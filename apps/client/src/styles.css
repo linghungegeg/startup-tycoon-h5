@@ -319,7 +319,7 @@ ol {
 }
 
 .auth-panel .game-input-row:nth-of-type(2) input {
-  padding-bottom: 5px;
+  transform: translateY(-10px);
 }
 
 .auth-actions,
