@@ -1,7 +1,9 @@
-import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { ApiConfig } from "./config.js";
+import { createPasswordRecord, verifyPassword } from "./password.js";
+import { createPrismaGameRepository, type AccountRecord, type GameRepository } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -27,59 +29,8 @@ type HealthResponse = {
   dependencies: ApiConfig["dependencies"];
 };
 
-type Account = {
-  id: string;
-  username: string;
-  passwordHash: string;
-  passwordSalt: string;
-};
-
-type ServerInfo = {
-  id: string;
-  name: string;
-  status: "recommended" | "new" | "busy";
-  label: string;
-  isRecommended: boolean;
-};
-
-type AvatarInfo = {
-  id: string;
-  name: string;
-  glyph: string;
-  specialty: string;
-};
-
-type PlayerProfile = {
-  id: string;
-  accountId: string;
-  serverId: string;
-  avatarId: string;
-  founderName: string;
-  companyName: string;
-  createdAt: string;
-};
-
-type ApiState = {
-  accountsByUsername: Map<string, Account>;
-  accountsById: Map<string, Account>;
-  sessions: Map<string, string>;
-  playersByAccountServer: Map<string, PlayerProfile>;
-};
-
 const TRACE_ID_HEADER = "x-trace-id";
 const MAX_BODY_BYTES = 16 * 1024;
-
-const servers: ServerInfo[] = [
-  { id: "s1", name: "长宁一服", status: "recommended", label: "推荐", isRecommended: true },
-  { id: "s2", name: "滨江新区", status: "new", label: "新服", isRecommended: false },
-  { id: "s3", name: "中关村路演场", status: "busy", label: "繁忙", isRecommended: false }
-];
-
-const avatars: AvatarInfo[] = [
-  { id: "strategist", name: "策略型创始人", glyph: "策", specialty: "融资谈判与方向判断" },
-  { id: "builder", name: "产品型创始人", glyph: "造", specialty: "产品研发与团队协作" },
-  { id: "operator", name: "运营型创始人", glyph: "营", specialty: "增长运营与现金回收" }
-];
 
 const readTraceId = (request: IncomingMessage): string => {
   const header = request.headers[TRACE_ID_HEADER];
@@ -167,23 +118,6 @@ const readBody = async (request: IncomingMessage): Promise<unknown> => {
 const readString = (body: Record<string, unknown>, key: string): string =>
   typeof body[key] === "string" ? body[key].trim() : "";
 
-const hashPassword = (password: string, salt: string): string =>
-  scryptSync(password, salt, 32).toString("hex");
-
-const createPasswordRecord = (password: string): Pick<Account, "passwordHash" | "passwordSalt"> => {
-  const passwordSalt = randomBytes(16).toString("hex");
-  return {
-    passwordHash: hashPassword(password, passwordSalt),
-    passwordSalt
-  };
-};
-
-const verifyPassword = (account: Account, password: string): boolean => {
-  const expected = Buffer.from(account.passwordHash, "hex");
-  const actual = Buffer.from(hashPassword(password, account.passwordSalt), "hex");
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
-};
-
 const validateCredentials = (body: unknown): { username: string; password: string } | string => {
   if (!isRecord(body)) {
     return "Request body must be a JSON object.";
@@ -208,7 +142,8 @@ const validateCredentials = (body: unknown): { username: string; password: strin
 };
 
 const validatePlayer = (
-  body: unknown
+  body: unknown,
+  repositoryState: { serverIds: Set<string>; avatarIds: Set<string> }
 ): { serverId: string; avatarId: string; founderName: string; companyName: string } | string => {
   if (!isRecord(body)) {
     return "Request body must be a JSON object.";
@@ -219,11 +154,11 @@ const validatePlayer = (
   const founderName = readString(body, "founderName");
   const companyName = readString(body, "companyName");
 
-  if (!servers.some((server) => server.id === serverId)) {
+  if (!repositoryState.serverIds.has(serverId)) {
     return "Server does not exist.";
   }
 
-  if (!avatars.some((avatar) => avatar.id === avatarId)) {
+  if (!repositoryState.avatarIds.has(avatarId)) {
     return "Avatar does not exist.";
   }
 
@@ -253,17 +188,17 @@ const readBearerToken = (request: IncomingMessage): string | undefined => {
   return token;
 };
 
-const authenticate = (request: IncomingMessage, state: ApiState): Account | undefined => {
+const authenticate = async (
+  request: IncomingMessage,
+  repository: GameRepository
+): Promise<AccountRecord | undefined> => {
   const token = readBearerToken(request);
   if (token === undefined) {
     return undefined;
   }
 
-  const accountId = state.sessions.get(token);
-  return accountId === undefined ? undefined : state.accountsById.get(accountId);
+  return repository.getAccountBySessionToken(token);
 };
-
-const playerKey = (accountId: string, serverId: string): string => `${accountId}:${serverId}`;
 
 const logRequest = (request: IncomingMessage, statusCode: number, traceId: string, startedAt: number): void => {
   const durationMs = Date.now() - startedAt;
@@ -279,14 +214,10 @@ const logRequest = (request: IncomingMessage, statusCode: number, traceId: strin
   );
 };
 
-export const createApiServer = (config: ApiConfig): Server => {
-  const state: ApiState = {
-    accountsByUsername: new Map(),
-    accountsById: new Map(),
-    sessions: new Map(),
-    playersByAccountServer: new Map()
-  };
-
+export const createApiServer = (
+  config: ApiConfig,
+  repository: GameRepository = createPrismaGameRepository()
+): Server => {
   return createServer(async (request, response) => {
     const startedAt = Date.now();
     const traceId = readTraceId(request);
@@ -326,21 +257,18 @@ export const createApiServer = (config: ApiConfig): Server => {
           return;
         }
 
-        if (state.accountsByUsername.has(credentials.username)) {
+        const account = await repository.createAccount({
+          username: credentials.username,
+          ...createPasswordRecord(credentials.password)
+        });
+
+        if (account === "ACCOUNT_EXISTS") {
           sendJson(response, 409, failure("ACCOUNT_EXISTS", "Account already exists.", traceId));
           return;
         }
 
-        const account: Account = {
-          id: randomUUID(),
-          username: credentials.username,
-          ...createPasswordRecord(credentials.password)
-        };
         const token = randomUUID();
-
-        state.accountsByUsername.set(account.username, account);
-        state.accountsById.set(account.id, account);
-        state.sessions.set(token, account.id);
+        await repository.createAccountSession(account.id, token);
 
         sendJson(response, 201, success({ accountId: account.id, username: account.username, token }, traceId));
       } catch (error) {
@@ -358,14 +286,14 @@ export const createApiServer = (config: ApiConfig): Server => {
           return;
         }
 
-        const account = state.accountsByUsername.get(credentials.username);
+        const account = await repository.findAccountByUsername(credentials.username);
         if (account === undefined || !verifyPassword(account, credentials.password)) {
           sendJson(response, 401, failure("INVALID_CREDENTIALS", "Invalid username or password.", traceId));
           return;
         }
 
         const token = randomUUID();
-        state.sessions.set(token, account.id);
+        await repository.createAccountSession(account.id, token);
         sendJson(response, 200, success({ accountId: account.id, username: account.username, token }, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
@@ -374,7 +302,31 @@ export const createApiServer = (config: ApiConfig): Server => {
       return;
     }
 
-    const account = authenticate(request, state);
+    if (request.method === "POST" && url.pathname === "/admin/auth/login") {
+      try {
+        const credentials = validateCredentials(await readBody(request));
+        if (typeof credentials === "string") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", credentials, traceId));
+          return;
+        }
+
+        const admin = await repository.findAdminByUsername(credentials.username);
+        if (admin === undefined || !verifyPassword(admin, credentials.password)) {
+          sendJson(response, 401, failure("INVALID_CREDENTIALS", "Invalid username or password.", traceId));
+          return;
+        }
+
+        const token = randomUUID();
+        await repository.createAdminSession(admin.id, token);
+        sendJson(response, 200, success({ adminUserId: admin.id, username: admin.username, token }, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const account = await authenticate(request, repository);
 
     if (request.method === "GET" && url.pathname === "/auth/session") {
       if (account === undefined) {
@@ -386,13 +338,25 @@ export const createApiServer = (config: ApiConfig): Server => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/auth/session") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success({ adminUserId: admin.id, username: admin.username }, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/servers") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
         return;
       }
 
-      sendJson(response, 200, success(servers, traceId));
+      sendJson(response, 200, success(await repository.listServers(), traceId));
       return;
     }
 
@@ -402,7 +366,7 @@ export const createApiServer = (config: ApiConfig): Server => {
         return;
       }
 
-      sendJson(response, 200, success(avatars, traceId));
+      sendJson(response, 200, success(await repository.listAvatars(), traceId));
       return;
     }
 
@@ -418,7 +382,7 @@ export const createApiServer = (config: ApiConfig): Server => {
         return;
       }
 
-      const profile = state.playersByAccountServer.get(playerKey(account.id, serverId));
+      const profile = await repository.getProfile(account.id, serverId);
       if (profile === undefined) {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -435,29 +399,32 @@ export const createApiServer = (config: ApiConfig): Server => {
       }
 
       try {
-        const player = validatePlayer(await readBody(request));
+        const [servers, avatars, body] = await Promise.all([
+          repository.listServers(),
+          repository.listAvatars(),
+          readBody(request)
+        ]);
+        const player = validatePlayer(body, {
+          serverIds: new Set(servers.map((server) => server.id)),
+          avatarIds: new Set(avatars.map((avatar) => avatar.id))
+        });
         if (typeof player === "string") {
           sendJson(response, 400, failure("VALIDATION_ERROR", player, traceId));
           return;
         }
 
-        const key = playerKey(account.id, player.serverId);
-        if (state.playersByAccountServer.has(key)) {
-          sendJson(response, 409, failure("PLAYER_EXISTS", "Player profile already exists for this server.", traceId));
-          return;
-        }
-
-        const profile: PlayerProfile = {
-          id: randomUUID(),
+        const profile = await repository.createProfile({
           accountId: account.id,
           serverId: player.serverId,
           avatarId: player.avatarId,
           founderName: player.founderName,
-          companyName: player.companyName,
-          createdAt: new Date().toISOString()
-        };
+          companyName: player.companyName
+        });
 
-        state.playersByAccountServer.set(key, profile);
+        if (profile === "PLAYER_EXISTS") {
+          sendJson(response, 409, failure("PLAYER_EXISTS", "Player profile already exists for this server.", traceId));
+          return;
+        }
         sendJson(response, 201, success(profile, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";

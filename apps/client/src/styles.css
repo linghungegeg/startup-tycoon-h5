@@ -191,6 +191,22 @@ ol {
   font-size: 16px;
 }
 
+.login-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.register-button {
+  min-height: 50px;
+  border: 1px solid rgba(47, 93, 80, 0.26);
+  border-radius: 8px;
+  color: #2f5d50;
+  background: #eef4ee;
+  font-size: 16px;
+  font-weight: 800;
+}
+
 .onboarding-shell {
   display: grid;
   place-items: center;

@@ -1,11 +1,41 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const ADMIN_SESSION_KEY = "wenziyouxi.admin.session";
 const ADMIN_SESSION_VERSION = 1;
 
 type AdminSession = {
   version: typeof ADMIN_SESSION_VERSION;
+  token: string;
   account: string;
+};
+
+type ApiSuccess<T> = {
+  success: true;
+  data: T;
+  traceId: string;
+};
+
+type ApiFailure = {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+  };
+  traceId: string;
+};
+
+type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
+
+type AdminLoginResponse = {
+  adminUserId: string;
+  username: string;
+  token: string;
+};
+
+type AdminSessionResponse = {
+  adminUserId: string;
+  username: string;
 };
 
 type PlayerRow = {
@@ -70,7 +100,11 @@ const isAdminSession = (value: unknown): value is AdminSession => {
   }
 
   const session = value as Partial<AdminSession>;
-  return session.version === ADMIN_SESSION_VERSION && typeof session.account === "string";
+  return (
+    session.version === ADMIN_SESSION_VERSION &&
+    typeof session.account === "string" &&
+    typeof session.token === "string"
+  );
 };
 
 const loadAdminSession = (): AdminSession | null => {
@@ -95,6 +129,43 @@ const clearAdminSession = (): void => {
   window.localStorage.removeItem(ADMIN_SESSION_KEY);
 };
 
+const readApiMessage = async (response: Response): Promise<string> => {
+  try {
+    const body = (await response.json()) as ApiFailure;
+    return body.error?.message ?? "请求失败，请稍后再试。";
+  } catch {
+    return "请求失败，请稍后再试。";
+  }
+};
+
+const apiRequest = async <T,>(
+  path: string,
+  options: RequestInit = {},
+  token?: string
+): Promise<ApiResponse<T>> => {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...options.headers
+    }
+  });
+
+  if (!response.ok) {
+    return {
+      success: false,
+      error: {
+        code: String(response.status),
+        message: await readApiMessage(response)
+      },
+      traceId: response.headers.get("x-trace-id") ?? ""
+    };
+  }
+
+  return (await response.json()) as ApiResponse<T>;
+};
+
 export default function App() {
   const initialSession = loadAdminSession();
   const [session, setSession] = useState<AdminSession | null>(initialSession);
@@ -104,6 +175,7 @@ export default function App() {
   const [status, setStatus] = useState<"全部" | PlayerRow["status"]>("全部");
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
+  const [isRestoring, setIsRestoring] = useState(initialSession !== null);
 
   const filteredRows = useMemo(() => {
     const trimmedKeyword = keyword.trim();
@@ -118,7 +190,57 @@ export default function App() {
     });
   }, [keyword, status]);
 
-  const submitLogin = (event: FormEvent<HTMLFormElement>): void => {
+  useEffect(() => {
+    if (initialSession === null) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const restoreSession = async (): Promise<void> => {
+      try {
+        const response = await apiRequest<AdminSessionResponse>("/admin/auth/session", {}, initialSession.token);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!response.success) {
+          clearAdminSession();
+          setSession(null);
+          setError("后台登录状态已过期，请重新登录。");
+          return;
+        }
+
+        const nextSession: AdminSession = {
+          version: ADMIN_SESSION_VERSION,
+          account: response.data.username,
+          token: initialSession.token
+        };
+        saveAdminSession(nextSession);
+        setSession(nextSession);
+        setAccount(response.data.username);
+      } catch {
+        if (isMounted) {
+          clearAdminSession();
+          setSession(null);
+          setError("无法连接后台服务，请确认 API 服务和数据库已启动。");
+        }
+      } finally {
+        if (isMounted) {
+          setIsRestoring(false);
+        }
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const submitLogin = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     const trimmedAccount = account.trim();
 
@@ -127,15 +249,30 @@ export default function App() {
       return;
     }
 
-    const nextSession: AdminSession = {
-      version: ADMIN_SESSION_VERSION,
-      account: trimmedAccount
-    };
-    saveAdminSession(nextSession);
-    setSession(nextSession);
-    setAccount(trimmedAccount);
-    setPassword("");
-    setError("");
+    try {
+      const login = await apiRequest<AdminLoginResponse>("/admin/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username: trimmedAccount, password })
+      });
+
+      if (!login.success) {
+        setError("管理员账号或密码不正确。");
+        return;
+      }
+
+      const nextSession: AdminSession = {
+        version: ADMIN_SESSION_VERSION,
+        account: login.data.username,
+        token: login.data.token
+      };
+      saveAdminSession(nextSession);
+      setSession(nextSession);
+      setAccount(login.data.username);
+      setPassword("");
+      setError("");
+    } catch {
+      setError("无法连接后台服务，请确认 API 服务和数据库已启动。");
+    }
   };
 
   const logout = (): void => {
@@ -159,7 +296,7 @@ export default function App() {
               <p>写字楼创业记</p>
             </div>
           </div>
-          <form className="admin-login-form" onSubmit={submitLogin}>
+          <form className="admin-login-form" onSubmit={(event) => void submitLogin(event)}>
             <label>
               管理员账号
               <input
@@ -182,6 +319,23 @@ export default function App() {
             {error && <p className="admin-error">{error}</p>}
             <button type="submit">登录后台</button>
           </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (isRestoring) {
+    return (
+      <main className="admin-login-shell">
+        <section className="admin-login-panel" aria-label="后台登录状态检查">
+          <div className="admin-login-brand">
+            <span>管</span>
+            <div>
+              <h1>运营管理后台</h1>
+              <p>正在校验登录状态</p>
+            </div>
+          </div>
+          {error && <p className="admin-error">{error}</p>}
         </section>
       </main>
     );

@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const SESSION_KEY = "wenziyouxi.client.session";
@@ -150,7 +150,7 @@ const apiRequest = async <T,>(
 
 function App() {
   const initialSession = loadSession();
-  const [step, setStep] = useState<OnboardingStep>(initialSession ? "game" : "auth");
+  const [step, setStep] = useState<OnboardingStep>("auth");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [username, setUsername] = useState(initialSession?.account.username ?? "");
   const [password, setPassword] = useState("");
@@ -164,6 +164,7 @@ function App() {
   const [profile, setProfile] = useState<PlayerProfile | null>(initialSession?.profile ?? null);
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(initialSession !== null);
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -198,8 +199,59 @@ function App() {
     setStep("game");
   };
 
-  const submitAuth = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
+  useEffect(() => {
+    if (initialSession === null) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const restoreSession = async (): Promise<void> => {
+      try {
+        const [sessionResponse, profileResponse] = await Promise.all([
+          apiRequest<{ accountId: string; username: string }>("/auth/session", {}, initialSession.account.token),
+          apiRequest<PlayerProfile>(
+            `/players?serverId=${encodeURIComponent(initialSession.server.id)}`,
+            {},
+            initialSession.account.token
+          )
+        ]);
+
+        if (!isMounted) {
+          return;
+        }
+
+        if (!sessionResponse.success || !profileResponse.success) {
+          clearSession();
+          setStep("auth");
+          setError("登录状态已过期，请重新登录。");
+          return;
+        }
+
+        enterGame(initialSession.account, initialSession.server, initialSession.avatar, profileResponse.data);
+      } catch {
+        if (isMounted) {
+          clearSession();
+          setAccount(null);
+          setProfile(null);
+          setStep("auth");
+          setError("无法恢复登录状态，请确认 API 服务和数据库已启动。");
+        }
+      } finally {
+        if (isMounted) {
+          setIsRestoring(false);
+        }
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const runAuth = async (mode: AuthMode): Promise<void> => {
     const trimmedUsername = username.trim();
 
     if (trimmedUsername.length < 3 || password.length < 6) {
@@ -209,9 +261,10 @@ function App() {
 
     setIsBusy(true);
     setError("");
+    setAuthMode(mode);
 
     try {
-      const authPath = authMode === "register" ? "/auth/register" : "/auth/login";
+      const authPath = mode === "register" ? "/auth/register" : "/auth/login";
       const auth = await apiRequest<AccountSession>(authPath, {
         method: "POST",
         body: JSON.stringify({ username: trimmedUsername, password })
@@ -259,6 +312,11 @@ function App() {
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const submitAuth = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    void runAuth("login");
   };
 
   const continueFromServer = async (): Promise<void> => {
@@ -355,6 +413,23 @@ function App() {
     setStep("auth");
   };
 
+  if (isRestoring) {
+    return (
+      <main className="login-shell" aria-label="恢复登录状态">
+        <section className="login-stage" aria-label="登录状态检查">
+          <div className="login-brand">
+            <span>创</span>
+            <div>
+              <h1>写字楼创业记</h1>
+              <p>正在进入游戏</p>
+            </div>
+          </div>
+          {error && <p className="form-error">{error}</p>}
+        </section>
+      </main>
+    );
+  }
+
   if (step === "game" && profile && selectedServer && selectedAvatar) {
     return (
       <main className="game-shell" aria-label="游戏主界面">
@@ -435,27 +510,7 @@ function App() {
             <div className="news-strip">今日目标：注册公司，拿下第一单</div>
           </div>
 
-          <form className="login-panel" onSubmit={(event) => void submitAuth(event)}>
-            <div className="segmented-control" role="tablist" aria-label="账号入口">
-              <button
-                aria-selected={authMode === "login"}
-                className={authMode === "login" ? "selected" : ""}
-                onClick={() => setAuthMode("login")}
-                role="tab"
-                type="button"
-              >
-                登录
-              </button>
-              <button
-                aria-selected={authMode === "register"}
-                className={authMode === "register" ? "selected" : ""}
-                onClick={() => setAuthMode("register")}
-                role="tab"
-                type="button"
-              >
-                注册
-              </button>
-            </div>
+          <form className="login-panel" onSubmit={submitAuth}>
             <label>
               账号
               <input
@@ -476,9 +531,14 @@ function App() {
               />
             </label>
             {error && <p className="form-error">{error}</p>}
-            <button className="primary-button enter-button" disabled={isBusy} type="submit">
-              {isBusy ? "正在进入" : authMode === "login" ? "进入游戏" : "创建账号"}
-            </button>
+            <div className="login-actions">
+              <button className="primary-button enter-button" disabled={isBusy} type="submit">
+                {isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"}
+              </button>
+              <button className="register-button" disabled={isBusy} type="button" onClick={() => void runAuth("register")}>
+                {isBusy && authMode === "register" ? "正在注册" : "注册进入游戏"}
+              </button>
+            </div>
           </form>
         </section>
       </main>

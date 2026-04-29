@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id           String          @id @default(uuid()) @db.VarChar(36)
+  username     String          @unique @db.VarChar(24)
+  passwordHash String          @db.VarChar(128)
+  passwordSalt String          @db.VarChar(64)
+  createdAt    DateTime        @default(now())
+  sessions     AccountSession[]
+  profiles     PlayerProfile[]
+}
+
+model AccountSession {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  token     String   @unique @db.VarChar(64)
+  accountId String   @db.VarChar(36)
+  createdAt DateTime @default(now())
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model AdminUser {
+  id           String          @id @default(uuid()) @db.VarChar(36)
+  username     String          @unique @db.VarChar(24)
+  passwordHash String          @db.VarChar(128)
+  passwordSalt String          @db.VarChar(64)
+  createdAt    DateTime        @default(now())
+  sessions     AdminSession[]
+  auditLogs    AdminAuditLog[]
+}
+
+model AdminSession {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  token       String    @unique @db.VarChar(64)
+  adminUserId String    @db.VarChar(36)
+  createdAt   DateTime  @default(now())
+  adminUser    AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+}
+
+model AdminAuditLog {
+  id          String    @id @default(uuid()) @db.VarChar(36)
+  adminUserId String    @db.VarChar(36)
+  action      String    @db.VarChar(64)
+  targetType  String    @db.VarChar(64)
+  targetId    String?   @db.VarChar(64)
+  detail      String?   @db.Text
+  createdAt   DateTime  @default(now())
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@index([adminUserId, createdAt])
+}
+
+model GameServer {
+  id            String          @id @db.VarChar(32)
+  name          String          @db.VarChar(32)
+  status        String          @db.VarChar(16)
+  label         String          @db.VarChar(16)
+  isRecommended Boolean         @default(false)
+  sortOrder     Int             @default(0)
+  createdAt     DateTime        @default(now())
+  profiles      PlayerProfile[]
+}
+
+model AvatarOption {
+  id        String          @id @db.VarChar(32)
+  name      String          @db.VarChar(32)
+  glyph     String          @db.VarChar(4)
+  specialty String          @db.VarChar(64)
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  profiles  PlayerProfile[]
+}
+
+model PlayerProfile {
+  id          String       @id @default(uuid()) @db.VarChar(36)
+  accountId   String       @db.VarChar(36)
+  serverId    String       @db.VarChar(32)
+  avatarId    String       @db.VarChar(32)
+  founderName String       @db.VarChar(16)
+  companyName String       @db.VarChar(24)
+  createdAt   DateTime     @default(now())
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  server      GameServer   @relation(fields: [serverId], references: [id], onDelete: Restrict)
+  avatar      AvatarOption @relation(fields: [avatarId], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, serverId])
+  @@index([serverId])
+  @@index([avatarId])
+}

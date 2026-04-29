@@ -1,9 +1,19 @@
 import { strict as assert } from "node:assert";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { test } from "node:test";
 
 import { createApiServer } from "../src/http.js";
 import type { ApiConfig } from "../src/config.js";
+import { createPasswordRecord } from "../src/password.js";
+import type {
+  AccountRecord,
+  AdminUserRecord,
+  AvatarRecord,
+  GameRepository,
+  PlayerProfileRecord,
+  ServerRecord
+} from "../src/repository.js";
 
 const config: ApiConfig = {
   host: "127.0.0.1",
@@ -24,10 +34,96 @@ type ApiBody<T> = {
   traceId: string;
 };
 
+const createTestRepository = (): GameRepository => {
+  const accounts = new Map<string, AccountRecord>();
+  const accountSessions = new Map<string, string>();
+  const adminPassword = createPasswordRecord("admin123");
+  const admins = new Map<string, AdminUserRecord>([
+    [
+      "admin",
+      {
+        id: "admin-1",
+        username: "admin",
+        ...adminPassword
+      }
+    ]
+  ]);
+  const adminSessions = new Map<string, string>();
+  const servers: ServerRecord[] = [
+    { id: "s1", name: "长宁一服", status: "recommended", label: "推荐", isRecommended: true },
+    { id: "s2", name: "滨江新区", status: "new", label: "新服", isRecommended: false }
+  ];
+  const avatars: AvatarRecord[] = [
+    { id: "strategist", name: "策略型创始人", glyph: "策", specialty: "融资谈判与方向判断" },
+    { id: "builder", name: "产品型创始人", glyph: "造", specialty: "产品研发与团队协作" }
+  ];
+  const profiles = new Map<string, PlayerProfileRecord>();
+
+  return {
+    async createAccount(account) {
+      if (accounts.has(account.username)) {
+        return "ACCOUNT_EXISTS";
+      }
+
+      const created: AccountRecord = {
+        id: randomUUID(),
+        ...account
+      };
+      accounts.set(created.username, created);
+      return created;
+    },
+    async findAccountByUsername(username) {
+      return accounts.get(username);
+    },
+    async createAccountSession(accountId, token) {
+      accountSessions.set(token, accountId);
+    },
+    async getAccountBySessionToken(token) {
+      const accountId = accountSessions.get(token);
+      return [...accounts.values()].find((account) => account.id === accountId);
+    },
+    async findAdminByUsername(username) {
+      return admins.get(username);
+    },
+    async createAdminSession(adminUserId, token) {
+      adminSessions.set(token, adminUserId);
+    },
+    async getAdminBySessionToken(token) {
+      const adminUserId = adminSessions.get(token);
+      return [...admins.values()].find((admin) => admin.id === adminUserId);
+    },
+    async listServers() {
+      return servers;
+    },
+    async listAvatars() {
+      return avatars;
+    },
+    async getProfile(accountId, serverId) {
+      return profiles.get(`${accountId}:${serverId}`);
+    },
+    async createProfile(profile) {
+      const key = `${profile.accountId}:${profile.serverId}`;
+      if (profiles.has(key)) {
+        return "PLAYER_EXISTS";
+      }
+
+      const created: PlayerProfileRecord = {
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+        ...profile
+      };
+      profiles.set(key, created);
+      return created;
+    },
+    async disconnect() {}
+  };
+};
+
 const withServer = async (
   run: (baseUrl: string) => Promise<void>
 ): Promise<void> => {
-  const server = createApiServer(config);
+  const repository = createTestRepository();
+  const server = createApiServer(config, repository);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
 
@@ -39,6 +135,7 @@ const withServer = async (
   } finally {
     server.close();
     await once(server, "close");
+    await repository.disconnect();
   }
 };
 
@@ -209,5 +306,33 @@ test("creates one player profile per account per server", async () => {
     assert.equal(profile.status, 200);
     assert.equal(profile.body.success, true);
     assert.equal(profile.body.data?.id, created.body.data?.id);
+  });
+});
+
+test("logs in admin users and returns admin sessions", async () => {
+  await withServer(async (baseUrl) => {
+    const login = await requestJson<{ adminUserId: string; username: string; token: string }>(
+      baseUrl,
+      "/admin/auth/login",
+      {
+        method: "POST",
+        body: JSON.stringify({ username: "admin", password: "admin123" })
+      }
+    );
+
+    assert.equal(login.status, 200);
+    assert.equal(login.body.success, true);
+    assert.ok(login.body.data?.adminUserId);
+    assert.ok(login.body.data?.token);
+
+    const session = await requestJson<{ adminUserId: string; username: string }>(
+      baseUrl,
+      "/admin/auth/session",
+      { headers: { authorization: `Bearer ${login.body.data.token}` } }
+    );
+
+    assert.equal(session.status, 200);
+    assert.equal(session.body.success, true);
+    assert.equal(session.body.data?.username, "admin");
   });
 });
