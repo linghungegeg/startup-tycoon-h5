@@ -226,6 +226,11 @@ ol {
   box-shadow: 0 0 44px rgba(0, 0, 0, 0.55);
 }
 
+.founder-canvas {
+  width: min(100vw, calc(100vh * 941 / 1672), 480px);
+  height: auto;
+}
+
 .design-image {
   position: absolute;
   inset: 0;
@@ -363,6 +368,7 @@ ol {
 
 .founder-cards {
   position: absolute;
+  z-index: 2;
   top: 31.4%;
   left: 5.4%;
   width: 89.4%;
@@ -381,10 +387,8 @@ ol {
 }
 
 .founder-card.selected {
-  border-color: rgba(255, 218, 126, 0.95);
-  box-shadow:
-    0 0 18px rgba(255, 174, 51, 0.7),
-    inset 0 0 0 1px rgba(255, 244, 203, 0.25);
+  border-color: transparent;
+  background: rgba(255, 218, 126, 0.06);
 }
 
 .founder-card:nth-child(1) {
@@ -422,11 +426,15 @@ ol {
 
 .founder-card.strategy.selected,
 .founder-card.operation.selected {
-  border-color: rgba(255, 218, 126, 0.95);
+  border-color: transparent;
 }
 
 .founder-panel {
   inset: 0;
+}
+
+.founder-panel .game-input-row input {
+  padding: 0 7% 0 50%;
 }
 
 .founder-panel .game-input-row:nth-of-type(1) {
