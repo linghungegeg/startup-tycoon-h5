@@ -16,6 +16,12 @@ const avatars = [
   { id: "operator", name: "运营型创始人", glyph: "营", specialty: "增长运营与现金回收", sortOrder: 3 }
 ];
 
+const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
+
+if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
+  throw new Error("ADMIN_PASSWORD must be 6 to 72 characters.");
+}
+
 const seed = async (): Promise<void> => {
   for (const server of servers) {
     await prisma.gameServer.upsert({
@@ -33,7 +39,7 @@ const seed = async (): Promise<void> => {
     });
   }
 
-  const adminPassword = createPasswordRecord("admin123");
+  const adminPassword = createPasswordRecord(adminPasswordText);
   await prisma.adminUser.upsert({
     where: { username: "admin" },
     update: adminPassword,
