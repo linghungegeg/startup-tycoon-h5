@@ -1,0 +1,276 @@
+:root {
+  color: #1c2320;
+  background: #edf1e8;
+  font-family:
+    Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button {
+  border: 0;
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100vh;
+  padding: 14px;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(226, 115, 64, 0.18), transparent 26%),
+    linear-gradient(180deg, #f7f2e8 0%, #e7eee9 100%);
+}
+
+.resource-bar,
+.status-panel,
+.bottom-nav {
+  border: 1px solid rgba(38, 48, 43, 0.14);
+  background: rgba(255, 252, 244, 0.88);
+  box-shadow: 0 14px 40px rgba(40, 50, 45, 0.12);
+}
+
+.resource-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 86px;
+  padding: 14px 16px;
+  border-radius: 8px;
+}
+
+.caption {
+  margin: 0 0 5px;
+  color: #69766d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+h1,
+h2,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+h1 {
+  font-size: 22px;
+  line-height: 1.18;
+}
+
+h2 {
+  margin-bottom: 10px;
+  font-size: 20px;
+}
+
+.resource-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(62px, 1fr));
+  gap: 8px;
+  min-width: 420px;
+}
+
+.resource-item {
+  padding: 10px;
+  border-radius: 6px;
+  background: #f3efe4;
+}
+
+dt {
+  color: #6d756f;
+  font-size: 12px;
+}
+
+dd {
+  margin-top: 4px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.playfield {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) 260px;
+  gap: 12px;
+  min-height: 0;
+}
+
+.action-rail {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+}
+
+.action-rail button,
+.bottom-nav button {
+  min-height: 48px;
+  border-radius: 8px;
+  color: #f9f5ec;
+  background: #2f5d50;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.office-scene {
+  position: relative;
+  overflow: hidden;
+  min-height: 420px;
+  border: 1px solid rgba(38, 48, 43, 0.14);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(247, 252, 255, 0.9) 0 36%, transparent 36%),
+    linear-gradient(90deg, #dcc8a3 0 14%, transparent 14% 86%, #dcc8a3 86%),
+    #d9e6dd;
+}
+
+.window-grid {
+  position: absolute;
+  inset: 34px 18% auto;
+  height: 130px;
+  border: 6px solid #415c69;
+  background:
+    linear-gradient(90deg, transparent 31%, #415c69 31% 35%, transparent 35% 65%, #415c69 65% 69%, transparent 69%),
+    linear-gradient(180deg, transparent 47%, #415c69 47% 53%, transparent 53%),
+    linear-gradient(135deg, #b9d9e4, #f7efe0);
+}
+
+.desk {
+  position: absolute;
+  bottom: 92px;
+  width: 26%;
+  height: 92px;
+  border-radius: 8px 8px 4px 4px;
+  background: #9d6f45;
+  box-shadow: inset 0 16px 0 rgba(255, 255, 255, 0.12);
+}
+
+.desk::before {
+  position: absolute;
+  top: -34px;
+  left: 18%;
+  width: 64%;
+  height: 34px;
+  border-radius: 6px 6px 0 0;
+  background: #334c59;
+  content: "";
+}
+
+.desk-left {
+  left: 8%;
+}
+
+.desk-center {
+  left: 37%;
+  transform: translateY(-28px);
+}
+
+.desk-right {
+  right: 8%;
+}
+
+.scene-note {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #fff8ec;
+  background: rgba(40, 56, 50, 0.84);
+}
+
+.scene-note span {
+  font-size: 13px;
+}
+
+.status-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.status-panel p:not(.caption) {
+  color: #4e5c55;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.status-panel dl {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.status-panel dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid rgba(38, 48, 43, 0.12);
+}
+
+.bottom-nav {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.bottom-nav button {
+  color: #415047;
+  background: transparent;
+}
+
+.bottom-nav button.active {
+  color: #fffaf1;
+  background: #d66b3d;
+}
+
+@media (max-width: 820px) {
+  .resource-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .resource-list {
+    min-width: 0;
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .playfield {
+    grid-template-columns: 1fr;
+  }
+
+  .action-rail {
+    grid-template-columns: repeat(4, 1fr);
+    order: 2;
+  }
+
+  .office-scene {
+    min-height: 360px;
+  }
+
+  .status-panel {
+    order: 3;
+  }
+}
