@@ -62,13 +62,9 @@ type StoredSession = {
   profile: PlayerProfile;
 };
 
-const reports = [
-  { label: "产品进度", value: "8%" },
-  { label: "现金", value: "¥50,000" },
-  { label: "团队", value: "1人" }
-];
-
-const navItems = ["公司", "员工", "项目", "市场"];
+const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
+const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
+const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
 const avatarClassById: Record<string, string> = {
   strategist: "strategy",
   builder: "product",
@@ -461,58 +457,73 @@ function App() {
   if (step === "game" && profile && selectedServer && selectedAvatar) {
     return (
       <main className="game-shell" aria-label="游戏主界面">
-        <header className="game-topbar">
-          <div>
-            <p className="caption">{selectedServer.name}</p>
-            <h1>{profile.companyName}</h1>
-          </div>
-          <button type="button" onClick={leaveGame}>
-            重新登录
-          </button>
-        </header>
+        <section className="home-canvas" aria-label="公司经营主页">
+          <img alt="" className="home-bg" src="/game-ui/zhuye-bg.png" />
 
-        <section className="portrait-card" aria-label="创始人档案">
-          <div className="avatar-mark">{selectedAvatar.glyph}</div>
-          <div>
-            <p className="caption">{selectedAvatar.name}</p>
-            <h2>{profile.founderName}</h2>
-            <p>账号：{account?.username ?? "已登录"}</p>
-          </div>
-        </section>
-
-        <section className="office-scene" aria-label="经营场景">
-          <div className="window-grid" aria-hidden="true" />
-          <div className="desk desk-left" />
-          <div className="desk desk-center" />
-          <div className="desk desk-right" />
-          <div className="scene-note">
-            <strong>公司刚成立</strong>
-            <span>第一周目标：完成可玩原型并招募核心成员。</span>
-          </div>
-        </section>
-
-        <section className="status-panel" aria-label="经营状态">
-          <div>
-            <p className="caption">初始档案</p>
-            <h2>档案编号 {profile.id.slice(0, 8)}</h2>
-          </div>
-          <dl>
-            {reports.map((report) => (
-              <div key={report.label}>
-                <dt>{report.label}</dt>
-                <dd>{report.value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        <nav className="bottom-nav" aria-label="底部导航">
-          {navItems.map((item, index) => (
-            <button className={index === 0 ? "active" : undefined} type="button" key={item}>
-              {item}
+          <header className="home-topbar" aria-label="玩家状态">
+            <button className="profile-badge" type="button" onClick={leaveGame}>
+              <span className="profile-face">{selectedAvatar.glyph}</span>
+              <span>
+                <strong>{profile.founderName || account?.username || "创业新星"}</strong>
+                <em>Lv.38</em>
+              </span>
+              <b>VIP8</b>
             </button>
-          ))}
-        </nav>
+            <div className="resource-grid" aria-label="资源">
+              <button type="button">资金 2.45亿 <span>+</span></button>
+              <button type="button">金币 36,580 <span>+</span></button>
+              <button type="button">钻石 8680 <span>+</span></button>
+              <button type="button">声望 125.6万</button>
+              <button type="button">体力 120/120 <span>+</span></button>
+            </div>
+            <button className="settings-button" type="button" aria-label="设置">设置</button>
+          </header>
+
+          <section className="left-actions" aria-label="福利入口">
+            {sideActions.map((item, index) => (
+              <button type="button" key={item}>
+                <span>{index === 4 ? "经理" : item.slice(0, 1)}</span>
+                <strong>{item}</strong>
+                {index !== 3 && <em />}
+              </button>
+            ))}
+          </section>
+
+          <section className="right-actions" aria-label="经营入口">
+            {rightActions.map((item, index) => (
+              <button type="button" key={item}>
+                <span>{item.slice(0, 2)}</span>
+                <strong>{item}</strong>
+                {[1, 2, 4, 5, 6, 7].includes(index) && <em />}
+              </button>
+            ))}
+          </section>
+
+          <section className="task-panel" aria-label="当前任务">
+            <button className="task-icon" type="button">任务</button>
+            <div>
+              <strong>主线</strong>
+              <span>升级市场部到 Lv.20（18/20）</span>
+              <small>奖励：钻石 200 资金 20万</small>
+            </div>
+            <button className="task-go" type="button">前往</button>
+          </section>
+
+          <button className="chapter-button" type="button">
+            <strong>出门谈判</strong>
+            <span>第15章</span>
+          </button>
+
+          <nav className="bottom-nav" aria-label="底部导航">
+            {navItems.map((item, index) => (
+              <button className={index === 0 ? "active" : undefined} type="button" key={item}>
+                <span>{item.slice(0, 1)}</span>
+                <strong>{item}</strong>
+                {[2, 4, 5].includes(index) && <em />}
+              </button>
+            ))}
+          </nav>
+        </section>
       </main>
     );
   }
