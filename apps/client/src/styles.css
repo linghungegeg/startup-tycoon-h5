@@ -319,7 +319,24 @@ ol {
 }
 
 .auth-panel .game-input-row:nth-of-type(2) input {
-  transform: translateY(-10px);
+  color: transparent;
+  text-shadow: none;
+  caret-color: transparent;
+}
+
+.auth-panel .game-input-row:nth-of-type(2)::after {
+  position: absolute;
+  top: 50%;
+  left: 35.5%;
+  color: #fff4e0;
+  content: attr(data-mask);
+  font-family: Arial, sans-serif;
+  font-size: clamp(14px, 4vw, 17px);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.76);
+  transform: translateY(-50%) translateY(-7px);
 }
 
 .auth-actions,

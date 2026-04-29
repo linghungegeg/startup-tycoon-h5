@@ -543,7 +543,7 @@ function App() {
                 value={username}
               />
             </label>
-            <label className="game-input-row">
+            <label className="game-input-row" data-mask={password ? "•".repeat(password.length) : undefined}>
               <span className="sr-only">密码</span>
               <input
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
