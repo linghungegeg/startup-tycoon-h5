@@ -285,7 +285,7 @@ ol {
   height: 100%;
   border: 0;
   border-radius: 0;
-  padding: 0;
+  padding: 0 8% 0 38%;
   color: #fff4e0;
   background: transparent;
   font-size: clamp(14px, 4.3vw, 18px);
@@ -299,15 +299,15 @@ ol {
 
 .auth-panel .game-input-row:nth-of-type(1) {
   top: 72.1%;
-  left: 40.3%;
-  width: 43.2%;
+  left: 14.8%;
+  width: 69.8%;
   height: 4.4%;
 }
 
 .auth-panel .game-input-row:nth-of-type(2) {
   top: 80.3%;
-  left: 40.3%;
-  width: 43.2%;
+  left: 14.8%;
+  width: 69.8%;
   height: 4.4%;
 }
 
@@ -415,15 +415,15 @@ ol {
 
 .founder-panel .game-input-row:nth-of-type(1) {
   top: 76.2%;
-  left: 42.4%;
-  width: 41.5%;
+  left: 13.8%;
+  width: 72.2%;
   height: 4.1%;
 }
 
 .founder-panel .game-input-row:nth-of-type(2) {
   top: 84.3%;
-  left: 42.4%;
-  width: 41.5%;
+  left: 13.8%;
+  width: 72.2%;
   height: 4.1%;
 }
 
