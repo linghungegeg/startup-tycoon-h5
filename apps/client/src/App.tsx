@@ -434,6 +434,7 @@ function App() {
     clearSession();
     setProfile(null);
     setAccount(null);
+    setUsername("");
     setPassword("");
     setFounderName("");
     setCompanyName("");
@@ -520,6 +521,7 @@ function App() {
     return (
       <main className="auth-screen" aria-label="玩家登录">
         <section className="auth-canvas" aria-label="游戏入口">
+          <img alt="" className="design-image" src="/game-ui/zhuce.png" />
           <div className="auth-title" aria-hidden="true">
             <span>写字楼</span>
             <strong>创业记</strong>
@@ -527,39 +529,40 @@ function App() {
           </div>
 
           <div className="server-ribbon" aria-label="当前区服">
-            <span>区服：</span>
-            <strong>S1 创业中心</strong>
-            <button type="button">换服</button>
+            <span className="sr-only">区服：S1 创业中心</span>
+            <button aria-label="换服" type="button" />
           </div>
 
           <form className="auth-panel" onSubmit={submitAuth}>
             <label className="game-input-row">
-              <span>账号</span>
+              <span className="sr-only">账号</span>
               <input
                 autoComplete="username"
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="请输入账号"
+                placeholder=""
                 value={username}
               />
             </label>
             <label className="game-input-row">
-              <span>密码</span>
+              <span className="sr-only">密码</span>
               <input
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="请输入密码"
+                placeholder=""
                 type="password"
                 value={password}
               />
             </label>
             {error && <p className="form-error">{error}</p>}
             <div className="auth-actions">
-              <button className="gold-button" disabled={isBusy} type="submit">
-                {isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"}
-              </button>
-              <button className="blue-button" disabled={isBusy} type="button" onClick={() => void runAuth("register")}>
-                {isBusy && authMode === "register" ? "正在注册" : "注册进入游戏"}
-              </button>
+              <button aria-label={isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"} className="gold-button" disabled={isBusy} type="submit" />
+              <button
+                aria-label={isBusy && authMode === "register" ? "正在注册" : "注册进入游戏"}
+                className="blue-button"
+                disabled={isBusy}
+                type="button"
+                onClick={() => void runAuth("register")}
+              />
             </div>
           </form>
         </section>
@@ -571,6 +574,7 @@ function App() {
     return (
       <main className="founder-screen" aria-label="选择角色与命名">
         <section className="founder-canvas" aria-label="创建创始人档案">
+          <img alt="" className="design-image" src="/game-ui/xuanjiao.png" />
           <div className="founder-title" aria-hidden="true">
             <span>写字楼</span>
             <strong>创业记</strong>
@@ -597,26 +601,24 @@ function App() {
 
           <form className="founder-panel" onSubmit={(event) => void submitProfile(event)}>
             <label className="game-input-row">
-              <span>创始人姓名</span>
+              <span className="sr-only">创始人姓名</span>
               <input
                 autoComplete="name"
                 onChange={(event) => setFounderName(event.target.value)}
-                placeholder="请输入创始人姓名"
+                placeholder=""
                 value={founderName}
               />
             </label>
             <label className="game-input-row">
-              <span>公司名称</span>
+              <span className="sr-only">公司名称</span>
               <input
                 onChange={(event) => setCompanyName(event.target.value)}
-                placeholder="请输入公司名称"
+                placeholder=""
                 value={companyName}
               />
             </label>
             {error && <p className="form-error">{error}</p>}
-            <button className="gold-button" disabled={isBusy} type="submit">
-              {isBusy ? "创建中" : "创建档案"}
-            </button>
+            <button aria-label={isBusy ? "创建中" : "创建档案"} className="gold-button" disabled={isBusy} type="submit" />
           </form>
         </section>
       </main>
