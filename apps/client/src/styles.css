@@ -275,6 +275,7 @@ ol {
 .game-input-row {
   position: absolute;
   display: block;
+  z-index: 3;
   color: #f6dfbb;
   font-size: 18px;
   font-weight: 900;
@@ -285,11 +286,12 @@ ol {
   height: 100%;
   border: 0;
   border-radius: 0;
-  padding: 0 8% 0 38%;
+  padding: 0 7% 0 35.5%;
   color: #fff4e0;
   background: transparent;
-  font-size: clamp(14px, 4.3vw, 18px);
+  font-size: clamp(14px, 4vw, 17px);
   font-weight: 800;
+  line-height: 1;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.76);
 }
 
@@ -297,18 +299,23 @@ ol {
   color: transparent;
 }
 
+.auth-panel .game-input-row input:focus-visible,
+.founder-panel .game-input-row input:focus-visible {
+  outline: 0;
+}
+
 .auth-panel .game-input-row:nth-of-type(1) {
-  top: 72.1%;
-  left: 14.8%;
-  width: 69.8%;
-  height: 4.4%;
+  top: 72.9%;
+  left: 12.4%;
+  width: 75.2%;
+  height: 5.2%;
 }
 
 .auth-panel .game-input-row:nth-of-type(2) {
-  top: 80.3%;
-  left: 14.8%;
-  width: 69.8%;
-  height: 4.4%;
+  top: 80.1%;
+  left: 12.4%;
+  width: 75.2%;
+  height: 5.2%;
 }
 
 .auth-actions,
@@ -336,6 +343,7 @@ ol {
   left: 20.2%;
   width: 60.4%;
   height: 5.1%;
+  z-index: 3;
 }
 
 .auth-actions .blue-button {
@@ -343,6 +351,7 @@ ol {
   left: 24.7%;
   width: 50.8%;
   height: 4.7%;
+  z-index: 3;
 }
 
 .founder-cards {
@@ -414,17 +423,17 @@ ol {
 }
 
 .founder-panel .game-input-row:nth-of-type(1) {
-  top: 76.2%;
-  left: 13.8%;
-  width: 72.2%;
-  height: 4.1%;
+  top: 75.6%;
+  left: 12.6%;
+  width: 74.8%;
+  height: 5.0%;
 }
 
 .founder-panel .game-input-row:nth-of-type(2) {
-  top: 84.3%;
-  left: 13.8%;
-  width: 72.2%;
-  height: 4.1%;
+  top: 83.8%;
+  left: 12.6%;
+  width: 74.8%;
+  height: 5.0%;
 }
 
 .founder-panel .gold-button {
@@ -432,6 +441,7 @@ ol {
   left: 19.6%;
   width: 61.0%;
   height: 5.2%;
+  z-index: 3;
 }
 
 
