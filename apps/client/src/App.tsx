@@ -69,6 +69,11 @@ const reports = [
 ];
 
 const navItems = ["公司", "员工", "项目", "市场"];
+const avatarClassById: Record<string, string> = {
+  strategist: "strategy",
+  builder: "product",
+  operator: "operation"
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -302,11 +307,31 @@ function App() {
       clearSession();
       setAccount(auth.data);
       setUsername(trimmedUsername);
+      setFounderName("");
+      setCompanyName("");
       setServers(serverResponse.data);
       setAvatars(avatarResponse.data);
       setServerId(recommendedServer.id);
       setAvatarId(firstAvatar.id);
-      setStep("server");
+
+      const existing = await apiRequest<PlayerProfile>(
+        `/players?serverId=${encodeURIComponent(recommendedServer.id)}`,
+        {},
+        auth.data.token
+      );
+
+      if (existing.success) {
+        const avatar = avatarResponse.data.find((item) => item.id === existing.data.avatarId) ?? firstAvatar;
+        enterGame(auth.data, recommendedServer, avatar, existing.data);
+        return;
+      }
+
+      if (existing.error.code !== "404") {
+        setError(existing.error.message);
+        return;
+      }
+
+      setStep("profile");
     } catch {
       setError("无法连接游戏服务器，请确认 API 服务已启动。");
     } finally {
@@ -410,6 +435,8 @@ function App() {
     setProfile(null);
     setAccount(null);
     setPassword("");
+    setFounderName("");
+    setCompanyName("");
     setStep("auth");
   };
 
@@ -491,28 +518,23 @@ function App() {
 
   if (step === "auth") {
     return (
-      <main className="login-shell" aria-label="玩家登录">
-        <section className="login-stage" aria-label="游戏入口">
-          <div className="login-brand">
-            <span>创</span>
-            <div>
-              <h1>写字楼创业记</h1>
-              <p>真实创业模拟经营</p>
-            </div>
+      <main className="auth-screen" aria-label="玩家登录">
+        <section className="auth-canvas" aria-label="游戏入口">
+          <div className="auth-title" aria-hidden="true">
+            <span>写字楼</span>
+            <strong>创业记</strong>
+            <em>从一间办公室到商业帝国</em>
           </div>
 
-          <div className="login-scene" aria-hidden="true">
-            <div className="city-window" />
-            <div className="founder-desk">
-              <span />
-              <span />
-            </div>
-            <div className="news-strip">今日目标：注册公司，拿下第一单</div>
+          <div className="server-ribbon" aria-label="当前区服">
+            <span>区服：</span>
+            <strong>S1 创业中心</strong>
+            <button type="button">换服</button>
           </div>
 
-          <form className="login-panel" onSubmit={submitAuth}>
-            <label>
-              账号
+          <form className="auth-panel" onSubmit={submitAuth}>
+            <label className="game-input-row">
+              <span>账号</span>
               <input
                 autoComplete="username"
                 onChange={(event) => setUsername(event.target.value)}
@@ -520,8 +542,8 @@ function App() {
                 value={username}
               />
             </label>
-            <label>
-              密码
+            <label className="game-input-row">
+              <span>密码</span>
               <input
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 onChange={(event) => setPassword(event.target.value)}
@@ -531,14 +553,70 @@ function App() {
               />
             </label>
             {error && <p className="form-error">{error}</p>}
-            <div className="login-actions">
-              <button className="primary-button enter-button" disabled={isBusy} type="submit">
+            <div className="auth-actions">
+              <button className="gold-button" disabled={isBusy} type="submit">
                 {isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"}
               </button>
-              <button className="register-button" disabled={isBusy} type="button" onClick={() => void runAuth("register")}>
+              <button className="blue-button" disabled={isBusy} type="button" onClick={() => void runAuth("register")}>
                 {isBusy && authMode === "register" ? "正在注册" : "注册进入游戏"}
               </button>
             </div>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (step === "profile") {
+    return (
+      <main className="founder-screen" aria-label="选择角色与命名">
+        <section className="founder-canvas" aria-label="创建创始人档案">
+          <div className="founder-title" aria-hidden="true">
+            <span>写字楼</span>
+            <strong>创业记</strong>
+            <em>从一间办公室到商业帝国</em>
+          </div>
+
+          <section className="founder-cards" aria-label="选择创业者类型">
+            {avatars.map((avatar) => (
+              <button
+                aria-pressed={avatar.id === avatarId}
+                className={`founder-card ${avatarClassById[avatar.id] ?? "strategy"} ${
+                  avatar.id === avatarId ? "selected" : ""
+                }`}
+                key={avatar.id}
+                onClick={() => setAvatarId(avatar.id)}
+                type="button"
+              >
+                <span className="founder-medal">{avatar.glyph}</span>
+                <strong>{avatar.name.replace("创始人", "")}</strong>
+                <small>{avatar.specialty}</small>
+              </button>
+            ))}
+          </section>
+
+          <form className="founder-panel" onSubmit={(event) => void submitProfile(event)}>
+            <label className="game-input-row">
+              <span>创始人姓名</span>
+              <input
+                autoComplete="name"
+                onChange={(event) => setFounderName(event.target.value)}
+                placeholder="请输入创始人姓名"
+                value={founderName}
+              />
+            </label>
+            <label className="game-input-row">
+              <span>公司名称</span>
+              <input
+                onChange={(event) => setCompanyName(event.target.value)}
+                placeholder="请输入公司名称"
+                value={companyName}
+              />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <button className="gold-button" disabled={isBusy} type="submit">
+              {isBusy ? "创建中" : "创建档案"}
+            </button>
           </form>
         </section>
       </main>
@@ -610,40 +688,6 @@ function App() {
               </button>
             </div>
           </section>
-        )}
-
-        {step === "profile" && (
-          <form className="flow-form" onSubmit={(event) => void submitProfile(event)}>
-            <label>
-              创始人姓名
-              <input
-                autoComplete="name"
-                onChange={(event) => setFounderName(event.target.value)}
-                placeholder="请输入创始人姓名"
-                value={founderName}
-              />
-            </label>
-            <label>
-              公司名
-              <input
-                onChange={(event) => setCompanyName(event.target.value)}
-                placeholder="请输入公司名称"
-                value={companyName}
-              />
-            </label>
-            <div className="profile-summary">
-              <span>{selectedServer?.name}</span>
-              <span>{selectedAvatar?.name}</span>
-            </div>
-            <div className="flow-actions">
-              <button type="button" onClick={() => setStep("avatar")}>
-                返回
-              </button>
-              <button className="primary-button" disabled={isBusy} type="submit">
-                {isBusy ? "创建中" : "创建档案"}
-              </button>
-            </div>
-          </form>
         )}
       </section>
     </main>
