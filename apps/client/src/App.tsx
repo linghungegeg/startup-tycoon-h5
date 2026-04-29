@@ -68,7 +68,7 @@ const reports = [
   { label: "团队", value: "1人" }
 ];
 
-const navItems = ["公司", "市场", "项目", "人脉"];
+const navItems = ["公司", "员工", "项目", "市场"];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -391,7 +391,7 @@ function App() {
         <section className="status-panel" aria-label="经营状态">
           <div>
             <p className="caption">初始档案</p>
-            <h2>Profile #{profile.id.slice(0, 8)}</h2>
+            <h2>档案编号 {profile.id.slice(0, 8)}</h2>
           </div>
           <dl>
             {reports.map((report) => (
@@ -414,28 +414,29 @@ function App() {
     );
   }
 
-  return (
-    <main className="onboarding-shell">
-      <section className="onboarding-panel" aria-label="进入游戏">
-        <div className="panel-heading">
-          <p className="caption">API: {API_BASE_URL}</p>
-          <h1>写字楼创业记</h1>
-          <p>注册或登录后选择区服，创建你的创始人和公司档案。</p>
-        </div>
+  if (step === "auth") {
+    return (
+      <main className="login-shell" aria-label="玩家登录">
+        <section className="login-stage" aria-label="游戏入口">
+          <div className="login-brand">
+            <span>创</span>
+            <div>
+              <h1>写字楼创业记</h1>
+              <p>真实创业模拟经营</p>
+            </div>
+          </div>
 
-        <ol className="step-list" aria-label="引导步骤">
-          {["账号", "服务器", "头像", "档案"].map((label, index) => (
-            <li className={index <= ["auth", "server", "avatar", "profile"].indexOf(step) ? "active" : ""} key={label}>
-              {label}
-            </li>
-          ))}
-        </ol>
+          <div className="login-scene" aria-hidden="true">
+            <div className="city-window" />
+            <div className="founder-desk">
+              <span />
+              <span />
+            </div>
+            <div className="news-strip">今日目标：注册公司，拿下第一单</div>
+          </div>
 
-        {error && <p className="form-error">{error}</p>}
-
-        {step === "auth" && (
-          <form className="flow-form" onSubmit={(event) => void submitAuth(event)}>
-            <div className="segmented-control" role="tablist" aria-label="登录方式">
+          <form className="login-panel" onSubmit={(event) => void submitAuth(event)}>
+            <div className="segmented-control" role="tablist" aria-label="账号入口">
               <button
                 aria-selected={authMode === "login"}
                 className={authMode === "login" ? "selected" : ""}
@@ -456,11 +457,11 @@ function App() {
               </button>
             </div>
             <label>
-              账号名
+              账号
               <input
                 autoComplete="username"
                 onChange={(event) => setUsername(event.target.value)}
-                placeholder="例如：linzhou"
+                placeholder="请输入账号"
                 value={username}
               />
             </label>
@@ -469,16 +470,38 @@ function App() {
               <input
                 autoComplete={authMode === "login" ? "current-password" : "new-password"}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="至少 6 位"
+                placeholder="请输入密码"
                 type="password"
                 value={password}
               />
             </label>
-            <button className="primary-button" disabled={isBusy} type="submit">
-              {isBusy ? "连接中" : "继续"}
+            {error && <p className="form-error">{error}</p>}
+            <button className="primary-button enter-button" disabled={isBusy} type="submit">
+              {isBusy ? "正在进入" : authMode === "login" ? "进入游戏" : "创建账号"}
             </button>
           </form>
-        )}
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="onboarding-shell">
+      <section className="onboarding-panel" aria-label="进入游戏">
+        <div className="panel-heading">
+          <h1>写字楼创业记</h1>
+          <p>选择区服，创建你的创始人和公司档案。</p>
+        </div>
+
+        <ol className="step-list" aria-label="引导步骤">
+          {["账号", "服务器", "头像", "档案"].map((label, index) => (
+            <li className={index <= ["auth", "server", "avatar", "profile"].indexOf(step) ? "active" : ""} key={label}>
+              {label}
+            </li>
+          ))}
+        </ol>
+
+        {error && <p className="form-error">{error}</p>}
 
         {step === "server" && (
           <section className="choice-list" aria-label="选择服务器">
@@ -536,7 +559,7 @@ function App() {
               <input
                 autoComplete="name"
                 onChange={(event) => setFounderName(event.target.value)}
-                placeholder="例如：林舟"
+                placeholder="请输入创始人姓名"
                 value={founderName}
               />
             </label>
@@ -544,7 +567,7 @@ function App() {
               公司名
               <input
                 onChange={(event) => setCompanyName(event.target.value)}
-                placeholder="例如：星火互动"
+                placeholder="请输入公司名称"
                 value={companyName}
               />
             </label>
