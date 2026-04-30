@@ -5,6 +5,7 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
 import { pickRecruitCandidate } from "./employee.js";
 import { calculateFinanceReport } from "./finance.js";
+import { calculateProjectProgressGain, calculateProjectSuccessRate } from "./project.js";
 
 export type AccountRecord = {
   id: string;
@@ -131,6 +132,31 @@ export type EmployeeRecord = {
   isActive: boolean;
 };
 
+export type ProjectRecord = {
+  id: string;
+  configId: string;
+  name: string;
+  category: string;
+  stage: number;
+  progress: number;
+  cycleDays: number;
+  budget: number;
+  risk: string;
+  successRate: number;
+  revenueReward: number;
+  assignedEmployeeId: string | null;
+  assignedEmployeeName: string | null;
+  status: "active" | "ready" | "settled" | "failed";
+  result: "success" | "failure" | null;
+  summary: string;
+  settledAt: string | null;
+};
+
+export type ProjectSettlementRecord = {
+  project: ProjectRecord;
+  finance: CompanyFinanceRecord;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -154,6 +180,11 @@ export type GameRepository = {
   cultivateEmployee(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
   grantEmployeeEquity(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "EQUITY_LIMIT_REACHED">;
   dismissEmployee(accountId: string, serverId: string, employeeId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
+  listProjects(accountId: string, serverId: string): Promise<ProjectRecord[] | "PLAYER_NOT_FOUND">;
+  startProject(accountId: string, serverId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "NO_PROJECT_AVAILABLE">;
+  assignProjectEmployee(accountId: string, serverId: string, projectId: string, employeeId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
+  advanceProject(accountId: string, serverId: string, projectId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_SETTLED">;
+  settleProject(accountId: string, serverId: string, projectId: string): Promise<ProjectSettlementRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_INCOMPLETE">;
   disconnect(): Promise<void>;
 };
 
@@ -252,6 +283,58 @@ const toEmployeeRecord = (employee: {
   isActive: boolean;
 }): EmployeeRecord => ({
   ...employee
+});
+
+const readProjectStatus = (status: string): ProjectRecord["status"] =>
+  status === "ready" || status === "settled" || status === "failed" ? status : "active";
+
+const readProjectResult = (result: string | null): ProjectRecord["result"] =>
+  result === "success" || result === "failure" ? result : null;
+
+const toProjectRecord = (
+  project: {
+    id: string;
+    configId: string;
+    name: string;
+    category: string;
+    stage: number;
+    progress: number;
+    cycleDays: number;
+    budget: number;
+    risk: string;
+    successRateBase: number;
+    revenueReward: number;
+    assignedEmployeeId: string | null;
+    assignedEmployeeName: string | null;
+    status: string;
+    result: string | null;
+    summary: string;
+    settledAt: Date | null;
+  },
+  employee?: { management: number; negotiation: number; execution: number } | null
+): ProjectRecord => ({
+  id: project.id,
+  configId: project.configId,
+  name: project.name,
+  category: project.category,
+  stage: project.stage,
+  progress: project.progress,
+  cycleDays: project.cycleDays,
+  budget: project.budget,
+  risk: project.risk,
+  successRate: calculateProjectSuccessRate({
+    baseRate: project.successRateBase,
+    employeeManagement: employee?.management,
+    employeeNegotiation: employee?.negotiation,
+    employeeExecution: employee?.execution
+  }),
+  revenueReward: project.revenueReward,
+  assignedEmployeeId: project.assignedEmployeeId,
+  assignedEmployeeName: project.assignedEmployeeName,
+  status: readProjectStatus(project.status),
+  result: readProjectResult(project.result),
+  summary: project.summary,
+  settledAt: project.settledAt?.toISOString() ?? null
 });
 
 const readTaskType = (type: string): TaskRecord["type"] =>
@@ -893,6 +976,257 @@ export const createPrismaGameRepository = (
     });
 
     return toCompanyFinanceRecord(toProfileRecord(updatedProfile));
+  },
+
+  async listProjects(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const projects = await prisma.playerProject.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    });
+    const assignedIds = projects
+      .map((project) => project.assignedEmployeeId)
+      .filter((employeeId): employeeId is string => employeeId !== null);
+    const assignedEmployees = await prisma.playerEmployee.findMany({
+      where: { id: { in: assignedIds }, profileId: profile.id },
+      select: { id: true, management: true, negotiation: true, execution: true }
+    });
+    const employeesById = new Map(assignedEmployees.map((employee) => [employee.id, employee]));
+
+    return projects.map((project) => toProjectRecord(project, project.assignedEmployeeId === null ? null : employeesById.get(project.assignedEmployeeId)));
+  },
+
+  async startProject(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [configs, ownedProjects] = await Promise.all([
+      prisma.projectConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+      prisma.playerProject.findMany({ where: { profileId: profile.id }, select: { configId: true } })
+    ]);
+    const ownedConfigIds = new Set(ownedProjects.map((project) => project.configId));
+    const selected = configs.find((config) => !ownedConfigIds.has(config.id));
+    if (selected === undefined) {
+      return "NO_PROJECT_AVAILABLE";
+    }
+
+    const created = await prisma.playerProject.create({
+      data: {
+        id: randomUUID(),
+        profileId: profile.id,
+        configId: selected.id,
+        name: selected.name,
+        category: selected.category,
+        cycleDays: selected.cycleDays,
+        budget: selected.budget,
+        risk: selected.risk,
+        successRateBase: selected.successRateBase,
+        revenueReward: selected.revenueReward,
+        reputationReward: selected.reputationReward,
+        customerSatisfactionReward: selected.customerSatisfactionReward,
+        failurePenalty: selected.failurePenalty,
+        summary: selected.summary
+      }
+    });
+
+    return toProjectRecord(created);
+  },
+
+  async assignProjectEmployee(accountId, serverId, projectId, employeeId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [project, employee] = await Promise.all([
+      prisma.playerProject.findFirst({
+        where: {
+          id: projectId,
+          profileId: profile.id,
+          status: { in: ["active", "ready"] }
+        }
+      }),
+      prisma.playerEmployee.findFirst({
+        where: {
+          id: employeeId,
+          profileId: profile.id,
+          isActive: true
+        }
+      })
+    ]);
+    if (project === null) {
+      return "PROJECT_NOT_FOUND";
+    }
+    if (employee === null) {
+      return "EMPLOYEE_NOT_FOUND";
+    }
+
+    const updated = await prisma.playerProject.update({
+      where: { id: project.id },
+      data: {
+        assignedEmployeeId: employee.id,
+        assignedEmployeeName: employee.name
+      }
+    });
+
+    return toProjectRecord(updated, employee);
+  },
+
+  async advanceProject(accountId, serverId, projectId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const project = await prisma.playerProject.findFirst({
+      where: {
+        id: projectId,
+        profileId: profile.id
+      }
+    });
+    if (project === null) {
+      return "PROJECT_NOT_FOUND";
+    }
+    if (project.status === "settled" || project.status === "failed") {
+      return "PROJECT_ALREADY_SETTLED";
+    }
+
+    const employee =
+      project.assignedEmployeeId === null
+        ? null
+        : await prisma.playerEmployee.findFirst({
+            where: { id: project.assignedEmployeeId, profileId: profile.id, isActive: true }
+          });
+    const progress = Math.min(100, project.progress + calculateProjectProgressGain(employee?.execution));
+    const updated = await prisma.playerProject.update({
+      where: { id: project.id },
+      data: {
+        progress,
+        stage: progress >= 100 ? project.stage + 1 : project.stage,
+        status: progress >= 100 ? "ready" : "active"
+      }
+    });
+
+    return toProjectRecord(updated, employee);
+  },
+
+  async settleProject(accountId, serverId, projectId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const project = await prisma.playerProject.findFirst({
+      where: {
+        id: projectId,
+        profileId: profile.id
+      }
+    });
+    if (project === null) {
+      return "PROJECT_NOT_FOUND";
+    }
+
+    const employee =
+      project.assignedEmployeeId === null
+        ? null
+        : await prisma.playerEmployee.findFirst({
+            where: { id: project.assignedEmployeeId, profileId: profile.id, isActive: true }
+          });
+
+    if (project.settledAt !== null) {
+      return {
+        project: toProjectRecord(project, employee),
+        finance: toCompanyFinanceRecord(toProfileRecord(profile))
+      };
+    }
+
+    if (project.progress < 100 || project.status !== "ready") {
+      return "PROJECT_INCOMPLETE";
+    }
+
+    const successRate = calculateProjectSuccessRate({
+      baseRate: project.successRateBase,
+      employeeManagement: employee?.management,
+      employeeNegotiation: employee?.negotiation,
+      employeeExecution: employee?.execution
+    });
+    const isSuccess = Math.random() * 100 < successRate;
+
+    const settled = await prisma.$transaction(async (tx) => {
+      const updatedProject = await tx.playerProject.update({
+        where: { id: project.id },
+        data: {
+          status: isSuccess ? "settled" : "failed",
+          result: isSuccess ? "success" : "failure",
+          settledAt: new Date()
+        }
+      });
+
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: isSuccess
+          ? {
+              cash: { increment: project.revenueReward },
+              monthlyIncome: { increment: Math.round(project.revenueReward * 0.18) },
+              reputation: { increment: project.reputationReward },
+              customerSatisfaction: { increment: project.customerSatisfactionReward }
+            }
+          : {
+              cash: { decrement: project.failurePenalty },
+              reputation: { decrement: Math.max(1000, project.reputationReward) },
+              customerSatisfaction: { decrement: Math.max(3, project.customerSatisfactionReward) },
+              pendingEventCount: { increment: 1 }
+            }
+      });
+
+      return { project: updatedProject, profile: updatedProfile };
+    });
+
+    return {
+      project: toProjectRecord(settled.project, employee),
+      finance: toCompanyFinanceRecord(toProfileRecord(settled.profile))
+    };
   },
 
   async disconnect() {

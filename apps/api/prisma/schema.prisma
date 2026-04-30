@@ -116,6 +116,7 @@ model PlayerProfile {
   tasks       PlayerTaskProgress[]
   financeReports CompanyFinanceReport[]
   employees   PlayerEmployee[]
+  projects    PlayerProject[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -172,6 +173,58 @@ model PlayerEmployee {
 
   @@unique([profileId, configId])
   @@index([profileId, isActive])
+}
+
+model ProjectConfig {
+  id        String          @id @db.VarChar(32)
+  name      String          @db.VarChar(48)
+  category  String          @db.VarChar(24)
+  cycleDays Int
+  budget    Int
+  risk      String          @db.VarChar(8)
+  successRateBase Int
+  revenueReward Int
+  reputationReward Int
+  customerSatisfactionReward Int
+  failurePenalty Int
+  summary   String          @db.VarChar(180)
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  projects  PlayerProject[]
+
+  @@index([sortOrder])
+}
+
+model PlayerProject {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  configId  String       @db.VarChar(32)
+  name      String       @db.VarChar(48)
+  category  String       @db.VarChar(24)
+  stage     Int          @default(1)
+  progress  Int          @default(0)
+  cycleDays Int
+  budget    Int
+  risk      String       @db.VarChar(8)
+  successRateBase Int
+  revenueReward Int
+  reputationReward Int
+  customerSatisfactionReward Int
+  failurePenalty Int
+  summary   String       @db.VarChar(180)
+  assignedEmployeeId String? @db.VarChar(36)
+  assignedEmployeeName String? @db.VarChar(32)
+  status    String       @default("active") @db.VarChar(16)
+  result    String?      @db.VarChar(16)
+  settledAt DateTime?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    ProjectConfig @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, configId])
+  @@index([profileId, status])
+  @@index([assignedEmployeeId])
 }
 
 model CompanyFinanceReport {

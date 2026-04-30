@@ -106,15 +106,22 @@ type Employee = {
 
 type BusinessProject = {
   id: string;
+  configId: string;
   name: string;
   category: string;
   stage: number;
   progress: number;
-  investment: string;
-  revenue: number;
-  ownerId: string;
-  risk: "低" | "中" | "高";
+  cycleDays: number;
+  budget: number;
+  risk: string;
+  successRate: number;
+  revenueReward: number;
+  assignedEmployeeId: string | null;
+  assignedEmployeeName: string | null;
+  status: "active" | "ready" | "settled" | "failed";
+  result: "success" | "failure" | null;
   summary: string;
+  settledAt: string | null;
 };
 
 type TaskItem = {
@@ -159,68 +166,7 @@ const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
 const initialEmployees: Employee[] = [];
-const initialProjects: BusinessProject[] = [
-  {
-    id: "smart-office",
-    name: "智慧办公 SaaS",
-    category: "产品研发",
-    stage: 2,
-    progress: 58,
-    investment: "420万",
-    revenue: 860,
-    ownerId: "jiang-yan",
-    risk: "中",
-    summary: "面向中小企业的办公协同产品，适合持续投入研发资源。"
-  },
-  {
-    id: "city-brand",
-    name: "城市品牌投放",
-    category: "市场营销",
-    stage: 3,
-    progress: 72,
-    investment: "310万",
-    revenue: 690,
-    ownerId: "lin-xia",
-    risk: "低",
-    summary: "提升公司曝光和项目订单，短期收益稳定。"
-  },
-  {
-    id: "finance-round",
-    name: "A 轮融资计划",
-    category: "投资合作",
-    stage: 1,
-    progress: 45,
-    investment: "180万",
-    revenue: 520,
-    ownerId: "chen-mo",
-    risk: "高",
-    summary: "争取外部资本进入，成功后可大幅提升公司估值。"
-  },
-  {
-    id: "delivery-center",
-    name: "交付中心扩容",
-    category: "运营建设",
-    stage: 2,
-    progress: 34,
-    investment: "260万",
-    revenue: 610,
-    ownerId: "zhou-hang",
-    risk: "中",
-    summary: "扩充项目交付能力，降低后续大客户订单流失。"
-  },
-  {
-    id: "hr-system",
-    name: "人才梯队计划",
-    category: "组织管理",
-    stage: 1,
-    progress: 63,
-    investment: "120万",
-    revenue: 380,
-    ownerId: "su-qing",
-    risk: "低",
-    summary: "优化招聘和培养机制，提高员工忠诚与成长效率。"
-  }
-];
+const initialProjects: BusinessProject[] = [];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
   "财务": {
     title: "财务",
@@ -547,6 +493,7 @@ function App() {
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
+  const [projectError, setProjectError] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -584,8 +531,16 @@ function App() {
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
     [projects, selectedProjectId]
   );
+  const activeProjects = useMemo(
+    () => projects.filter((project) => project.status === "active" || project.status === "ready"),
+    [projects]
+  );
   const totalProjectRevenue = useMemo(
-    () => projects.reduce((total, project) => total + project.revenue, 0),
+    () => activeProjects.reduce((total, project) => total + project.revenueReward, 0),
+    [activeProjects]
+  );
+  const highestProjectStage = useMemo(
+    () => projects.reduce((highest, project) => Math.max(highest, project.stage), 0),
     [projects]
   );
   const currentMainTask = useMemo(
@@ -648,6 +603,23 @@ function App() {
     }
 
     setEmployeeError(response.error.message);
+  };
+
+  const loadProjects = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<BusinessProject[]>(
+      `/projects?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setProjects(response.data);
+      setSelectedProjectId((currentId) => response.data.find((project) => project.id === currentId)?.id ?? response.data[0]?.id ?? "");
+      setProjectError("");
+      return;
+    }
+
+    setProjectError(response.error.message);
   };
 
   const enterGame = (
@@ -743,6 +715,7 @@ function App() {
     void loadTasks(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
+    void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
 
   const runAuth = async (mode: AuthMode): Promise<void> => {
@@ -1038,6 +1011,15 @@ function App() {
     void loadEmployees(account.token, selectedServer.id);
   };
 
+  const refreshCompanyAndProjects = (): void => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    void loadCompanyFinance(account.token, selectedServer.id);
+    void loadProjects(account.token, selectedServer.id);
+  };
+
   const runEmployeeAction = async (path: string): Promise<boolean> => {
     if (!account || !selectedServer) {
       setEmployeeError("账号或服务器状态缺失，请重新登录。");
@@ -1120,30 +1102,104 @@ function App() {
     setEmployeeError(response.error.message);
   };
 
-  const advanceProject = (): void => {
+  const runProjectAction = async <T,>(path: string, body: Record<string, string> = {}): Promise<ApiResponse<T> | undefined> => {
+    if (!account || !selectedServer) {
+      setProjectError("账号或服务器状态缺失，请重新登录。");
+      return undefined;
+    }
+
+    return apiRequest<T>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+  };
+
+  const startProject = async (): Promise<void> => {
+    const response = await runProjectAction<BusinessProject>("/projects/start");
+    if (response === undefined) {
+      return;
+    }
+
+    if (response.success) {
+      setSelectedProjectId(response.data.id);
+      setProjectError("");
+      refreshCompanyAndProjects();
+      return;
+    }
+
+    setProjectError(response.error.message);
+  };
+
+  const assignProjectEmployee = async (employeeId: string): Promise<void> => {
+    if (!selectedProject || employeeId === "") {
+      return;
+    }
+
+    const response = await runProjectAction<BusinessProject>(
+      `/projects/${encodeURIComponent(selectedProject.id)}/assign`,
+      { employeeId }
+    );
+    if (response === undefined) {
+      return;
+    }
+
+    if (response.success) {
+      setSelectedProjectId(response.data.id);
+      setProjectError("");
+      refreshCompanyAndProjects();
+      return;
+    }
+
+    setProjectError(response.error.message);
+  };
+
+  const advanceProject = async (): Promise<void> => {
     if (!selectedProject) {
       return;
     }
 
-    setProjects((currentProjects) =>
-      currentProjects.map((project) => {
-        if (project.id !== selectedProject.id) {
-          return project;
-        }
+    const response = await runProjectAction<BusinessProject>(`/projects/${encodeURIComponent(selectedProject.id)}/advance`);
+    if (response === undefined) {
+      return;
+    }
 
-        const nextProgress = project.progress + 18;
-        const isStageComplete = nextProgress >= 100;
+    if (response.success) {
+      setSelectedProjectId(response.data.id);
+      setProjectError("");
+      refreshCompanyAndProjects();
+      void progressTask("main-first-project");
+      void progressTask("daily-project-push");
+      return;
+    }
 
-        return {
-          ...project,
-          stage: isStageComplete ? project.stage + 1 : project.stage,
-          progress: isStageComplete ? nextProgress - 100 : nextProgress,
-          revenue: project.revenue + (isStageComplete ? 180 : 60)
-        };
-      })
+    setProjectError(response.error.message);
+  };
+
+  const settleProject = async (): Promise<void> => {
+    if (!selectedProject) {
+      return;
+    }
+
+    const response = await runProjectAction<{ project: BusinessProject; finance: CompanyFinance }>(
+      `/projects/${encodeURIComponent(selectedProject.id)}/settle`
     );
-    void progressTask("main-first-project");
-    void progressTask("daily-project-push");
+    if (response === undefined) {
+      return;
+    }
+
+    if (response.success) {
+      setCompanyFinance(response.data.finance);
+      setSelectedProjectId(response.data.project.id);
+      setProjectError("");
+      refreshCompanyAndProjects();
+      return;
+    }
+
+    setProjectError(response.error.message);
   };
 
   const guideTask = (task: TaskItem): void => {
@@ -1397,28 +1453,29 @@ function App() {
             </section>
           )}
 
-          {activeNav === "项目" && selectedProject && (
+          {activeNav === "项目" && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>项目</strong>
-                  <span>预计月收益 {totalProjectRevenue.toLocaleString("zh-CN")}万</span>
+                  <span>预计回款 {compactNumber(totalProjectRevenue)}</span>
                 </div>
                 <button type="button" onClick={() => openHomePanel("项目")}>规则</button>
               </header>
 
               <section className="project-summary" aria-label="项目概览">
-                <span>在研 {projects.length}</span>
-                <span>最高阶段 {Math.max(...projects.map((project) => project.stage))}</span>
-                <span>推进任务 3/5</span>
+                <span>在研 {activeProjects.length}</span>
+                <span>最高阶段 {highestProjectStage}</span>
+                <span>可结算 {projects.filter((project) => project.status === "ready").length}</span>
               </section>
+              {projectError && <p className="project-error">{projectError}</p>}
 
               <section className="project-layout">
                 <div className="project-list" aria-label="项目列表">
                   {projects.map((project) => (
                     <button
-                      className={project.id === selectedProject.id ? "selected" : undefined}
+                      className={project.id === selectedProject?.id ? "selected" : undefined}
                       key={project.id}
                       type="button"
                       onClick={() => setSelectedProjectId(project.id)}
@@ -1428,52 +1485,86 @@ function App() {
                       <span>
                         <i style={{ width: `${project.progress}%` }} />
                       </span>
-                      <small>预计 {project.revenue}万/月</small>
+                      <small>{project.status === "ready" ? "待结算" : `预计 ${compactNumber(project.revenueReward)}`}</small>
                     </button>
                   ))}
                 </div>
 
                 <article className="project-detail" aria-label="项目详情">
-                  <div className="project-title">
-                    <span>{selectedProject.category.slice(0, 2)}</span>
-                    <strong>{selectedProject.name}</strong>
-                    <em>阶段 {selectedProject.stage} · 风险 {selectedProject.risk}</em>
-                  </div>
+                  {selectedProject ? (
+                    <>
+                      <div className="project-title">
+                        <span>{selectedProject.category.slice(0, 2)}</span>
+                        <strong>{selectedProject.name}</strong>
+                        <em>阶段 {selectedProject.stage} · 风险 {selectedProject.risk} · 成功率 {selectedProject.successRate}%</em>
+                      </div>
 
-                  <dl className="project-stats">
-                    <div>
-                      <dt>进度</dt>
-                      <dd>{selectedProject.progress}%</dd>
-                    </div>
-                    <div>
-                      <dt>投入</dt>
-                      <dd>{selectedProject.investment}</dd>
-                    </div>
-                    <div>
-                      <dt>收益</dt>
-                      <dd>{selectedProject.revenue}万/月</dd>
-                    </div>
-                    <div>
-                      <dt>负责人</dt>
-                      <dd>{employees.find((employee) => employee.id === selectedProject.ownerId)?.name ?? "待分配"}</dd>
-                    </div>
-                  </dl>
+                      <dl className="project-stats">
+                        <div>
+                          <dt>进度</dt>
+                          <dd>{selectedProject.progress}%</dd>
+                        </div>
+                        <div>
+                          <dt>周期</dt>
+                          <dd>{selectedProject.cycleDays}天</dd>
+                        </div>
+                        <div>
+                          <dt>预算</dt>
+                          <dd>{compactNumber(selectedProject.budget)}</dd>
+                        </div>
+                        <div>
+                          <dt>回款</dt>
+                          <dd>{compactNumber(selectedProject.revenueReward)}</dd>
+                        </div>
+                        <div>
+                          <dt>负责人</dt>
+                          <dd>{selectedProject.assignedEmployeeName ?? "待分配"}</dd>
+                        </div>
+                        <div>
+                          <dt>状态</dt>
+                          <dd>{selectedProject.status === "ready" ? "待结算" : selectedProject.status === "settled" ? "已成功" : selectedProject.status === "failed" ? "已失败" : "推进中"}</dd>
+                        </div>
+                      </dl>
 
-                  <div className="project-progress" aria-label="项目进度">
-                    <span>
-                      <i style={{ width: `${selectedProject.progress}%` }} />
-                    </span>
-                    <strong>{selectedProject.progress}%</strong>
-                  </div>
+                      <label className="project-assignee">
+                        <span>派员工</span>
+                        <select
+                          value={selectedProject.assignedEmployeeId ?? ""}
+                          onChange={(event) => void assignProjectEmployee(event.target.value)}
+                          disabled={selectedProject.status === "settled" || selectedProject.status === "failed"}
+                        >
+                          <option value="">待分配</option>
+                          {activeEmployees.map((employee) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.name} · {employee.role}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
 
-                  <p>{selectedProject.summary}</p>
+                      <div className="project-progress" aria-label="项目进度">
+                        <span>
+                          <i style={{ width: `${selectedProject.progress}%` }} />
+                        </span>
+                        <strong>{selectedProject.progress}%</strong>
+                      </div>
 
-                  <div className="project-actions">
-                    <button type="button" onClick={advanceProject}>推进</button>
-                    <button type="button" onClick={() => openHomePanel("项目")}>立项</button>
-                    <button type="button" onClick={() => openHomePanel("投资合作")}>加投</button>
-                    <button type="button" onClick={() => openHomePanel("项目")}>结算</button>
-                  </div>
+                      <p>{selectedProject.summary}</p>
+
+                      <div className="project-actions">
+                        <button type="button" onClick={() => void advanceProject()} disabled={selectedProject.status !== "active"}>推进</button>
+                        <button type="button" onClick={() => void startProject()}>接项目</button>
+                        <button type="button" onClick={() => void settleProject()} disabled={selectedProject.status !== "ready"}>结算</button>
+                        <button type="button" onClick={() => activeEmployees[0] && void assignProjectEmployee(activeEmployees[0].id)} disabled={activeEmployees.length === 0 || selectedProject.status === "settled" || selectedProject.status === "failed"}>派遣</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="project-empty">
+                      <strong>暂无项目</strong>
+                      <p>接下第一单项目，分配员工后推进交付，结算结果会影响现金、声誉和客户满意度。</p>
+                      <button type="button" onClick={() => void startProject()}>接项目</button>
+                    </div>
+                  )}
                 </article>
               </section>
             </section>

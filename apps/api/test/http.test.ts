@@ -8,6 +8,7 @@ import type { ApiConfig } from "../src/config.js";
 import { pickRecruitCandidate } from "../src/employee.js";
 import { calculateFinanceReport } from "../src/finance.js";
 import { createPasswordRecord } from "../src/password.js";
+import { calculateProjectSuccessRate } from "../src/project.js";
 import type {
   AccountRecord,
   AdminUserRecord,
@@ -17,6 +18,8 @@ import type {
   EmployeeRecord,
   GameRepository,
   PlayerProfileRecord,
+  ProjectRecord,
+  ProjectSettlementRecord,
   ServerRecord,
   TaskRecord
 } from "../src/repository.js";
@@ -115,6 +118,37 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const employees = new Map<string, EmployeeRecord>();
+  const projectConfigs = [
+    {
+      id: "success-project",
+      name: "客户 CRM 外包开发",
+      category: "外包开发",
+      cycleDays: 12,
+      budget: 180000,
+      risk: "低",
+      successRateBase: 100,
+      revenueReward: 320000,
+      reputationReward: 1200,
+      customerSatisfactionReward: 4,
+      failurePenalty: 60000,
+      summary: "为传统企业交付客户管理系统。"
+    },
+    {
+      id: "failed-project",
+      name: "高风险 AI 自动化方案",
+      category: "AI 自动化",
+      cycleDays: 22,
+      budget: 360000,
+      risk: "高",
+      successRateBase: 0,
+      revenueReward: 760000,
+      reputationReward: 2600,
+      customerSatisfactionReward: 6,
+      failurePenalty: 180000,
+      summary: "高风险项目，适合验证失败结算。"
+    }
+  ];
+  const projects = new Map<string, ProjectRecord>();
   const taskConfigs = [
     {
       id: "main-profile-created",
@@ -190,6 +224,22 @@ const createTestRepository = (): GameRepository => {
       operatingDay: profile.operatingDay,
       riskStatus: report.riskStatus,
       riskTips: report.riskTips
+    };
+  };
+  const projectForProfile = (profileId: string): ProjectRecord[] =>
+    [...projects.values()].filter((project) => project.id.startsWith(`${profileId}:`));
+
+  const refreshProjectSuccessRate = (project: ProjectRecord): ProjectRecord => {
+    const employee =
+      project.assignedEmployeeId === null ? undefined : employees.get(project.assignedEmployeeId);
+    return {
+      ...project,
+      successRate: calculateProjectSuccessRate({
+        baseRate: project.configId === "failed-project" ? 0 : project.configId === "success-project" ? 100 : project.successRate,
+        employeeManagement: employee?.management,
+        employeeNegotiation: employee?.negotiation,
+        employeeExecution: employee?.execution
+      })
     };
   };
 
@@ -511,6 +561,133 @@ const createTestRepository = (): GameRepository => {
       profile.reputation -= 2000;
       profile.pendingEventCount += 1;
       return toCompanyFinanceRecord(profile);
+    },
+    async listProjects(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      return projectForProfile(profile.id).map(refreshProjectSuccessRate);
+    },
+    async startProject(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const ownedConfigIds = new Set(projectForProfile(profile.id).map((project) => project.configId));
+      const selected = projectConfigs.find((config) => !ownedConfigIds.has(config.id));
+      if (selected === undefined) {
+        return "NO_PROJECT_AVAILABLE";
+      }
+
+      const created: ProjectRecord = {
+        id: `${profile.id}:${selected.id}`,
+        configId: selected.id,
+        name: selected.name,
+        category: selected.category,
+        stage: 1,
+        progress: 0,
+        cycleDays: selected.cycleDays,
+        budget: selected.budget,
+        risk: selected.risk,
+        successRate: calculateProjectSuccessRate({ baseRate: selected.successRateBase }),
+        revenueReward: selected.revenueReward,
+        assignedEmployeeId: null,
+        assignedEmployeeName: null,
+        status: "active",
+        result: null,
+        summary: selected.summary,
+        settledAt: null
+      };
+      projects.set(created.id, created);
+      return created;
+    },
+    async assignProjectEmployee(accountId, serverId, projectId, employeeId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const project = projects.get(projectId);
+      if (project === undefined || !project.id.startsWith(`${profile.id}:`) || project.status === "settled" || project.status === "failed") {
+        return "PROJECT_NOT_FOUND";
+      }
+
+      const employee = employees.get(employeeId);
+      if (employee === undefined || !employee.id.startsWith(`${profile.id}:`) || !employee.isActive) {
+        return "EMPLOYEE_NOT_FOUND";
+      }
+
+      project.assignedEmployeeId = employee.id;
+      project.assignedEmployeeName = employee.name;
+      const updated = refreshProjectSuccessRate(project);
+      projects.set(project.id, updated);
+      return updated;
+    },
+    async advanceProject(accountId, serverId, projectId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const project = projects.get(projectId);
+      if (project === undefined || !project.id.startsWith(`${profile.id}:`)) {
+        return "PROJECT_NOT_FOUND";
+      }
+      if (project.status === "settled" || project.status === "failed") {
+        return "PROJECT_ALREADY_SETTLED";
+      }
+
+      const nextProgress = Math.min(100, project.progress + 40);
+      project.progress = nextProgress;
+      project.stage = nextProgress >= 100 ? project.stage + 1 : project.stage;
+      project.status = nextProgress >= 100 ? "ready" : "active";
+      return refreshProjectSuccessRate(project);
+    },
+    async settleProject(accountId, serverId, projectId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const project = projects.get(projectId);
+      if (project === undefined || !project.id.startsWith(`${profile.id}:`)) {
+        return "PROJECT_NOT_FOUND";
+      }
+
+      if (project.settledAt !== null) {
+        return {
+          project: refreshProjectSuccessRate(project),
+          finance: toCompanyFinanceRecord(profile)
+        };
+      }
+
+      if (project.progress < 100 || project.status !== "ready") {
+        return "PROJECT_INCOMPLETE";
+      }
+
+      const isSuccess = project.successRate >= 50;
+      project.status = isSuccess ? "settled" : "failed";
+      project.result = isSuccess ? "success" : "failure";
+      project.settledAt = new Date().toISOString();
+      if (isSuccess) {
+        profile.cash += project.revenueReward;
+        profile.monthlyIncome += Math.round(project.revenueReward * 0.18);
+        profile.reputation += project.configId === "success-project" ? 1200 : 2600;
+        profile.customerSatisfaction += project.configId === "success-project" ? 4 : 6;
+      } else {
+        profile.cash -= project.configId === "failed-project" ? 180000 : 60000;
+        profile.reputation -= 2600;
+        profile.customerSatisfaction -= 6;
+        profile.pendingEventCount += 1;
+      }
+
+      return {
+        project: refreshProjectSuccessRate(project),
+        finance: toCompanyFinanceRecord(profile)
+      };
     },
     async disconnect() {}
   };
@@ -899,6 +1076,185 @@ test("recruits, cultivates, grants equity, and dismisses persistent employees", 
 
     const afterDismissList = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers: auth });
     assert.equal(afterDismissList.body.data?.[0]?.isActive, false);
+  });
+});
+
+test("calculates project success rate with employee assignment boundaries", () => {
+  assert.equal(calculateProjectSuccessRate({ baseRate: 70 }), 70);
+  assert.equal(
+    calculateProjectSuccessRate({
+      baseRate: 70,
+      employeeManagement: 90,
+      employeeNegotiation: 80,
+      employeeExecution: 100
+    }),
+    79
+  );
+  assert.equal(calculateProjectSuccessRate({ baseRate: 98, employeeManagement: 100, employeeNegotiation: 100, employeeExecution: 100 }), 95);
+  assert.equal(calculateProjectSuccessRate({ baseRate: -10 }), 5);
+});
+
+test("runs projects through assignment, progress, settlement, and restore flows", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const emptyList = await requestJson<ProjectRecord[]>(baseUrl, "/projects?serverId=s1", { headers: auth });
+    assert.equal(emptyList.status, 200);
+    assert.equal(emptyList.body.data?.length, 0);
+
+    const project = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(project.status, 201);
+    assert.equal(project.body.data?.status, "active");
+    const projectId = project.body.data?.id;
+    assert.ok(projectId);
+
+    const recruited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const employeeId = recruited.body.data?.id;
+    assert.ok(employeeId);
+
+    const assigned = await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/assign`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", employeeId })
+    });
+    assert.equal(assigned.status, 200);
+    assert.equal(assigned.body.data?.assignedEmployeeId, employeeId);
+    assert.ok((assigned.body.data?.successRate ?? 0) >= (project.body.data?.successRate ?? 0));
+
+    const earlySettle = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(earlySettle.status, 409);
+    assert.equal(earlySettle.body.error?.code, "PROJECT_INCOMPLETE");
+
+    for (let index = 0; index < 3; index += 1) {
+      await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+    }
+
+    const restoredReady = await requestJson<ProjectRecord[]>(baseUrl, "/projects?serverId=s1", { headers: auth });
+    assert.equal(restoredReady.body.data?.[0]?.progress, 100);
+    assert.equal(restoredReady.body.data?.[0]?.status, "ready");
+    assert.equal(restoredReady.body.data?.[0]?.assignedEmployeeId, employeeId);
+
+    const beforeSettle = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    const settled = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.project.result, "success");
+    assert.ok((settled.body.data?.finance.cash ?? 0) > (beforeSettle.body.data?.cash ?? 0));
+    assert.ok((settled.body.data?.finance.customerSatisfaction ?? 0) > (beforeSettle.body.data?.customerSatisfaction ?? 0));
+
+    const duplicate = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.data?.finance.cash, settled.body.data?.finance.cash);
+    assert.equal(duplicate.body.data?.project.settledAt, settled.body.data?.project.settledAt);
+
+    const session = await requestJson<{ accountId: string; username: string }>(baseUrl, "/auth/session", { headers: auth });
+    assert.equal(session.status, 200);
+    const restoredSettled = await requestJson<ProjectRecord[]>(baseUrl, "/projects?serverId=s1", { headers: auth });
+    assert.equal(restoredSettled.body.data?.[0]?.result, "success");
+  });
+});
+
+test("settles failed projects once and applies company losses", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const failedProject = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const projectId = failedProject.body.data?.id;
+    assert.ok(projectId);
+
+    for (let index = 0; index < 3; index += 1) {
+      await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+    }
+
+    const beforeSettle = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    const settled = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.project.result, "failure");
+    assert.ok((settled.body.data?.finance.cash ?? 0) < (beforeSettle.body.data?.cash ?? 0));
+    assert.ok((settled.body.data?.finance.customerSatisfaction ?? 0) < (beforeSettle.body.data?.customerSatisfaction ?? 0));
+    assert.ok((settled.body.data?.finance.brandReputation ?? 0) < (beforeSettle.body.data?.brandReputation ?? 0));
+
+    const duplicate = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.data?.finance.cash, settled.body.data?.finance.cash);
   });
 });
 

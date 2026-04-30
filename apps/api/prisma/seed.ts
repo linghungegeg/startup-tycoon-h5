@@ -213,6 +213,69 @@ const employeeConfigs = [
   }
 ];
 
+const projectConfigs = [
+  {
+    id: "outsourcing-crm",
+    name: "客户 CRM 外包开发",
+    category: "外包开发",
+    cycleDays: 12,
+    budget: 180000,
+    risk: "低",
+    successRateBase: 72,
+    revenueReward: 320000,
+    reputationReward: 1200,
+    customerSatisfactionReward: 4,
+    failurePenalty: 60000,
+    summary: "为传统企业交付客户管理系统，回款稳定，适合建立第一条项目收入线。",
+    sortOrder: 1
+  },
+  {
+    id: "saas-custom",
+    name: "连锁门店 SaaS 定制",
+    category: "SaaS 定制",
+    cycleDays: 18,
+    budget: 260000,
+    risk: "中",
+    successRateBase: 64,
+    revenueReward: 520000,
+    reputationReward: 1800,
+    customerSatisfactionReward: 5,
+    failurePenalty: 110000,
+    summary: "为连锁门店定制数据看板和会员运营工具，收益更高但交付压力更大。",
+    sortOrder: 2
+  },
+  {
+    id: "growth-campaign",
+    name: "城市品牌增长投放",
+    category: "营销增长",
+    cycleDays: 10,
+    budget: 150000,
+    risk: "中",
+    successRateBase: 68,
+    revenueReward: 280000,
+    reputationReward: 1600,
+    customerSatisfactionReward: 3,
+    failurePenalty: 80000,
+    summary: "帮助客户完成城市级品牌投放，依赖运营节奏和客户沟通质量。",
+    sortOrder: 3
+  },
+  {
+    id: "ai-automation",
+    name: "AI 自动化方案",
+    category: "AI 自动化",
+    cycleDays: 22,
+    budget: 360000,
+    risk: "高",
+    successRateBase: 56,
+    revenueReward: 760000,
+    reputationReward: 2600,
+    customerSatisfactionReward: 6,
+    failurePenalty: 180000,
+    summary: "为客户设计自动化客服和流程机器人，成功后能显著提升公司声誉。",
+    sortOrder: 4
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -249,6 +312,14 @@ const seed = async (): Promise<void> => {
       where: { id: employeeConfig.id },
       update: employeeConfig,
       create: employeeConfig
+    });
+  }
+
+  for (const projectConfig of projectConfigs) {
+    await prisma.projectConfig.upsert({
+      where: { id: projectConfig.id },
+      update: projectConfig,
+      create: projectConfig
     });
   }
 

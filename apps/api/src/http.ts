@@ -634,6 +634,107 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/projects") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const projects = await repository.listProjects(account.id, serverId);
+      if (projects === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(projects, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/projects/start") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const project = await repository.startProject(account.id, serverId);
+      if (project === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (project === "NO_PROJECT_AVAILABLE") {
+        sendJson(response, 409, failure("NO_PROJECT_AVAILABLE", "No project is available.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(project, traceId));
+      return;
+    }
+
+    const projectActionMatch = /^\/projects\/([^/]+)\/(assign|advance|settle)$/.exec(url.pathname);
+    if (request.method === "POST" && projectActionMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const projectId = projectActionMatch[1];
+      const action = projectActionMatch[2];
+      if (serverId === undefined || projectId === undefined || action === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and projectId are required.", traceId));
+        return;
+      }
+
+      const result =
+        action === "assign"
+          ? await repository.assignProjectEmployee(
+              account.id,
+              serverId,
+              decodeURIComponent(projectId),
+              isRecord(body) && typeof body.employeeId === "string" ? body.employeeId : ""
+            )
+          : action === "advance"
+            ? await repository.advanceProject(account.id, serverId, decodeURIComponent(projectId))
+            : await repository.settleProject(account.id, serverId, decodeURIComponent(projectId));
+
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "PROJECT_NOT_FOUND") {
+        sendJson(response, 404, failure("PROJECT_NOT_FOUND", "Project not found.", traceId));
+        return;
+      }
+      if (result === "EMPLOYEE_NOT_FOUND") {
+        sendJson(response, 404, failure("EMPLOYEE_NOT_FOUND", "Employee not found.", traceId));
+        return;
+      }
+      if (result === "PROJECT_ALREADY_SETTLED") {
+        sendJson(response, 409, failure("PROJECT_ALREADY_SETTLED", "Project has already been settled.", traceId));
+        return;
+      }
+      if (result === "PROJECT_INCOMPLETE") {
+        sendJson(response, 409, failure("PROJECT_INCOMPLETE", "Project is not ready to settle.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     const taskProgressMatch = /^\/tasks\/([^/]+)\/progress$/.exec(url.pathname);
     if (request.method === "POST" && taskProgressMatch !== null) {
       if (account === undefined) {

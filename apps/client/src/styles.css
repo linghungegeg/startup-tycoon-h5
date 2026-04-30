@@ -1657,6 +1657,14 @@ input {
   white-space: nowrap;
 }
 
+.project-error {
+  margin: 0;
+  color: #ffd7c0;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+  text-align: center;
+}
+
 .project-layout {
   display: grid;
   grid-template-columns: 43% 1fr;
@@ -1822,6 +1830,31 @@ input {
   font-weight: 900;
 }
 
+.project-assignee {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-assignee span {
+  color: #d8c9a8;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 900;
+}
+
+.project-assignee select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 4px;
+  color: #ffe5a9;
+  background: rgba(5, 12, 22, 0.9);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
 .project-detail p {
   color: #efe2c6;
   font-size: clamp(12px, 3.4vw, 16px);
@@ -1838,6 +1871,36 @@ input {
 
 .project-actions button {
   min-height: 36px;
+}
+
+.project-actions button:disabled {
+  opacity: 0.52;
+}
+
+.project-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  min-height: 100%;
+  text-align: center;
+}
+
+.project-empty strong {
+  color: #fff6d8;
+  font-size: clamp(20px, 5.4vw, 28px);
+  font-weight: 900;
+}
+
+.project-empty button {
+  position: static;
+  min-height: 38px;
+  border-radius: 5px;
+  padding: 0 18px;
+  color: #57360f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 900;
 }
 
 .task-screen {
