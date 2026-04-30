@@ -92,8 +92,42 @@ model PlayerProfile {
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   server      GameServer   @relation(fields: [serverId], references: [id], onDelete: Restrict)
   avatar      AvatarOption @relation(fields: [avatarId], references: [id], onDelete: Restrict)
+  tasks       PlayerTaskProgress[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
   @@index([avatarId])
+}
+
+model TaskConfig {
+  id              String               @id @db.VarChar(48)
+  type            String               @db.VarChar(16)
+  title           String               @db.VarChar(48)
+  description     String               @db.VarChar(160)
+  target          Int
+  initialProgress Int                  @default(0)
+  rewardLabel     String               @db.VarChar(80)
+  guideAction     String               @db.VarChar(32)
+  unlockKind      String               @default("none") @db.VarChar(24)
+  sortOrder       Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  progresses      PlayerTaskProgress[]
+
+  @@index([type, sortOrder])
+}
+
+model PlayerTaskProgress {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  taskId      String        @db.VarChar(48)
+  progress    Int           @default(0)
+  dailyDate   String?       @db.VarChar(10)
+  claimedAt   DateTime?
+  updatedAt   DateTime      @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  task        TaskConfig    @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, taskId])
+  @@index([profileId, updatedAt])
+  @@index([taskId])
 }

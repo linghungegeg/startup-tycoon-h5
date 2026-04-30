@@ -12,7 +12,8 @@ import type {
   AvatarRecord,
   GameRepository,
   PlayerProfileRecord,
-  ServerRecord
+  ServerRecord,
+  TaskRecord
 } from "../src/repository.js";
 
 const config: ApiConfig = {
@@ -58,6 +59,77 @@ const createTestRepository = (): GameRepository => {
     { id: "builder", name: "产品型创始人", glyph: "造", specialty: "产品研发与团队协作" }
   ];
   const profiles = new Map<string, PlayerProfileRecord>();
+  const taskConfigs = [
+    {
+      id: "main-profile-created",
+      type: "main" as const,
+      title: "完成公司档案",
+      description: "创建创始人和公司档案。",
+      target: 1,
+      initialProgress: 1,
+      rewardLabel: "钻石 120、资金 10万",
+      guideAction: "领取奖励",
+      unlockKind: "none" as const
+    },
+    {
+      id: "daily-train-employee",
+      type: "daily" as const,
+      title: "培训员工",
+      description: "完成一次员工培养。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "金币 8,000、培养手册 1",
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-knowledge-labor-contract",
+      type: "side" as const,
+      title: "阅读用工合规知识",
+      description: "查看劳动合同风险知识卡。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "声望 300、知识点 1",
+      guideAction: "查看知识",
+      unlockKind: "knowledge" as const
+    },
+    {
+      id: "side-compliance-contract-review",
+      type: "side" as const,
+      title: "完成合同复核",
+      description: "推进一次合同复核支线。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "资金 6万、合规评分 2",
+      guideAction: "处理支线",
+      unlockKind: "compliance" as const
+    }
+  ];
+  const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
+
+  const getProfileByAccountAndServer = (accountId: string, serverId: string): PlayerProfileRecord | undefined =>
+    profiles.get(`${accountId}:${serverId}`);
+
+  const toTaskRecord = (
+    profileId: string,
+    config: (typeof taskConfigs)[number],
+    today: string
+  ): TaskRecord => {
+    const key = `${profileId}:${config.id}`;
+    const progress = taskProgress.get(key);
+    const isDaily = config.type === "daily";
+    const isFreshDaily = !isDaily || progress?.dailyDate === today;
+    const currentProgress = isFreshDaily ? progress?.progress ?? config.initialProgress : 0;
+    const isClaimed = isFreshDaily && progress?.claimedAt !== undefined;
+
+    return {
+      ...config,
+      type: config.type,
+      progress: Math.min(currentProgress, config.target),
+      isClaimed,
+      isClaimable: currentProgress >= config.target && !isClaimed
+    };
+  };
 
   return {
     async createAccount(account) {
@@ -114,6 +186,69 @@ const createTestRepository = (): GameRepository => {
       };
       profiles.set(key, created);
       return created;
+    },
+    async listTasks(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      return taskConfigs.map((config) => toTaskRecord(profile.id, config, today));
+    },
+    async advanceTask(accountId, serverId, taskId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const config = taskConfigs.find((task) => task.id === taskId);
+      if (config === undefined) {
+        return "TASK_NOT_FOUND";
+      }
+
+      const key = `${profile.id}:${config.id}`;
+      const existing = taskProgress.get(key);
+      const isDaily = config.type === "daily";
+      const shouldResetDaily = isDaily && existing?.dailyDate !== today;
+      const currentProgress = shouldResetDaily ? 0 : existing?.progress ?? config.initialProgress;
+      taskProgress.set(key, {
+        progress: Math.min(currentProgress + 1, config.target),
+        dailyDate: isDaily ? today : existing?.dailyDate,
+        claimedAt: shouldResetDaily ? undefined : existing?.claimedAt
+      });
+      return toTaskRecord(profile.id, config, today);
+    },
+    async claimTask(accountId, serverId, taskId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const config = taskConfigs.find((task) => task.id === taskId);
+      if (config === undefined) {
+        return "TASK_NOT_FOUND";
+      }
+
+      const key = `${profile.id}:${config.id}`;
+      const existing = taskProgress.get(key);
+      const isDaily = config.type === "daily";
+      const isFreshDaily = !isDaily || existing?.dailyDate === today;
+      const currentProgress = isFreshDaily ? existing?.progress ?? config.initialProgress : 0;
+
+      if (currentProgress < config.target) {
+        return "TASK_INCOMPLETE";
+      }
+
+      if (isFreshDaily && existing?.claimedAt !== undefined) {
+        return "TASK_ALREADY_CLAIMED";
+      }
+
+      taskProgress.set(key, {
+        progress: currentProgress,
+        dailyDate: isDaily ? today : existing?.dailyDate,
+        claimedAt: new Date().toISOString()
+      });
+      return toTaskRecord(profile.id, config, today);
     },
     async disconnect() {}
   };
@@ -306,6 +441,68 @@ test("creates one player profile per account per server", async () => {
     assert.equal(profile.status, 200);
     assert.equal(profile.body.success, true);
     assert.equal(profile.body.data?.id, created.body.data?.id);
+  });
+});
+
+test("lists, advances, and claims player tasks without duplicate rewards", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    assert.equal(tasks.status, 200);
+    assert.equal(tasks.body.success, true);
+    assert.ok(tasks.body.data?.some((task) => task.type === "main" && task.isClaimable));
+    assert.ok(tasks.body.data?.some((task) => task.unlockKind === "knowledge"));
+    assert.ok(tasks.body.data?.some((task) => task.unlockKind === "compliance"));
+
+    const incompleteClaim = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/claim", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(incompleteClaim.status, 409);
+    assert.equal(incompleteClaim.body.error?.code, "TASK_INCOMPLETE");
+
+    const advanced = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/progress", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(advanced.status, 200);
+    assert.equal(advanced.body.data?.isClaimable, true);
+
+    const claimed = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/claim", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200);
+    assert.equal(claimed.body.data?.isClaimed, true);
+
+    const duplicateClaim = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/claim", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicateClaim.status, 409);
+    assert.equal(duplicateClaim.body.error?.code, "TASK_ALREADY_CLAIMED");
   });
 });
 

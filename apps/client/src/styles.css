@@ -1712,6 +1712,180 @@ input {
   min-height: 36px;
 }
 
+.task-screen {
+  position: absolute;
+  inset: 8.8% 2.4% 9.8%;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 2%;
+  padding: 2.8%;
+  border: 1px solid rgba(246, 204, 116, 0.74);
+  border-radius: 8px;
+  color: #fff1c9;
+  background:
+    linear-gradient(180deg, rgba(16, 30, 48, 0.95), rgba(7, 13, 23, 0.94)),
+    rgba(7, 13, 23, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 16px 38px rgba(0, 0, 0, 0.46);
+}
+
+.task-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20% 1fr 20%;
+  align-items: center;
+  gap: 2%;
+  min-height: 7%;
+}
+
+.task-header button,
+.task-tabs button,
+.task-list button {
+  position: static;
+}
+
+.task-header button,
+.task-tabs button,
+.task-list button {
+  min-height: 34px;
+  border-radius: 5px;
+  color: #58370f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.5vw, 16px);
+  font-weight: 900;
+}
+
+.task-header div {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.task-header strong {
+  color: #ffd873;
+  font-size: clamp(23px, 6vw, 32px);
+  font-weight: 900;
+}
+
+.task-header span {
+  color: #d8c9a8;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.task-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2%;
+}
+
+.task-tabs button {
+  color: #ffe4a8;
+  background:
+    linear-gradient(180deg, rgba(24, 40, 61, 0.92), rgba(8, 15, 25, 0.92)),
+    rgba(8, 15, 25, 0.92);
+}
+
+.task-tabs button.active {
+  color: #51340f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+}
+
+.task-error {
+  min-height: 24px;
+  border-radius: 5px;
+  padding: 5px 8px;
+  color: #ffd7c6;
+  background: rgba(138, 47, 31, 0.42);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.task-list {
+  display: grid;
+  align-content: start;
+  gap: 2%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 1%;
+}
+
+.task-list article {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 6px;
+  padding: 3%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.task-list article.claimed {
+  opacity: 0.72;
+}
+
+.task-list header,
+.task-list footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.task-list header strong {
+  overflow: hidden;
+  color: #fff6d8;
+  font-size: clamp(15px, 4vw, 20px);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-list header span {
+  flex: 0 0 auto;
+  color: #ffe5a9;
+  font-size: clamp(12px, 3.2vw, 15px);
+  font-weight: 900;
+}
+
+.task-list p {
+  color: #efe2c6;
+  font-size: clamp(12px, 3.4vw, 15px);
+  font-weight: 800;
+  line-height: 1.42;
+}
+
+.task-progress-line span {
+  display: block;
+  overflow: hidden;
+  height: 9px;
+  border: 1px solid rgba(255, 218, 126, 0.48);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.26);
+}
+
+.task-progress-line i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #3da2ff, #ffe28a);
+}
+
+.task-list small {
+  min-width: 0;
+  overflow: hidden;
+  color: #d8c9a8;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-list button {
+  flex: 0 0 28%;
+}
+
 @media (max-width: 420px) {
   .onboarding-shell {
     align-items: stretch;

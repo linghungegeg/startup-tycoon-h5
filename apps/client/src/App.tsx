@@ -91,6 +91,20 @@ type BusinessProject = {
   summary: string;
 };
 
+type TaskItem = {
+  id: string;
+  type: "main" | "daily" | "side";
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  rewardLabel: string;
+  guideAction: string;
+  unlockKind: "none" | "knowledge" | "compliance";
+  isClaimed: boolean;
+  isClaimable: boolean;
+};
+
 const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
 const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
 const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
@@ -309,8 +323,18 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
   },
   "任务": {
     title: "主线任务",
-    lines: ["升级市场部到 Lv.20（18/20）。", "奖励：钻石 200、资金 20万。"],
-    action: "前往市场部"
+    lines: ["主线、每日、支线任务会在任务系统中统一追踪。", "任务奖励由服务器记录，已领取奖励不能重复领取。"],
+    action: "打开任务"
+  },
+  "创业知识": {
+    title: "创业知识",
+    lines: ["知识卡用于解释劳动合同、税务、回款、融资等经营常识。", "阅读后可推进对应知识任务。"],
+    action: "已阅读"
+  },
+  "合规支线": {
+    title: "合规支线",
+    lines: ["合同复核、用工规范和客户回款会影响公司长期风险。", "完成合规支线可降低后续经营事件损失。"],
+    action: "完成复核"
   },
   "出门谈判": {
     title: "出门谈判",
@@ -455,6 +479,9 @@ function App() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
   const [projects, setProjects] = useState<BusinessProject[]>(initialProjects);
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjects[0]?.id ?? "");
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [activeTaskType, setActiveTaskType] = useState<TaskItem["type"]>("main");
+  const [taskError, setTaskError] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -484,6 +511,34 @@ function App() {
     () => projects.reduce((total, project) => total + project.revenue, 0),
     [projects]
   );
+  const currentMainTask = useMemo(
+    () => tasks.find((task) => task.type === "main" && !task.isClaimed) ?? tasks.find((task) => task.type === "main"),
+    [tasks]
+  );
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => task.type === activeTaskType),
+    [activeTaskType, tasks]
+  );
+
+  const replaceTask = (nextTask: TaskItem): void => {
+    setTasks((currentTasks) => currentTasks.map((task) => (task.id === nextTask.id ? nextTask : task)));
+  };
+
+  const loadTasks = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<TaskItem[]>(
+      `/tasks?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setTasks(response.data);
+      setTaskError("");
+      return;
+    }
+
+    setTaskError(response.error.message);
+  };
 
   const enterGame = (
     nextAccount: AccountSession,
@@ -560,6 +615,14 @@ function App() {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (step !== "game" || !account || !selectedServer) {
+      return;
+    }
+
+    void loadTasks(account.token, selectedServer.id);
+  }, [step, account?.token, selectedServer?.id]);
 
   const runAuth = async (mode: AuthMode): Promise<void> => {
     const trimmedUsername = username.trim();
@@ -750,6 +813,59 @@ function App() {
     setActivePanel(panelName);
   };
 
+  const openTaskScreen = (): void => {
+    setActivePanel(null);
+    setActiveNav("任务");
+  };
+
+  const progressTask = async (taskId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      setTaskError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<TaskItem>(
+      `/tasks/${encodeURIComponent(taskId)}/progress`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      replaceTask(response.data);
+      setTaskError("");
+      return;
+    }
+
+    setTaskError(response.error.message);
+  };
+
+  const claimTask = async (taskId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      setTaskError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<TaskItem>(
+      `/tasks/${encodeURIComponent(taskId)}/claim`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      replaceTask(response.data);
+      setTaskError("");
+      return;
+    }
+
+    setTaskError(response.error.message);
+  };
+
   const cultivateEmployee = (): void => {
     if (!selectedEmployee) {
       return;
@@ -769,6 +885,7 @@ function App() {
           : employee
       )
     );
+    void progressTask("daily-train-employee");
   };
 
   const advanceProject = (): void => {
@@ -793,6 +910,36 @@ function App() {
         };
       })
     );
+    void progressTask("main-first-project");
+    void progressTask("daily-project-push");
+  };
+
+  const guideTask = (task: TaskItem): void => {
+    if (task.isClaimable) {
+      void claimTask(task.id);
+      return;
+    }
+
+    if (task.guideAction.includes("员工")) {
+      setActiveNav("员工");
+      return;
+    }
+
+    if (task.guideAction.includes("项目")) {
+      setActiveNav("项目");
+      return;
+    }
+
+    if (task.unlockKind === "knowledge") {
+      openHomePanel("创业知识");
+      void progressTask(task.id);
+      return;
+    }
+
+    if (task.unlockKind === "compliance") {
+      openHomePanel("合规支线");
+      void progressTask(task.id);
+    }
   };
 
   const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
@@ -870,13 +1017,13 @@ function App() {
           </section>
 
           <section className="task-panel" aria-label="当前任务">
-            <button className="task-icon" type="button" onClick={() => openHomePanel("任务")}>任务</button>
+            <button className="task-icon" type="button" onClick={openTaskScreen}>任务</button>
             <div>
               <strong>主线</strong>
-              <span>升级市场部到 Lv.20（18/20）</span>
-              <small>奖励：钻石 200 资金 20万</small>
+              <span>{currentMainTask ? `${currentMainTask.title}（${currentMainTask.progress}/${currentMainTask.target}）` : "任务配置读取中"}</span>
+              <small>{currentMainTask ? `奖励：${currentMainTask.rewardLabel}` : "请确认 API 服务已启动"}</small>
             </div>
-            <button className="task-go" type="button" onClick={() => openHomePanel("任务")}>前往</button>
+            <button className="task-go" type="button" onClick={openTaskScreen}>前往</button>
           </section>
 
           <button className="chapter-button" type="button" onClick={() => openHomePanel("出门谈判")}>
@@ -1067,6 +1214,61 @@ function App() {
                     <button type="button" onClick={() => openHomePanel("项目")}>结算</button>
                   </div>
                 </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "任务" && (
+            <section className="task-screen" aria-label="任务系统">
+              <header className="task-header">
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <div>
+                  <strong>任务</strong>
+                  <span>主线 / 每日 / 支线</span>
+                </div>
+                <button type="button" onClick={() => selectedServer && account && void loadTasks(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <nav className="task-tabs" aria-label="任务分类">
+                {[
+                  ["main", "主线"],
+                  ["daily", "每日"],
+                  ["side", "支线"]
+                ].map(([type, label]) => (
+                  <button
+                    className={activeTaskType === type ? "active" : undefined}
+                    key={type}
+                    type="button"
+                    onClick={() => setActiveTaskType(type as TaskItem["type"])}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+
+              {taskError && <p className="task-error">{taskError}</p>}
+
+              <section className="task-list" aria-label="任务列表">
+                {visibleTasks.map((task) => (
+                  <article className={task.isClaimed ? "claimed" : undefined} key={task.id}>
+                    <header>
+                      <strong>{task.title}</strong>
+                      <span>{task.progress}/{task.target}</span>
+                    </header>
+                    <p>{task.description}</p>
+                    <div className="task-progress-line">
+                      <span>
+                        <i style={{ width: `${Math.min((task.progress / task.target) * 100, 100)}%` }} />
+                      </span>
+                    </div>
+                    <footer>
+                      <small>奖励：{task.rewardLabel}</small>
+                      <button disabled={task.isClaimed} type="button" onClick={() => guideTask(task)}>
+                        {task.isClaimed ? "已领取" : task.isClaimable ? "领取" : task.guideAction}
+                      </button>
+                    </footer>
+                  </article>
+                ))}
               </section>
             </section>
           )}

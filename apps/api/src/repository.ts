@@ -37,6 +37,20 @@ export type PlayerProfileRecord = {
   createdAt: string;
 };
 
+export type TaskRecord = {
+  id: string;
+  type: "main" | "daily" | "side";
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  rewardLabel: string;
+  guideAction: string;
+  unlockKind: "none" | "knowledge" | "compliance";
+  isClaimed: boolean;
+  isClaimable: boolean;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -49,6 +63,9 @@ export type GameRepository = {
   listAvatars(): Promise<AvatarRecord[]>;
   getProfile(accountId: string, serverId: string): Promise<PlayerProfileRecord | undefined>;
   createProfile(profile: Omit<PlayerProfileRecord, "id" | "createdAt">): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
+  listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
+  advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
+  claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
   disconnect(): Promise<void>;
 };
 
@@ -78,6 +95,47 @@ const toProfileRecord = (profile: {
   ...profile,
   createdAt: profile.createdAt.toISOString()
 });
+
+const readTaskType = (type: string): TaskRecord["type"] =>
+  type === "daily" || type === "side" ? type : "main";
+
+const readUnlockKind = (unlockKind: string): TaskRecord["unlockKind"] =>
+  unlockKind === "knowledge" || unlockKind === "compliance" ? unlockKind : "none";
+
+const toTaskRecord = (
+  config: {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    target: number;
+    initialProgress: number;
+    rewardLabel: string;
+    guideAction: string;
+    unlockKind: string;
+  },
+  progress: { progress: number; dailyDate: string | null; claimedAt: Date | null } | undefined,
+  today: string
+): TaskRecord => {
+  const isDaily = config.type === "daily";
+  const isFreshDaily = !isDaily || progress?.dailyDate === today;
+  const currentProgress = isFreshDaily ? progress?.progress ?? config.initialProgress : 0;
+  const isClaimed = isFreshDaily && progress?.claimedAt !== null && progress?.claimedAt !== undefined;
+
+  return {
+    id: config.id,
+    type: readTaskType(config.type),
+    title: config.title,
+    description: config.description,
+    progress: Math.min(currentProgress, config.target),
+    target: config.target,
+    rewardLabel: config.rewardLabel,
+    guideAction: config.guideAction,
+    unlockKind: readUnlockKind(config.unlockKind),
+    isClaimed,
+    isClaimable: currentProgress >= config.target && !isClaimed
+  };
+};
 
 export const createPrismaGameRepository = (
   prisma = new PrismaClient()
@@ -182,6 +240,147 @@ export const createPrismaGameRepository = (
       }
       throw error;
     }
+  },
+
+  async listTasks(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [configs, progresses] = await Promise.all([
+      prisma.taskConfig.findMany({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      }),
+      prisma.playerTaskProgress.findMany({
+        where: { profileId: profile.id }
+      })
+    ]);
+    const progressByTaskId = new Map(progresses.map((progress) => [progress.taskId, progress]));
+    return configs.map((config) => toTaskRecord(config, progressByTaskId.get(config.id), today));
+  },
+
+  async advanceTask(accountId, serverId, taskId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const config = await prisma.taskConfig.findUnique({ where: { id: taskId } });
+    if (config === null) {
+      return "TASK_NOT_FOUND";
+    }
+
+    const existing = await prisma.playerTaskProgress.findUnique({
+      where: {
+        profileId_taskId: {
+          profileId: profile.id,
+          taskId
+        }
+      }
+    });
+    const isDaily = config.type === "daily";
+    const shouldResetDaily = isDaily && existing?.dailyDate !== today;
+    const baseProgress = shouldResetDaily ? 0 : existing?.progress ?? config.initialProgress;
+    const nextProgress = Math.min(baseProgress + 1, config.target);
+
+    const progress = await prisma.playerTaskProgress.upsert({
+      where: {
+        profileId_taskId: {
+          profileId: profile.id,
+          taskId
+        }
+      },
+      update: {
+        progress: nextProgress,
+        dailyDate: isDaily ? today : existing?.dailyDate ?? null,
+        claimedAt: shouldResetDaily ? null : existing?.claimedAt ?? null
+      },
+      create: {
+        profileId: profile.id,
+        taskId,
+        progress: nextProgress,
+        dailyDate: isDaily ? today : null
+      }
+    });
+
+    return toTaskRecord(config, progress, today);
+  },
+
+  async claimTask(accountId, serverId, taskId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const config = await prisma.taskConfig.findUnique({ where: { id: taskId } });
+    if (config === null) {
+      return "TASK_NOT_FOUND";
+    }
+
+    const existing = await prisma.playerTaskProgress.findUnique({
+      where: {
+        profileId_taskId: {
+          profileId: profile.id,
+          taskId
+        }
+      }
+    });
+    const isDaily = config.type === "daily";
+    const isFreshDaily = !isDaily || existing?.dailyDate === today;
+    const currentProgress = isFreshDaily ? existing?.progress ?? config.initialProgress : 0;
+
+    if (currentProgress < config.target) {
+      return "TASK_INCOMPLETE";
+    }
+
+    if (isFreshDaily && existing?.claimedAt !== null && existing?.claimedAt !== undefined) {
+      return "TASK_ALREADY_CLAIMED";
+    }
+
+    const progress = await prisma.playerTaskProgress.upsert({
+      where: {
+        profileId_taskId: {
+          profileId: profile.id,
+          taskId
+        }
+      },
+      update: {
+        progress: currentProgress,
+        dailyDate: isDaily ? today : existing?.dailyDate ?? null,
+        claimedAt: new Date()
+      },
+      create: {
+        profileId: profile.id,
+        taskId,
+        progress: currentProgress,
+        dailyDate: isDaily ? today : null,
+        claimedAt: new Date()
+      }
+    });
+
+    return toTaskRecord(config, progress, today);
   },
 
   async disconnect() {

@@ -173,6 +173,17 @@ const validatePlayer = (
   return { serverId, avatarId, founderName, companyName };
 };
 
+const readServerId = (body: unknown): string | undefined => {
+  if (!isRecord(body)) {
+    return undefined;
+  }
+
+  const serverId = readString(body, "serverId");
+  return serverId === "" ? undefined : serverId;
+};
+
+const readToday = (): string => new Date().toISOString().slice(0, 10);
+
 const readBearerToken = (request: IncomingMessage): string | undefined => {
   const header = request.headers.authorization;
 
@@ -426,6 +437,110 @@ export const createApiServer = (
           return;
         }
         sendJson(response, 201, success(profile, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/tasks") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const tasks = await repository.listTasks(account.id, serverId, readToday());
+      if (tasks === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(tasks, traceId));
+      return;
+    }
+
+    const taskProgressMatch = /^\/tasks\/([^/]+)\/progress$/.exec(url.pathname);
+    if (request.method === "POST" && taskProgressMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const serverId = readServerId(await readBody(request));
+        const taskId = taskProgressMatch[1];
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+        if (taskId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "taskId is required.", traceId));
+          return;
+        }
+
+        const task = await repository.advanceTask(account.id, serverId, decodeURIComponent(taskId), readToday());
+        if (task === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (task === "TASK_NOT_FOUND") {
+          sendJson(response, 404, failure("TASK_NOT_FOUND", "Task not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(task, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const taskClaimMatch = /^\/tasks\/([^/]+)\/claim$/.exec(url.pathname);
+    if (request.method === "POST" && taskClaimMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const serverId = readServerId(await readBody(request));
+        const taskId = taskClaimMatch[1];
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+        if (taskId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "taskId is required.", traceId));
+          return;
+        }
+
+        const task = await repository.claimTask(account.id, serverId, decodeURIComponent(taskId), readToday());
+        if (task === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (task === "TASK_NOT_FOUND") {
+          sendJson(response, 404, failure("TASK_NOT_FOUND", "Task not found.", traceId));
+          return;
+        }
+        if (task === "TASK_INCOMPLETE") {
+          sendJson(response, 409, failure("TASK_INCOMPLETE", "Task is not complete yet.", traceId));
+          return;
+        }
+        if (task === "TASK_ALREADY_CLAIMED") {
+          sendJson(response, 409, failure("TASK_ALREADY_CLAIMED", "Task reward has already been claimed.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(task, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
         sendJson(response, 400, failure(code, "Invalid request body.", traceId));
