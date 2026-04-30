@@ -34,6 +34,7 @@ type AccountSession = {
 type ServerOption = {
   id: string;
   name: string;
+  status?: string;
   label: string;
   isRecommended: boolean;
 };
@@ -321,6 +322,11 @@ const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
 const eventEntryNames = new Set(["风险", "合同", "邮件"]);
 const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [];
+const defaultServers: ServerOption[] = [
+  { id: "s1", name: "长宁一服", status: "recommended", label: "推荐", isRecommended: true },
+  { id: "s2", name: "滨江新区", status: "new", label: "新服", isRecommended: false },
+  { id: "s3", name: "中关村路演场", status: "busy", label: "繁忙", isRecommended: false }
+];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
   "财务": {
     title: "财务",
@@ -528,6 +534,26 @@ const compactNumber = (value: number): string => {
 
 const formatWan = (value: number): string => `${(value / 10000).toFixed(1)}万`;
 
+const serverStatusClass = (server: ServerOption): string => {
+  if (server.status === "busy" || server.label === "繁忙") {
+    return "busy";
+  }
+
+  if (server.status === "new" || server.label === "新服") {
+    return "new";
+  }
+
+  return "smooth";
+};
+
+const serverStatusText = (server: ServerOption): string => {
+  if (server.isRecommended) {
+    return "流畅";
+  }
+
+  return server.label;
+};
+
 const rarityClass = (rarity: string): string => {
   if (rarity === "传奇") {
     return "ssr";
@@ -681,9 +707,9 @@ function App() {
   const [password, setPassword] = useState(rememberedAuth?.password ?? "");
   const [rememberPassword, setRememberPassword] = useState(rememberedAuth !== null);
   const [account, setAccount] = useState<AccountSession | null>(initialSession?.account ?? null);
-  const [servers, setServers] = useState<ServerOption[]>(initialSession ? [initialSession.server] : []);
+  const [servers, setServers] = useState<ServerOption[]>(initialSession ? [initialSession.server] : defaultServers);
   const [avatars, setAvatars] = useState<AvatarOption[]>(initialSession ? [initialSession.avatar] : []);
-  const [serverId, setServerId] = useState(initialSession?.server.id ?? "");
+  const [serverId, setServerId] = useState(initialSession?.server.id ?? defaultServers[0]?.id ?? "");
   const [avatarId, setAvatarId] = useState(initialSession?.avatar.id ?? "");
   const [founderName, setFounderName] = useState(initialSession?.profile.founderName ?? "");
   const [companyName, setCompanyName] = useState(initialSession?.profile.companyName ?? "");
@@ -691,6 +717,8 @@ function App() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
+  const [isServerPickerOpen, setIsServerPickerOpen] = useState(false);
+  const [activeServerCategory, setActiveServerCategory] = useState<"recent" | "all">("all");
   const [activeNav, setActiveNav] = useState("首页");
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
@@ -726,6 +754,18 @@ function App() {
     () => servers.find((server) => server.id === serverId) ?? servers[0],
     [serverId, servers]
   );
+  const serverPickerServers = useMemo(() => {
+    if (activeServerCategory === "all") {
+      return servers;
+    }
+
+    const recentServers = [
+      ...(selectedServer ? [selectedServer] : []),
+      ...servers.filter((server) => server.isRecommended && server.id !== selectedServer?.id)
+    ];
+
+    return recentServers.length > 0 ? recentServers : servers;
+  }, [activeServerCategory, selectedServer, servers]);
   const selectedAvatar = useMemo(
     () => avatars.find((avatar) => avatar.id === avatarId) ?? avatars[0],
     [avatarId, avatars]
@@ -1171,8 +1211,9 @@ function App() {
         return;
       }
 
+      const preferredServer = serverResponse.data.find((server) => server.id === serverId);
       const recommendedServer =
-        serverResponse.data.find((server) => server.isRecommended) ?? serverResponse.data[0];
+        preferredServer ?? serverResponse.data.find((server) => server.isRecommended) ?? serverResponse.data[0];
       const firstAvatar = avatarResponse.data[0];
 
       if (recommendedServer === undefined || firstAvatar === undefined) {
@@ -2683,7 +2724,12 @@ function App() {
 
           <div className="server-ribbon" aria-label="当前区服">
             <span className="server-label">{selectedServer?.name ?? "S1 创业中心"}</span>
-            <button aria-label="换服" type="button" />
+            <button
+              aria-expanded={isServerPickerOpen}
+              aria-label="换服"
+              onClick={() => setIsServerPickerOpen(true)}
+              type="button"
+            />
           </div>
 
           <form className="auth-panel" onSubmit={submitAuth}>
@@ -2719,6 +2765,91 @@ function App() {
               <button aria-label={isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"} className="gold-button" disabled={isBusy} type="submit" />
             </div>
           </form>
+          {isServerPickerOpen && (
+            <section className="server-picker" aria-label="选择区服">
+              <button
+                className="server-picker-backdrop"
+                type="button"
+                aria-label="关闭区服列表"
+                onClick={() => setIsServerPickerOpen(false)}
+              />
+              <div className="server-list-card">
+                <div className="server-list-header">
+                  <div>
+                    <span className="server-list-icon layers" aria-hidden="true" />
+                    <h2>选择区服</h2>
+                  </div>
+                  <button
+                    className="server-list-close"
+                    type="button"
+                    aria-label="关闭区服列表"
+                    onClick={() => setIsServerPickerOpen(false)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="server-list-body">
+                  <div className="server-category-nav" aria-label="区服分类">
+                    <button
+                      className={activeServerCategory === "recent" ? "cat-tab active" : "cat-tab"}
+                      type="button"
+                      onClick={() => setActiveServerCategory("recent")}
+                    >
+                      <span className="server-list-icon clock" aria-hidden="true" />
+                      <span>最近登录</span>
+                    </button>
+                    <button
+                      className={activeServerCategory === "all" ? "cat-tab active" : "cat-tab"}
+                      type="button"
+                      onClick={() => setActiveServerCategory("all")}
+                    >
+                      <span className="server-list-icon server" aria-hidden="true" />
+                      <span>全部区服</span>
+                    </button>
+                  </div>
+
+                  <div className="server-list-scroll">
+                    {serverPickerServers.map((server, index) => {
+                      const statusClass = serverStatusClass(server);
+                      return (
+                        <button
+                          className={server.id === serverId ? "server-item selected" : "server-item"}
+                          key={server.id}
+                          style={{ animationDelay: `${0.04 + index * 0.06}s` }}
+                          type="button"
+                          onClick={() => {
+                            setServerId(server.id);
+                          }}
+                        >
+                          <span className="server-item-main">
+                            <span className="server-list-id">{server.id.toUpperCase()}</span>
+                            <span className="server-list-name">{server.name}</span>
+                            {server.isRecommended && <span className="server-recommend-tag">推荐</span>}
+                          </span>
+                          <span className={`server-list-status ${statusClass}`}>
+                            <i className="status-dot" />
+                            {serverStatusText(server)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="server-list-footer">
+                  <div>
+                    <i aria-hidden="true" />
+                    <span>
+                      <em>当前选择</em>
+                      <strong>{selectedServer ? `${selectedServer.id.toUpperCase()}区 · ${selectedServer.name}` : "未选择"}</strong>
+                    </span>
+                  </div>
+                  <span>v1.0.42</span>
+                </div>
+              </div>
+            </section>
+          )}
         </section>
       </main>
     );
