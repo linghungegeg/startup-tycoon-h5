@@ -230,6 +230,57 @@ const eventConfigs = [
   }
 ];
 
+const loanConfigs = [
+  {
+    id: "short-cashflow-loan",
+    name: "经营周转贷",
+    lender: "城市商业银行",
+    principal: 300000,
+    annualRateBasisPoints: 720,
+    termMonths: 6,
+    monthlyPayment: 53200,
+    creditRequired: "B",
+    summary: "适合短期现金流缺口，放款快，但每月还款压力明显。",
+    sortOrder: 1
+  },
+  {
+    id: "equipment-growth-loan",
+    name: "设备升级贷",
+    lender: "科技园担保中心",
+    principal: 600000,
+    annualRateBasisPoints: 960,
+    termMonths: 12,
+    monthlyPayment: 54800,
+    creditRequired: "A",
+    summary: "额度更高，适合扩张办公和交付能力，信用评级不足时不可申请。",
+    sortOrder: 2
+  },
+  {
+    id: "emergency-bridge-loan",
+    name: "应急过桥贷",
+    lender: "供应链金融机构",
+    principal: 180000,
+    annualRateBasisPoints: 1800,
+    termMonths: 3,
+    monthlyPayment: 62700,
+    creditRequired: "C",
+    summary: "用于资金紧张时快速止血，利率高，逾期会迅速拖累信用。",
+    sortOrder: 3
+  },
+  {
+    id: "high-debt-expansion-loan",
+    name: "高负债扩张贷",
+    lender: "民间联合授信",
+    principal: 4000000,
+    annualRateBasisPoints: 1500,
+    termMonths: 12,
+    monthlyPayment: 700000,
+    creditRequired: "B",
+    summary: "额度很高，可迅速补充现金，但会把公司推入高负债压力区。",
+    sortOrder: 4
+  }
+];
+
 const employeeConfigs = [
   {
     id: "lin-zhiyuan",
@@ -467,6 +518,14 @@ const seed = async (): Promise<void> => {
       where: { id: eventConfig.id },
       update: eventConfig,
       create: eventConfig
+    });
+  }
+
+  for (const loanConfig of loanConfigs) {
+    await prisma.loanConfig.upsert({
+      where: { id: loanConfig.id },
+      update: loanConfig,
+      create: loanConfig
     });
   }
 

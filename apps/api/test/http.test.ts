@@ -19,6 +19,9 @@ import type {
   EventChoiceRecord,
   EventRecord,
   GameRepository,
+  LoanActionRecord,
+  LoanCenterRecord,
+  LoanRecord,
   PlayerProfileRecord,
   ProjectRecord,
   ProjectSettlementRecord,
@@ -309,6 +312,42 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const playerEvents = new Map<string, EventRecord>();
+  const loanConfigs = [
+    {
+      id: "short-cashflow-loan",
+      name: "经营周转贷",
+      lender: "城市商业银行",
+      principal: 300000,
+      annualRateBasisPoints: 720,
+      termMonths: 6,
+      monthlyPayment: 53200,
+      creditRequired: "B",
+      summary: "适合短期现金流缺口。"
+    },
+    {
+      id: "equipment-growth-loan",
+      name: "设备升级贷",
+      lender: "科技园担保中心",
+      principal: 600000,
+      annualRateBasisPoints: 960,
+      termMonths: 12,
+      monthlyPayment: 54800,
+      creditRequired: "A",
+      summary: "额度更高，适合扩张办公。"
+    },
+    {
+      id: "high-debt-expansion-loan",
+      name: "高负债扩张贷",
+      lender: "民间联合授信",
+      principal: 4000000,
+      annualRateBasisPoints: 1500,
+      termMonths: 12,
+      monthlyPayment: 700000,
+      creditRequired: "B",
+      summary: "额度很高，但会带来高负债压力。"
+    }
+  ];
+  const playerLoans = new Map<string, LoanRecord>();
 
   const getProfileByAccountAndServer = (accountId: string, serverId: string): PlayerProfileRecord | undefined =>
     profiles.get(`${accountId}:${serverId}`);
@@ -430,6 +469,52 @@ const createTestRepository = (): GameRepository => {
     }
     profile.pendingEventCount = ownedEvents.filter((event) => event.status === "pending").length;
     return ownedEvents.sort((left, right) => left.status.localeCompare(right.status) || left.createdAt.localeCompare(right.createdAt));
+  };
+
+  const creditRank = (rating: string): number => (rating === "A" ? 3 : rating === "B" ? 2 : rating === "C" ? 1 : 0);
+  const downgradeCredit = (rating: string): string => (rating === "A" ? "B" : rating === "B" ? "C" : "D");
+  const calculatePrincipalPayment = (loan: LoanRecord): number => {
+    return Math.min(loan.remainingPrincipal, Math.max(1, Math.ceil(loan.remainingPrincipal / Math.max(loan.remainingMonths, 1))));
+  };
+  const loansForProfile = (profileId: string): LoanRecord[] =>
+    [...playerLoans.values()].filter((loan) => loan.id.startsWith(`${profileId}:`));
+  const toLoanCenterRecord = (profile: PlayerProfileRecord): LoanCenterRecord => {
+    const loans = loansForProfile(profile.id);
+    const activeConfigIds = new Set(loans.filter((loan) => loan.status !== "settled").map((loan) => loan.configId));
+    const finance = toCompanyFinanceRecord(profile);
+    const hasOverdueLoan = loans.some((loan) => loan.status === "overdue");
+    const crisisLevel =
+      finance.cash < 0 || finance.debtRatioBasisPoints >= 9000
+        ? "bankruptcy"
+        : finance.riskStatus === "资金紧张" || hasOverdueLoan
+          ? "cashflow"
+          : finance.debtRatioBasisPoints >= 6000
+            ? "debt"
+            : "none";
+
+    return {
+      offers: loanConfigs.map((config) => {
+        const isCreditEnough = creditRank(profile.creditRating) >= creditRank(config.creditRequired);
+        const hasActiveLoan = activeConfigIds.has(config.id);
+        return {
+          ...config,
+          isAvailable: isCreditEnough && !hasActiveLoan,
+          lockedReason: !isCreditEnough ? "信用评级不足" : hasActiveLoan ? "同类贷款未结清" : null
+        };
+      }),
+      loans,
+      finance,
+      crisis: {
+        isActive: crisisLevel !== "none",
+        level: crisisLevel,
+        summary: crisisLevel === "none" ? "现金流和负债处于可控区间。" : "现金流或负债进入危机状态。",
+        routes: [
+          { id: "financing", title: "融资谈判", impact: "现金+20万，声望-300。" },
+          { id: "cost_cut", title: "降本裁撤", impact: "月支出-10万，员工满意度-6。" },
+          { id: "restructure", title: "债务重组", impact: "负债-20万，信用降级。" }
+        ]
+      }
+    };
   };
 
   return {
@@ -935,6 +1020,122 @@ const createTestRepository = (): GameRepository => {
           followupEventId: followupEvent?.id ?? null
         }
       } satisfies EventChoiceRecord;
+    },
+    async listLoans(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toLoanCenterRecord(profile);
+    },
+    async applyLoan(accountId, serverId, loanConfigId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const config = loanConfigs.find((item) => item.id === loanConfigId);
+      if (config === undefined) {
+        return "LOAN_NOT_FOUND";
+      }
+      if (creditRank(profile.creditRating) < creditRank(config.creditRequired)) {
+        return "CREDIT_NOT_ENOUGH";
+      }
+      const loanId = `${profile.id}:${config.id}`;
+      const existing = playerLoans.get(loanId);
+      if (existing !== undefined && existing.status !== "settled") {
+        return "LOAN_ALREADY_ACTIVE";
+      }
+
+      const loan: LoanRecord = {
+        id: loanId,
+        configId: config.id,
+        name: config.name,
+        lender: config.lender,
+        principal: config.principal,
+        remainingPrincipal: config.principal,
+        annualRateBasisPoints: config.annualRateBasisPoints,
+        termMonths: config.termMonths,
+        remainingMonths: config.termMonths,
+        monthlyPayment: config.monthlyPayment,
+        overduePeriods: 0,
+        penaltyAccrued: 0,
+        status: "active",
+        createdAt: new Date().toISOString(),
+        settledAt: null
+      };
+      playerLoans.set(loan.id, loan);
+      profile.cash += config.principal;
+      profile.totalDebt += config.principal;
+      profile.debtWarning = "中";
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: `${config.name} 已放款。` } satisfies LoanActionRecord;
+    },
+    async repayLoan(accountId, serverId, loanId, mode) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const loan = playerLoans.get(loanId);
+      if (loan === undefined || !loan.id.startsWith(`${profile.id}:`) || loan.status === "settled") {
+        return "LOAN_NOT_FOUND";
+      }
+      const principalPayment = mode === "full" ? loan.remainingPrincipal : calculatePrincipalPayment(loan);
+      const payment = mode === "full" ? loan.remainingPrincipal + loan.penaltyAccrued : loan.monthlyPayment + loan.penaltyAccrued;
+      if (profile.cash < payment) {
+        return "INSUFFICIENT_CASH";
+      }
+      profile.cash -= payment;
+      profile.totalDebt = Math.max(0, profile.totalDebt - principalPayment - loan.penaltyAccrued);
+      loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
+      loan.remainingMonths = mode === "full" || loan.remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
+      loan.penaltyAccrued = 0;
+      loan.status = loan.remainingPrincipal === 0 ? "settled" : "active";
+      loan.settledAt = loan.status === "settled" ? new Date().toISOString() : null;
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: mode === "full" ? "提前结清完成。" : "本期还款完成。" } satisfies LoanActionRecord;
+    },
+    async settleLoanPeriod(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const loan = loansForProfile(profile.id).find((item) => item.status !== "settled");
+      if (loan === undefined) {
+        return "NO_ACTIVE_LOAN";
+      }
+      if (profile.cash >= loan.monthlyPayment + loan.penaltyAccrued) {
+        return this.repayLoan(accountId, serverId, loan.id, "scheduled") as Promise<LoanActionRecord>;
+      }
+      const penalty = Math.max(1000, Math.round(loan.monthlyPayment * 0.08));
+      loan.status = "overdue";
+      loan.overduePeriods += 1;
+      loan.penaltyAccrued += penalty;
+      profile.totalDebt += penalty;
+      profile.creditRating = downgradeCredit(profile.creditRating);
+      profile.riskStatus = "资金紧张";
+      profile.debtWarning = "高";
+      profile.pendingEventCount += 1;
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: `现金不足，本期逾期并产生罚息 ${penalty}。` } satisfies LoanActionRecord;
+    },
+    async resolveCrisis(accountId, serverId, route) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      if (route !== "financing" && route !== "cost_cut" && route !== "restructure") {
+        return "INVALID_CRISIS_ROUTE";
+      }
+      const center = toLoanCenterRecord(profile);
+      if (!center.crisis.isActive) {
+        return "CRISIS_NOT_ACTIVE";
+      }
+      if (route === "financing") {
+        profile.cash += 200000;
+        profile.reputation -= 300;
+      } else if (route === "cost_cut") {
+        profile.monthlyExpense = Math.max(0, profile.monthlyExpense - 100000);
+        profile.employeeSatisfaction -= 6;
+      } else {
+        profile.totalDebt = Math.max(0, profile.totalDebt - 200000);
+        profile.creditRating = downgradeCredit(profile.creditRating);
+      }
+      profile.riskStatus = "预警";
+      return toLoanCenterRecord(profile);
     },
     async disconnect() {}
   };
@@ -1981,6 +2182,138 @@ test("rejects invalid event choices and isolates events between accounts", async
     assert.equal(secondEvents.status, 200);
     assert.equal(secondEvents.body.success, true);
     assert.notEqual(secondEvents.body.data?.[0]?.id, firstEvent.id);
+  });
+});
+
+test("lists loan products and applies cashflow loans with debt pressure", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "loanapply");
+    const loans = await requestJson<LoanCenterRecord>(baseUrl, "/finance/loans?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(loans.status, 200);
+    assert.equal(loans.body.success, true);
+    assert.equal(loans.body.data?.offers[0]?.name, "经营周转贷");
+    assert.equal(loans.body.data?.offers[0]?.termMonths, 6);
+    assert.equal(loans.body.data?.offers[0]?.annualRateBasisPoints, 720);
+    assert.equal(loans.body.data?.crisis.routes.length, 3);
+
+    const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    assert.equal(applied.status, 201);
+    assert.equal(applied.body.success, true);
+    assert.equal(applied.body.data?.loan?.status, "active");
+    assert.equal(applied.body.data?.loanCenter.finance.cash, profile.cash + 300000);
+    assert.equal(applied.body.data?.loanCenter.finance.totalDebt, profile.totalDebt + 300000);
+    assert.ok((applied.body.data?.loanCenter.finance.debtRatioBasisPoints ?? 0) > 0);
+
+    const duplicate = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "LOAN_ALREADY_ACTIVE");
+  });
+});
+
+test("settles loan periods, supports early repayment, and blocks insufficient cash", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "loanrepay");
+    const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    assert.equal(applied.status, 201);
+    const loanId = applied.body.data?.loan?.id;
+    assert.ok(loanId);
+
+    const period = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/settle-period", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(period.status, 200);
+    assert.equal(period.body.data?.loan?.remainingMonths, 5);
+    assert.ok((period.body.data?.loan?.remainingPrincipal ?? 300000) < 300000);
+
+    const full = await requestJson<LoanActionRecord>(baseUrl, `/finance/loans/${encodeURIComponent(loanId)}/repay`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", mode: "full" })
+    });
+    assert.equal(full.status, 200);
+    assert.equal(full.body.data?.loan?.status, "settled");
+    assert.equal(full.body.data?.loanCenter.finance.totalDebt, 0);
+
+    const duplicate = await requestJson<LoanActionRecord>(baseUrl, `/finance/loans/${encodeURIComponent(loanId)}/repay`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", mode: "full" })
+    });
+    assert.equal(duplicate.status, 404);
+  });
+});
+
+test("records overdue penalties, downgrades credit, and exposes crisis routes", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "loanoverdue");
+    const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    assert.equal(applied.status, 201);
+    const loanId = applied.body.data?.loan?.id;
+    assert.ok(loanId);
+
+    const full = await requestJson<LoanActionRecord>(baseUrl, `/finance/loans/${encodeURIComponent(loanId)}/repay`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", mode: "full" })
+    });
+    assert.equal(full.status, 200);
+
+    const bridge = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    assert.equal(bridge.status, 201);
+    const bridgeLoanId = bridge.body.data?.loan?.id;
+    assert.ok(bridgeLoanId);
+
+    for (let index = 0; index < 9; index += 1) {
+      await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/settle-period", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      });
+    }
+    const overdue = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/settle-period", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(overdue.status, 200);
+    assert.equal(overdue.body.data?.loan?.status, "overdue");
+    assert.ok((overdue.body.data?.loan?.penaltyAccrued ?? 0) > 0);
+    assert.equal(overdue.body.data?.loanCenter.finance.creditRating, "B");
+    assert.equal(overdue.body.data?.loanCenter.crisis.isActive, true);
+    assert.equal(overdue.body.data?.loanCenter.crisis.routes.length, 3);
+
+    const resolved = await requestJson<LoanCenterRecord>(baseUrl, "/finance/crisis/resolve", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", route: "restructure" })
+    });
+    assert.equal(resolved.status, 200);
+    assert.equal(resolved.body.success, true);
+    assert.ok((resolved.body.data?.finance.totalDebt ?? Number.MAX_SAFE_INTEGER) < (overdue.body.data?.loanCenter.finance.totalDebt ?? 0));
   });
 });
 

@@ -198,6 +198,60 @@ export type EventChoiceRecord = {
   };
 };
 
+export type LoanOfferRecord = {
+  id: string;
+  name: string;
+  lender: string;
+  principal: number;
+  annualRateBasisPoints: number;
+  termMonths: number;
+  monthlyPayment: number;
+  creditRequired: string;
+  summary: string;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+export type LoanRecord = {
+  id: string;
+  configId: string;
+  name: string;
+  lender: string;
+  principal: number;
+  remainingPrincipal: number;
+  annualRateBasisPoints: number;
+  termMonths: number;
+  remainingMonths: number;
+  monthlyPayment: number;
+  overduePeriods: number;
+  penaltyAccrued: number;
+  status: "active" | "overdue" | "settled";
+  createdAt: string;
+  settledAt: string | null;
+};
+
+export type LoanCenterRecord = {
+  offers: LoanOfferRecord[];
+  loans: LoanRecord[];
+  finance: CompanyFinanceRecord;
+  crisis: {
+    isActive: boolean;
+    level: "none" | "cashflow" | "debt" | "bankruptcy";
+    summary: string;
+    routes: Array<{
+      id: "financing" | "cost_cut" | "restructure";
+      title: string;
+      impact: string;
+    }>;
+  };
+};
+
+export type LoanActionRecord = {
+  loan: LoanRecord | null;
+  loanCenter: LoanCenterRecord;
+  result: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -228,6 +282,11 @@ export type GameRepository = {
   settleProject(accountId: string, serverId: string, projectId: string): Promise<ProjectSettlementRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_INCOMPLETE">;
   listEvents(accountId: string, serverId: string): Promise<EventRecord[] | "PLAYER_NOT_FOUND">;
   chooseEvent(accountId: string, serverId: string, eventId: string, option: "A" | "B"): Promise<EventChoiceRecord | "PLAYER_NOT_FOUND" | "EVENT_NOT_FOUND" | "EVENT_ALREADY_RESOLVED" | "INVALID_EVENT_OPTION">;
+  listLoans(accountId: string, serverId: string): Promise<LoanCenterRecord | "PLAYER_NOT_FOUND">;
+  applyLoan(accountId: string, serverId: string, loanConfigId: string): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "LOAN_NOT_FOUND" | "CREDIT_NOT_ENOUGH" | "LOAN_ALREADY_ACTIVE">;
+  repayLoan(accountId: string, serverId: string, loanId: string, mode: "scheduled" | "full"): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "LOAN_NOT_FOUND" | "INSUFFICIENT_CASH">;
+  settleLoanPeriod(accountId: string, serverId: string): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "NO_ACTIVE_LOAN">;
+  resolveCrisis(accountId: string, serverId: string, route: "financing" | "cost_cut" | "restructure"): Promise<LoanCenterRecord | "PLAYER_NOT_FOUND" | "CRISIS_NOT_ACTIVE" | "INVALID_CRISIS_ROUTE">;
   disconnect(): Promise<void>;
 };
 
@@ -466,6 +525,133 @@ const toEventRecord = (event: {
   createdAt: event.createdAt.toISOString(),
   resolvedAt: event.resolvedAt?.toISOString() ?? null
 });
+
+const readLoanStatus = (status: string): LoanRecord["status"] =>
+  status === "overdue" || status === "settled" ? status : "active";
+
+const creditRank = (creditRating: string): number => {
+  if (creditRating === "A") {
+    return 3;
+  }
+  if (creditRating === "B") {
+    return 2;
+  }
+  if (creditRating === "C") {
+    return 1;
+  }
+  return 0;
+};
+
+const downgradeCredit = (creditRating: string): string => {
+  if (creditRating === "A") {
+    return "B";
+  }
+  if (creditRating === "B") {
+    return "C";
+  }
+  return "D";
+};
+
+const calculatePrincipalPayment = (loan: { remainingPrincipal: number; remainingMonths: number }): number => {
+  return Math.min(loan.remainingPrincipal, Math.max(1, Math.ceil(loan.remainingPrincipal / Math.max(loan.remainingMonths, 1))));
+};
+
+const toLoanRecord = (loan: {
+  id: string;
+  configId: string;
+  name: string;
+  lender: string;
+  principal: number;
+  remainingPrincipal: number;
+  annualRateBasisPoints: number;
+  termMonths: number;
+  remainingMonths: number;
+  monthlyPayment: number;
+  overduePeriods: number;
+  penaltyAccrued: number;
+  status: string;
+  createdAt: Date;
+  settledAt: Date | null;
+}): LoanRecord => ({
+  id: loan.id,
+  configId: loan.configId,
+  name: loan.name,
+  lender: loan.lender,
+  principal: loan.principal,
+  remainingPrincipal: loan.remainingPrincipal,
+  annualRateBasisPoints: loan.annualRateBasisPoints,
+  termMonths: loan.termMonths,
+  remainingMonths: loan.remainingMonths,
+  monthlyPayment: loan.monthlyPayment,
+  overduePeriods: loan.overduePeriods,
+  penaltyAccrued: loan.penaltyAccrued,
+  status: readLoanStatus(loan.status),
+  createdAt: loan.createdAt.toISOString(),
+  settledAt: loan.settledAt?.toISOString() ?? null
+});
+
+const toLoanCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<LoanCenterRecord> => {
+  const [configs, loans] = await Promise.all([
+    prisma.loanConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.playerLoan.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    })
+  ]);
+  const activeConfigIds = new Set(loans.filter((loan) => loan.status !== "settled").map((loan) => loan.configId));
+  const finance = toCompanyFinanceRecord(profile);
+  const hasOverdueLoan = loans.some((loan) => loan.status === "overdue");
+  const crisisLevel: LoanCenterRecord["crisis"]["level"] =
+    finance.cash < 0 || finance.debtRatioBasisPoints >= 9000
+      ? "bankruptcy"
+      : finance.riskStatus === "资金紧张" || hasOverdueLoan
+        ? "cashflow"
+        : finance.debtRatioBasisPoints >= 6000
+          ? "debt"
+          : "none";
+
+  return {
+    offers: configs.map((config) => {
+      const isCreditEnough = creditRank(profile.creditRating) >= creditRank(config.creditRequired);
+      const hasActiveLoan = activeConfigIds.has(config.id);
+      return {
+        id: config.id,
+        name: config.name,
+        lender: config.lender,
+        principal: config.principal,
+        annualRateBasisPoints: config.annualRateBasisPoints,
+        termMonths: config.termMonths,
+        monthlyPayment: config.monthlyPayment,
+        creditRequired: config.creditRequired,
+        summary: config.summary,
+        isAvailable: isCreditEnough && !hasActiveLoan,
+        lockedReason: !isCreditEnough ? "信用评级不足" : hasActiveLoan ? "同类贷款未结清" : null
+      };
+    }),
+    loans: loans.map(toLoanRecord),
+    finance,
+    crisis: {
+      isActive: crisisLevel !== "none",
+      level: crisisLevel,
+      summary:
+        crisisLevel === "bankruptcy"
+          ? "公司已接近破产保护线，需要立即选择重组或止血路线。"
+          : crisisLevel === "cashflow"
+            ? "现金流进入资金紧张状态，需要补充现金或压缩支出。"
+            : crisisLevel === "debt"
+              ? "负债率偏高，信用和后续融资条件正在承压。"
+              : "现金流和负债处于可控区间。",
+      routes: [
+        { id: "financing", title: "融资谈判", impact: "现金+20万，声望-300，不稀释股权，正式融资留到后续阶段。" },
+        { id: "cost_cut", title: "降本裁撤", impact: "月支出-10万，员工满意度-6，声望-800。" },
+        { id: "restructure", title: "债务重组", impact: "负债-20万，信用降级，声望-1200。" }
+      ]
+    }
+  };
+};
 
 const readTaskType = (type: string): TaskRecord["type"] =>
   type === "daily" || type === "side" ? type : "main";
@@ -1540,6 +1726,290 @@ export const createPrismaGameRepository = (
         followupEventId: settled.followupEvent?.id ?? null
       }
     };
+  },
+
+  async listLoans(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toLoanCenterRecord(prisma, toProfileRecord(profile));
+  },
+
+  async applyLoan(accountId, serverId, loanConfigId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const config = await prisma.loanConfig.findUnique({ where: { id: loanConfigId } });
+    if (config === null) {
+      return "LOAN_NOT_FOUND";
+    }
+    if (creditRank(profile.creditRating) < creditRank(config.creditRequired)) {
+      return "CREDIT_NOT_ENOUGH";
+    }
+
+    const activeLoan = await prisma.playerLoan.findFirst({
+      where: {
+        profileId: profile.id,
+        configId: config.id,
+        status: { not: "settled" }
+      }
+    });
+    if (activeLoan !== null) {
+      return "LOAN_ALREADY_ACTIVE";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const loan = await tx.playerLoan.create({
+        data: {
+          id: randomUUID(),
+          profileId: profile.id,
+          configId: config.id,
+          name: config.name,
+          lender: config.lender,
+          principal: config.principal,
+          remainingPrincipal: config.principal,
+          annualRateBasisPoints: config.annualRateBasisPoints,
+          termMonths: config.termMonths,
+          remainingMonths: config.termMonths,
+          monthlyPayment: config.monthlyPayment
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: config.principal },
+          totalDebt: { increment: config.principal },
+          debtWarning: "中"
+        }
+      });
+      return { loan, profile: updatedProfile };
+    });
+
+    return {
+      loan: toLoanRecord(result.loan),
+      loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: `${config.name} 已放款，现金增加 ${config.principal.toLocaleString("zh-CN")}。`
+    };
+  },
+
+  async repayLoan(accountId, serverId, loanId, mode) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const loan = await prisma.playerLoan.findFirst({
+      where: {
+        id: loanId,
+        profileId: profile.id,
+        status: { not: "settled" }
+      }
+    });
+    if (loan === null) {
+      return "LOAN_NOT_FOUND";
+    }
+
+    const principalPayment = mode === "full" ? loan.remainingPrincipal : calculatePrincipalPayment(loan);
+    const payment = mode === "full" ? loan.remainingPrincipal + loan.penaltyAccrued : loan.monthlyPayment + loan.penaltyAccrued;
+    if (profile.cash < payment) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
+      const remainingMonths = mode === "full" || remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
+      const status = remainingPrincipal === 0 ? "settled" : "active";
+      const updatedLoan = await tx.playerLoan.update({
+        where: { id: loan.id },
+        data: {
+          remainingPrincipal,
+          remainingMonths,
+          penaltyAccrued: 0,
+          overduePeriods: status === "settled" ? loan.overduePeriods : 0,
+          status,
+          settledAt: status === "settled" ? new Date() : null
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: payment },
+          totalDebt: { decrement: Math.min(profile.totalDebt, principalPayment + loan.penaltyAccrued) },
+          debtWarning: remainingPrincipal === 0 ? "低" : profile.debtWarning
+        }
+      });
+      return { loan: updatedLoan, profile: updatedProfile };
+    });
+
+    return {
+      loan: toLoanRecord(result.loan),
+      loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: mode === "full" ? "提前结清完成，后续月供压力解除。" : "本期还款完成，剩余本金和期数已更新。"
+    };
+  },
+
+  async settleLoanPeriod(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const loan = await prisma.playerLoan.findFirst({
+      where: {
+        profileId: profile.id,
+        status: { in: ["active", "overdue"] }
+      },
+      orderBy: [{ overduePeriods: "desc" }, { createdAt: "asc" }]
+    });
+    if (loan === null) {
+      return "NO_ACTIVE_LOAN";
+    }
+
+    if (profile.cash >= loan.monthlyPayment + loan.penaltyAccrued) {
+      const principalPayment = calculatePrincipalPayment(loan);
+      const payment = loan.monthlyPayment + loan.penaltyAccrued;
+      const result = await prisma.$transaction(async (tx) => {
+        const remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
+        const status = remainingPrincipal === 0 ? "settled" : "active";
+        const updatedLoan = await tx.playerLoan.update({
+          where: { id: loan.id },
+          data: {
+            remainingPrincipal,
+            remainingMonths: status === "settled" ? 0 : Math.max(0, loan.remainingMonths - 1),
+            penaltyAccrued: 0,
+            overduePeriods: status === "settled" ? loan.overduePeriods : 0,
+            status,
+            settledAt: status === "settled" ? new Date() : null
+          }
+        });
+        const updatedProfile = await tx.playerProfile.update({
+          where: { id: profile.id },
+          data: {
+            cash: { decrement: payment },
+            totalDebt: { decrement: Math.min(profile.totalDebt, principalPayment + loan.penaltyAccrued) },
+            debtWarning: remainingPrincipal === 0 ? "低" : profile.debtWarning
+          }
+        });
+        return { loan: updatedLoan, profile: updatedProfile };
+      });
+
+      return {
+        loan: toLoanRecord(result.loan),
+        loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
+        result: "本期还款完成，剩余本金和期数已更新。"
+      };
+    }
+
+    const penalty = Math.max(1000, Math.round(loan.monthlyPayment * 0.08));
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedLoan = await tx.playerLoan.update({
+        where: { id: loan.id },
+        data: {
+          status: "overdue",
+          overduePeriods: { increment: 1 },
+          penaltyAccrued: { increment: penalty }
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          totalDebt: { increment: penalty },
+          creditRating: downgradeCredit(profile.creditRating),
+          riskStatus: "资金紧张",
+          debtWarning: "高",
+          pendingEventCount: { increment: 1 }
+        }
+      });
+      return { loan: updatedLoan, profile: updatedProfile };
+    });
+
+    return {
+      loan: toLoanRecord(result.loan),
+      loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: `现金不足，本期逾期并产生罚息 ${penalty.toLocaleString("zh-CN")}。`
+    };
+  },
+
+  async resolveCrisis(accountId, serverId, route) {
+    if (route !== "financing" && route !== "cost_cut" && route !== "restructure") {
+      return "INVALID_CRISIS_ROUTE";
+    }
+
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const center = await toLoanCenterRecord(prisma, toProfileRecord(profile));
+    if (!center.crisis.isActive) {
+      return "CRISIS_NOT_ACTIVE";
+    }
+
+    const updated = await prisma.playerProfile.update({
+      where: { id: profile.id },
+      data:
+        route === "financing"
+          ? {
+              cash: { increment: 200000 },
+              reputation: { decrement: 300 },
+              riskStatus: "预警"
+            }
+          : route === "cost_cut"
+            ? {
+                monthlyExpense: { decrement: Math.min(profile.monthlyExpense, 100000) },
+                employeeSatisfaction: { decrement: 6 },
+                reputation: { decrement: 800 },
+                riskStatus: "预警"
+              }
+            : {
+                totalDebt: { decrement: Math.min(profile.totalDebt, 200000) },
+                creditRating: downgradeCredit(profile.creditRating),
+                reputation: { decrement: 1200 },
+                debtWarning: profile.totalDebt > 400000 ? "中" : "低",
+                riskStatus: "预警"
+              }
+    });
+
+    return toLoanCenterRecord(prisma, toProfileRecord(updated));
   },
 
   async disconnect() {

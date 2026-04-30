@@ -118,6 +118,7 @@ model PlayerProfile {
   employees   PlayerEmployee[]
   projects    PlayerProject[]
   events      PlayerEvent[]
+  loans       PlayerLoan[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -272,6 +273,47 @@ model PlayerEvent {
 
   @@unique([profileId, configId])
   @@index([profileId, status])
+}
+
+model LoanConfig {
+  id        String       @id @db.VarChar(32)
+  name      String       @db.VarChar(48)
+  lender    String       @db.VarChar(32)
+  principal Int
+  annualRateBasisPoints Int
+  termMonths Int
+  monthlyPayment Int
+  creditRequired String  @db.VarChar(8)
+  summary   String       @db.VarChar(180)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  loans     PlayerLoan[]
+
+  @@index([sortOrder])
+}
+
+model PlayerLoan {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  configId  String       @db.VarChar(32)
+  name      String       @db.VarChar(48)
+  lender    String       @db.VarChar(32)
+  principal Int
+  remainingPrincipal Int
+  annualRateBasisPoints Int
+  termMonths Int
+  remainingMonths Int
+  monthlyPayment Int
+  overduePeriods Int      @default(0)
+  penaltyAccrued Int      @default(0)
+  status    String       @default("active") @db.VarChar(16)
+  createdAt DateTime     @default(now())
+  settledAt DateTime?
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    LoanConfig    @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, status])
+  @@index([configId])
 }
 
 model CompanyFinanceReport {

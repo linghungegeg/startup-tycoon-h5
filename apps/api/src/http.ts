@@ -627,6 +627,155 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/finance/loans") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const loans = await repository.listLoans(account.id, serverId);
+      if (loans === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(loans, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/loans/apply") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const loanConfigId = isRecord(body) && typeof body.loanConfigId === "string" ? body.loanConfigId.trim() : "";
+      if (serverId === undefined || loanConfigId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and loanConfigId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.applyLoan(account.id, serverId, loanConfigId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "LOAN_NOT_FOUND") {
+        sendJson(response, 404, failure("LOAN_NOT_FOUND", "Loan product not found.", traceId));
+        return;
+      }
+      if (result === "CREDIT_NOT_ENOUGH") {
+        sendJson(response, 409, failure("CREDIT_NOT_ENOUGH", "Credit rating is not enough for this loan.", traceId));
+        return;
+      }
+      if (result === "LOAN_ALREADY_ACTIVE") {
+        sendJson(response, 409, failure("LOAN_ALREADY_ACTIVE", "This loan is already active.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
+    const loanRepayMatch = /^\/finance\/loans\/([^/]+)\/repay$/.exec(url.pathname);
+    if (request.method === "POST" && loanRepayMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const loanId = loanRepayMatch[1];
+      const mode = isRecord(body) && body.mode === "full" ? "full" : "scheduled";
+      if (serverId === undefined || loanId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and loanId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.repayLoan(account.id, serverId, decodeURIComponent(loanId), mode);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "LOAN_NOT_FOUND") {
+        sendJson(response, 404, failure("LOAN_NOT_FOUND", "Loan not found.", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough to repay this loan.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/loans/settle-period") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleLoanPeriod(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "NO_ACTIVE_LOAN") {
+        sendJson(response, 409, failure("NO_ACTIVE_LOAN", "No active loan is available.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/crisis/resolve") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const route = isRecord(body) && typeof body.route === "string" ? body.route : "";
+      if (serverId === undefined || route === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and route are required.", traceId));
+        return;
+      }
+      if (route !== "financing" && route !== "cost_cut" && route !== "restructure") {
+        sendJson(response, 400, failure("INVALID_CRISIS_ROUTE", "Crisis route is invalid.", traceId));
+        return;
+      }
+
+      const result = await repository.resolveCrisis(account.id, serverId, route);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CRISIS_NOT_ACTIVE") {
+        sendJson(response, 409, failure("CRISIS_NOT_ACTIVE", "Crisis is not active.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/employees") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

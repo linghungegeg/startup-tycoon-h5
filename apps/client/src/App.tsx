@@ -203,6 +203,60 @@ type EventChoiceResult = {
   };
 };
 
+type LoanOffer = {
+  id: string;
+  name: string;
+  lender: string;
+  principal: number;
+  annualRateBasisPoints: number;
+  termMonths: number;
+  monthlyPayment: number;
+  creditRequired: string;
+  summary: string;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+type PlayerLoan = {
+  id: string;
+  configId: string;
+  name: string;
+  lender: string;
+  principal: number;
+  remainingPrincipal: number;
+  annualRateBasisPoints: number;
+  termMonths: number;
+  remainingMonths: number;
+  monthlyPayment: number;
+  overduePeriods: number;
+  penaltyAccrued: number;
+  status: "active" | "overdue" | "settled";
+  createdAt: string;
+  settledAt: string | null;
+};
+
+type LoanCenter = {
+  offers: LoanOffer[];
+  loans: PlayerLoan[];
+  finance: CompanyFinance;
+  crisis: {
+    isActive: boolean;
+    level: "none" | "cashflow" | "debt" | "bankruptcy";
+    summary: string;
+    routes: Array<{
+      id: "financing" | "cost_cut" | "restructure";
+      title: string;
+      impact: string;
+    }>;
+  };
+};
+
+type LoanActionResult = {
+  loan: PlayerLoan | null;
+  loanCenter: LoanCenter;
+  result: string;
+};
+
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
@@ -543,6 +597,11 @@ function App() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventError, setEventError] = useState("");
   const [eventNotice, setEventNotice] = useState("");
+  const [loanCenter, setLoanCenter] = useState<LoanCenter | null>(null);
+  const [selectedLoanOfferId, setSelectedLoanOfferId] = useState("");
+  const [selectedLoanId, setSelectedLoanId] = useState("");
+  const [loanError, setLoanError] = useState("");
+  const [loanNotice, setLoanNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -605,6 +664,18 @@ function App() {
     [events, selectedEventId]
   );
   const pendingEvents = useMemo(() => events.filter((item) => item.status === "pending"), [events]);
+  const selectedLoanOffer = useMemo(
+    () => loanCenter?.offers.find((item) => item.id === selectedLoanOfferId) ?? loanCenter?.offers[0],
+    [loanCenter?.offers, selectedLoanOfferId]
+  );
+  const activeLoans = useMemo(
+    () => loanCenter?.loans.filter((item) => item.status !== "settled") ?? [],
+    [loanCenter?.loans]
+  );
+  const selectedLoan = useMemo(
+    () => activeLoans.find((item) => item.id === selectedLoanId) ?? activeLoans[0],
+    [activeLoans, selectedLoanId]
+  );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
@@ -675,6 +746,50 @@ function App() {
     }
 
     setFinanceError(response.error.message);
+  };
+
+  const applyLoanCenter = (nextLoanCenter: LoanCenter): void => {
+    setLoanCenter(nextLoanCenter);
+    setSelectedLoanOfferId((currentId) => nextLoanCenter.offers.find((item) => item.id === currentId)?.id ?? nextLoanCenter.offers[0]?.id ?? "");
+    const active = nextLoanCenter.loans.filter((item) => item.status !== "settled");
+    setSelectedLoanId((currentId) => active.find((item) => item.id === currentId)?.id ?? active[0]?.id ?? "");
+    setCompanyFinance(nextLoanCenter.finance);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            cash: nextLoanCenter.finance.cash,
+            monthlyIncome: nextLoanCenter.finance.monthlyIncome,
+            monthlyExpense: nextLoanCenter.finance.monthlyExpense,
+            valuation: nextLoanCenter.finance.valuation,
+            totalDebt: nextLoanCenter.finance.totalDebt,
+            creditRating: nextLoanCenter.finance.creditRating,
+            reputation: nextLoanCenter.finance.brandReputation,
+            employeeSatisfaction: nextLoanCenter.finance.employeeSatisfaction,
+            customerSatisfaction: nextLoanCenter.finance.customerSatisfaction,
+            financeMonth: nextLoanCenter.finance.financeMonth,
+            operatingDay: nextLoanCenter.finance.operatingDay,
+            riskStatus: nextLoanCenter.finance.riskStatus,
+            debtWarning: nextLoanCenter.finance.debtRatioBasisPoints >= 6000 ? "高" : nextLoanCenter.finance.totalDebt > 0 ? "中" : "低"
+          }
+    );
+  };
+
+  const loadLoanCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<LoanCenter>(
+      `/finance/loans?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyLoanCenter(response.data);
+      setLoanError("");
+      return;
+    }
+
+    setLoanError(response.error.message);
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -804,6 +919,7 @@ function App() {
     void loadTasks(account.token, selectedServer.id);
     void loadEvents(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
+    void loadLoanCenter(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -997,6 +1113,12 @@ function App() {
     if (eventEntryNames.has(panelName)) {
       setActivePanel(null);
       setActiveNav("事件");
+      return;
+    }
+
+    if (panelName === "贷款") {
+      setActivePanel(null);
+      setActiveNav("贷款");
       return;
     }
 
@@ -1365,6 +1487,56 @@ function App() {
     setEventError(response.error.message);
   };
 
+  const runLoanAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
+    if (!account || !selectedServer) {
+      setLoanError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<LoanActionResult>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      applyLoanCenter(response.data.loanCenter);
+      setLoanNotice(response.data.result);
+      setLoanError("");
+      return;
+    }
+
+    setLoanError(response.error.message);
+  };
+
+  const resolveCrisis = async (route: "financing" | "cost_cut" | "restructure"): Promise<void> => {
+    if (!account || !selectedServer) {
+      setLoanError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<LoanCenter>(
+      "/finance/crisis/resolve",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, route })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      applyLoanCenter(response.data);
+      setLoanNotice("危机处理方案已执行，公司状态已更新。");
+      setLoanError("");
+      return;
+    }
+
+    setLoanError(response.error.message);
+  };
+
   const guideTask = (task: TaskItem): void => {
     if (task.isClaimable) {
       void claimTask(task.id);
@@ -1726,6 +1898,123 @@ function App() {
                       <p>接下第一单项目，分配员工后推进交付，结算结果会影响现金、声誉和客户满意度。</p>
                       <button type="button" onClick={() => void startProject()}>接项目</button>
                     </div>
+                  )}
+                </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "贷款" && (
+            <section className="loan-screen" aria-label="贷款与危机">
+              <header className="loan-header">
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <div>
+                  <strong>贷款</strong>
+                  <span>信用 {loanCenter?.finance.creditRating ?? profile.creditRating} · 负债 {loanCenter ? `${(loanCenter.finance.debtRatioBasisPoints / 100).toFixed(1)}%` : "读取中"}</span>
+                </div>
+                <button type="button" onClick={() => account && selectedServer && void loadLoanCenter(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <section className="loan-summary" aria-label="负债概览">
+                <span>总负债 {compactNumber(loanCenter?.finance.totalDebt ?? profile.totalDebt)}</span>
+                <span>本期应还 {compactNumber(activeLoans.reduce((total, item) => total + item.monthlyPayment + item.penaltyAccrued, 0))}</span>
+                <span>{loanCenter?.crisis.isActive ? "危机中" : "可控"}</span>
+              </section>
+              {loanNotice && <p className="loan-notice">{loanNotice}</p>}
+              {loanError && <p className="loan-error">{loanError}</p>}
+
+              <section className="loan-layout">
+                <div className="loan-list" aria-label="贷款产品">
+                  {(loanCenter?.offers ?? []).map((offer) => (
+                    <button
+                      className={offer.id === selectedLoanOffer?.id ? "selected" : undefined}
+                      key={offer.id}
+                      type="button"
+                      onClick={() => setSelectedLoanOfferId(offer.id)}
+                    >
+                      <strong>{offer.name}</strong>
+                      <em>{offer.lender} · 年化 {(offer.annualRateBasisPoints / 100).toFixed(1)}%</em>
+                      <span>{formatWan(offer.principal)} / {offer.termMonths}期 / 月供{formatWan(offer.monthlyPayment)}</span>
+                      <small>{offer.lockedReason ?? "可申请"}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="loan-detail" aria-label="贷款详情">
+                  {selectedLoanOffer ? (
+                    <>
+                      <div className="loan-title">
+                        <span>贷</span>
+                        <strong>{selectedLoanOffer.name}</strong>
+                        <em>{selectedLoanOffer.summary}</em>
+                      </div>
+
+                      <dl className="loan-stats">
+                        <div>
+                          <dt>到账</dt>
+                          <dd>{compactNumber(selectedLoanOffer.principal)}</dd>
+                        </div>
+                        <div>
+                          <dt>月供</dt>
+                          <dd>{compactNumber(selectedLoanOffer.monthlyPayment)}</dd>
+                        </div>
+                        <div>
+                          <dt>期限</dt>
+                          <dd>{selectedLoanOffer.termMonths}期</dd>
+                        </div>
+                        <div>
+                          <dt>信用</dt>
+                          <dd>{selectedLoanOffer.creditRequired}级</dd>
+                        </div>
+                      </dl>
+
+                      {selectedLoan && (
+                        <section className="loan-active">
+                          <strong>{selectedLoan.name}</strong>
+                          <span>剩余 {compactNumber(selectedLoan.remainingPrincipal)} · {selectedLoan.remainingMonths}期 · {selectedLoan.status === "overdue" ? `逾期${selectedLoan.overduePeriods}期` : "正常"}</span>
+                          <small>罚息 {compactNumber(selectedLoan.penaltyAccrued)}</small>
+                        </section>
+                      )}
+
+                      {loanCenter?.crisis.isActive && (
+                        <section className="loan-crisis">
+                          <strong>{loanCenter.crisis.summary}</strong>
+                          {loanCenter.crisis.routes.map((route) => (
+                            <button key={route.id} type="button" onClick={() => void resolveCrisis(route.id)}>
+                              <span>{route.title}</span>
+                              <small>{route.impact}</small>
+                            </button>
+                          ))}
+                        </section>
+                      )}
+
+                      <div className="loan-actions">
+                        <button
+                          type="button"
+                          disabled={!selectedLoanOffer.isAvailable}
+                          onClick={() => void runLoanAction("/finance/loans/apply", { loanConfigId: selectedLoanOffer.id })}
+                        >
+                          申请
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedLoan}
+                          onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "scheduled" })}
+                        >
+                          还本期
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedLoan}
+                          onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "full" })}
+                        >
+                          结清
+                        </button>
+                        <button type="button" onClick={() => void runLoanAction("/finance/loans/settle-period")}>到期</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="loan-empty">贷款配置读取中，请确认 API 服务已启动。</div>
                   )}
                 </article>
               </section>
