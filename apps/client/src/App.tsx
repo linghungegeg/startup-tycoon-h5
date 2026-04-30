@@ -78,6 +78,19 @@ type Employee = {
   specialty: string;
 };
 
+type BusinessProject = {
+  id: string;
+  name: string;
+  category: string;
+  stage: number;
+  progress: number;
+  investment: string;
+  revenue: number;
+  ownerId: string;
+  risk: "低" | "中" | "高";
+  summary: string;
+};
+
 const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
 const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
 const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
@@ -159,6 +172,68 @@ const initialEmployees: Employee[] = [
     negotiation: 70,
     execution: 88,
     specialty: "强化产品研发，提高长期估值。"
+  }
+];
+const initialProjects: BusinessProject[] = [
+  {
+    id: "smart-office",
+    name: "智慧办公 SaaS",
+    category: "产品研发",
+    stage: 2,
+    progress: 58,
+    investment: "420万",
+    revenue: 860,
+    ownerId: "jiang-yan",
+    risk: "中",
+    summary: "面向中小企业的办公协同产品，适合持续投入研发资源。"
+  },
+  {
+    id: "city-brand",
+    name: "城市品牌投放",
+    category: "市场营销",
+    stage: 3,
+    progress: 72,
+    investment: "310万",
+    revenue: 690,
+    ownerId: "lin-xia",
+    risk: "低",
+    summary: "提升公司曝光和项目订单，短期收益稳定。"
+  },
+  {
+    id: "finance-round",
+    name: "A 轮融资计划",
+    category: "投资合作",
+    stage: 1,
+    progress: 45,
+    investment: "180万",
+    revenue: 520,
+    ownerId: "chen-mo",
+    risk: "高",
+    summary: "争取外部资本进入，成功后可大幅提升公司估值。"
+  },
+  {
+    id: "delivery-center",
+    name: "交付中心扩容",
+    category: "运营建设",
+    stage: 2,
+    progress: 34,
+    investment: "260万",
+    revenue: 610,
+    ownerId: "zhou-hang",
+    risk: "中",
+    summary: "扩充项目交付能力，降低后续大客户订单流失。"
+  },
+  {
+    id: "hr-system",
+    name: "人才梯队计划",
+    category: "组织管理",
+    stage: 1,
+    progress: 63,
+    investment: "120万",
+    revenue: 380,
+    ownerId: "su-qing",
+    risk: "低",
+    summary: "优化招聘和培养机制，提高员工忠诚与成长效率。"
   }
 ];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
@@ -378,6 +453,8 @@ function App() {
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
+  const [projects, setProjects] = useState<BusinessProject[]>(initialProjects);
+  const [selectedProjectId, setSelectedProjectId] = useState(initialProjects[0]?.id ?? "");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -398,6 +475,14 @@ function App() {
         0
       ),
     [employees]
+  );
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
+    [projects, selectedProjectId]
+  );
+  const totalProjectRevenue = useMemo(
+    () => projects.reduce((total, project) => total + project.revenue, 0),
+    [projects]
   );
 
   const enterGame = (
@@ -686,6 +771,30 @@ function App() {
     );
   };
 
+  const advanceProject = (): void => {
+    if (!selectedProject) {
+      return;
+    }
+
+    setProjects((currentProjects) =>
+      currentProjects.map((project) => {
+        if (project.id !== selectedProject.id) {
+          return project;
+        }
+
+        const nextProgress = project.progress + 18;
+        const isStageComplete = nextProgress >= 100;
+
+        return {
+          ...project,
+          stage: isStageComplete ? project.stage + 1 : project.stage,
+          progress: isStageComplete ? nextProgress - 100 : nextProgress,
+          revenue: project.revenue + (isStageComplete ? 180 : 60)
+        };
+      })
+    );
+  };
+
   const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
 
   if (isRestoring) {
@@ -785,7 +894,7 @@ function App() {
                   setActiveNav(item);
                   if (item === "首页") {
                     setActivePanel(null);
-                  } else if (item === "员工") {
+                  } else if (item === "员工" || item === "项目") {
                     setActivePanel(null);
                   } else {
                     openHomePanel(item);
@@ -874,6 +983,88 @@ function App() {
                     <button type="button" onClick={() => openHomePanel("员工")}>招募</button>
                     <button type="button" onClick={() => openHomePanel("员工")}>股权</button>
                     <button type="button" onClick={() => openHomePanel("员工")}>解雇</button>
+                  </div>
+                </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "项目" && selectedProject && (
+            <section className="project-screen" aria-label="项目系统">
+              <header className="project-header">
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <div>
+                  <strong>项目</strong>
+                  <span>预计月收益 {totalProjectRevenue.toLocaleString("zh-CN")}万</span>
+                </div>
+                <button type="button" onClick={() => openHomePanel("项目")}>规则</button>
+              </header>
+
+              <section className="project-summary" aria-label="项目概览">
+                <span>在研 {projects.length}</span>
+                <span>最高阶段 {Math.max(...projects.map((project) => project.stage))}</span>
+                <span>推进任务 3/5</span>
+              </section>
+
+              <section className="project-layout">
+                <div className="project-list" aria-label="项目列表">
+                  {projects.map((project) => (
+                    <button
+                      className={project.id === selectedProject.id ? "selected" : undefined}
+                      key={project.id}
+                      type="button"
+                      onClick={() => setSelectedProjectId(project.id)}
+                    >
+                      <strong>{project.name}</strong>
+                      <em>{project.category} · 阶段 {project.stage}</em>
+                      <span>
+                        <i style={{ width: `${project.progress}%` }} />
+                      </span>
+                      <small>预计 {project.revenue}万/月</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="project-detail" aria-label="项目详情">
+                  <div className="project-title">
+                    <span>{selectedProject.category.slice(0, 2)}</span>
+                    <strong>{selectedProject.name}</strong>
+                    <em>阶段 {selectedProject.stage} · 风险 {selectedProject.risk}</em>
+                  </div>
+
+                  <dl className="project-stats">
+                    <div>
+                      <dt>进度</dt>
+                      <dd>{selectedProject.progress}%</dd>
+                    </div>
+                    <div>
+                      <dt>投入</dt>
+                      <dd>{selectedProject.investment}</dd>
+                    </div>
+                    <div>
+                      <dt>收益</dt>
+                      <dd>{selectedProject.revenue}万/月</dd>
+                    </div>
+                    <div>
+                      <dt>负责人</dt>
+                      <dd>{employees.find((employee) => employee.id === selectedProject.ownerId)?.name ?? "待分配"}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="project-progress" aria-label="项目进度">
+                    <span>
+                      <i style={{ width: `${selectedProject.progress}%` }} />
+                    </span>
+                    <strong>{selectedProject.progress}%</strong>
+                  </div>
+
+                  <p>{selectedProject.summary}</p>
+
+                  <div className="project-actions">
+                    <button type="button" onClick={advanceProject}>推进</button>
+                    <button type="button" onClick={() => openHomePanel("项目")}>立项</button>
+                    <button type="button" onClick={() => openHomePanel("投资合作")}>加投</button>
+                    <button type="button" onClick={() => openHomePanel("项目")}>结算</button>
                   </div>
                 </article>
               </section>
