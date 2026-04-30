@@ -2535,7 +2535,7 @@ function App() {
                         <button type="button" onClick={() => void advanceProject()} disabled={selectedProject.status !== "active"}>推进</button>
                         <button type="button" onClick={() => void startProject()}>接项目</button>
                         <button type="button" onClick={() => void settleProject()} disabled={selectedProject.status !== "ready"}>结算</button>
-                        <button type="button" onClick={() => activeEmployees[0] && void assignProjectEmployee(activeEmployees[0].id)} disabled={activeEmployees.length === 0 || selectedProject.status === "settled" || selectedProject.status === "failed"}>派遣</button>
+                        <button type="button" onClick={() => selectedProject.assignedEmployeeId && void assignProjectEmployee(selectedProject.assignedEmployeeId)} disabled={selectedProject.assignedEmployeeId === null || selectedProject.status === "settled" || selectedProject.status === "failed"}>派遣</button>
                       </div>
                     </>
                   ) : (
