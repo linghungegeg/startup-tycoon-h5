@@ -257,6 +257,54 @@ type LoanActionResult = {
   result: string;
 };
 
+type FundingOffer = {
+  id: string;
+  roundName: string;
+  investorName: string;
+  focus: string;
+  amount: number;
+  preMoneyValuation: number;
+  postMoneyValuation: number;
+  equityBasisPoints: number;
+  successRate: number;
+  debtToleranceBasisPoints: number;
+  boardPressure: number;
+  term: string;
+  summary: string;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+type PlayerFunding = {
+  id: string;
+  investorId: string;
+  roundName: string;
+  investorName: string;
+  amount: number;
+  preMoneyValuation: number;
+  postMoneyValuation: number;
+  equityBasisPoints: number;
+  successRate: number;
+  boardPressure: number;
+  term: string;
+  status: "pending" | "funded" | "failed";
+  resultSummary: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+type FundingCenter = {
+  offers: FundingOffer[];
+  fundings: PlayerFunding[];
+  finance: CompanyFinance;
+};
+
+type FundingActionResult = {
+  funding: PlayerFunding;
+  fundingCenter: FundingCenter;
+  result: string;
+};
+
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
@@ -602,6 +650,11 @@ function App() {
   const [selectedLoanId, setSelectedLoanId] = useState("");
   const [loanError, setLoanError] = useState("");
   const [loanNotice, setLoanNotice] = useState("");
+  const [fundingCenter, setFundingCenter] = useState<FundingCenter | null>(null);
+  const [selectedFundingOfferId, setSelectedFundingOfferId] = useState("");
+  const [selectedFundingId, setSelectedFundingId] = useState("");
+  const [fundingError, setFundingError] = useState("");
+  const [fundingNotice, setFundingNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -675,6 +728,18 @@ function App() {
   const selectedLoan = useMemo(
     () => activeLoans.find((item) => item.id === selectedLoanId) ?? activeLoans[0],
     [activeLoans, selectedLoanId]
+  );
+  const selectedFundingOffer = useMemo(
+    () => fundingCenter?.offers.find((item) => item.id === selectedFundingOfferId) ?? fundingCenter?.offers[0],
+    [fundingCenter?.offers, selectedFundingOfferId]
+  );
+  const pendingFundings = useMemo(
+    () => fundingCenter?.fundings.filter((item) => item.status === "pending") ?? [],
+    [fundingCenter?.fundings]
+  );
+  const selectedFunding = useMemo(
+    () => pendingFundings.find((item) => item.id === selectedFundingId) ?? pendingFundings[0],
+    [pendingFundings, selectedFundingId]
   );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
@@ -776,6 +841,35 @@ function App() {
     );
   };
 
+  const applyFundingCenter = (nextFundingCenter: FundingCenter): void => {
+    setFundingCenter(nextFundingCenter);
+    setSelectedFundingOfferId((currentId) => nextFundingCenter.offers.find((item) => item.id === currentId)?.id ?? nextFundingCenter.offers[0]?.id ?? "");
+    const pending = nextFundingCenter.fundings.filter((item) => item.status === "pending");
+    setSelectedFundingId((currentId) => pending.find((item) => item.id === currentId)?.id ?? pending[0]?.id ?? "");
+    setCompanyFinance(nextFundingCenter.finance);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            cash: nextFundingCenter.finance.cash,
+            monthlyIncome: nextFundingCenter.finance.monthlyIncome,
+            monthlyExpense: nextFundingCenter.finance.monthlyExpense,
+            valuation: nextFundingCenter.finance.valuation,
+            founderEquityBasisPoints: nextFundingCenter.finance.founderEquityBasisPoints,
+            totalDebt: nextFundingCenter.finance.totalDebt,
+            creditRating: nextFundingCenter.finance.creditRating,
+            reputation: nextFundingCenter.finance.brandReputation,
+            employeeSatisfaction: nextFundingCenter.finance.employeeSatisfaction,
+            customerSatisfaction: nextFundingCenter.finance.customerSatisfaction,
+            financeMonth: nextFundingCenter.finance.financeMonth,
+            operatingDay: nextFundingCenter.finance.operatingDay,
+            riskStatus: nextFundingCenter.finance.riskStatus,
+            debtWarning: nextFundingCenter.finance.debtRatioBasisPoints >= 6000 ? "高" : nextFundingCenter.finance.totalDebt > 0 ? "中" : "低"
+          }
+    );
+  };
+
   const loadLoanCenter = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<LoanCenter>(
       `/finance/loans?serverId=${encodeURIComponent(nextServerId)}`,
@@ -790,6 +884,22 @@ function App() {
     }
 
     setLoanError(response.error.message);
+  };
+
+  const loadFundingCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<FundingCenter>(
+      `/finance/fundings?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyFundingCenter(response.data);
+      setFundingError("");
+      return;
+    }
+
+    setFundingError(response.error.message);
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -920,6 +1030,7 @@ function App() {
     void loadEvents(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
     void loadLoanCenter(account.token, selectedServer.id);
+    void loadFundingCenter(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -1116,9 +1227,9 @@ function App() {
       return;
     }
 
-    if (panelName === "贷款") {
+    if (panelName === "贷款" || panelName === "融资") {
       setActivePanel(null);
-      setActiveNav("贷款");
+      setActiveNav(panelName);
       return;
     }
 
@@ -1512,6 +1623,31 @@ function App() {
     setLoanError(response.error.message);
   };
 
+  const runFundingAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
+    if (!account || !selectedServer) {
+      setFundingError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<FundingActionResult>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      applyFundingCenter(response.data.fundingCenter);
+      setFundingNotice(response.data.result);
+      setFundingError("");
+      return;
+    }
+
+    setFundingError(response.error.message);
+  };
+
   const resolveCrisis = async (route: "financing" | "cost_cut" | "restructure"): Promise<void> => {
     if (!account || !selectedServer) {
       setLoanError("账号或区服状态缺失，请重新登录。");
@@ -1898,6 +2034,117 @@ function App() {
                       <p>接下第一单项目，分配员工后推进交付，结算结果会影响现金、声誉和客户满意度。</p>
                       <button type="button" onClick={() => void startProject()}>接项目</button>
                     </div>
+                  )}
+                </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "融资" && (
+            <section className="funding-screen" aria-label="融资路演">
+              <header className="funding-header">
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <div>
+                  <strong>融资</strong>
+                  <span>估值 {compactNumber(fundingCenter?.finance.valuation ?? profile.valuation)} · 股权 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) / 100).toFixed(1)}%</span>
+                </div>
+                <button type="button" onClick={() => account && selectedServer && void loadFundingCenter(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <section className="funding-summary" aria-label="融资概览">
+                <span>现金 {compactNumber(fundingCenter?.finance.cash ?? profile.cash)}</span>
+                <span>负债 {(fundingCenter ? fundingCenter.finance.debtRatioBasisPoints / 100 : 0).toFixed(1)}%</span>
+                <span>待谈 {pendingFundings.length}</span>
+              </section>
+              {fundingNotice && <p className="funding-notice">{fundingNotice}</p>}
+              {fundingError && <p className="funding-error">{fundingError}</p>}
+
+              <section className="funding-layout">
+                <div className="funding-list" aria-label="投资人列表">
+                  {(fundingCenter?.offers ?? []).map((offer) => (
+                    <button
+                      className={offer.id === selectedFundingOffer?.id ? "selected" : undefined}
+                      key={offer.id}
+                      type="button"
+                      onClick={() => setSelectedFundingOfferId(offer.id)}
+                    >
+                      <strong>{offer.investorName}</strong>
+                      <em>{offer.roundName} · {offer.focus}</em>
+                      <span>{formatWan(offer.amount)} / 稀释{(offer.equityBasisPoints / 100).toFixed(1)}% / 成功{offer.successRate}%</span>
+                      <small>{offer.lockedReason ?? "可路演"}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="funding-detail" aria-label="融资详情">
+                  {selectedFundingOffer ? (
+                    <>
+                      <div className="funding-title">
+                        <span>融</span>
+                        <strong>{selectedFundingOffer.investorName}</strong>
+                        <em>{selectedFundingOffer.summary}</em>
+                      </div>
+
+                      <dl className="funding-stats">
+                        <div>
+                          <dt>到账</dt>
+                          <dd>{compactNumber(selectedFundingOffer.amount)}</dd>
+                        </div>
+                        <div>
+                          <dt>投前</dt>
+                          <dd>{compactNumber(selectedFundingOffer.preMoneyValuation)}</dd>
+                        </div>
+                        <div>
+                          <dt>投后</dt>
+                          <dd>{compactNumber(selectedFundingOffer.postMoneyValuation)}</dd>
+                        </div>
+                        <div>
+                          <dt>稀释</dt>
+                          <dd>{(selectedFundingOffer.equityBasisPoints / 100).toFixed(1)}%</dd>
+                        </div>
+                        <div>
+                          <dt>成功率</dt>
+                          <dd>{selectedFundingOffer.successRate}%</dd>
+                        </div>
+                        <div>
+                          <dt>董事会</dt>
+                          <dd>{selectedFundingOffer.boardPressure}</dd>
+                        </div>
+                      </dl>
+
+                      <section className="funding-active">
+                        <strong>投资条款</strong>
+                        <span>{selectedFundingOffer.term}</span>
+                        <small>接受后创始人股权降至 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) - selectedFundingOffer.equityBasisPoints) / 100}%</small>
+                      </section>
+
+                      {selectedFunding && (
+                        <section className="funding-active">
+                          <strong>{selectedFunding.investorName}</strong>
+                          <span>{selectedFunding.roundName} 正在谈判，成功率 {selectedFunding.successRate}%。</span>
+                          <small>{selectedFunding.term}</small>
+                        </section>
+                      )}
+
+                      <div className="funding-actions">
+                        <button
+                          type="button"
+                          disabled={!selectedFundingOffer.isAvailable}
+                          onClick={() => void runFundingAction("/finance/fundings/start", { investorId: selectedFundingOffer.id })}
+                        >
+                          发起路演
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedFunding}
+                          onClick={() => selectedFunding && void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFunding.id)}/settle`)}
+                        >
+                          确认结果
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="funding-empty">投资人配置读取中，请确认 API 服务已启动。</div>
                   )}
                 </article>
               </section>

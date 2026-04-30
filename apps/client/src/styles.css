@@ -2451,6 +2451,281 @@ input {
   align-self: end;
 }
 
+.funding-screen {
+  position: absolute;
+  inset: 8.8% 2.4% 9.8%;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 2%;
+  padding: 2.8%;
+  border: 1px solid rgba(246, 204, 116, 0.74);
+  border-radius: 8px;
+  color: #fff1c9;
+  background:
+    linear-gradient(180deg, rgba(25, 36, 47, 0.96), rgba(8, 15, 24, 0.94)),
+    rgba(7, 13, 23, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 16px 38px rgba(0, 0, 0, 0.46);
+}
+
+.funding-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20% 1fr 20%;
+  align-items: center;
+  gap: 2%;
+  min-height: 7%;
+}
+
+.funding-header button,
+.funding-list button,
+.funding-actions button {
+  position: static;
+}
+
+.funding-header button,
+.funding-actions button {
+  min-height: 34px;
+  border-radius: 5px;
+  color: #58370f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.5vw, 16px);
+  font-weight: 900;
+}
+
+.funding-actions button:disabled {
+  opacity: 0.5;
+}
+
+.funding-header div {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.funding-header strong {
+  color: #ffd873;
+  font-size: clamp(23px, 6vw, 32px);
+  font-weight: 900;
+}
+
+.funding-header span {
+  color: #d8c9a8;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.funding-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2%;
+}
+
+.funding-summary span {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 5px;
+  color: #ffe5a9;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(10px, 2.9vw, 14px);
+  font-weight: 900;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funding-notice,
+.funding-error {
+  min-height: 24px;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.funding-notice {
+  color: #eaffd2;
+  background: rgba(41, 105, 57, 0.38);
+}
+
+.funding-error {
+  color: #ffd7c6;
+  background: rgba(138, 47, 31, 0.42);
+}
+
+.funding-layout {
+  display: grid;
+  grid-template-columns: 42% 1fr;
+  gap: 2.4%;
+  min-height: 0;
+}
+
+.funding-list {
+  display: grid;
+  align-content: start;
+  gap: 2%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2%;
+}
+
+.funding-list button {
+  display: grid;
+  gap: 5px;
+  min-height: 108px;
+  border-radius: 6px;
+  padding: 8px;
+  text-align: left;
+}
+
+.funding-list button.selected {
+  border-color: rgba(255, 218, 126, 0.95);
+  background:
+    linear-gradient(180deg, rgba(55, 111, 103, 0.9), rgba(12, 32, 39, 0.92)),
+    rgba(11, 27, 48, 0.92);
+}
+
+.funding-list strong,
+.funding-list em,
+.funding-list span,
+.funding-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funding-list strong {
+  color: #fff6d8;
+  font-size: clamp(13px, 3.6vw, 17px);
+  font-weight: 900;
+}
+
+.funding-list em,
+.funding-list span,
+.funding-list small {
+  color: #d8c9a8;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.funding-detail {
+  display: grid;
+  grid-template-rows: auto auto auto auto 1fr;
+  gap: 3%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 6px;
+  padding: 3%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.funding-title {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4% 2%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+}
+
+.funding-title span {
+  display: grid;
+  width: min(20vw, 78px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid rgba(255, 218, 126, 0.88);
+  border-radius: 50%;
+  color: #07172a;
+  background: radial-gradient(circle at 34% 24%, #fff4c8, #6fbca6 72%);
+  font-size: clamp(22px, 6vw, 34px);
+  font-weight: 900;
+}
+
+.funding-title strong {
+  color: #fff6d8;
+  font-size: clamp(17px, 4.8vw, 24px);
+  font-weight: 900;
+}
+
+.funding-title em {
+  color: #d8c9a8;
+  font-size: clamp(11px, 3vw, 14px);
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.42;
+}
+
+.funding-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.funding-stats div,
+.funding-active {
+  display: grid;
+  gap: 5px;
+  border-radius: 5px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.funding-stats dt,
+.funding-stats dd,
+.funding-active span,
+.funding-active small {
+  overflow: hidden;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.funding-stats dt,
+.funding-active strong {
+  color: #ffe5a9;
+  font-weight: 900;
+}
+
+.funding-stats dd {
+  margin: 0;
+  color: #fff6d8;
+}
+
+.funding-active span,
+.funding-active small {
+  color: #efe2c6;
+}
+
+.funding-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  align-self: end;
+}
+
+.funding-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  border: 1px solid rgba(246, 204, 116, 0.32);
+  border-radius: 6px;
+  color: #d8c9a8;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 800;
+  text-align: center;
+}
+
 .event-screen {
   position: absolute;
   inset: 8.8% 2.4% 9.8%;

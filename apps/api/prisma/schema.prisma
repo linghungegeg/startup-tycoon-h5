@@ -119,6 +119,7 @@ model PlayerProfile {
   projects    PlayerProject[]
   events      PlayerEvent[]
   loans       PlayerLoan[]
+  fundings    PlayerFunding[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -314,6 +315,50 @@ model PlayerLoan {
 
   @@index([profileId, status])
   @@index([configId])
+}
+
+model InvestorConfig {
+  id        String       @id @db.VarChar(32)
+  roundName String      @db.VarChar(16)
+  name      String      @db.VarChar(48)
+  focus     String      @db.VarChar(48)
+  ticketSize Int
+  valuationMultiplierBasisPoints Int
+  equityBasisPoints Int
+  successRateBase Int
+  debtToleranceBasisPoints Int
+  boardPressure Int
+  term      String       @db.VarChar(180)
+  summary   String       @db.VarChar(180)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  fundings  PlayerFunding[]
+
+  @@index([sortOrder])
+}
+
+model PlayerFunding {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  investorId String      @db.VarChar(32)
+  roundName String       @db.VarChar(16)
+  investorName String    @db.VarChar(48)
+  amount    Int
+  preMoneyValuation Int
+  postMoneyValuation Int
+  equityBasisPoints Int
+  successRate Int
+  boardPressure Int
+  term      String        @db.VarChar(180)
+  status    String        @default("pending") @db.VarChar(16)
+  resultSummary String?   @db.VarChar(220)
+  createdAt DateTime      @default(now())
+  resolvedAt DateTime?
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  investor  InvestorConfig @relation(fields: [investorId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, status])
+  @@index([investorId])
 }
 
 model CompanyFinanceReport {

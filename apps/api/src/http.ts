@@ -649,6 +649,97 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/finance/fundings") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const fundings = await repository.listFundings(account.id, serverId);
+      if (fundings === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(fundings, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/fundings/start") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const investorId = isRecord(body) && typeof body.investorId === "string" ? body.investorId.trim() : "";
+      if (serverId === undefined || investorId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and investorId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.startFunding(account.id, serverId, investorId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "INVESTOR_NOT_FOUND") {
+        sendJson(response, 404, failure("INVESTOR_NOT_FOUND", "Investor offer not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_LOCKED") {
+        sendJson(response, 409, failure("FUNDING_LOCKED", "Financing terms are not available.", traceId));
+        return;
+      }
+      if (result === "FUNDING_ALREADY_ACTIVE") {
+        sendJson(response, 409, failure("FUNDING_ALREADY_ACTIVE", "This financing negotiation is already active.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
+    const fundingSettleMatch = /^\/finance\/fundings\/([^/]+)\/settle$/.exec(url.pathname);
+    if (request.method === "POST" && fundingSettleMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const fundingId = fundingSettleMatch[1];
+      if (serverId === undefined || fundingId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and fundingId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleFunding(account.id, serverId, decodeURIComponent(fundingId));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_NOT_FOUND") {
+        sendJson(response, 404, failure("FUNDING_NOT_FOUND", "Financing record not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_ALREADY_SETTLED") {
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/finance/loans/apply") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

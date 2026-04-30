@@ -227,6 +227,78 @@ const eventConfigs = [
     knowledgeTitle: "客户舆情响应",
     riskExplanation: "舆情事件拖延处理会扩大客户不确定感，透明说明通常能降低后续信任成本。",
     sortOrder: 4
+  },
+  {
+    id: "funding-failed-bridge-plan",
+    title: "融资未达成后的替代方案",
+    source: "董事会纪要",
+    channel: "finance",
+    summary: "本轮融资没有完成，董事会要求提交现金流替代方案。",
+    context: "投资人暂缓打款后，公司需要在贷款周转、降本和项目回款之间快速做出选择，避免现金安全垫继续下降。",
+    optionA: "收缩支出并催收短周期项目",
+    optionAResult: "公司进入保守经营，现金流压力缓解，董事会对执行节奏保持关注。",
+    optionACash: 50000,
+    optionAReputation: 200,
+    optionACustomerSatisfaction: 0,
+    optionARiskDelta: -1,
+    optionB: "继续寻找更高估值投资人",
+    optionBResult: "公司保持增长叙事，但现金流和董事会压力继续上升。",
+    optionBCash: -30000,
+    optionBReputation: 500,
+    optionBCustomerSatisfaction: 0,
+    optionBRiskDelta: 1,
+    followupEventId: null,
+    knowledgeTitle: "融资失败后的现金流替代路线",
+    riskExplanation: "融资失败不会直接补充现金，越接近资金紧张区间，越需要用回款、降本或短期授信维持经营安全垫。",
+    sortOrder: 5
+  }
+];
+
+const investorConfigs = [
+  {
+    id: "angel-local-commerce",
+    roundName: "天使轮",
+    name: "启明天使合伙人",
+    focus: "本地商业 SaaS",
+    ticketSize: 800000,
+    valuationMultiplierBasisPoints: 10500,
+    equityBasisPoints: 800,
+    successRateBase: 78,
+    debtToleranceBasisPoints: 4500,
+    boardPressure: 12,
+    term: "每月提交经营简报，重大支出需提前说明。",
+    summary: "偏好现金流清晰的小团队，条款温和，适合早期补充安全垫。",
+    sortOrder: 1
+  },
+  {
+    id: "prea-growth-fund",
+    roundName: "Pre-A",
+    name: "源石成长基金",
+    focus: "项目收入增长",
+    ticketSize: 1500000,
+    valuationMultiplierBasisPoints: 11600,
+    equityBasisPoints: 1200,
+    successRateBase: 62,
+    debtToleranceBasisPoints: 3500,
+    boardPressure: 22,
+    term: "季度增长目标未达成时触发估值复核。",
+    summary: "提供更高金额，但关注增长速度和后续估值兑现。",
+    sortOrder: 2
+  },
+  {
+    id: "strategic-enterprise-capital",
+    roundName: "A轮",
+    name: "华企战略资本",
+    focus: "大客户渠道合作",
+    ticketSize: 2600000,
+    valuationMultiplierBasisPoints: 12800,
+    equityBasisPoints: 1600,
+    successRateBase: 32,
+    debtToleranceBasisPoints: 3000,
+    boardPressure: 34,
+    term: "优先参与大客户渠道合作，保留董事会观察权。",
+    summary: "金额最高，条款更强势，适合公司状态稳定后推进。",
+    sortOrder: 3
   }
 ];
 
@@ -526,6 +598,14 @@ const seed = async (): Promise<void> => {
       where: { id: loanConfig.id },
       update: loanConfig,
       create: loanConfig
+    });
+  }
+
+  for (const investorConfig of investorConfigs) {
+    await prisma.investorConfig.upsert({
+      where: { id: investorConfig.id },
+      update: investorConfig,
+      create: investorConfig
     });
   }
 
