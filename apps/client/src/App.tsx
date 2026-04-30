@@ -170,7 +170,10 @@ type CompanyFinance = {
   riskStatus: "稳健" | "预警" | "资金紧张";
   riskTips: string[];
   reportMonth?: number;
+  income?: number;
+  expense?: number;
   endingCash?: number;
+  createdAt?: string;
 };
 
 type EventOption = {
@@ -312,9 +315,9 @@ type FundingActionResult = {
   result: string;
 };
 
-const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
-const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
-const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
+const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
+const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
+const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
 const eventEntryNames = new Set(["风险", "合同", "邮件"]);
 const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [];
@@ -619,13 +622,33 @@ const clearRememberedAuth = (): void => {
   window.localStorage.removeItem(REMEMBER_AUTH_KEY);
 };
 
-const readApiMessage = async (response: Response): Promise<string> => {
+const readApiFailure = async (response: Response): Promise<ApiFailure> => {
+  const traceId = response.headers.get("x-trace-id") ?? "";
+
   try {
     const body = (await response.json()) as ApiFailure;
-    return body.error?.message ?? "请求失败，请稍后再试。";
+    if (
+      body.success === false &&
+      typeof body.error?.code === "string" &&
+      typeof body.error.message === "string"
+    ) {
+      return {
+        ...body,
+        traceId: body.traceId || traceId
+      };
+    }
   } catch {
-    return "请求失败，请稍后再试。";
+    // Fall back to a generic client-side failure below when the response is not JSON.
   }
+
+  return {
+    success: false,
+    error: {
+      code: String(response.status),
+      message: "请求失败，请稍后再试。"
+    },
+    traceId
+  };
 };
 
 const apiRequest = async <T,>(
@@ -643,14 +666,7 @@ const apiRequest = async <T,>(
   });
 
   if (!response.ok) {
-    return {
-      success: false,
-      error: {
-        code: String(response.status),
-        message: await readApiMessage(response)
-      },
-      traceId: response.headers.get("x-trace-id") ?? ""
-    };
+    return readApiFailure(response);
   }
 
   return (await response.json()) as ApiResponse<T>;
@@ -675,7 +691,7 @@ function App() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
-  const [activeNav, setActiveNav] = useState("公司");
+  const [activeNav, setActiveNav] = useState("首页");
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
@@ -847,6 +863,31 @@ function App() {
     setEventError(response.error.message);
   };
 
+  const applyCompanyFinance = (finance: CompanyFinance): void => {
+    setCompanyFinance(finance);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            cash: finance.cash,
+            monthlyIncome: finance.monthlyIncome,
+            monthlyExpense: finance.monthlyExpense,
+            valuation: finance.valuation,
+            founderEquityBasisPoints: finance.founderEquityBasisPoints,
+            totalDebt: finance.totalDebt,
+            creditRating: finance.creditRating,
+            reputation: finance.brandReputation,
+            employeeSatisfaction: finance.employeeSatisfaction,
+            customerSatisfaction: finance.customerSatisfaction,
+            financeMonth: finance.financeMonth,
+            operatingDay: finance.operatingDay,
+            riskStatus: finance.riskStatus,
+            debtWarning: finance.debtRatioBasisPoints >= 6000 ? "高" : finance.totalDebt > 0 ? "中" : "低"
+          }
+    );
+  };
+
   const loadCompanyFinance = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<CompanyFinance>(
       `/company/status?serverId=${encodeURIComponent(nextServerId)}`,
@@ -855,7 +896,7 @@ function App() {
     );
 
     if (response.success) {
-      setCompanyFinance(response.data);
+      applyCompanyFinance(response.data);
       setFinanceError("");
       return;
     }
@@ -1166,7 +1207,7 @@ function App() {
         return;
       }
 
-      if (existing.error.code !== "404") {
+      if (existing.error.code !== "PLAYER_NOT_FOUND") {
         setError(existing.error.message);
         return;
       }
@@ -1211,7 +1252,7 @@ function App() {
         return;
       }
 
-      if (existing.error.code !== "404") {
+      if (existing.error.code !== "PLAYER_NOT_FOUND") {
         setError(existing.error.message);
         return;
       }
@@ -1387,26 +1428,7 @@ function App() {
     );
 
     if (response.success) {
-      setCompanyFinance(response.data);
-      setProfile((currentProfile) =>
-        currentProfile === null
-          ? currentProfile
-          : {
-              ...currentProfile,
-              cash: response.data.cash,
-              monthlyIncome: response.data.monthlyIncome,
-              monthlyExpense: response.data.monthlyExpense,
-              valuation: response.data.valuation,
-              totalDebt: response.data.totalDebt,
-              creditRating: response.data.creditRating,
-              reputation: response.data.brandReputation,
-              employeeSatisfaction: response.data.employeeSatisfaction,
-              customerSatisfaction: response.data.customerSatisfaction,
-              financeMonth: response.data.financeMonth,
-              operatingDay: response.data.operatingDay,
-              riskStatus: response.data.riskStatus
-            }
-      );
+      applyCompanyFinance(response.data);
       setFinanceError("");
       return;
     }
@@ -1798,7 +1820,7 @@ function App() {
               <b>Lv.{profile.companyLevel}</b>
             </button>
             <div className="resource-grid" aria-label="资源">
-              <button type="button" onClick={() => openHomePanel("创业基金")}>
+              <button type="button" onClick={() => openHomePanel("财务")}>
                 <i>资</i>{compactNumber(profile.cash)} <span>+</span>
               </button>
               <button type="button" onClick={() => openHomePanel("福利中心")}>
@@ -1870,7 +1892,7 @@ function App() {
                 key={item}
                 onClick={() => {
                   setActiveNav(item);
-                  if (item === "公司") {
+                  if (item === "首页") {
                     setActivePanel(null);
                   } else if (item === "员工" || item === "项目") {
                     setActivePanel(null);
@@ -1889,7 +1911,7 @@ function App() {
           {activeNav === "员工" && (
             <section className="employee-screen" aria-label="员工系统">
               <header className="employee-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>员工</strong>
                   <span>团队战力 {employeePower.toLocaleString("zh-CN")}</span>
@@ -1989,7 +2011,7 @@ function App() {
           {activeNav === "项目" && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>项目</strong>
                   <span>预计回款 {compactNumber(totalProjectRevenue)}</span>
@@ -2106,7 +2128,7 @@ function App() {
           {activeNav === "融资" && (
             <section className="funding-screen" aria-label="融资路演">
               <header className="funding-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>融资</strong>
                   <span>估值 {compactNumber(fundingCenter?.finance.valuation ?? profile.valuation)} · 股权 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) / 100).toFixed(1)}%</span>
@@ -2217,7 +2239,7 @@ function App() {
           {activeNav === "贷款" && (
             <section className="loan-screen" aria-label="贷款与危机">
               <header className="loan-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>贷款</strong>
                   <span>信用 {loanCenter?.finance.creditRating ?? profile.creditRating} · 负债 {loanCenter ? `${(loanCenter.finance.debtRatioBasisPoints / 100).toFixed(1)}%` : "读取中"}</span>
@@ -2334,7 +2356,7 @@ function App() {
           {activeNav === "任务" && (
             <section className="task-screen" aria-label="任务系统">
               <header className="task-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>任务</strong>
                   <span>主线 / 每日 / 支线</span>
@@ -2393,7 +2415,7 @@ function App() {
           {activeNav === "事件" && (
             <section className="event-screen" aria-label="事件中心">
               <header className="event-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
                 <div>
                   <strong>事件</strong>
                   <span>消息 / 邮件 / 合同 / 财报</span>
@@ -2574,6 +2596,29 @@ function App() {
                         <p key={tip}>{tip}</p>
                       ))}
                     </section>
+                    {companyFinance.reportMonth !== undefined && (
+                      <section className="finance-report" aria-label="月度经营报告">
+                        <strong>第 {companyFinance.reportMonth} 月经营报告</strong>
+                        <dl>
+                          <div>
+                            <dt>收入</dt>
+                            <dd>{compactNumber(companyFinance.income ?? companyFinance.monthlyIncome)}</dd>
+                          </div>
+                          <div>
+                            <dt>支出</dt>
+                            <dd>{compactNumber(companyFinance.expense ?? companyFinance.monthlyExpense)}</dd>
+                          </div>
+                          <div>
+                            <dt>净现金流</dt>
+                            <dd>{compactNumber(companyFinance.netCashFlow)}</dd>
+                          </div>
+                          <div>
+                            <dt>期末现金</dt>
+                            <dd>{compactNumber(companyFinance.endingCash ?? companyFinance.cash)}</dd>
+                          </div>
+                        </dl>
+                      </section>
+                    )}
                     {financeError && <p className="task-error">{financeError}</p>}
                     <button className="modal-action" type="button" onClick={() => void settleFinanceMonth()}>
                       生成第 {companyFinance.financeMonth} 月经营报告

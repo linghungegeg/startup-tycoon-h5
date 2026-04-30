@@ -1579,14 +1579,34 @@ test("calculates finance reports across cash-flow boundaries", () => {
       expected: { netCashFlow: -300, cashAfterSettlement: -200, debtRatioBasisPoints: 0, riskStatus: "资金紧张" }
     },
     {
+      name: "cash can settle exactly to zero",
+      input: { cash: 200, monthlyIncome: 100, monthlyExpense: 300, totalDebt: 0, valuation: 10000 },
+      expected: { netCashFlow: -200, cashAfterSettlement: 0, debtRatioBasisPoints: 0, riskStatus: "预警" }
+    },
+    {
       name: "zero values stay stable",
       input: { cash: 0, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 0, valuation: 0 },
       expected: { netCashFlow: 0, cashAfterSettlement: 0, debtRatioBasisPoints: 0, riskStatus: "稳健" }
     },
     {
+      name: "debt with zero valuation maxes the debt ratio",
+      input: { cash: 1000, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 1, valuation: 0 },
+      expected: { netCashFlow: 0, cashAfterSettlement: 1000, debtRatioBasisPoints: 10000, riskStatus: "预警" }
+    },
+    {
+      name: "debt ratio warning starts at sixty percent",
+      input: { cash: 1000, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 6000, valuation: 10000 },
+      expected: { netCashFlow: 0, cashAfterSettlement: 1000, debtRatioBasisPoints: 6000, riskStatus: "预警" }
+    },
+    {
       name: "high debt ratio becomes warning",
       input: { cash: 1000, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 7000, valuation: 10000 },
       expected: { netCashFlow: 0, cashAfterSettlement: 1000, debtRatioBasisPoints: 7000, riskStatus: "预警" }
+    },
+    {
+      name: "negative debt and valuation clamp to zero",
+      input: { cash: 1000, monthlyIncome: 0, monthlyExpense: 0, totalDebt: -1, valuation: -100 },
+      expected: { netCashFlow: 0, cashAfterSettlement: 1000, debtRatioBasisPoints: 0, riskStatus: "稳健" }
     },
     {
       name: "large values do not overflow",
@@ -1628,8 +1648,11 @@ test("loads and settles company finance without duplicate monthly settlement", a
     const status = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
     assert.equal(status.status, 200);
     assert.equal(status.body.success, true);
-    assert.equal(status.body.data?.netCashFlow, 512000);
-    assert.equal(status.body.data?.riskStatus, "稳健");
+    const finance = status.body.data;
+    assert.ok(finance);
+    assert.equal(finance.netCashFlow, 512000);
+    assert.ok(finance.riskTips.length > 0);
+    assert.equal(finance.riskStatus, "稳健");
 
     const day = await requestJson<CompanyFinanceRecord>(baseUrl, "/finance/settle-day", {
       method: "POST",
@@ -1645,9 +1668,16 @@ test("loads and settles company finance without duplicate monthly settlement", a
       body: JSON.stringify({ serverId: "s1", reportMonth: 1 })
     });
     assert.equal(settled.status, 200);
-    assert.equal(settled.body.data?.reportMonth, 1);
-    assert.equal(settled.body.data?.endingCash, 2962000);
-    assert.equal(settled.body.data?.financeMonth, 2);
+    const settlement = settled.body.data;
+    assert.ok(settlement);
+    assert.equal(settlement.reportMonth, 1);
+    assert.equal(settlement.income, finance.monthlyIncome);
+    assert.equal(settlement.expense, finance.monthlyExpense);
+    assert.equal(settlement.netCashFlow, finance.netCashFlow);
+    assert.ok(settlement.riskTips.length > 0);
+    assert.equal(settlement.endingCash, finance.cash + finance.netCashFlow);
+    assert.equal(settlement.endingCash, 2962000);
+    assert.equal(settlement.financeMonth, 2);
 
     const duplicate = await requestJson<CompanyFinanceSettlementRecord>(baseUrl, "/finance/settle-month", {
       method: "POST",
@@ -1655,7 +1685,7 @@ test("loads and settles company finance without duplicate monthly settlement", a
       body: JSON.stringify({ serverId: "s1", reportMonth: 1 })
     });
     assert.equal(duplicate.status, 200);
-    assert.equal(duplicate.body.data?.endingCash, settled.body.data?.endingCash);
+    assert.equal(duplicate.body.data?.endingCash, settlement.endingCash);
   });
 });
 
