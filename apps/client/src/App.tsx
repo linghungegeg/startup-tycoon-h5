@@ -7,6 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
+type NativeHomePage = "leaderboard" | "shop" | "bag" | "negotiation";
 
 type ApiSuccess<T> = {
   success: true;
@@ -316,9 +317,119 @@ type FundingActionResult = {
   result: string;
 };
 
-const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
-const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
-const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
+const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
+const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
+const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
+const homeActionIcons: Record<string, string> = {
+  "财务": "pie-chart",
+  "融资": "handshake",
+  "贷款": "circle-dollar-sign",
+  "风险": "shield-check",
+  "合同": "file-text",
+  "首充": "gift",
+  "首充豪礼": "gift",
+  "月卡": "calendar",
+  "礼包": "package-open",
+  "活动": "calendar",
+  "排行": "trophy",
+  "VIP": "award",
+  "福利中心": "gift",
+  "七日目标": "calendar",
+  "创业基金": "landmark",
+  "专属经理": "contact",
+  "排行榜": "trophy",
+  "财务中心": "pie-chart",
+  "特惠商城": "shopping-cart",
+  "邮件": "mail",
+  "限时活动": "package-open",
+  "投资合作": "handshake",
+  "商战竞争": "trending-up",
+  "市场营销": "megaphone",
+  "产品研发": "box",
+  "企业并购": "building-2",
+  "扩建": "building"
+};
+const homeActionIconClasses: Record<string, string> = {
+  "财务": "text-blue-400",
+  "融资": "text-emerald-400",
+  "贷款": "text-amber-400",
+  "风险": "text-red-400",
+  "合同": "text-business-gold",
+  "首充": "text-red-400",
+  "首充豪礼": "text-red-400",
+  "月卡": "text-business-gold",
+  "礼包": "text-pink-400",
+  "活动": "text-blue-400",
+  "排行": "text-amber-400",
+  "VIP": "text-business-gold",
+  "福利中心": "text-business-gold",
+  "七日目标": "text-business-gold",
+  "创业基金": "text-emerald-400",
+  "专属经理": "text-pink-400",
+  "排行榜": "text-amber-400",
+  "邮件": "text-business-gold",
+  "限时活动": "text-pink-400",
+  "投资合作": "text-amber-400",
+  "商战竞争": "text-blue-400",
+  "市场营销": "text-blue-400",
+  "产品研发": "text-cyan-400",
+  "企业并购": "text-business-gold",
+  "扩建": "text-emerald-400"
+};
+const navIcons: Record<string, string> = {
+  "公司": "home",
+  "员工": "users",
+  "项目": "layout-dashboard",
+  "产品": "box",
+  "市场": "megaphone",
+  "商会": "building-2"
+};
+const iconPaths: Record<string, string[]> = {
+  "award": ["M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "m8 14-2 7 6-3 6 3-2-7"],
+  "box": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
+  "briefcase": ["M10 6V5a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v1", "M4 7h16v12H4Z", "M9 12h6"],
+  "building": ["M6 22V4h12v18", "M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"],
+  "building-2": ["M6 22V4h8v18", "M14 9h4v13", "M9 8h2M9 12h2M9 16h2"],
+  "calendar": ["M7 3v4M17 3v4", "M4 7h16v14H4Z", "M4 11h16"],
+  "circle-dollar-sign": ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M12 6v12", "M16 9c-1-1-3-1-4-1s-3 .5-3 2 1 2 3 2 3 .5 3 2-1 2-3 2-3 0-4-1"],
+  "clipboard-check": ["M9 5h6l1 2h2v14H6V7h2Z", "m9 14 2 2 4-5"],
+  "contact": ["M7 7a5 5 0 0 1 10 0", "M5 21a7 7 0 0 1 14 0", "M4 4h16v18H4Z"],
+  "crown": ["m3 7 5 5 4-8 4 8 5-5-2 12H5Z"],
+  "file-search": ["M6 2h8l4 4v16H6Z", "M14 2v6h6", "M10 15a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z", "m15 18 3 3"],
+  "file-text": ["M6 2h8l4 4v16H6Z", "M14 2v6h6", "M9 13h6M9 17h6"],
+  "gem": ["M6 3h12l4 6-10 12L2 9Z", "M2 9h20", "m8 9 4 12 4-12"],
+  "gift": ["M3 9h18v4H3Z", "M5 13h14v8H5Z", "M12 9v12", "M12 9C9 9 7 7 7 5.5S9 3 12 9Zm0 0c3 0 5-2 5-3.5S15 3 12 9Z"],
+  "handshake": ["M8 12 5 15a3 3 0 0 1-3-3l5-5 4 4", "m16 12 3 3a3 3 0 0 0 3-3l-5-5-4 4", "M8 12l4 4 4-4", "m12 16 2 2a2 2 0 0 0 3-3"],
+  "home": ["M3 11 12 3l9 8", "M5 10v11h14V10", "M10 21v-6h4v6"],
+  "landmark": ["M3 21h18", "M5 10h14", "M12 3 4 8h16Z", "M6 10v8M10 10v8M14 10v8M18 10v8"],
+  "layout-dashboard": ["M4 4h7v7H4Z", "M13 4h7v4h-7Z", "M13 10h7v10h-7Z", "M4 13h7v7H4Z"],
+  "mail": ["M4 6h16v12H4Z", "m4 7 8 6 8-6"],
+  "megaphone": ["M3 11v4h4l10 4V7L7 11Z", "M7 15l2 5"],
+  "package": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
+  "package-open": ["M3 9 12 4l9 5-9 5Z", "M3 9v8l9 5 9-5V9", "M12 14v8"],
+  "plus": ["M12 5v14", "M5 12h14"],
+  "shield-check": ["M12 3 5 6v6c0 5 3 8 7 10 4-2 7-5 7-10V6Z", "m9 12 2 2 4-5"],
+  "shopping-bag": ["M6 8h12l1 13H5Z", "M9 8a3 3 0 0 1 6 0"],
+  "shopping-cart": ["M3 4h2l2 12h11l3-8H7", "M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM18 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"],
+  "star": ["m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"],
+  "swords": ["M14 4 20 10", "M20 4 4 20", "M4 14l6 6", "M14 20l6-6"],
+  "trending-up": ["M3 17 9 11l4 4 7-8", "M14 7h6v6"],
+  "trophy": ["M8 4h8v5a4 4 0 0 1-8 0Z", "M6 6H3v2a4 4 0 0 0 4 4", "M18 6h3v2a4 4 0 0 1-4 4", "M12 13v5", "M8 21h8"],
+  "users": ["M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2", "M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M22 21v-2a4 4 0 0 0-3-3.8", "M17 3.2a4 4 0 0 1 0 7.6"],
+  "x": ["M6 6l12 12", "M18 6 6 18"],
+  "zap": ["M13 2 4 14h7l-1 8 9-12h-7Z"]
+};
+const Icon = ({ name, className }: { name: string; className: string }) => {
+  const paths = iconPaths[name] ?? iconPaths["box"] ?? [];
+
+  return (
+    <svg className={className} aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      {paths.map((path) => (
+        <path d={path} key={path} />
+      ))}
+    </svg>
+  );
+};
 const eventEntryNames = new Set(["风险", "合同", "邮件"]);
 const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [];
@@ -392,6 +503,11 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
     title: "福利中心",
     lines: ["每日登录、在线时长和成长节点奖励集中领取。", "未领取奖励会在入口显示红点。"],
     action: "领取福利"
+  },
+  "商城": {
+    title: "特惠商城",
+    lines: ["月卡、成长基金、猎头契约和经营保险集中展示。", "平台币消费会计入 VIP 经验，后台发放平台币不直接计入。"],
+    action: "进入商城"
   },
   "七日目标": {
     title: "七日目标",
@@ -719,8 +835,9 @@ function App() {
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
   const [isServerPickerOpen, setIsServerPickerOpen] = useState(false);
   const [activeServerCategory, setActiveServerCategory] = useState<"recent" | "all">("all");
-  const [activeNav, setActiveNav] = useState("首页");
+  const [activeNav, setActiveNav] = useState("公司");
   const [activePanel, setActivePanel] = useState<string | null>(null);
+  const [nativeHomePage, setNativeHomePage] = useState<NativeHomePage | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
   const [projects, setProjects] = useState<BusinessProject[]>(initialProjects);
@@ -1366,29 +1483,64 @@ function App() {
   };
 
   const openHomePanel = (panelName: string): void => {
+    if (panelName === "排行榜" || panelName === "排行") {
+      setActivePanel(null);
+      setNativeHomePage("leaderboard");
+      return;
+    }
+
+    if (panelName === "商城" || panelName === "特惠商城") {
+      setActivePanel(null);
+      setNativeHomePage("shop");
+      return;
+    }
+
+    if (panelName === "背包") {
+      setActivePanel(null);
+      setActiveNav("背包");
+      setNativeHomePage("bag");
+      return;
+    }
+
+    if (panelName === "出门谈判") {
+      setActivePanel(null);
+      setNativeHomePage("negotiation");
+      return;
+    }
+
     if (eventEntryNames.has(panelName)) {
       setActivePanel(null);
+      setNativeHomePage(null);
       setActiveNav("事件");
       return;
     }
 
     if (panelName === "贷款" || panelName === "融资") {
       setActivePanel(null);
+      setNativeHomePage(null);
       setActiveNav(panelName);
       return;
     }
 
+    setNativeHomePage(null);
     setActivePanel(panelName);
   };
 
   const openTaskScreen = (): void => {
     setActivePanel(null);
+    setNativeHomePage(null);
     setActiveNav("任务");
   };
 
   const openEventScreen = (): void => {
     setActivePanel(null);
+    setNativeHomePage(null);
     setActiveNav("事件");
+  };
+
+  const closeNativeHomePage = (): void => {
+    setNativeHomePage(null);
+    setActiveNav("公司");
   };
 
   const progressTask = async (taskId: string): Promise<void> => {
@@ -1848,111 +2000,343 @@ function App() {
   if (step === "game" && profile && selectedServer && selectedAvatar) {
     return (
       <main className="game-shell" aria-label="游戏主界面">
-        <section className="home-canvas" aria-label="公司经营主页">
-          <img alt="" className="home-bg" src="/game-ui/shouyegai.png" />
-
-          <header className="home-topbar" aria-label="玩家状态">
-            <button className="profile-badge" type="button" onClick={leaveGame}>
-              <span className="profile-face">{selectedAvatar.glyph}</span>
-              <span>
-                <strong>{profile.founderName || account?.username || "创业新星"}</strong>
-                <em>{profile.companyName}</em>
-              </span>
-              <b>Lv.{profile.companyLevel}</b>
-            </button>
-            <div className="resource-grid" aria-label="资源">
-              <button type="button" onClick={() => openHomePanel("财务")}>
-                <i>资</i>{compactNumber(profile.cash)} <span>+</span>
+        <section className="app-viewport shadow-2xl" aria-label="公司经营主页">
+          <header className="absolute top-0 left-0 right-0 z-[60] p-4 space-y-3 pointer-events-none">
+            <div className="flex items-center justify-between pointer-events-auto">
+              <button className="flex items-center gap-2 text-left" type="button" onClick={leaveGame}>
+                <span className="relative group">
+                  <span className="block w-12 h-12 rounded-full border-2 border-business-gold p-0.5 overflow-hidden shadow-lg shadow-business-gold/10">
+                    <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full object-cover rounded-full" />
+                  </span>
+                  <span className="absolute -bottom-1 -right-1 bg-business-gold text-business-dark text-[9px] font-black px-1.5 rounded-sm border border-business-dark">VIP 8</span>
+                </span>
+                <span className="flex flex-col min-w-0">
+                  <span className="flex items-center gap-1.5">
+                    <strong className="font-black text-sm text-white drop-shadow-md truncate max-w-[120px]">{profile.founderName || account?.username || "创业新星"}</strong>
+                    <span className="bg-blue-500/20 text-blue-400 text-[9px] px-1.5 py-0.5 rounded font-bold border border-blue-500/30">创业先驱</span>
+                  </span>
+                  <span className="flex items-center gap-2 mt-1">
+                    <span className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                      <span className="block w-3/4 h-full bg-business-gold shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                    </span>
+                    <span className="text-[9px] text-slate-400 font-bold">LV.{profile.companyLevel}</span>
+                  </span>
+                </span>
               </button>
-              <button type="button" onClick={() => openHomePanel("福利中心")}>
-                <i>币</i>{profile.platformCoins.toLocaleString("zh-CN")} <span>+</span>
-              </button>
-              <button type="button" onClick={() => openHomePanel("出门谈判")}>
-                <i>力</i>{profile.actionPower}/{profile.actionPowerLimit} <span>+</span>
-              </button>
-              <button type="button" onClick={() => openHomePanel("贷款")}>
-                <i>债</i>{profile.debtWarning}
-              </button>
-              <button type="button" onClick={() => openHomePanel("邮件")}>
-                <i>邮</i>{profile.unreadMailCount}
-              </button>
-              <button type="button" onClick={() => openHomePanel("排行")}>
-                <i>誉</i>{compactNumber(profile.reputation)}
+              <button className="flex flex-col items-end" type="button" onClick={() => openHomePanel("财务")}>
+                <span className="text-[10px] text-slate-400 font-medium">公司估值</span>
+                <strong className="text-xs text-business-gold font-black">{compactNumber(profile.valuation)}</strong>
               </button>
             </div>
-            <button className="settings-button" type="button" aria-label="设置" onClick={() => openHomePanel("设置")} />
+
+            <div className="flex gap-2 overflow-x-auto scroll-hide pb-1 pointer-events-auto" aria-label="资源">
+              {[
+                { icon: "circle-dollar-sign", iconClass: "text-emerald-400", label: compactNumber(profile.cash), panel: "财务", add: true },
+                { icon: "gem", iconClass: "text-business-gold", label: profile.platformCoins.toLocaleString("zh-CN"), panel: "商城", add: true },
+                { icon: "award", iconClass: "text-blue-400", label: compactNumber(profile.reputation), panel: "排行榜", add: false },
+                { icon: "zap", iconClass: "text-amber-500", label: `${profile.actionPower}/${profile.actionPowerLimit}`, panel: "出门谈判", add: false }
+              ].map((resource) => (
+                <button className="resource-tag min-w-[86px]" type="button" key={resource.panel} onClick={() => openHomePanel(resource.panel)}>
+                  <Icon name={resource.icon} className={`w-3 h-3 ${resource.iconClass}`} />
+                  <span className="text-[10px] font-bold truncate">{resource.label}</span>
+                  {resource.add && (
+                    <span className="ml-auto w-3.5 h-3.5 bg-white/10 rounded flex items-center justify-center">
+                      <Icon name="plus" className="w-2.5 h-2.5 text-slate-400" />
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </header>
 
-          <section className="left-actions" aria-label="福利入口">
-            {sideActions.map((item, index) => (
-              <button type="button" key={item} onClick={() => openHomePanel(item)}>
-                <span>{item.slice(0, 2)}</span>
-                <strong>{item}</strong>
-                {[0, 3, 4].includes(index) && <em />}
-              </button>
-            ))}
-          </section>
-
-          <section className="right-actions" aria-label="经营入口">
-            {rightActions.map((item, index) => (
-              <button type="button" key={item} onClick={() => openHomePanel(item)}>
-                <span>{item.slice(0, 2)}</span>
-                <strong>{item}</strong>
-                {[2, 3, 4, 5, 6].includes(index) && <em />}
-              </button>
-            ))}
-          </section>
-
-          <section className="task-panel" aria-label="当前任务">
-            <button className="task-icon" type="button" onClick={openTaskScreen}>任务</button>
-            <div>
-              <strong>{highlightedTask?.isClaimable ? "可领取" : "主线"}</strong>
-              <span>{highlightedTask ? `${highlightedTask.title}（${highlightedTask.progress}/${highlightedTask.target}）` : "任务配置读取中"}</span>
-              <small>{highlightedTask ? `奖励：${highlightedTask.rewardLabel}` : "请确认 API 服务已启动"}</small>
+          <main id="home-scene" className="flex-1 main-bg relative flex flex-col items-center justify-center">
+            <div className="animate-float text-center pointer-events-none">
+              <div>
+                <h2 className="text-2xl font-black tracking-widest text-white drop-shadow-2xl">{profile.companyName}</h2>
+              </div>
             </div>
-            <button className="task-go" type="button" onClick={openTaskScreen}>前往</button>
-          </section>
 
-          <section className="status-strip" aria-label="公司状态">
-            <span>现金流{compactNumber(profile.monthlyIncome - profile.monthlyExpense)}</span>
-            <span>收入{compactNumber(profile.monthlyIncome)}</span>
-            <span>支出{compactNumber(profile.monthlyExpense)}</span>
-            <button type="button" onClick={openEventScreen}>待办{profile.pendingEventCount}</button>
-          </section>
+            <div className="absolute left-4 top-36 space-y-4">
+              {sideActions.map((item, index) => (
+                <button className="flex flex-col items-center gap-1 group relative" type="button" key={item} onClick={() => openHomePanel(item)}>
+                  {[3, 4].includes(index) && <span className="red-dot" />}
+                  <span className="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Icon name={homeActionIcons[item] ?? "box"} className={`w-6 h-6 ${homeActionIconClasses[item] ?? ""}`} />
+                  </span>
+                  <span className="text-[10px] text-white/90 font-bold drop-shadow-md">{item}</span>
+                </button>
+              ))}
+            </div>
 
-          <button className="chapter-button" type="button" onClick={() => openHomePanel("出门谈判")}>
-            <strong>出门谈判</strong>
-            <span>第15章</span>
-          </button>
+            <div className="absolute right-4 top-32 space-y-1.5">
+              {rightActions.map((item, index) => (
+                <button className="flex flex-col items-center gap-1 group relative" type="button" key={item} onClick={() => openHomePanel(item)}>
+                  {[0, 3, 5, 6].includes(index) && <span className="red-dot" />}
+                  <span className="w-11 h-11 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Icon name={homeActionIcons[item] ?? "box"} className={`w-5 h-5 ${homeActionIconClasses[item] ?? ""}`} />
+                  </span>
+                  <span className="text-[9px] text-white/90 font-bold drop-shadow-md">{item}</span>
+                </button>
+              ))}
+            </div>
 
-          <nav className="bottom-nav" aria-label="底部导航">
+            <button className="absolute bottom-24 left-4 right-24 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer text-left" type="button" onClick={openTaskScreen}>
+              <span className="w-12 h-12 bg-business-gold/15 rounded-xl flex items-center justify-center relative border border-business-gold/20">
+                <span className="red-dot" />
+                <Icon name="clipboard-check" className="w-7 h-7 text-business-gold" />
+              </span>
+              <span className="flex-1 overflow-hidden">
+                <span className="flex justify-between items-center mb-0.5">
+                  <span className="text-business-gold text-[10px] font-black uppercase tracking-wider">{highlightedTask?.isClaimable ? "可领取" : "主线任务"}</span>
+                  <span className="text-slate-500 text-[10px] font-bold">{highlightedTask ? `${highlightedTask.progress}/${highlightedTask.target}` : "0/0"}</span>
+                </span>
+                <strong className="block text-xs font-black truncate text-white">{highlightedTask ? highlightedTask.title : "任务配置读取中"}</strong>
+                <span className="flex items-center gap-2 mt-1">
+                  <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold truncate">
+                    <Icon name="gem" className="w-2.5 h-2.5" /> {highlightedTask ? highlightedTask.rewardLabel : "请确认 API 服务已启动"}
+                  </span>
+                </span>
+              </span>
+              <span className="btn-gold px-3 py-2 rounded-xl text-xs font-black text-business-dark">{highlightedTask?.isClaimable ? "领取" : "前往"}</span>
+            </button>
+
+          </main>
+
+          <nav className="h-24 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 px-2 flex items-center justify-between z-[100] pb-6" aria-label="底部导航">
             {navItems.map((item, index) => (
               <button
-                className={activeNav === item ? "active" : undefined}
+                className={`flex flex-col items-center gap-1.5 flex-1 transition-colors ${activeNav === item ? "text-business-gold" : "text-slate-500"}`}
                 type="button"
                 key={item}
                 onClick={() => {
                   setActiveNav(item);
-                  if (item === "首页") {
+                  if (item === "公司") {
                     setActivePanel(null);
+                    setNativeHomePage(null);
                   } else if (item === "员工" || item === "项目") {
                     setActivePanel(null);
+                    setNativeHomePage(null);
                   } else {
                     openHomePanel(item);
                   }
                 }}
               >
-                <span>{item.slice(0, 1)}</span>
-                <strong>{item}</strong>
-                {[1, 2, 5].includes(index) && <em />}
+                <span className="relative">
+                  {[1, 2, 5].includes(index) && <span className="red-dot" />}
+                  <Icon name={navIcons[item] ?? "box"} className="w-6 h-6" />
+                </span>
+                <span className="text-[10px] font-bold">{item}</span>
               </button>
             ))}
           </nav>
 
+          {nativeHomePage === "leaderboard" && (
+            <section className="page-container page-active" aria-label="排行榜" data-testid="native-leaderboard">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="award" className="w-7 h-7 text-business-gold" />
+                  <h2 className="text-xl font-black text-white italic uppercase">Rank 排行榜</h2>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭排行榜" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="px-6 flex gap-8 border-b border-white/5 mb-4">
+                <button className="pb-3 border-b-2 border-business-gold text-business-gold font-bold text-sm" type="button">全服估值榜</button>
+                <button className="pb-3 text-slate-500 font-bold text-sm" type="button">月度盈利榜</button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
+                {[
+                  { rank: "NO.1", name: "马氪 · 万向集团", value: "估值: ¥145.2 亿", crown: true, initial: "马" },
+                  { rank: "2", name: "许天 · 天空资本", value: "估值: ¥98.7 亿", initial: "许" },
+                  { rank: "3", name: "张强 · 巅峰科技", value: "估值: ¥82.1 亿", initial: "张" }
+                ].map((row) => (
+                  <article
+                    className={`glass-panel p-4 rounded-2xl flex items-center gap-4 ${row.crown ? "bg-gradient-to-r from-business-gold/10 to-transparent border-business-gold/30" : ""}`}
+                    key={row.name}
+                  >
+                    <div className={row.crown ? "w-8 h-8 flex items-center justify-center" : "w-8 text-center text-slate-500 font-black text-lg italic"}>
+                      {row.crown ? <Icon name="crown" className="w-6 h-6 text-business-gold" /> : row.rank}
+                    </div>
+                    <div className={`w-10 h-10 rounded-full border-2 ${row.crown ? "border-business-gold" : "border-slate-700"} p-0.5`}>
+                      <span className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-white">{row.initial}</span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-xs font-black text-white">{row.name}</div>
+                      <div className="text-[9px] text-slate-500">{row.value}</div>
+                    </div>
+                    {row.crown && <div className="text-[10px] font-black text-business-gold italic">{row.rank}</div>}
+                  </article>
+                ))}
+              </div>
+              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                <div className="flex items-center gap-4 px-2">
+                  <div className="w-8 text-center text-business-gold font-black italic">45</div>
+                  <div className="w-10 h-10 rounded-full border-2 border-business-gold p-0.5">
+                    <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full rounded-full object-cover" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs font-black text-white">{profile.founderName || account?.username || "创业新星"} · {profile.companyName}</div>
+                    <div className="text-[9px] text-slate-400 italic">击败了 85% 的玩家</div>
+                  </div>
+                  <div className="text-xs font-black text-business-gold">{compactNumber(profile.valuation)}</div>
+                </div>
+              </footer>
+            </section>
+          )}
+
+          {nativeHomePage === "shop" && (
+            <section className="page-container page-active" aria-label="特惠商城" data-testid="native-shop">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="shopping-bag" className="w-7 h-7 text-pink-400" />
+                  <h2 className="text-xl font-black text-white italic uppercase">Shop 商业特权</h2>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭特惠商城" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="px-6 flex gap-6 overflow-x-auto scroll-hide mb-4">
+                <button className="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap" type="button">限时礼包</button>
+                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">钻石充值</button>
+                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">月卡/基金</button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="限时活动广告">
+                  <img src="/game-ui/html-design/main-bg.jpg" alt="" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
+                    <h3 className="text-lg font-black italic text-white">C轮融资专项礼包</h3>
+                    <p className="text-[10px] text-business-gold font-bold">限时 2.5 折 | 仅剩 14:23:45</p>
+                  </div>
+                </section>
+                <div className="grid grid-cols-2 gap-4">
+                  {[
+                    { title: "高级猎头契约 x10", icon: "file-search", iconClass: "text-business-gold", price: "1280", discount: "-60%" },
+                    { title: "经营保险 (7天)", icon: "shield-check", iconClass: "text-emerald-400", price: "680" }
+                  ].map((product) => (
+                    <article className="glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative" key={product.title}>
+                      {product.discount && <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">{product.discount}</div>}
+                      <div className="w-16 h-16 flex items-center justify-center">
+                        <Icon name={product.icon} className={`w-10 h-10 ${product.iconClass}`} />
+                      </div>
+                      <div className="text-xs font-black text-white text-center">{product.title}</div>
+                      <div className="flex items-center gap-1">
+                        <Icon name="gem" className="w-3 h-3 text-business-gold" />
+                        <span className="text-sm font-black">{product.price}</span>
+                      </div>
+                      <button className="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark" type="button">购买</button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {nativeHomePage === "bag" && (
+            <section className="page-container page-active" aria-label="背包" data-testid="native-bag">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="package" className="w-7 h-7 text-business-gold" />
+                  <h2 className="text-xl font-black text-white italic uppercase">Inventory 背包</h2>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭背包" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 pb-10 scroll-hide">
+                <div className="grid grid-cols-4 gap-3">
+                  <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 active:border-business-gold transition-colors relative">
+                    <Icon name="file-text" className="w-8 h-8 text-slate-500" />
+                    <span className="absolute bottom-1 right-2 text-[10px] font-black text-white">12</span>
+                  </div>
+                  <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-business-gold/40 bg-business-gold/5 relative">
+                    <Icon name="star" className="w-8 h-8 text-business-gold" />
+                    <span className="absolute bottom-1 right-2 text-[10px] font-black text-white">1</span>
+                  </div>
+                  {Array.from({ length: 18 }, (_, index) => (
+                    <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-40" key={index} />
+                  ))}
+                </div>
+              </div>
+              <footer className="p-6 bg-slate-900 border-t border-white/5 h-48 flex gap-6">
+                <div className="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center border border-business-gold/30 shrink-0">
+                  <Icon name="star" className="w-10 h-10 text-business-gold" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-black text-white">精英员工直聘券 (SSR)</h3>
+                  <p className="text-xs text-slate-400 mt-2 font-medium">使用后可从当前卡池中自选一名 SSR 级员工入职。</p>
+                  <button className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark" type="button">使用</button>
+                </div>
+              </footer>
+            </section>
+          )}
+
+          {nativeHomePage === "negotiation" && (
+            <section className="page-container page-active" aria-label="出门谈判" data-testid="native-negotiation">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="handshake" className="w-7 h-7 text-business-gold" />
+                  <h2 className="text-xl font-black text-white italic uppercase">Chapter 谈判</h2>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭出门谈判" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 pb-10 space-y-4 scroll-hide">
+                <section className="glass-panel rounded-3xl p-5 border-business-gold/30 bg-gradient-to-br from-business-gold/10 to-slate-950">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] text-business-gold font-black uppercase tracking-wider">当前章节</span>
+                    <span className="text-[10px] text-slate-400 font-bold">行动力 {profile.actionPower}/{profile.actionPowerLimit}</span>
+                  </div>
+                  <h3 className="text-2xl font-black text-white">第15章 · 扩张谈判</h3>
+                  <p className="mt-2 text-xs leading-5 text-slate-400 font-medium">
+                    推进谈判可解锁新客户、新项目和商战对手，承接主线任务与后续经营事件。
+                  </p>
+                </section>
+
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="w-12 h-12 bg-business-gold/15 rounded-2xl flex items-center justify-center border border-business-gold/20 shrink-0">
+                      <Icon name="clipboard-check" className="w-7 h-7 text-business-gold" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-business-gold text-[10px] font-black uppercase">主线任务</span>
+                        <span className="text-slate-500 text-[10px] font-bold">{highlightedTask ? `${highlightedTask.progress}/${highlightedTask.target}` : "0/0"}</span>
+                      </div>
+                      <strong className="block text-sm font-black text-white truncate">{highlightedTask ? highlightedTask.title : "任务配置读取中"}</strong>
+                      <p className="mt-2 text-[10px] text-slate-400 font-medium">
+                        {highlightedTask ? highlightedTask.rewardLabel : "请确认 API 服务已启动"}
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="grid grid-cols-3 gap-3">
+                  {[
+                    ["客户", "新合同"],
+                    ["项目", "高收益"],
+                    ["商战", "新对手"]
+                  ].map(([label, value]) => (
+                    <div className="glass-panel rounded-2xl p-3 text-center" key={label}>
+                      <div className="text-[10px] text-slate-500 font-bold">{label}</div>
+                      <div className="mt-1 text-xs text-white font-black">{value}</div>
+                    </div>
+                  ))}
+                </section>
+              </div>
+              <footer className="p-6 bg-slate-900 border-t border-white/5">
+                <button className="w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={openEventScreen}>
+                  开始谈判
+                </button>
+              </footer>
+            </section>
+          )}
+
           {activeNav === "员工" && (
             <section className="employee-screen" aria-label="员工系统">
               <header className="employee-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>员工</strong>
                   <span>团队战力 {employeePower.toLocaleString("zh-CN")}</span>
@@ -2052,7 +2436,7 @@ function App() {
           {activeNav === "项目" && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>项目</strong>
                   <span>预计回款 {compactNumber(totalProjectRevenue)}</span>
@@ -2169,7 +2553,7 @@ function App() {
           {activeNav === "融资" && (
             <section className="funding-screen" aria-label="融资路演">
               <header className="funding-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>融资</strong>
                   <span>估值 {compactNumber(fundingCenter?.finance.valuation ?? profile.valuation)} · 股权 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) / 100).toFixed(1)}%</span>
@@ -2280,7 +2664,7 @@ function App() {
           {activeNav === "贷款" && (
             <section className="loan-screen" aria-label="贷款与危机">
               <header className="loan-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>贷款</strong>
                   <span>信用 {loanCenter?.finance.creditRating ?? profile.creditRating} · 负债 {loanCenter ? `${(loanCenter.finance.debtRatioBasisPoints / 100).toFixed(1)}%` : "读取中"}</span>
@@ -2397,7 +2781,7 @@ function App() {
           {activeNav === "任务" && (
             <section className="task-screen" aria-label="任务系统">
               <header className="task-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>任务</strong>
                   <span>主线 / 每日 / 支线</span>
@@ -2456,7 +2840,7 @@ function App() {
           {activeNav === "事件" && (
             <section className="event-screen" aria-label="事件中心">
               <header className="event-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>事件</strong>
                   <span>消息 / 邮件 / 合同 / 财报</span>
