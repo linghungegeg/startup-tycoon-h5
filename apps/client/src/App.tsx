@@ -62,9 +62,105 @@ type StoredSession = {
   profile: PlayerProfile;
 };
 
+type EmployeeQuality = "SSR" | "SR" | "R";
+
+type Employee = {
+  id: string;
+  name: string;
+  quality: EmployeeQuality;
+  role: string;
+  level: number;
+  salary: string;
+  loyalty: number;
+  management: number;
+  negotiation: number;
+  execution: number;
+  specialty: string;
+};
+
 const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
 const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
 const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
+const initialEmployees: Employee[] = [
+  {
+    id: "lin-xia",
+    name: "林夏",
+    quality: "SSR",
+    role: "市场总监",
+    level: 18,
+    salary: "8.8万/月",
+    loyalty: 92,
+    management: 86,
+    negotiation: 91,
+    execution: 78,
+    specialty: "擅长品牌投放，提升项目曝光。"
+  },
+  {
+    id: "zhou-hang",
+    name: "周航",
+    quality: "SR",
+    role: "项目经理",
+    level: 16,
+    salary: "6.2万/月",
+    loyalty: 88,
+    management: 79,
+    negotiation: 73,
+    execution: 90,
+    specialty: "推进项目交付，缩短研发周期。"
+  },
+  {
+    id: "chen-mo",
+    name: "陈默",
+    quality: "SR",
+    role: "融资顾问",
+    level: 15,
+    salary: "6.6万/月",
+    loyalty: 84,
+    management: 75,
+    negotiation: 94,
+    execution: 72,
+    specialty: "提高融资成功率，适合谈判阵容。"
+  },
+  {
+    id: "he-yu",
+    name: "何煜",
+    quality: "R",
+    role: "运营主管",
+    level: 12,
+    salary: "3.8万/月",
+    loyalty: 80,
+    management: 70,
+    negotiation: 66,
+    execution: 82,
+    specialty: "稳定日常经营，降低运营损耗。"
+  },
+  {
+    id: "su-qing",
+    name: "苏青",
+    quality: "R",
+    role: "人事经理",
+    level: 11,
+    salary: "3.5万/月",
+    loyalty: 86,
+    management: 76,
+    negotiation: 62,
+    execution: 74,
+    specialty: "提升员工忠诚，减少离职风险。"
+  },
+  {
+    id: "jiang-yan",
+    name: "江言",
+    quality: "SR",
+    role: "产品负责人",
+    level: 14,
+    salary: "5.9万/月",
+    loyalty: 82,
+    management: 78,
+    negotiation: 70,
+    execution: 88,
+    specialty: "强化产品研发，提高长期估值。"
+  }
+];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
   "首充豪礼": {
     title: "首充豪礼",
@@ -280,6 +376,8 @@ function App() {
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
   const [activeNav, setActiveNav] = useState("首页");
   const [activePanel, setActivePanel] = useState<string | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -288,6 +386,18 @@ function App() {
   const selectedAvatar = useMemo(
     () => avatars.find((avatar) => avatar.id === avatarId) ?? avatars[0],
     [avatarId, avatars]
+  );
+  const selectedEmployee = useMemo(
+    () => employees.find((employee) => employee.id === selectedEmployeeId) ?? employees[0],
+    [employees, selectedEmployeeId]
+  );
+  const employeePower = useMemo(
+    () =>
+      employees.reduce(
+        (total, employee) => total + employee.management + employee.negotiation + employee.execution + employee.level * 3,
+        0
+      ),
+    [employees]
   );
 
   const enterGame = (
@@ -555,6 +665,27 @@ function App() {
     setActivePanel(panelName);
   };
 
+  const cultivateEmployee = (): void => {
+    if (!selectedEmployee) {
+      return;
+    }
+
+    setEmployees((currentEmployees) =>
+      currentEmployees.map((employee) =>
+        employee.id === selectedEmployee.id
+          ? {
+              ...employee,
+              level: employee.level + 1,
+              loyalty: Math.min(employee.loyalty + 1, 100),
+              management: employee.management + 2,
+              negotiation: employee.negotiation + 2,
+              execution: employee.execution + 2
+            }
+          : employee
+      )
+    );
+  };
+
   const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
 
   if (isRestoring) {
@@ -652,7 +783,11 @@ function App() {
                 key={item}
                 onClick={() => {
                   setActiveNav(item);
-                  if (item !== "首页") {
+                  if (item === "首页") {
+                    setActivePanel(null);
+                  } else if (item === "员工") {
+                    setActivePanel(null);
+                  } else {
                     openHomePanel(item);
                   }
                 }}
@@ -663,6 +798,87 @@ function App() {
               </button>
             ))}
           </nav>
+
+          {activeNav === "员工" && selectedEmployee && (
+            <section className="employee-screen" aria-label="员工系统">
+              <header className="employee-header">
+                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <div>
+                  <strong>员工</strong>
+                  <span>团队战力 {employeePower.toLocaleString("zh-CN")}</span>
+                </div>
+                <button type="button" onClick={() => openHomePanel("员工")}>规则</button>
+              </header>
+
+              <section className="employee-summary" aria-label="员工概览">
+                <span>在岗 {employees.length}</span>
+                <span>平均忠诚 {Math.round(employees.reduce((total, employee) => total + employee.loyalty, 0) / employees.length)}</span>
+                <span>月薪合计 34.8万</span>
+              </section>
+
+              <section className="employee-layout">
+                <div className="employee-list" aria-label="员工列表">
+                  {employees.map((employee) => (
+                    <button
+                      className={employee.id === selectedEmployee.id ? "selected" : undefined}
+                      key={employee.id}
+                      type="button"
+                      onClick={() => setSelectedEmployeeId(employee.id)}
+                    >
+                      <span className={`quality ${employee.quality.toLowerCase()}`}>{employee.quality}</span>
+                      <strong>{employee.name}</strong>
+                      <em>{employee.role}</em>
+                      <small>Lv.{employee.level}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="employee-detail" aria-label="员工详情">
+                  <div className="employee-portrait">
+                    <span>{selectedEmployee.name.slice(0, 1)}</span>
+                    <strong>{selectedEmployee.name}</strong>
+                    <em>{selectedEmployee.quality} · {selectedEmployee.role}</em>
+                  </div>
+
+                  <dl className="employee-stats">
+                    <div>
+                      <dt>等级</dt>
+                      <dd>Lv.{selectedEmployee.level}</dd>
+                    </div>
+                    <div>
+                      <dt>薪资</dt>
+                      <dd>{selectedEmployee.salary}</dd>
+                    </div>
+                    <div>
+                      <dt>忠诚</dt>
+                      <dd>{selectedEmployee.loyalty}</dd>
+                    </div>
+                    <div>
+                      <dt>管理</dt>
+                      <dd>{selectedEmployee.management}</dd>
+                    </div>
+                    <div>
+                      <dt>谈判</dt>
+                      <dd>{selectedEmployee.negotiation}</dd>
+                    </div>
+                    <div>
+                      <dt>执行</dt>
+                      <dd>{selectedEmployee.execution}</dd>
+                    </div>
+                  </dl>
+
+                  <p>{selectedEmployee.specialty}</p>
+
+                  <div className="employee-actions">
+                    <button type="button" onClick={cultivateEmployee}>培养</button>
+                    <button type="button" onClick={() => openHomePanel("员工")}>招募</button>
+                    <button type="button" onClick={() => openHomePanel("员工")}>股权</button>
+                    <button type="button" onClick={() => openHomePanel("员工")}>解雇</button>
+                  </div>
+                </article>
+              </section>
+            </section>
+          )}
 
           {selectedPanel && (
             <section className="home-modal" aria-label={selectedPanel.title}>

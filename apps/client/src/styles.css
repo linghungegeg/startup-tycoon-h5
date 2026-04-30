@@ -1167,6 +1167,285 @@ input {
   font-weight: 900;
 }
 
+.employee-screen {
+  position: absolute;
+  inset: 8.8% 2.4% 9.8%;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 2%;
+  padding: 2.8%;
+  border: 1px solid rgba(246, 204, 116, 0.74);
+  border-radius: 8px;
+  color: #fff1c9;
+  background:
+    linear-gradient(180deg, rgba(16, 30, 48, 0.95), rgba(7, 13, 23, 0.94)),
+    rgba(7, 13, 23, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 16px 38px rgba(0, 0, 0, 0.46);
+}
+
+.employee-header {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20% 1fr 20%;
+  align-items: center;
+  gap: 2%;
+  min-height: 7%;
+}
+
+.employee-header button,
+.employee-actions button,
+.employee-list button {
+  position: static;
+}
+
+.employee-header button {
+  min-height: 34px;
+  border-radius: 5px;
+  color: #58370f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.5vw, 16px);
+  font-weight: 900;
+}
+
+.employee-header div {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+.employee-header strong {
+  color: #ffd873;
+  font-size: clamp(23px, 6vw, 32px);
+  font-weight: 900;
+}
+
+.employee-header span {
+  color: #d8c9a8;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.employee-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2%;
+}
+
+.employee-summary span {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  place-items: center;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 5px;
+  color: #ffe5a9;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(10px, 2.9vw, 14px);
+  font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.employee-layout {
+  display: grid;
+  grid-template-columns: 38% 1fr;
+  gap: 2.4%;
+  min-height: 0;
+}
+
+.employee-list {
+  display: grid;
+  align-content: start;
+  gap: 2%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2%;
+}
+
+.employee-list button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30% 1fr;
+  grid-template-areas:
+    "quality name"
+    "quality role"
+    "quality level";
+  align-items: center;
+  min-height: 72px;
+  border-radius: 6px;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.employee-list button.selected {
+  border-color: rgba(255, 218, 126, 0.95);
+  background:
+    linear-gradient(180deg, rgba(45, 102, 153, 0.9), rgba(11, 27, 48, 0.92)),
+    rgba(11, 27, 48, 0.92);
+}
+
+.quality {
+  display: grid;
+  grid-area: quality;
+  width: 42px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  color: #1a2130;
+  background: linear-gradient(180deg, #fff0a9, #cb832d);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+}
+
+.quality.ssr {
+  color: #301308;
+  background: linear-gradient(180deg, #ffe9a8, #e06f31);
+}
+
+.quality.sr {
+  color: #07172a;
+  background: linear-gradient(180deg, #cfefff, #4b9ed9);
+}
+
+.quality.r {
+  color: #091b12;
+  background: linear-gradient(180deg, #d9ffd7, #61bd76);
+}
+
+.employee-list strong {
+  grid-area: name;
+  overflow: hidden;
+  color: #fff6d8;
+  font-size: clamp(14px, 3.8vw, 18px);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-list em,
+.employee-list small {
+  color: #d8c9a8;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.employee-list em {
+  grid-area: role;
+  overflow: hidden;
+  font-size: clamp(11px, 3vw, 14px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-list small {
+  grid-area: level;
+  font-size: clamp(10px, 2.8vw, 13px);
+}
+
+.employee-detail {
+  display: grid;
+  grid-template-rows: auto auto auto 1fr;
+  gap: 3%;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(246, 204, 116, 0.42);
+  border-radius: 6px;
+  padding: 3%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.employee-portrait {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4% 2%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.employee-portrait span {
+  display: grid;
+  width: min(24vw, 92px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid rgba(255, 218, 126, 0.88);
+  border-radius: 50%;
+  color: #1b2332;
+  background: radial-gradient(circle at 34% 24%, #fff6d7, #c79038 72%);
+  font-size: clamp(32px, 10vw, 54px);
+  font-weight: 900;
+}
+
+.employee-portrait strong {
+  color: #fff6d8;
+  font-size: clamp(20px, 5.6vw, 28px);
+  font-weight: 900;
+}
+
+.employee-portrait em {
+  color: #d8c9a8;
+  font-size: clamp(11px, 3vw, 14px);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.employee-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.employee-stats div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  min-height: 30px;
+  border-radius: 4px;
+  padding: 0 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.employee-stats dt,
+.employee-stats dd {
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 900;
+}
+
+.employee-stats dt {
+  color: #d8c9a8;
+}
+
+.employee-stats dd {
+  color: #ffe5a9;
+}
+
+.employee-detail p {
+  color: #efe2c6;
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 800;
+  line-height: 1.42;
+}
+
+.employee-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  align-self: end;
+}
+
+.employee-actions button {
+  min-height: 36px;
+  border-radius: 5px;
+  color: #57360f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 900;
+}
+
 @media (max-width: 420px) {
   .onboarding-shell {
     align-items: stretch;
