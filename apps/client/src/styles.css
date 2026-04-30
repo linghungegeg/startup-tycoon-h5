@@ -684,6 +684,17 @@ input {
   box-shadow: 0 0 44px rgba(0, 0, 0, 0.65);
 }
 
+.home-canvas::before {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  content: "";
+  background:
+    linear-gradient(180deg, rgba(4, 9, 16, 0.44), transparent 15%, transparent 68%, rgba(4, 9, 16, 0.48)),
+    linear-gradient(90deg, rgba(4, 9, 16, 0.42), transparent 22%, transparent 78%, rgba(4, 9, 16, 0.42));
+}
+
 .home-bg {
   position: absolute;
   inset: 0;
@@ -709,36 +720,44 @@ input {
 
 .home-topbar {
   position: absolute;
-  top: 0.6%;
-  left: 0.8%;
-  right: 0.8%;
-  height: 7.8%;
+  top: 1.2%;
+  left: 2%;
+  right: 2%;
+  height: 8.4%;
   z-index: 3;
+  border: 1px solid rgba(219, 181, 103, 0.32);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(10, 20, 32, 0.72), rgba(6, 13, 23, 0.58));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(4px);
 }
 
 .profile-badge {
-  top: 0;
-  left: 0;
+  top: 9%;
+  left: 1.5%;
   display: grid;
-  grid-template-columns: 38% 1fr;
+  grid-template-columns: 28% 1fr;
   align-items: center;
-  width: 27.5%;
-  height: 100%;
+  width: 30%;
+  height: 76%;
   border-radius: 0 0 10px 0;
   padding: 0 1.6%;
+  border-color: rgba(219, 181, 103, 0.34);
   text-align: left;
+  background: rgba(8, 18, 30, 0.58);
+  box-shadow: none;
 }
 
 .profile-face {
   display: grid;
   place-items: center;
-  width: min(10.2vw, 50px);
+  width: min(7.8vw, 34px);
   aspect-ratio: 1;
-  border: 2px solid #d8a74f;
+  border: 1px solid rgba(221, 178, 92, 0.84);
   border-radius: 50%;
   color: #07101c;
   background: radial-gradient(circle at 35% 30%, #fff6d7, #c79038 70%);
-  font-size: clamp(15px, 4vw, 23px);
+  font-size: clamp(12px, 3.1vw, 17px);
   font-weight: 900;
 }
 
@@ -752,44 +771,49 @@ input {
 .profile-badge strong {
   overflow: hidden;
   color: #fff7d8;
-  font-size: clamp(10px, 2.7vw, 15px);
+  font-size: clamp(9px, 2.35vw, 12px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .profile-badge em {
-  margin-top: 3px;
-  font-size: clamp(10px, 2.5vw, 14px);
+  margin-top: 2px;
+  color: #d8c8a9;
+  font-size: clamp(8px, 2.1vw, 11px);
 }
 
 .profile-badge b {
   position: absolute;
-  left: 5%;
-  bottom: 2%;
+  left: 4%;
+  bottom: -10%;
   color: #ffcf67;
-  font-size: clamp(11px, 3.5vw, 20px);
+  font-size: clamp(9px, 2.5vw, 13px);
 }
 
 .resource-grid {
   position: absolute;
-  top: 2%;
-  left: 30.5%;
-  right: 9.2%;
+  top: 10%;
+  left: 33%;
+  right: 8.8%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(2, 1fr);
-  gap: 7% 2.2%;
-  height: 84%;
+  gap: 8% 1.8%;
+  height: 76%;
 }
 
 .resource-grid button {
   position: relative;
   min-height: 0;
-  border-radius: 5px;
-  padding: 0 17% 0 23%;
+  border-color: rgba(220, 181, 101, 0.28);
+  border-radius: 4px;
+  padding: 0 14% 0 21%;
   overflow: hidden;
-  font-size: clamp(9px, 2.6vw, 14px);
+  color: #f5ead0;
+  background: rgba(5, 12, 22, 0.48);
+  box-shadow: none;
+  font-size: clamp(8px, 2.18vw, 11px);
   font-weight: 800;
   text-align: center;
   text-overflow: ellipsis;
@@ -801,13 +825,13 @@ input {
   left: 4%;
   top: 50%;
   display: grid;
-  width: 17%;
+  width: 15%;
   aspect-ratio: 1;
   place-items: center;
   border-radius: 50%;
   color: #1b2535;
   background: linear-gradient(180deg, #fff5c6, #d29a34);
-  font-size: clamp(8px, 2.1vw, 12px);
+  font-size: clamp(7px, 1.75vw, 10px);
   font-style: normal;
   font-weight: 900;
   transform: translateY(-50%);
@@ -819,21 +843,22 @@ input {
   right: 0;
   display: grid;
   place-items: center;
-  width: 18%;
+  width: 16%;
   height: 100%;
   color: #ffd27b;
-  font-size: clamp(16px, 4vw, 24px);
+  font-size: clamp(11px, 3vw, 16px);
 }
 
 .settings-button {
-  top: 5.6%;
-  right: 0.5%;
-  width: 8.2%;
-  height: 52%;
-  border: 0;
+  top: 20%;
+  right: 1.3%;
+  width: 6.6%;
+  height: 58%;
+  border-color: rgba(220, 181, 101, 0.34);
+  border-radius: 5px;
   overflow: hidden;
   color: transparent;
-  background: transparent;
+  background: rgba(5, 12, 22, 0.46);
   box-shadow: none;
   font-size: 0;
 }
@@ -845,7 +870,7 @@ input {
   height: 100%;
   color: #e9d7b1;
   content: "⚙";
-  font-size: clamp(18px, 5vw, 28px);
+  font-size: clamp(13px, 3.5vw, 18px);
 }
 
 .left-actions,
@@ -857,31 +882,33 @@ input {
 }
 
 .left-actions {
-  top: 17.8%;
-  left: 1.2%;
-  width: 15.2%;
-  height: 33.8%;
+  top: 19%;
+  left: 2.2%;
+  width: 13.6%;
+  height: 30.8%;
 }
 
 .right-actions {
-  top: 8.5%;
-  right: 1.5%;
-  width: 16.2%;
-  height: 50.5%;
+  top: 12.2%;
+  right: 2%;
+  width: 13.8%;
+  height: 43.6%;
 }
 
 .left-actions button,
 .right-actions button {
   position: relative;
   display: grid;
-  place-items: center;
+  grid-template-columns: 42% 1fr;
+  align-items: center;
   min-height: 0;
-  border: 0;
-  border-radius: 50%;
-  padding: 3%;
-  background:
-    radial-gradient(circle at 38% 30%, rgba(255, 245, 205, 0.22), rgba(13, 23, 37, 0.92) 64%),
-    linear-gradient(180deg, rgba(255, 210, 113, 0.18), transparent);
+  border: 1px solid rgba(222, 181, 98, 0.34);
+  border-radius: 6px;
+  padding: 0 5%;
+  background: linear-gradient(180deg, rgba(10, 23, 37, 0.76), rgba(5, 12, 22, 0.62));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 7px 18px rgba(0, 0, 0, 0.2);
   transition:
     filter 150ms ease,
     transform 150ms ease;
@@ -900,12 +927,13 @@ input {
 .right-actions button span {
   display: grid;
   place-items: center;
-  width: 70%;
+  width: 82%;
   aspect-ratio: 1;
-  border: 2px solid rgba(235, 187, 83, 0.78);
+  border: 1px solid rgba(235, 187, 83, 0.64);
   border-radius: 50%;
   color: #ffd77d;
-  font-size: clamp(10px, 3vw, 16px);
+  background: rgba(255, 215, 125, 0.08);
+  font-size: clamp(8px, 2.15vw, 11px);
   font-weight: 900;
 }
 
@@ -913,9 +941,8 @@ input {
 .right-actions button strong {
   overflow: hidden;
   max-width: 100%;
-  margin-top: -4%;
   color: #ffe7a8;
-  font-size: clamp(10px, 3vw, 16px);
+  font-size: clamp(9px, 2.3vw, 12px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -925,9 +952,10 @@ input {
 .right-actions button em,
 .bottom-nav button em {
   position: absolute;
-  top: 5%;
-  right: 10%;
-  width: 18%;
+  top: -6%;
+  right: -5%;
+  width: 12%;
+  min-width: 6px;
   aspect-ratio: 1;
   border-radius: 50%;
   background: #df3527;
@@ -937,18 +965,19 @@ input {
 .task-panel {
   position: absolute;
   z-index: 3;
-  left: 3.0%;
-  bottom: 11.7%;
+  left: 5%;
+  bottom: 13.1%;
   display: grid;
-  grid-template-columns: 16% 1fr 21%;
+  grid-template-columns: 13% 1fr 18%;
   align-items: center;
-  width: 69.2%;
-  height: 7.1%;
-  border: 1px solid rgba(238, 190, 98, 0.58);
+  width: 65%;
+  height: 6.2%;
+  border: 1px solid rgba(238, 190, 98, 0.42);
   border-radius: 6px;
-  padding: 1.4% 2%;
-  background: linear-gradient(180deg, rgba(11, 22, 33, 0.88), rgba(8, 14, 24, 0.88));
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+  padding: 1% 1.4%;
+  background: linear-gradient(180deg, rgba(9, 20, 32, 0.78), rgba(5, 11, 20, 0.72));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(3px);
 }
 
 .task-panel .task-icon,
@@ -959,10 +988,13 @@ input {
 }
 
 .task-panel .task-icon {
-  width: 92%;
-  height: 94%;
-  border-radius: 50%;
-  font-size: clamp(10px, 2.8vw, 15px);
+  width: 88%;
+  height: 82%;
+  border-color: rgba(220, 181, 101, 0.36);
+  border-radius: 5px;
+  background: rgba(255, 213, 122, 0.1);
+  box-shadow: none;
+  font-size: clamp(8px, 2.15vw, 11px);
   font-weight: 900;
 }
 
@@ -972,21 +1004,21 @@ input {
 
 .task-panel strong {
   color: #ffd05f;
-  font-size: clamp(10px, 2.7vw, 14px);
+  font-size: clamp(9px, 2.35vw, 12px);
 }
 
 .task-panel span,
 .task-panel small {
   display: block;
   overflow: hidden;
-  font-size: clamp(10px, 2.55vw, 13px);
+  font-size: clamp(9px, 2.2vw, 11px);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .task-panel small {
-  margin-top: 4px;
+  margin-top: 2px;
   color: #efe2c3;
 }
 
@@ -995,25 +1027,27 @@ input {
   border-radius: 4px;
   color: #503111;
   background: linear-gradient(180deg, #fff1b5, #d29335);
-  font-size: clamp(12px, 3.4vw, 18px);
+  box-shadow: none;
+  font-size: clamp(10px, 2.7vw, 14px);
   font-weight: 900;
 }
 
 .status-strip {
   position: absolute;
   z-index: 3;
-  left: 3.2%;
-  bottom: 19.5%;
+  left: 5%;
+  bottom: 19.8%;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1.4%;
-  width: 69%;
-  height: 5.2%;
-  padding: 1%;
-  border: 1px solid rgba(238, 190, 98, 0.48);
+  width: 65%;
+  height: 4.4%;
+  padding: 0.8%;
+  border: 1px solid rgba(238, 190, 98, 0.32);
   border-radius: 6px;
-  background: linear-gradient(180deg, rgba(14, 29, 43, 0.86), rgba(7, 14, 22, 0.88));
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+  background: linear-gradient(180deg, rgba(10, 22, 35, 0.7), rgba(5, 11, 20, 0.66));
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(3px);
 }
 
 .status-strip span,
@@ -1025,7 +1059,8 @@ input {
   border-radius: 4px;
   color: #ffe7b2;
   background: rgba(255, 255, 255, 0.06);
-  font-size: clamp(9px, 2.45vw, 13px);
+  box-shadow: none;
+  font-size: clamp(8px, 2.1vw, 11px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1036,14 +1071,19 @@ input {
 }
 
 .chapter-button {
-  right: 2.1%;
-  bottom: 10.2%;
+  right: 3.4%;
+  bottom: 12.6%;
   display: grid;
   place-items: center;
-  width: 21.8%;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 45% 32%, rgba(45, 108, 202, 0.95), rgba(8, 20, 40, 0.95) 67%);
+  width: 20%;
+  height: 7%;
+  border-color: rgba(238, 190, 98, 0.46);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(28, 84, 128, 0.82), rgba(7, 20, 36, 0.78));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 24px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(3px);
 }
 
 .chapter-button strong,
@@ -1053,35 +1093,41 @@ input {
 }
 
 .chapter-button strong {
-  font-size: clamp(12px, 3.5vw, 21px);
+  font-size: clamp(12px, 3.2vw, 17px);
 }
 
 .chapter-button span {
-  margin-top: -9%;
-  font-size: clamp(9px, 2.5vw, 13px);
+  margin-top: -7%;
+  color: #ffe8a9;
+  font-size: clamp(8px, 2.2vw, 11px);
 }
 
 .bottom-nav {
   position: absolute;
   z-index: 4;
-  left: 0.6%;
-  right: 0.6%;
-  bottom: 0.6%;
+  left: 2%;
+  right: 2%;
+  bottom: 1.1%;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  height: 8.7%;
-  border: 1px solid rgba(238, 190, 98, 0.58);
-  background: linear-gradient(180deg, rgba(17, 28, 43, 0.94), rgba(7, 13, 23, 0.96));
+  gap: 1%;
+  height: 9.4%;
+  padding: 1%;
+  border: 1px solid rgba(238, 190, 98, 0.36);
+  border-radius: 10px 10px 6px 6px;
+  background: linear-gradient(180deg, rgba(12, 24, 39, 0.86), rgba(5, 11, 20, 0.9));
+  box-shadow: 0 -10px 26px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(4px);
 }
 
 .bottom-nav button {
   display: grid;
+  grid-template-rows: 52% 1fr;
   place-items: center;
   min-height: 0;
-  border: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
   box-shadow: none;
 }
 
@@ -1090,19 +1136,22 @@ input {
 }
 
 .bottom-nav button.active {
-  border: 1px solid rgba(255, 218, 126, 0.95);
+  border: 1px solid rgba(255, 218, 126, 0.76);
   background:
-    linear-gradient(180deg, rgba(38, 127, 196, 0.92), rgba(16, 42, 73, 0.94)),
-    radial-gradient(circle at 50% 14%, rgba(255, 234, 157, 0.36), transparent 42%);
+    linear-gradient(180deg, rgba(29, 100, 155, 0.76), rgba(11, 35, 59, 0.82)),
+    radial-gradient(circle at 50% 8%, rgba(255, 234, 157, 0.28), transparent 46%);
 }
 
 .bottom-nav button span {
   display: grid;
   place-items: center;
-  width: 52%;
+  width: 42%;
   aspect-ratio: 1;
+  border: 1px solid rgba(238, 190, 98, 0.36);
+  border-radius: 50%;
   color: #f6ce82;
-  font-size: clamp(14px, 4.5vw, 24px);
+  background: rgba(255, 215, 125, 0.08);
+  font-size: clamp(10px, 3vw, 16px);
   font-weight: 900;
 }
 
@@ -1110,7 +1159,7 @@ input {
   overflow: hidden;
   max-width: 100%;
   color: #eadfc5;
-  font-size: clamp(13px, 3.8vw, 21px);
+  font-size: clamp(9px, 2.7vw, 14px);
   font-weight: 900;
   text-overflow: ellipsis;
   white-space: nowrap;
