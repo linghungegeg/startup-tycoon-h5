@@ -97,6 +97,15 @@ model PlayerProfile {
   actionPowerLimit Int     @default(120)
   monthlyIncome Int        @default(860000)
   monthlyExpense Int       @default(348000)
+  valuation    Int         @default(4800000)
+  founderEquityBasisPoints Int @default(10000)
+  totalDebt    Int         @default(0)
+  creditRating String      @default("A") @db.VarChar(8)
+  employeeSatisfaction Int @default(82)
+  customerSatisfaction Int @default(78)
+  financeMonth Int        @default(1)
+  operatingDay Int        @default(1)
+  riskStatus   String      @default("稳健") @db.VarChar(16)
   pendingEventCount Int    @default(2)
   unreadMailCount Int      @default(1)
   debtWarning String       @default("低") @db.VarChar(8)
@@ -105,10 +114,30 @@ model PlayerProfile {
   server      GameServer   @relation(fields: [serverId], references: [id], onDelete: Restrict)
   avatar      AvatarOption @relation(fields: [avatarId], references: [id], onDelete: Restrict)
   tasks       PlayerTaskProgress[]
+  financeReports CompanyFinanceReport[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
   @@index([avatarId])
+}
+
+model CompanyFinanceReport {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  reportMonth Int
+  income      Int
+  expense     Int
+  netCashFlow Int
+  endingCash  Int
+  totalDebt   Int
+  debtRatioBasisPoints Int
+  riskStatus String        @db.VarChar(16)
+  riskTips   String        @db.Text
+  createdAt   DateTime     @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, reportMonth])
+  @@index([profileId, createdAt])
 }
 
 model TaskConfig {

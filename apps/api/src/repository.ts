@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
+import { calculateFinanceReport } from "./finance.js";
+
 export type AccountRecord = {
   id: string;
   username: string;
@@ -43,6 +45,15 @@ export type PlayerProfileRecord = {
   actionPowerLimit: number;
   monthlyIncome: number;
   monthlyExpense: number;
+  valuation: number;
+  founderEquityBasisPoints: number;
+  totalDebt: number;
+  creditRating: string;
+  employeeSatisfaction: number;
+  customerSatisfaction: number;
+  financeMonth: number;
+  operatingDay: number;
+  riskStatus: string;
   pendingEventCount: number;
   unreadMailCount: number;
   debtWarning: string;
@@ -68,6 +79,36 @@ export type TaskRecord = {
   isClaimable: boolean;
 };
 
+export type CompanyFinanceRecord = {
+  profileId: string;
+  companyName: string;
+  companyLevel: number;
+  cash: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  netCashFlow: number;
+  valuation: number;
+  founderEquityBasisPoints: number;
+  totalDebt: number;
+  debtRatioBasisPoints: number;
+  creditRating: string;
+  brandReputation: number;
+  employeeSatisfaction: number;
+  customerSatisfaction: number;
+  financeMonth: number;
+  operatingDay: number;
+  riskStatus: "稳健" | "预警" | "资金紧张";
+  riskTips: string[];
+};
+
+export type CompanyFinanceSettlementRecord = CompanyFinanceRecord & {
+  reportMonth: number;
+  income: number;
+  expense: number;
+  endingCash: number;
+  createdAt: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -83,6 +124,9 @@ export type GameRepository = {
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
+  getCompanyFinance(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
+  settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
+  settleCompanyMonth(accountId: string, serverId: string, reportMonth: number): Promise<CompanyFinanceSettlementRecord | "PLAYER_NOT_FOUND">;
   disconnect(): Promise<void>;
 };
 
@@ -116,6 +160,15 @@ const toProfileRecord = (profile: {
   actionPowerLimit: number;
   monthlyIncome: number;
   monthlyExpense: number;
+  valuation: number;
+  founderEquityBasisPoints: number;
+  totalDebt: number;
+  creditRating: string;
+  employeeSatisfaction: number;
+  customerSatisfaction: number;
+  financeMonth: number;
+  operatingDay: number;
+  riskStatus: string;
   pendingEventCount: number;
   unreadMailCount: number;
   debtWarning: string;
@@ -124,6 +177,32 @@ const toProfileRecord = (profile: {
   ...profile,
   createdAt: profile.createdAt.toISOString()
 });
+
+const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRecord => {
+  const report = calculateFinanceReport(profile);
+
+  return {
+    profileId: profile.id,
+    companyName: profile.companyName,
+    companyLevel: profile.companyLevel,
+    cash: profile.cash,
+    monthlyIncome: profile.monthlyIncome,
+    monthlyExpense: profile.monthlyExpense,
+    netCashFlow: report.netCashFlow,
+    valuation: profile.valuation,
+    founderEquityBasisPoints: profile.founderEquityBasisPoints,
+    totalDebt: profile.totalDebt,
+    debtRatioBasisPoints: report.debtRatioBasisPoints,
+    creditRating: profile.creditRating,
+    brandReputation: profile.reputation,
+    employeeSatisfaction: profile.employeeSatisfaction,
+    customerSatisfaction: profile.customerSatisfaction,
+    financeMonth: profile.financeMonth,
+    operatingDay: profile.operatingDay,
+    riskStatus: report.riskStatus,
+    riskTips: report.riskTips
+  };
+};
 
 const readTaskType = (type: string): TaskRecord["type"] =>
   type === "daily" || type === "side" ? type : "main";
@@ -410,6 +489,132 @@ export const createPrismaGameRepository = (
     });
 
     return toTaskRecord(config, progress, today);
+  },
+
+  async getCompanyFinance(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+
+    return profile === null ? "PLAYER_NOT_FOUND" : toCompanyFinanceRecord(toProfileRecord(profile));
+  },
+
+  async settleCompanyDay(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const updated = await prisma.playerProfile.update({
+      where: { id: profile.id },
+      data: {
+        operatingDay: profile.operatingDay + 1
+      }
+    });
+
+    return toCompanyFinanceRecord(toProfileRecord(updated));
+  },
+
+  async settleCompanyMonth(accountId, serverId, reportMonth) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const existingReport = await prisma.companyFinanceReport.findUnique({
+      where: {
+        profileId_reportMonth: {
+          profileId: profile.id,
+          reportMonth
+        }
+      }
+    });
+    if (existingReport !== null) {
+      const finance = toCompanyFinanceRecord(toProfileRecord(profile));
+      return {
+        ...finance,
+        reportMonth: existingReport.reportMonth,
+        income: existingReport.income,
+        expense: existingReport.expense,
+        endingCash: existingReport.endingCash,
+        createdAt: existingReport.createdAt.toISOString()
+      };
+    }
+
+    const currentProfile = toProfileRecord(profile);
+    const report = calculateFinanceReport(currentProfile);
+    const nextRiskStatus = report.riskStatus;
+    const nextDebtWarning = report.debtRatioBasisPoints >= 6000 ? "高" : "低";
+    const nextCreditRating = report.debtRatioBasisPoints >= 6000 || report.cashAfterSettlement < 0 ? "B" : "A";
+
+    const [updated, savedReport] = await prisma.$transaction(async (tx) => {
+      const nextProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: report.cashAfterSettlement,
+          financeMonth: Math.max(profile.financeMonth, reportMonth + 1),
+          operatingDay: 1,
+          riskStatus: nextRiskStatus,
+          debtWarning: nextDebtWarning,
+          creditRating: nextCreditRating,
+          pendingEventCount: report.riskStatus === "稳健" ? profile.pendingEventCount : profile.pendingEventCount + 1
+        }
+      });
+
+      const financeReport = await tx.companyFinanceReport.upsert({
+        where: {
+          profileId_reportMonth: {
+            profileId: profile.id,
+            reportMonth
+          }
+        },
+        update: {},
+        create: {
+          id: randomUUID(),
+          profileId: profile.id,
+          reportMonth,
+          income: profile.monthlyIncome,
+          expense: profile.monthlyExpense,
+          netCashFlow: report.netCashFlow,
+          endingCash: report.cashAfterSettlement,
+          totalDebt: profile.totalDebt,
+          debtRatioBasisPoints: report.debtRatioBasisPoints,
+          riskStatus: report.riskStatus,
+          riskTips: report.riskTips.join("\n")
+        }
+      });
+
+      return [nextProfile, financeReport] as const;
+    });
+
+    const finance = toCompanyFinanceRecord(toProfileRecord(updated));
+    return {
+      ...finance,
+      reportMonth: savedReport.reportMonth,
+      income: savedReport.income,
+      expense: savedReport.expense,
+      endingCash: savedReport.endingCash,
+      createdAt: savedReport.createdAt.toISOString()
+    };
   },
 
   async disconnect() {

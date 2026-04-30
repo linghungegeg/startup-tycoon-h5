@@ -60,6 +60,15 @@ type PlayerProfile = {
   actionPowerLimit: number;
   monthlyIncome: number;
   monthlyExpense: number;
+  valuation: number;
+  founderEquityBasisPoints: number;
+  totalDebt: number;
+  creditRating: string;
+  employeeSatisfaction: number;
+  customerSatisfaction: number;
+  financeMonth: number;
+  operatingDay: number;
+  riskStatus: string;
   pendingEventCount: number;
   unreadMailCount: number;
   debtWarning: string;
@@ -115,6 +124,30 @@ type TaskItem = {
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
   isClaimable: boolean;
+};
+
+type CompanyFinance = {
+  profileId: string;
+  companyName: string;
+  companyLevel: number;
+  cash: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  netCashFlow: number;
+  valuation: number;
+  founderEquityBasisPoints: number;
+  totalDebt: number;
+  debtRatioBasisPoints: number;
+  creditRating: string;
+  brandReputation: number;
+  employeeSatisfaction: number;
+  customerSatisfaction: number;
+  financeMonth: number;
+  operatingDay: number;
+  riskStatus: "稳健" | "预警" | "资金紧张";
+  riskTips: string[];
+  reportMonth?: number;
+  endingCash?: number;
 };
 
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
@@ -571,6 +604,8 @@ function App() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeTaskType, setActiveTaskType] = useState<TaskItem["type"]>("main");
   const [taskError, setTaskError] = useState("");
+  const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
+  const [financeError, setFinanceError] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -627,6 +662,22 @@ function App() {
     }
 
     setTaskError(response.error.message);
+  };
+
+  const loadCompanyFinance = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<CompanyFinance>(
+      `/company/status?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setCompanyFinance(response.data);
+      setFinanceError("");
+      return;
+    }
+
+    setFinanceError(response.error.message);
   };
 
   const enterGame = (
@@ -720,6 +771,7 @@ function App() {
     }
 
     void loadTasks(account.token, selectedServer.id);
+    void loadCompanyFinance(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
 
   const runAuth = async (mode: AuthMode): Promise<void> => {
@@ -962,6 +1014,48 @@ function App() {
     }
 
     setTaskError(response.error.message);
+  };
+
+  const settleFinanceMonth = async (): Promise<void> => {
+    if (!account || !selectedServer || !companyFinance) {
+      return;
+    }
+
+    const response = await apiRequest<CompanyFinance>(
+      "/finance/settle-month",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, reportMonth: companyFinance.financeMonth })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCompanyFinance(response.data);
+      setProfile((currentProfile) =>
+        currentProfile === null
+          ? currentProfile
+          : {
+              ...currentProfile,
+              cash: response.data.cash,
+              monthlyIncome: response.data.monthlyIncome,
+              monthlyExpense: response.data.monthlyExpense,
+              valuation: response.data.valuation,
+              totalDebt: response.data.totalDebt,
+              creditRating: response.data.creditRating,
+              reputation: response.data.brandReputation,
+              employeeSatisfaction: response.data.employeeSatisfaction,
+              customerSatisfaction: response.data.customerSatisfaction,
+              financeMonth: response.data.financeMonth,
+              operatingDay: response.data.operatingDay,
+              riskStatus: response.data.riskStatus
+            }
+      );
+      setFinanceError("");
+      return;
+    }
+
+    setFinanceError(response.error.message);
   };
 
   const cultivateEmployee = (): void => {
@@ -1381,7 +1475,80 @@ function App() {
             </section>
           )}
 
-          {selectedPanel && (
+          {activePanel === "财务" && (
+            <section className="home-modal" aria-label="财务">
+              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActivePanel(null)} />
+              <div className="modal-sheet finance-sheet">
+                <header>
+                  <strong>财务</strong>
+                  <button type="button" aria-label="关闭" onClick={() => setActivePanel(null)}>×</button>
+                </header>
+                {companyFinance ? (
+                  <>
+                    <dl className="finance-grid">
+                      <div>
+                        <dt>现金</dt>
+                        <dd>{compactNumber(companyFinance.cash)}</dd>
+                      </div>
+                      <div>
+                        <dt>月收入</dt>
+                        <dd>{compactNumber(companyFinance.monthlyIncome)}</dd>
+                      </div>
+                      <div>
+                        <dt>月支出</dt>
+                        <dd>{compactNumber(companyFinance.monthlyExpense)}</dd>
+                      </div>
+                      <div>
+                        <dt>净现金流</dt>
+                        <dd>{compactNumber(companyFinance.netCashFlow)}</dd>
+                      </div>
+                      <div>
+                        <dt>估值</dt>
+                        <dd>{compactNumber(companyFinance.valuation)}</dd>
+                      </div>
+                      <div>
+                        <dt>股权</dt>
+                        <dd>{(companyFinance.founderEquityBasisPoints / 100).toFixed(1)}%</dd>
+                      </div>
+                      <div>
+                        <dt>负债率</dt>
+                        <dd>{(companyFinance.debtRatioBasisPoints / 100).toFixed(1)}%</dd>
+                      </div>
+                      <div>
+                        <dt>信用</dt>
+                        <dd>{companyFinance.creditRating}</dd>
+                      </div>
+                    </dl>
+                    <section className={`finance-risk ${companyFinance.riskStatus === "稳健" ? "stable" : "warning"}`}>
+                      <strong>{companyFinance.riskStatus}</strong>
+                      {companyFinance.riskTips.map((tip) => (
+                        <p key={tip}>{tip}</p>
+                      ))}
+                    </section>
+                    {financeError && <p className="task-error">{financeError}</p>}
+                    <button className="modal-action" type="button" onClick={() => void settleFinanceMonth()}>
+                      生成第 {companyFinance.financeMonth} 月经营报告
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p>{financeError || "财务数据读取中，请稍候。"}</p>
+                    </div>
+                    <button
+                      className="modal-action"
+                      type="button"
+                      onClick={() => account && selectedServer && void loadCompanyFinance(account.token, selectedServer.id)}
+                    >
+                      刷新财务
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
+          {selectedPanel && activePanel !== "财务" && (
             <section className="home-modal" aria-label={selectedPanel.title}>
               <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActivePanel(null)} />
               <div className="modal-sheet">

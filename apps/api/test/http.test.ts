@@ -5,11 +5,14 @@ import { test } from "node:test";
 
 import { createApiServer } from "../src/http.js";
 import type { ApiConfig } from "../src/config.js";
+import { calculateFinanceReport } from "../src/finance.js";
 import { createPasswordRecord } from "../src/password.js";
 import type {
   AccountRecord,
   AdminUserRecord,
   AvatarRecord,
+  CompanyFinanceRecord,
+  CompanyFinanceSettlementRecord,
   GameRepository,
   PlayerProfileRecord,
   ServerRecord,
@@ -106,9 +109,36 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
+  const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
 
   const getProfileByAccountAndServer = (accountId: string, serverId: string): PlayerProfileRecord | undefined =>
     profiles.get(`${accountId}:${serverId}`);
+
+  const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRecord => {
+    const report = calculateFinanceReport(profile);
+
+    return {
+      profileId: profile.id,
+      companyName: profile.companyName,
+      companyLevel: profile.companyLevel,
+      cash: profile.cash,
+      monthlyIncome: profile.monthlyIncome,
+      monthlyExpense: profile.monthlyExpense,
+      netCashFlow: report.netCashFlow,
+      valuation: profile.valuation,
+      founderEquityBasisPoints: profile.founderEquityBasisPoints,
+      totalDebt: profile.totalDebt,
+      debtRatioBasisPoints: report.debtRatioBasisPoints,
+      creditRating: profile.creditRating,
+      brandReputation: profile.reputation,
+      employeeSatisfaction: profile.employeeSatisfaction,
+      customerSatisfaction: profile.customerSatisfaction,
+      financeMonth: profile.financeMonth,
+      operatingDay: profile.operatingDay,
+      riskStatus: report.riskStatus,
+      riskTips: report.riskTips
+    };
+  };
 
   const toTaskRecord = (
     profileId: string,
@@ -191,6 +221,15 @@ const createTestRepository = (): GameRepository => {
         actionPowerLimit: 120,
         monthlyIncome: 860000,
         monthlyExpense: 348000,
+        valuation: 4800000,
+        founderEquityBasisPoints: 10000,
+        totalDebt: 0,
+        creditRating: "A",
+        employeeSatisfaction: 82,
+        customerSatisfaction: 78,
+        financeMonth: 1,
+        operatingDay: 1,
+        riskStatus: "稳健",
         pendingEventCount: 2,
         unreadMailCount: 1,
         debtWarning: "低",
@@ -261,6 +300,53 @@ const createTestRepository = (): GameRepository => {
         claimedAt: new Date().toISOString()
       });
       return toTaskRecord(profile.id, config, today);
+    },
+    async getCompanyFinance(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toCompanyFinanceRecord(profile);
+    },
+    async settleCompanyDay(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      profile.operatingDay += 1;
+      return toCompanyFinanceRecord(profile);
+    },
+    async settleCompanyMonth(accountId, serverId, reportMonth) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const key = `${profile.id}:${reportMonth}`;
+      const existing = financeReports.get(key);
+      if (existing !== undefined) {
+        return existing;
+      }
+
+      const report = calculateFinanceReport(profile);
+      profile.cash = report.cashAfterSettlement;
+      profile.financeMonth = Math.max(profile.financeMonth, reportMonth + 1);
+      profile.operatingDay = 1;
+      profile.riskStatus = report.riskStatus;
+      profile.debtWarning = report.debtRatioBasisPoints >= 6000 ? "高" : "低";
+      profile.creditRating = report.debtRatioBasisPoints >= 6000 || report.cashAfterSettlement < 0 ? "B" : "A";
+      if (report.riskStatus !== "稳健") {
+        profile.pendingEventCount += 1;
+      }
+
+      const settlement: CompanyFinanceSettlementRecord = {
+        ...toCompanyFinanceRecord(profile),
+        reportMonth,
+        income: profile.monthlyIncome,
+        expense: profile.monthlyExpense,
+        endingCash: report.cashAfterSettlement,
+        createdAt: new Date().toISOString()
+      };
+      financeReports.set(key, settlement);
+      return settlement;
     },
     async disconnect() {}
   };
@@ -453,6 +539,104 @@ test("creates one player profile per account per server", async () => {
     assert.equal(profile.status, 200);
     assert.equal(profile.body.success, true);
     assert.equal(profile.body.data?.id, created.body.data?.id);
+  });
+});
+
+test("calculates finance reports across cash-flow boundaries", () => {
+  const cases = [
+    {
+      name: "positive net cash flow",
+      input: { cash: 1000, monthlyIncome: 800, monthlyExpense: 300, totalDebt: 0, valuation: 10000 },
+      expected: { netCashFlow: 500, cashAfterSettlement: 1500, debtRatioBasisPoints: 0, riskStatus: "稳健" }
+    },
+    {
+      name: "negative flow with enough cash",
+      input: { cash: 1000, monthlyIncome: 300, monthlyExpense: 800, totalDebt: 0, valuation: 10000 },
+      expected: { netCashFlow: -500, cashAfterSettlement: 500, debtRatioBasisPoints: 0, riskStatus: "预警" }
+    },
+    {
+      name: "cash shortage enters risk",
+      input: { cash: 100, monthlyIncome: 200, monthlyExpense: 500, totalDebt: 0, valuation: 10000 },
+      expected: { netCashFlow: -300, cashAfterSettlement: -200, debtRatioBasisPoints: 0, riskStatus: "资金紧张" }
+    },
+    {
+      name: "zero values stay stable",
+      input: { cash: 0, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 0, valuation: 0 },
+      expected: { netCashFlow: 0, cashAfterSettlement: 0, debtRatioBasisPoints: 0, riskStatus: "稳健" }
+    },
+    {
+      name: "high debt ratio becomes warning",
+      input: { cash: 1000, monthlyIncome: 0, monthlyExpense: 0, totalDebt: 7000, valuation: 10000 },
+      expected: { netCashFlow: 0, cashAfterSettlement: 1000, debtRatioBasisPoints: 7000, riskStatus: "预警" }
+    },
+    {
+      name: "large values do not overflow",
+      input: { cash: 1000000000, monthlyIncome: 900000000, monthlyExpense: 100000000, totalDebt: 0, valuation: 2000000000 },
+      expected: { netCashFlow: 800000000, cashAfterSettlement: 1800000000, debtRatioBasisPoints: 0, riskStatus: "稳健" }
+    }
+  ] as const;
+
+  for (const testCase of cases) {
+    const report = calculateFinanceReport(testCase.input);
+    assert.equal(report.netCashFlow, testCase.expected.netCashFlow, testCase.name);
+    assert.equal(report.cashAfterSettlement, testCase.expected.cashAfterSettlement, testCase.name);
+    assert.equal(report.debtRatioBasisPoints, testCase.expected.debtRatioBasisPoints, testCase.name);
+    assert.equal(report.riskStatus, testCase.expected.riskStatus, testCase.name);
+  }
+});
+
+test("loads and settles company finance without duplicate monthly settlement", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const status = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    assert.equal(status.status, 200);
+    assert.equal(status.body.success, true);
+    assert.equal(status.body.data?.netCashFlow, 512000);
+    assert.equal(status.body.data?.riskStatus, "稳健");
+
+    const day = await requestJson<CompanyFinanceRecord>(baseUrl, "/finance/settle-day", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(day.status, 200);
+    assert.equal(day.body.data?.operatingDay, 2);
+
+    const settled = await requestJson<CompanyFinanceSettlementRecord>(baseUrl, "/finance/settle-month", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", reportMonth: 1 })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.reportMonth, 1);
+    assert.equal(settled.body.data?.endingCash, 2962000);
+    assert.equal(settled.body.data?.financeMonth, 2);
+
+    const duplicate = await requestJson<CompanyFinanceSettlementRecord>(baseUrl, "/finance/settle-month", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", reportMonth: 1 })
+    });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.data?.endingCash, settled.body.data?.endingCash);
   });
 });
 

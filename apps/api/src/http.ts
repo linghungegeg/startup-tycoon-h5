@@ -182,6 +182,19 @@ const readServerId = (body: unknown): string | undefined => {
   return serverId === "" ? undefined : serverId;
 };
 
+const readPositiveInteger = (body: unknown, key: string): number | undefined => {
+  if (!isRecord(body)) {
+    return undefined;
+  }
+
+  const value = body[key];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return undefined;
+  }
+
+  return value;
+};
+
 const readToday = (): string => new Date().toISOString().slice(0, 10);
 
 const readBearerToken = (request: IncomingMessage): string | undefined => {
@@ -463,6 +476,74 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(tasks, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/company/status") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const finance = await repository.getCompanyFinance(account.id, serverId);
+      if (finance === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(finance, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/settle-day") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const finance = await repository.settleCompanyDay(account.id, serverId);
+      if (finance === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(finance, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/finance/settle-month") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const reportMonth = readPositiveInteger(body, "reportMonth");
+      if (serverId === undefined || reportMonth === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and reportMonth are required.", traceId));
+        return;
+      }
+
+      const finance = await repository.settleCompanyMonth(account.id, serverId, reportMonth);
+      if (finance === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(finance, traceId));
       return;
     }
 
