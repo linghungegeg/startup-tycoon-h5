@@ -264,12 +264,13 @@ ol {
 
 .server-label {
   position: absolute;
-  left: 30.0%;
-  top: 63.8%;
-  display: grid;
-  width: 40.0%;
-  height: 2.8%;
-  place-items: center;
+  left: 24.0%;
+  top: 60.35%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 47.0%;
+  height: 4.6%;
   color: #f0c08a;
   background: transparent;
   font-size: clamp(13px, 3.7vw, 18px);
@@ -282,10 +283,10 @@ ol {
 
 .server-ribbon button {
   position: absolute;
-  top: 62.4%;
-  right: 15.0%;
-  width: 15.5%;
-  height: 4.0%;
+  top: 60.35%;
+  right: 11.8%;
+  width: 18.8%;
+  height: 4.6%;
   background: transparent;
   pointer-events: auto;
 }
@@ -296,7 +297,8 @@ ol {
 
 .game-input-row {
   position: absolute;
-  display: block;
+  display: flex;
+  align-items: center;
   z-index: 3;
   color: #f6dfbb;
   font-size: 18px;
@@ -305,13 +307,13 @@ ol {
 
 .game-input-row input {
   width: 100%;
-  height: 100%;
+  height: auto;
   border: 0;
   border-radius: 0;
   padding: 0;
   color: #fff4e0;
   background: transparent;
-  font-size: clamp(13px, 3.55vw, 18px);
+  font-size: clamp(13px, 3.75vw, 18px);
   font-weight: 800;
   line-height: 1;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.76);
@@ -329,57 +331,58 @@ ol {
 
 .auth-panel .game-input-row input {
   display: block;
-  height: 100%;
-  line-height: normal;
-  transform: none;
+  height: auto;
+  line-height: 1;
+  transform: translateY(-22%);
 }
 
 .auth-panel .game-input-row:nth-of-type(1) {
-  top: 69.45%;
-  left: 24%;
-  width: 55.0%;
-  height: 2.7%;
+  top: 67.35%;
+  left: 20.4%;
+  width: 66.0%;
+  height: 5.0%;
 }
 
 .auth-panel .game-input-row:nth-of-type(1) input {
-  padding-left: 0;
+  padding-left: 8.0%;
 }
 
 .auth-panel .game-input-row:nth-of-type(2) {
-  top: 76.10%;
-  left: 24%;
-  width: 55.0%;
-  height: 2.7%;
+  top: 73.95%;
+  left: 20.4%;
+  width: 66.0%;
+  height: 5.0%;
 }
 
 .auth-panel .game-input-row:nth-of-type(2) input {
   -webkit-text-security: disc;
   caret-color: #fff4e0;
-  padding-left: 0;
+  padding-left: 8.0%;
+  transform: translateY(-34%);
 }
 
 .auth-remember {
   position: absolute;
   z-index: 4;
-  top: 78.58%;
-  left: 66.2%;
+  top: 76.6%;
+  left: 62.3%;
   display: flex;
   align-items: center;
-  gap: 6.0%;
-  width: 20.0%;
-  height: 2.7%;
+  gap: 16%;
+  width: 24.0%;
+  height: 4.2%;
   color: #e5c08c;
   font-size: clamp(11px, 3.25vw, 16px);
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.1;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.74);
   white-space: nowrap;
 }
 
 .auth-remember input {
   position: relative;
-  flex: 0 0 18%;
-  width: auto;
+  flex: 0 0 20%;
+  width: 20%;
   height: auto;
   aspect-ratio: 1;
   margin: 0;
@@ -390,18 +393,20 @@ ol {
 
 .auth-remember::before {
   position: absolute;
-  left: 2.2%;
-  top: 46%;
+  left: 24.0%;
+  top: 50.0%;
   display: none;
-  width: 5px;
-  height: 10px;
+  width: auto;
+  height: auto;
   color: #f7d28d;
-  content: "";
-  border-right: 2px solid #f7d28d;
-  border-bottom: 2px solid #f7d28d;
+  content: "✓";
+  border: 0;
+  font-size: clamp(15px, 4vw, 18px);
+  font-weight: 900;
+  line-height: 1;
   pointer-events: none;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.78));
-  transform: translateY(-50%) rotate(45deg);
+  transform: translate(-50%, -54%);
 }
 
 .auth-remember:has(input:checked)::before {
