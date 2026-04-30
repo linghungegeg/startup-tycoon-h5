@@ -91,6 +91,128 @@ const taskConfigs = [
   }
 ];
 
+const employeeConfigs = [
+  {
+    id: "lin-zhiyuan",
+    name: "林知远",
+    role: "工程师",
+    careerLevel: "合伙人",
+    rarity: "传奇",
+    baseSalary: 88000,
+    basePressure: 34,
+    loyalty: 92,
+    growthPotential: 86,
+    management: 86,
+    negotiation: 74,
+    execution: 92,
+    specialty: "擅长架构优化，能降低技术债和服务器成本。",
+    recruitWeight: 3,
+    sortOrder: 1
+  },
+  {
+    id: "xu-manqing",
+    name: "许曼青",
+    role: "产品经理",
+    careerLevel: "总监",
+    rarity: "顶尖",
+    baseSalary: 72000,
+    basePressure: 42,
+    loyalty: 82,
+    growthPotential: 88,
+    management: 78,
+    negotiation: 72,
+    execution: 90,
+    specialty: "擅长 MVP 和用户留存，适合产品线推进。",
+    recruitWeight: 8,
+    sortOrder: 2
+  },
+  {
+    id: "zhou-qihang",
+    name: "周启航",
+    role: "销售",
+    careerLevel: "高级",
+    rarity: "稀缺",
+    baseSalary: 62000,
+    basePressure: 46,
+    loyalty: 76,
+    growthPotential: 80,
+    management: 70,
+    negotiation: 92,
+    execution: 84,
+    specialty: "擅长大客户谈判，提高项目收入和回款概率。",
+    recruitWeight: 15,
+    sortOrder: 3
+  },
+  {
+    id: "shen-ruoning",
+    name: "沈若宁",
+    role: "财务",
+    careerLevel: "中级",
+    rarity: "优秀",
+    baseSalary: 46000,
+    basePressure: 28,
+    loyalty: 86,
+    growthPotential: 74,
+    management: 76,
+    negotiation: 68,
+    execution: 82,
+    specialty: "擅长现金流管控，降低经营波动。",
+    recruitWeight: 24,
+    sortOrder: 4
+  },
+  {
+    id: "gu-mingchuan",
+    name: "顾明川",
+    role: "法务",
+    careerLevel: "专家",
+    rarity: "稀缺",
+    baseSalary: 58000,
+    basePressure: 32,
+    loyalty: 88,
+    growthPotential: 78,
+    management: 72,
+    negotiation: 84,
+    execution: 76,
+    specialty: "擅长合同和劳动争议，降低合规风险。",
+    recruitWeight: 12,
+    sortOrder: 5
+  },
+  {
+    id: "ye-siqi",
+    name: "叶思齐",
+    role: "运营",
+    careerLevel: "高级",
+    rarity: "优秀",
+    baseSalary: 42000,
+    basePressure: 38,
+    loyalty: 80,
+    growthPotential: 82,
+    management: 70,
+    negotiation: 66,
+    execution: 88,
+    specialty: "擅长活动和用户增长，但容易提高营销成本。",
+    recruitWeight: 28,
+    sortOrder: 6
+  },
+  {
+    id: "su-jian",
+    name: "苏简",
+    role: "HR",
+    careerLevel: "中级",
+    rarity: "优秀",
+    baseSalary: 38000,
+    basePressure: 24,
+    loyalty: 90,
+    growthPotential: 76,
+    management: 80,
+    negotiation: 64,
+    execution: 72,
+    specialty: "降低离职风险，提高招聘效率。",
+    recruitWeight: 30,
+    sortOrder: 7
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -119,6 +241,14 @@ const seed = async (): Promise<void> => {
       where: { id: taskConfig.id },
       update: taskConfig,
       create: taskConfig
+    });
+  }
+
+  for (const employeeConfig of employeeConfigs) {
+    await prisma.employeeConfig.upsert({
+      where: { id: employeeConfig.id },
+      update: employeeConfig,
+      create: employeeConfig
     });
   }
 

@@ -115,10 +115,63 @@ model PlayerProfile {
   avatar      AvatarOption @relation(fields: [avatarId], references: [id], onDelete: Restrict)
   tasks       PlayerTaskProgress[]
   financeReports CompanyFinanceReport[]
+  employees   PlayerEmployee[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
   @@index([avatarId])
+}
+
+model EmployeeConfig {
+  id        String          @id @db.VarChar(32)
+  name      String          @db.VarChar(32)
+  role      String          @db.VarChar(24)
+  careerLevel String        @db.VarChar(16)
+  rarity    String          @db.VarChar(16)
+  baseSalary Int
+  basePressure Int
+  loyalty   Int
+  growthPotential Int
+  management Int
+  negotiation Int
+  execution  Int
+  specialty String          @db.VarChar(160)
+  recruitWeight Int
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  employees PlayerEmployee[]
+
+  @@index([recruitWeight])
+  @@index([sortOrder])
+}
+
+model PlayerEmployee {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  configId  String       @db.VarChar(32)
+  name      String       @db.VarChar(32)
+  role      String       @db.VarChar(24)
+  careerLevel String     @db.VarChar(16)
+  rarity    String       @db.VarChar(16)
+  level     Int          @default(1)
+  salary    Int
+  pressure  Int
+  loyalty   Int
+  growthPotential Int
+  management Int
+  negotiation Int
+  execution  Int
+  specialty String       @db.VarChar(160)
+  equityBasisPoints Int  @default(0)
+  assignedTo String?     @db.VarChar(32)
+  isActive Boolean       @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    EmployeeConfig @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, configId])
+  @@index([profileId, isActive])
 }
 
 model CompanyFinanceReport {

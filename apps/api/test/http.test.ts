@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import { createApiServer } from "../src/http.js";
 import type { ApiConfig } from "../src/config.js";
+import { pickRecruitCandidate } from "../src/employee.js";
 import { calculateFinanceReport } from "../src/finance.js";
 import { createPasswordRecord } from "../src/password.js";
 import type {
@@ -13,6 +14,7 @@ import type {
   AvatarRecord,
   CompanyFinanceRecord,
   CompanyFinanceSettlementRecord,
+  EmployeeRecord,
   GameRepository,
   PlayerProfileRecord,
   ServerRecord,
@@ -62,6 +64,57 @@ const createTestRepository = (): GameRepository => {
     { id: "builder", name: "产品型创始人", glyph: "造", specialty: "产品研发与团队协作" }
   ];
   const profiles = new Map<string, PlayerProfileRecord>();
+  const employeeConfigs = [
+    {
+      id: "lin-zhiyuan",
+      name: "林知远",
+      role: "工程师",
+      careerLevel: "合伙人",
+      rarity: "传奇",
+      baseSalary: 88000,
+      basePressure: 34,
+      loyalty: 92,
+      growthPotential: 86,
+      management: 86,
+      negotiation: 74,
+      execution: 92,
+      specialty: "擅长架构优化，能降低技术债和服务器成本。",
+      recruitWeight: 3
+    },
+    {
+      id: "xu-manqing",
+      name: "许曼青",
+      role: "产品经理",
+      careerLevel: "总监",
+      rarity: "顶尖",
+      baseSalary: 72000,
+      basePressure: 42,
+      loyalty: 82,
+      growthPotential: 88,
+      management: 78,
+      negotiation: 72,
+      execution: 90,
+      specialty: "擅长 MVP 和用户留存，适合产品线推进。",
+      recruitWeight: 8
+    },
+    {
+      id: "shen-ruoning",
+      name: "沈若宁",
+      role: "财务",
+      careerLevel: "中级",
+      rarity: "优秀",
+      baseSalary: 46000,
+      basePressure: 28,
+      loyalty: 86,
+      growthPotential: 74,
+      management: 76,
+      negotiation: 68,
+      execution: 82,
+      specialty: "擅长现金流管控，降低经营波动。",
+      recruitWeight: 24
+    }
+  ];
+  const employees = new Map<string, EmployeeRecord>();
   const taskConfigs = [
     {
       id: "main-profile-created",
@@ -347,6 +400,117 @@ const createTestRepository = (): GameRepository => {
       };
       financeReports.set(key, settlement);
       return settlement;
+    },
+    async listEmployees(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      return [...employees.values()].filter((employee) => employee.id.startsWith(`${profile.id}:`));
+    },
+    async recruitEmployee(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const ownedConfigIds = new Set(
+        [...employees.values()]
+          .filter((employee) => employee.id.startsWith(`${profile.id}:`))
+          .map((employee) => employee.configId)
+      );
+      const selected = employeeConfigs.find((config) => !ownedConfigIds.has(config.id));
+      if (selected === undefined) {
+        return "NO_EMPLOYEE_AVAILABLE";
+      }
+
+      const created: EmployeeRecord = {
+        id: `${profile.id}:${selected.id}`,
+        configId: selected.id,
+        name: selected.name,
+        role: selected.role,
+        careerLevel: selected.careerLevel,
+        rarity: selected.rarity,
+        level: 1,
+        salary: selected.baseSalary,
+        pressure: selected.basePressure,
+        loyalty: selected.loyalty,
+        growthPotential: selected.growthPotential,
+        management: selected.management,
+        negotiation: selected.negotiation,
+        execution: selected.execution,
+        specialty: selected.specialty,
+        equityBasisPoints: 0,
+        assignedTo: null,
+        isActive: true
+      };
+      employees.set(created.id, created);
+      profile.monthlyExpense += created.salary;
+      profile.employeeSatisfaction += 1;
+      return created;
+    },
+    async cultivateEmployee(accountId, serverId, employeeId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const employee = employees.get(employeeId);
+      if (employee === undefined || !employee.id.startsWith(`${profile.id}:`) || !employee.isActive) {
+        return "EMPLOYEE_NOT_FOUND";
+      }
+
+      const salaryIncrease = Math.max(2000, Math.round(employee.salary * 0.08));
+      employee.level += 1;
+      employee.salary += salaryIncrease;
+      employee.pressure = Math.min(employee.pressure + 2, 100);
+      employee.loyalty = Math.min(employee.loyalty + 1, 100);
+      employee.management += 2;
+      employee.negotiation += 2;
+      employee.execution += 2;
+      profile.cash -= 20000;
+      profile.monthlyExpense += salaryIncrease;
+      return employee;
+    },
+    async grantEmployeeEquity(accountId, serverId, employeeId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const employee = employees.get(employeeId);
+      if (employee === undefined || !employee.id.startsWith(`${profile.id}:`) || !employee.isActive) {
+        return "EMPLOYEE_NOT_FOUND";
+      }
+
+      if (profile.founderEquityBasisPoints < 100) {
+        return "EQUITY_LIMIT_REACHED";
+      }
+
+      employee.equityBasisPoints += 100;
+      employee.loyalty = Math.min(employee.loyalty + 8, 100);
+      profile.founderEquityBasisPoints -= 100;
+      profile.employeeSatisfaction += 2;
+      return employee;
+    },
+    async dismissEmployee(accountId, serverId, employeeId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const employee = employees.get(employeeId);
+      if (employee === undefined || !employee.id.startsWith(`${profile.id}:`) || !employee.isActive) {
+        return "EMPLOYEE_NOT_FOUND";
+      }
+
+      employee.isActive = false;
+      profile.monthlyExpense -= employee.salary;
+      profile.employeeSatisfaction -= 5;
+      profile.reputation -= 2000;
+      profile.pendingEventCount += 1;
+      return toCompanyFinanceRecord(profile);
     },
     async disconnect() {}
   };
@@ -637,6 +801,104 @@ test("loads and settles company finance without duplicate monthly settlement", a
     });
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.data?.endingCash, settled.body.data?.endingCash);
+  });
+});
+
+test("picks recruit candidates by configured weight boundaries", () => {
+  const pool = [
+    { id: "common", recruitWeight: 10 },
+    { id: "rare", recruitWeight: 5 },
+    { id: "legend", recruitWeight: 1 }
+  ];
+
+  assert.equal(pickRecruitCandidate(pool, 0)?.id, "common");
+  assert.equal(pickRecruitCandidate(pool, 9.99)?.id, "common");
+  assert.equal(pickRecruitCandidate(pool, 10)?.id, "rare");
+  assert.equal(pickRecruitCandidate(pool, 14.99)?.id, "rare");
+  assert.equal(pickRecruitCandidate(pool, 15)?.id, "legend");
+  assert.equal(pickRecruitCandidate([], 0), undefined);
+});
+
+test("recruits, cultivates, grants equity, and dismisses persistent employees", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const baseline = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    assert.equal(baseline.status, 200);
+    const baselineExpense = baseline.body.data?.monthlyExpense;
+    assert.equal(typeof baselineExpense, "number");
+
+    const recruited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(recruited.status, 201);
+    assert.equal(recruited.body.success, true);
+    assert.equal(recruited.body.data?.isActive, true);
+    const recruitedEmployee = recruited.body.data;
+    assert.ok(recruitedEmployee);
+
+    const listed = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers: auth });
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body.data?.length, 1);
+    assert.equal(listed.body.data?.[0]?.id, recruitedEmployee.id);
+
+    const afterRecruit = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    assert.equal(afterRecruit.body.data?.monthlyExpense, baselineExpense + recruitedEmployee.salary);
+
+    const trained = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(recruitedEmployee.id)}/train`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(trained.status, 200);
+    assert.equal(trained.body.data?.level, 2);
+    assert.ok((trained.body.data?.salary ?? 0) > recruitedEmployee.salary);
+    assert.ok((trained.body.data?.management ?? 0) > recruitedEmployee.management);
+    assert.ok((trained.body.data?.pressure ?? 0) > recruitedEmployee.pressure);
+
+    const afterTrainList = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers: auth });
+    assert.equal(afterTrainList.body.data?.[0]?.level, 2);
+
+    const equity = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(recruitedEmployee.id)}/equity`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(equity.status, 200);
+    assert.equal(equity.body.data?.equityBasisPoints, 100);
+    assert.ok((equity.body.data?.loyalty ?? 0) >= recruitedEmployee.loyalty);
+
+    const fired = await requestJson<CompanyFinanceRecord>(baseUrl, `/employees/${encodeURIComponent(recruitedEmployee.id)}/fire`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(fired.status, 200);
+    assert.equal(fired.body.data?.monthlyExpense, baselineExpense);
+    assert.ok((fired.body.data?.employeeSatisfaction ?? 100) < (afterRecruit.body.data?.employeeSatisfaction ?? 0));
+    assert.ok((fired.body.data?.brandReputation ?? 0) < (afterRecruit.body.data?.brandReputation ?? 0));
+
+    const afterDismissList = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers: auth });
+    assert.equal(afterDismissList.body.data?.[0]?.isActive, false);
   });
 });
 

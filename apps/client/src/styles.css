@@ -1339,6 +1339,14 @@ input {
   white-space: nowrap;
 }
 
+.employee-error {
+  margin: 0;
+  color: #ffd7c0;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+  text-align: center;
+}
+
 .employee-layout {
   display: grid;
   grid-template-columns: 38% 1fr;
@@ -1530,6 +1538,36 @@ input {
 .employee-actions button {
   min-height: 36px;
   border-radius: 5px;
+  color: #57360f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 900;
+}
+
+.employee-actions button:disabled {
+  opacity: 0.52;
+}
+
+.employee-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 12px;
+  min-height: 100%;
+  text-align: center;
+}
+
+.employee-empty strong {
+  color: #fff6d8;
+  font-size: clamp(20px, 5.4vw, 28px);
+  font-weight: 900;
+}
+
+.employee-empty button {
+  position: static;
+  min-height: 38px;
+  border-radius: 5px;
+  padding: 0 18px;
   color: #57360f;
   background: linear-gradient(180deg, #fff1b5, #d29335);
   font-size: clamp(12px, 3.4vw, 16px);

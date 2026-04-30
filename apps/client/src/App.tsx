@@ -83,20 +83,25 @@ type StoredSession = {
   profile: PlayerProfile;
 };
 
-type EmployeeQuality = "SSR" | "SR" | "R";
-
 type Employee = {
   id: string;
+  configId: string;
   name: string;
-  quality: EmployeeQuality;
   role: string;
+  careerLevel: string;
+  rarity: string;
   level: number;
-  salary: string;
+  salary: number;
+  pressure: number;
   loyalty: number;
+  growthPotential: number;
   management: number;
   negotiation: number;
   execution: number;
   specialty: string;
+  equityBasisPoints: number;
+  assignedTo: string | null;
+  isActive: boolean;
 };
 
 type BusinessProject = {
@@ -153,86 +158,7 @@ type CompanyFinance = {
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
-const initialEmployees: Employee[] = [
-  {
-    id: "lin-xia",
-    name: "林夏",
-    quality: "SSR",
-    role: "市场总监",
-    level: 18,
-    salary: "8.8万/月",
-    loyalty: 92,
-    management: 86,
-    negotiation: 91,
-    execution: 78,
-    specialty: "擅长品牌投放，提升项目曝光。"
-  },
-  {
-    id: "zhou-hang",
-    name: "周航",
-    quality: "SR",
-    role: "项目经理",
-    level: 16,
-    salary: "6.2万/月",
-    loyalty: 88,
-    management: 79,
-    negotiation: 73,
-    execution: 90,
-    specialty: "推进项目交付，缩短研发周期。"
-  },
-  {
-    id: "chen-mo",
-    name: "陈默",
-    quality: "SR",
-    role: "融资顾问",
-    level: 15,
-    salary: "6.6万/月",
-    loyalty: 84,
-    management: 75,
-    negotiation: 94,
-    execution: 72,
-    specialty: "提高融资成功率，适合谈判阵容。"
-  },
-  {
-    id: "he-yu",
-    name: "何煜",
-    quality: "R",
-    role: "运营主管",
-    level: 12,
-    salary: "3.8万/月",
-    loyalty: 80,
-    management: 70,
-    negotiation: 66,
-    execution: 82,
-    specialty: "稳定日常经营，降低运营损耗。"
-  },
-  {
-    id: "su-qing",
-    name: "苏青",
-    quality: "R",
-    role: "人事经理",
-    level: 11,
-    salary: "3.5万/月",
-    loyalty: 86,
-    management: 76,
-    negotiation: 62,
-    execution: 74,
-    specialty: "提升员工忠诚，减少离职风险。"
-  },
-  {
-    id: "jiang-yan",
-    name: "江言",
-    quality: "SR",
-    role: "产品负责人",
-    level: 14,
-    salary: "5.9万/月",
-    loyalty: 82,
-    management: 78,
-    negotiation: 70,
-    execution: 88,
-    specialty: "强化产品研发，提高长期估值。"
-  }
-];
+const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [
   {
     id: "smart-office",
@@ -500,6 +426,20 @@ const compactNumber = (value: number): string => {
   return value.toLocaleString("zh-CN");
 };
 
+const formatWan = (value: number): string => `${(value / 10000).toFixed(1)}万`;
+
+const rarityClass = (rarity: string): string => {
+  if (rarity === "传奇") {
+    return "ssr";
+  }
+
+  if (rarity === "顶尖" || rarity === "稀缺") {
+    return "sr";
+  }
+
+  return "r";
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -606,6 +546,7 @@ function App() {
   const [taskError, setTaskError] = useState("");
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
   const [financeError, setFinanceError] = useState("");
+  const [employeeError, setEmployeeError] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -619,13 +560,25 @@ function App() {
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? employees[0],
     [employees, selectedEmployeeId]
   );
+  const activeEmployees = useMemo(() => employees.filter((employee) => employee.isActive), [employees]);
   const employeePower = useMemo(
     () =>
-      employees.reduce(
+      activeEmployees.reduce(
         (total, employee) => total + employee.management + employee.negotiation + employee.execution + employee.level * 3,
         0
       ),
-    [employees]
+    [activeEmployees]
+  );
+  const averageEmployeeLoyalty = useMemo(
+    () =>
+      activeEmployees.length === 0
+        ? 0
+        : Math.round(activeEmployees.reduce((total, employee) => total + employee.loyalty, 0) / activeEmployees.length),
+    [activeEmployees]
+  );
+  const totalEmployeeSalary = useMemo(
+    () => activeEmployees.reduce((total, employee) => total + employee.salary, 0),
+    [activeEmployees]
   );
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
@@ -678,6 +631,23 @@ function App() {
     }
 
     setFinanceError(response.error.message);
+  };
+
+  const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<Employee[]>(
+      `/employees?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setEmployees(response.data);
+      setSelectedEmployeeId((currentId) => response.data.find((employee) => employee.id === currentId)?.id ?? response.data[0]?.id ?? "");
+      setEmployeeError("");
+      return;
+    }
+
+    setEmployeeError(response.error.message);
   };
 
   const enterGame = (
@@ -772,6 +742,7 @@ function App() {
 
     void loadTasks(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
+    void loadEmployees(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
 
   const runAuth = async (mode: AuthMode): Promise<void> => {
@@ -1058,26 +1029,95 @@ function App() {
     setFinanceError(response.error.message);
   };
 
-  const cultivateEmployee = (): void => {
-    if (!selectedEmployee) {
+  const refreshCompanyAndEmployees = (): void => {
+    if (!account || !selectedServer) {
       return;
     }
 
-    setEmployees((currentEmployees) =>
-      currentEmployees.map((employee) =>
-        employee.id === selectedEmployee.id
-          ? {
-              ...employee,
-              level: employee.level + 1,
-              loyalty: Math.min(employee.loyalty + 1, 100),
-              management: employee.management + 2,
-              negotiation: employee.negotiation + 2,
-              execution: employee.execution + 2
-            }
-          : employee
-      )
+    void loadCompanyFinance(account.token, selectedServer.id);
+    void loadEmployees(account.token, selectedServer.id);
+  };
+
+  const runEmployeeAction = async (path: string): Promise<boolean> => {
+    if (!account || !selectedServer) {
+      setEmployeeError("账号或服务器状态缺失，请重新登录。");
+      return false;
+    }
+
+    const response = await apiRequest<Employee>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
     );
-    void progressTask("daily-train-employee");
+
+    if (response.success) {
+      setSelectedEmployeeId(response.data.id);
+      setEmployeeError("");
+      refreshCompanyAndEmployees();
+      return true;
+    }
+
+    setEmployeeError(response.error.message);
+    return false;
+  };
+
+  const recruitEmployee = (): void => {
+    void runEmployeeAction("/employees/recruit");
+  };
+
+  const cultivateEmployee = async (): Promise<void> => {
+    if (!selectedEmployee || !selectedEmployee.isActive) {
+      return;
+    }
+
+    const isSuccess = await runEmployeeAction(`/employees/${encodeURIComponent(selectedEmployee.id)}/train`);
+    if (isSuccess) {
+      void progressTask("daily-train-employee");
+    }
+  };
+
+  const grantEmployeeEquity = (): void => {
+    if (!selectedEmployee || !selectedEmployee.isActive) {
+      return;
+    }
+
+    if (!window.confirm("股权激励会降低创始人持股，并提升员工忠诚。确认执行？")) {
+      return;
+    }
+
+    void runEmployeeAction(`/employees/${encodeURIComponent(selectedEmployee.id)}/equity`);
+  };
+
+  const dismissEmployee = async (): Promise<void> => {
+    if (!account || !selectedServer || !selectedEmployee || !selectedEmployee.isActive) {
+      return;
+    }
+
+    if (!window.confirm("裁员会降低月支出，但会影响士气和声誉。确认裁员？")) {
+      return;
+    }
+
+    const response = await apiRequest<CompanyFinance>(
+      `/employees/${encodeURIComponent(selectedEmployee.id)}/fire`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCompanyFinance(response.data);
+      setSelectedEmployeeId("");
+      setEmployeeError("");
+      refreshCompanyAndEmployees();
+      return;
+    }
+
+    setEmployeeError(response.error.message);
   };
 
   const advanceProject = (): void => {
@@ -1257,7 +1297,7 @@ function App() {
             ))}
           </nav>
 
-          {activeNav === "员工" && selectedEmployee && (
+          {activeNav === "员工" && (
             <section className="employee-screen" aria-label="员工系统">
               <header className="employee-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
@@ -1269,70 +1309,89 @@ function App() {
               </header>
 
               <section className="employee-summary" aria-label="员工概览">
-                <span>在岗 {employees.length}</span>
-                <span>平均忠诚 {Math.round(employees.reduce((total, employee) => total + employee.loyalty, 0) / employees.length)}</span>
-                <span>月薪合计 34.8万</span>
+                <span>在岗 {activeEmployees.length}</span>
+                <span>平均忠诚 {averageEmployeeLoyalty}</span>
+                <span>月薪合计 {formatWan(totalEmployeeSalary)}</span>
               </section>
+              {employeeError && <p className="employee-error">{employeeError}</p>}
 
               <section className="employee-layout">
                 <div className="employee-list" aria-label="员工列表">
                   {employees.map((employee) => (
                     <button
-                      className={employee.id === selectedEmployee.id ? "selected" : undefined}
+                      className={employee.id === selectedEmployee?.id ? "selected" : undefined}
                       key={employee.id}
                       type="button"
                       onClick={() => setSelectedEmployeeId(employee.id)}
                     >
-                      <span className={`quality ${employee.quality.toLowerCase()}`}>{employee.quality}</span>
+                      <span className={`quality ${rarityClass(employee.rarity)}`}>{employee.rarity}</span>
                       <strong>{employee.name}</strong>
-                      <em>{employee.role}</em>
-                      <small>Lv.{employee.level}</small>
+                      <em>{employee.role} · {employee.careerLevel}</em>
+                      <small>{employee.isActive ? `Lv.${employee.level}` : "离岗"}</small>
                     </button>
                   ))}
                 </div>
 
                 <article className="employee-detail" aria-label="员工详情">
-                  <div className="employee-portrait">
-                    <span>{selectedEmployee.name.slice(0, 1)}</span>
-                    <strong>{selectedEmployee.name}</strong>
-                    <em>{selectedEmployee.quality} · {selectedEmployee.role}</em>
-                  </div>
+                  {selectedEmployee ? (
+                    <>
+                      <div className="employee-portrait">
+                        <span>{selectedEmployee.name.slice(0, 1)}</span>
+                        <strong>{selectedEmployee.name}</strong>
+                        <em>{selectedEmployee.rarity} · {selectedEmployee.role} · {selectedEmployee.careerLevel}</em>
+                      </div>
 
-                  <dl className="employee-stats">
-                    <div>
-                      <dt>等级</dt>
-                      <dd>Lv.{selectedEmployee.level}</dd>
-                    </div>
-                    <div>
-                      <dt>薪资</dt>
-                      <dd>{selectedEmployee.salary}</dd>
-                    </div>
-                    <div>
-                      <dt>忠诚</dt>
-                      <dd>{selectedEmployee.loyalty}</dd>
-                    </div>
-                    <div>
-                      <dt>管理</dt>
-                      <dd>{selectedEmployee.management}</dd>
-                    </div>
-                    <div>
-                      <dt>谈判</dt>
-                      <dd>{selectedEmployee.negotiation}</dd>
-                    </div>
-                    <div>
-                      <dt>执行</dt>
-                      <dd>{selectedEmployee.execution}</dd>
-                    </div>
-                  </dl>
+                      <dl className="employee-stats">
+                        <div>
+                          <dt>等级</dt>
+                          <dd>Lv.{selectedEmployee.level}</dd>
+                        </div>
+                        <div>
+                          <dt>薪资</dt>
+                          <dd>{formatWan(selectedEmployee.salary)}/月</dd>
+                        </div>
+                        <div>
+                          <dt>忠诚</dt>
+                          <dd>{selectedEmployee.loyalty}</dd>
+                        </div>
+                        <div>
+                          <dt>压力</dt>
+                          <dd>{selectedEmployee.pressure}</dd>
+                        </div>
+                        <div>
+                          <dt>管理</dt>
+                          <dd>{selectedEmployee.management}</dd>
+                        </div>
+                        <div>
+                          <dt>谈判</dt>
+                          <dd>{selectedEmployee.negotiation}</dd>
+                        </div>
+                        <div>
+                          <dt>执行</dt>
+                          <dd>{selectedEmployee.execution}</dd>
+                        </div>
+                        <div>
+                          <dt>股权</dt>
+                          <dd>{(selectedEmployee.equityBasisPoints / 100).toFixed(0)}%</dd>
+                        </div>
+                      </dl>
 
-                  <p>{selectedEmployee.specialty}</p>
+                      <p>{selectedEmployee.specialty} 成长潜力 {selectedEmployee.growthPotential}。</p>
 
-                  <div className="employee-actions">
-                    <button type="button" onClick={cultivateEmployee}>培养</button>
-                    <button type="button" onClick={() => openHomePanel("员工")}>招募</button>
-                    <button type="button" onClick={() => openHomePanel("员工")}>股权</button>
-                    <button type="button" onClick={() => openHomePanel("员工")}>解雇</button>
-                  </div>
+                      <div className="employee-actions">
+                        <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
+                        <button type="button" onClick={recruitEmployee}>招募</button>
+                        <button type="button" onClick={grantEmployeeEquity} disabled={!selectedEmployee.isActive}>股权</button>
+                        <button type="button" onClick={() => void dismissEmployee()} disabled={!selectedEmployee.isActive}>裁员</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="employee-empty">
+                      <strong>暂无员工</strong>
+                      <p>通过招募建立第一支核心团队，员工薪资会计入公司月支出。</p>
+                      <button type="button" onClick={recruitEmployee}>招募员工</button>
+                    </div>
+                  )}
                 </article>
               </section>
             </section>

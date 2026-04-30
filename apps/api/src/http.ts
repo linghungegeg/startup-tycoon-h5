@@ -547,6 +547,93 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/employees") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const employees = await repository.listEmployees(account.id, serverId);
+      if (employees === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(employees, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/employees/recruit") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const employee = await repository.recruitEmployee(account.id, serverId);
+      if (employee === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (employee === "NO_EMPLOYEE_AVAILABLE") {
+        sendJson(response, 409, failure("NO_EMPLOYEE_AVAILABLE", "No employee candidates are available.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(employee, traceId));
+      return;
+    }
+
+    const employeeActionMatch = /^\/employees\/([^/]+)\/(train|equity|fire)$/.exec(url.pathname);
+    if (request.method === "POST" && employeeActionMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      const employeeId = employeeActionMatch[1];
+      const action = employeeActionMatch[2];
+      if (serverId === undefined || employeeId === undefined || action === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and employeeId are required.", traceId));
+        return;
+      }
+
+      const result =
+        action === "train"
+          ? await repository.cultivateEmployee(account.id, serverId, decodeURIComponent(employeeId))
+          : action === "equity"
+            ? await repository.grantEmployeeEquity(account.id, serverId, decodeURIComponent(employeeId))
+            : await repository.dismissEmployee(account.id, serverId, decodeURIComponent(employeeId));
+
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "EMPLOYEE_NOT_FOUND") {
+        sendJson(response, 404, failure("EMPLOYEE_NOT_FOUND", "Employee not found.", traceId));
+        return;
+      }
+      if (result === "EQUITY_LIMIT_REACHED") {
+        sendJson(response, 409, failure("EQUITY_LIMIT_REACHED", "Founder equity is not enough.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     const taskProgressMatch = /^\/tasks\/([^/]+)\/progress$/.exec(url.pathname);
     if (request.method === "POST" && taskProgressMatch !== null) {
       if (account === undefined) {

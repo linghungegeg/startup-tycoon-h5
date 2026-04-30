@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
+import { pickRecruitCandidate } from "./employee.js";
 import { calculateFinanceReport } from "./finance.js";
 
 export type AccountRecord = {
@@ -109,6 +110,27 @@ export type CompanyFinanceSettlementRecord = CompanyFinanceRecord & {
   createdAt: string;
 };
 
+export type EmployeeRecord = {
+  id: string;
+  configId: string;
+  name: string;
+  role: string;
+  careerLevel: string;
+  rarity: string;
+  level: number;
+  salary: number;
+  pressure: number;
+  loyalty: number;
+  growthPotential: number;
+  management: number;
+  negotiation: number;
+  execution: number;
+  specialty: string;
+  equityBasisPoints: number;
+  assignedTo: string | null;
+  isActive: boolean;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -127,6 +149,11 @@ export type GameRepository = {
   getCompanyFinance(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyMonth(accountId: string, serverId: string, reportMonth: number): Promise<CompanyFinanceSettlementRecord | "PLAYER_NOT_FOUND">;
+  listEmployees(accountId: string, serverId: string): Promise<EmployeeRecord[] | "PLAYER_NOT_FOUND">;
+  recruitEmployee(accountId: string, serverId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "NO_EMPLOYEE_AVAILABLE">;
+  cultivateEmployee(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
+  grantEmployeeEquity(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "EQUITY_LIMIT_REACHED">;
+  dismissEmployee(accountId: string, serverId: string, employeeId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
   disconnect(): Promise<void>;
 };
 
@@ -203,6 +230,29 @@ const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRec
     riskTips: report.riskTips
   };
 };
+
+const toEmployeeRecord = (employee: {
+  id: string;
+  configId: string;
+  name: string;
+  role: string;
+  careerLevel: string;
+  rarity: string;
+  level: number;
+  salary: number;
+  pressure: number;
+  loyalty: number;
+  growthPotential: number;
+  management: number;
+  negotiation: number;
+  execution: number;
+  specialty: string;
+  equityBasisPoints: number;
+  assignedTo: string | null;
+  isActive: boolean;
+}): EmployeeRecord => ({
+  ...employee
+});
 
 const readTaskType = (type: string): TaskRecord["type"] =>
   type === "daily" || type === "side" ? type : "main";
@@ -615,6 +665,234 @@ export const createPrismaGameRepository = (
       endingCash: savedReport.endingCash,
       createdAt: savedReport.createdAt.toISOString()
     };
+  },
+
+  async listEmployees(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const employees = await prisma.playerEmployee.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ isActive: "desc" }, { createdAt: "asc" }]
+    });
+
+    return employees.map(toEmployeeRecord);
+  },
+
+  async recruitEmployee(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [configs, ownedEmployees] = await Promise.all([
+      prisma.employeeConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+      prisma.playerEmployee.findMany({ where: { profileId: profile.id }, select: { configId: true } })
+    ]);
+    const ownedConfigIds = new Set(ownedEmployees.map((employee) => employee.configId));
+    const pool = configs.filter((config) => !ownedConfigIds.has(config.id));
+    if (pool.length === 0) {
+      return "NO_EMPLOYEE_AVAILABLE";
+    }
+
+    const totalWeight = pool.reduce((total, config) => total + Math.max(config.recruitWeight, 0), 0);
+    const selected = pickRecruitCandidate(pool, Math.random() * totalWeight);
+    if (selected === undefined) {
+      return "NO_EMPLOYEE_AVAILABLE";
+    }
+
+    const [created] = await prisma.$transaction([
+      prisma.playerEmployee.create({
+        data: {
+          id: randomUUID(),
+          profileId: profile.id,
+          configId: selected.id,
+          name: selected.name,
+          role: selected.role,
+          careerLevel: selected.careerLevel,
+          rarity: selected.rarity,
+          level: 1,
+          salary: selected.baseSalary,
+          pressure: selected.basePressure,
+          loyalty: selected.loyalty,
+          growthPotential: selected.growthPotential,
+          management: selected.management,
+          negotiation: selected.negotiation,
+          execution: selected.execution,
+          specialty: selected.specialty
+        }
+      }),
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          monthlyExpense: { increment: selected.baseSalary },
+          employeeSatisfaction: { increment: 1 }
+        }
+      })
+    ]);
+
+    return toEmployeeRecord(created);
+  },
+
+  async cultivateEmployee(accountId, serverId, employeeId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const employee = await prisma.playerEmployee.findFirst({
+      where: {
+        id: employeeId,
+        profileId: profile.id,
+        isActive: true
+      }
+    });
+    if (employee === null) {
+      return "EMPLOYEE_NOT_FOUND";
+    }
+
+    const salaryIncrease = Math.max(2000, Math.round(employee.salary * 0.08));
+    const [updated] = await prisma.$transaction([
+      prisma.playerEmployee.update({
+        where: { id: employee.id },
+        data: {
+          level: employee.level + 1,
+          salary: employee.salary + salaryIncrease,
+          pressure: Math.min(employee.pressure + 2, 100),
+          loyalty: Math.min(employee.loyalty + 1, 100),
+          management: employee.management + 2,
+          negotiation: employee.negotiation + 2,
+          execution: employee.execution + 2
+        }
+      }),
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: 20000 },
+          monthlyExpense: { increment: salaryIncrease }
+        }
+      })
+    ]);
+
+    return toEmployeeRecord(updated);
+  },
+
+  async grantEmployeeEquity(accountId, serverId, employeeId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const employee = await prisma.playerEmployee.findFirst({
+      where: {
+        id: employeeId,
+        profileId: profile.id,
+        isActive: true
+      }
+    });
+    if (employee === null) {
+      return "EMPLOYEE_NOT_FOUND";
+    }
+
+    if (profile.founderEquityBasisPoints < 100) {
+      return "EQUITY_LIMIT_REACHED";
+    }
+
+    const [updated] = await prisma.$transaction([
+      prisma.playerEmployee.update({
+        where: { id: employee.id },
+        data: {
+          equityBasisPoints: employee.equityBasisPoints + 100,
+          loyalty: Math.min(employee.loyalty + 8, 100)
+        }
+      }),
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          founderEquityBasisPoints: { decrement: 100 },
+          employeeSatisfaction: { increment: 2 }
+        }
+      })
+    ]);
+
+    return toEmployeeRecord(updated);
+  },
+
+  async dismissEmployee(accountId, serverId, employeeId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const employee = await prisma.playerEmployee.findFirst({
+      where: {
+        id: employeeId,
+        profileId: profile.id,
+        isActive: true
+      }
+    });
+    if (employee === null) {
+      return "EMPLOYEE_NOT_FOUND";
+    }
+
+    const updatedProfile = await prisma.$transaction(async (tx) => {
+      await tx.playerEmployee.update({
+        where: { id: employee.id },
+        data: {
+          isActive: false,
+          assignedTo: null
+        }
+      });
+
+      return tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          monthlyExpense: { decrement: employee.salary },
+          employeeSatisfaction: { decrement: 5 },
+          reputation: { decrement: 2000 },
+          pendingEventCount: { increment: 1 }
+        }
+      });
+    });
+
+    return toCompanyFinanceRecord(toProfileRecord(updatedProfile));
   },
 
   async disconnect() {
