@@ -2667,7 +2667,7 @@ function App() {
                 onChange={(event) => setRememberPassword(event.target.checked)}
                 type="checkbox"
               />
-              <span className="sr-only">记住密码</span>
+              <span>记住密码</span>
             </label>
             {error && <p className="form-error">{error}</p>}
             <div className="auth-actions">
