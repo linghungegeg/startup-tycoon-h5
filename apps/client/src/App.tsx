@@ -65,6 +65,118 @@ type StoredSession = {
 const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
 const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
 const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
+const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
+  "首充豪礼": {
+    title: "首充豪礼",
+    lines: ["首充任意金额可领取创业启动礼包。", "礼包含钻石、资金和橙色员工招募券。"],
+    action: "前往充值"
+  },
+  "福利中心": {
+    title: "福利中心",
+    lines: ["每日登录、在线时长和成长节点奖励集中领取。", "未领取奖励会在入口显示红点。"],
+    action: "领取福利"
+  },
+  "七日目标": {
+    title: "七日目标",
+    lines: ["完成七日创业目标，解锁高级员工和稀有项目。", "当前目标：完成 3 次项目洽谈。"],
+    action: "查看目标"
+  },
+  "创业基金": {
+    title: "创业基金",
+    lines: ["达成公司等级后返还钻石。", "基金权益与平台币消费记录分开结算。"],
+    action: "查看基金"
+  },
+  "专属经理": {
+    title: "专属经理",
+    lines: ["专属经理提供经营提醒、礼包推荐和成长规划。", "提升 VIP 等级可解锁更多服务。"],
+    action: "联系经理"
+  },
+  "排行榜": {
+    title: "排行榜",
+    lines: ["查看本服公司估值、项目收益和商战积分排名。", "排行榜每日 0 点刷新。"],
+    action: "查看排名"
+  },
+  "邮件": {
+    title: "邮件",
+    lines: ["系统奖励、补偿和活动结算会通过邮件发放。", "含附件邮件请及时领取。"],
+    action: "打开邮箱"
+  },
+  "限时活动": {
+    title: "限时活动",
+    lines: ["当前开放：开服冲榜、项目翻倍、员工培养返利。", "活动奖励以页面规则为准。"],
+    action: "参加活动"
+  },
+  "投资合作": {
+    title: "投资合作",
+    lines: ["选择合作方提升项目融资效率。", "高价值合作需要声望和公司等级。"],
+    action: "洽谈合作"
+  },
+  "商战竞争": {
+    title: "商战竞争",
+    lines: ["挑战竞争对手，争夺市场份额和排名积分。", "布阵员工会影响谈判胜率。"],
+    action: "进入商战"
+  },
+  "市场营销": {
+    title: "市场营销",
+    lines: ["投放营销资源，提高项目曝光和订单转化。", "营销等级越高，收益加成越稳定。"],
+    action: "升级营销"
+  },
+  "产品研发": {
+    title: "产品研发",
+    lines: ["研发新产品线，提升公司长期估值。", "研发进度受员工能力和资金投入影响。"],
+    action: "开始研发"
+  },
+  "企业并购": {
+    title: "企业并购",
+    lines: ["收购潜力公司，获取团队、专利和现金流。", "并购目标会随主线进度开放。"],
+    action: "查看目标"
+  },
+  "扩建": {
+    title: "扩建",
+    lines: ["扩建办公楼层，解锁更多岗位和部门容量。", "扩建需要资金、声望和对应章节进度。"],
+    action: "扩建公司"
+  },
+  "任务": {
+    title: "主线任务",
+    lines: ["升级市场部到 Lv.20（18/20）。", "奖励：钻石 200、资金 20万。"],
+    action: "前往市场部"
+  },
+  "出门谈判": {
+    title: "出门谈判",
+    lines: ["当前章节：第15章。", "推进谈判可解锁新客户、新项目和商战对手。"],
+    action: "开始谈判"
+  },
+  "设置": {
+    title: "设置",
+    lines: ["账号切换会回到登录界面。", "后续将开放音效、公告和客服入口。"],
+    action: "切换账号"
+  },
+  "员工": {
+    title: "员工管理",
+    lines: ["管理员工岗位、等级、薪资、忠诚度和能力值。", "招募、培养、解雇和股权激励入口将在员工系统开放。"],
+    action: "进入员工"
+  },
+  "项目": {
+    title: "项目中心",
+    lines: ["查看项目阶段、投入成本、预计收益和负责人。", "完成主线任务会解锁更高收益项目。"],
+    action: "进入项目"
+  },
+  "商战": {
+    title: "商战大厅",
+    lines: ["配置谈判阵容，挑战竞品公司。", "商战积分可兑换员工培养资源。"],
+    action: "进入商战"
+  },
+  "联盟": {
+    title: "联盟",
+    lines: ["加入联盟可参与集体投资、联盟商战和成员互助。", "联盟功能将在公司等级达标后开放。"],
+    action: "查看联盟"
+  },
+  "背包": {
+    title: "背包",
+    lines: ["管理道具、礼包、招募券和活动材料。", "部分奖励领取后会自动进入背包。"],
+    action: "打开背包"
+  }
+};
 const avatarClassById: Record<string, string> = {
   strategist: "strategy",
   builder: "product",
@@ -166,6 +278,8 @@ function App() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
+  const [activeNav, setActiveNav] = useState("首页");
+  const [activePanel, setActivePanel] = useState<string | null>(null);
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -437,6 +551,12 @@ function App() {
     setStep("auth");
   };
 
+  const openHomePanel = (panelName: string): void => {
+    setActivePanel(panelName);
+  };
+
+  const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
+
   if (isRestoring) {
     return (
       <main className="login-shell" aria-label="恢复登录状态">
@@ -470,18 +590,28 @@ function App() {
               <b>VIP8</b>
             </button>
             <div className="resource-grid" aria-label="资源">
-              <button type="button">资金 2.45亿 <span>+</span></button>
-              <button type="button">金币 36,580 <span>+</span></button>
-              <button type="button">钻石 8680 <span>+</span></button>
-              <button type="button">声望 125.6万</button>
-              <button type="button">体力 120/120 <span>+</span></button>
+              <button type="button" onClick={() => openHomePanel("创业基金")}>
+                <i>资</i>2.45亿 <span>+</span>
+              </button>
+              <button type="button" onClick={() => openHomePanel("福利中心")}>
+                <i>币</i>36,580 <span>+</span>
+              </button>
+              <button type="button" onClick={() => openHomePanel("首充豪礼")}>
+                <i>钻</i>8,680 <span>+</span>
+              </button>
+              <button type="button" onClick={() => openHomePanel("排行榜")}>
+                <i>誉</i>125.6万
+              </button>
+              <button type="button" onClick={() => openHomePanel("出门谈判")}>
+                <i>力</i>120/120 <span>+</span>
+              </button>
             </div>
-            <button className="settings-button" type="button" aria-label="设置">设置</button>
+            <button className="settings-button" type="button" aria-label="设置" onClick={() => openHomePanel("设置")}>设置</button>
           </header>
 
           <section className="left-actions" aria-label="福利入口">
             {sideActions.map((item, index) => (
-              <button type="button" key={item}>
+              <button type="button" key={item} onClick={() => openHomePanel(item)}>
                 <span>{index === 4 ? "经理" : item.slice(0, 1)}</span>
                 <strong>{item}</strong>
                 {index !== 3 && <em />}
@@ -491,7 +621,7 @@ function App() {
 
           <section className="right-actions" aria-label="经营入口">
             {rightActions.map((item, index) => (
-              <button type="button" key={item}>
+              <button type="button" key={item} onClick={() => openHomePanel(item)}>
                 <span>{item.slice(0, 2)}</span>
                 <strong>{item}</strong>
                 {[1, 2, 4, 5, 6, 7].includes(index) && <em />}
@@ -500,29 +630,63 @@ function App() {
           </section>
 
           <section className="task-panel" aria-label="当前任务">
-            <button className="task-icon" type="button">任务</button>
+            <button className="task-icon" type="button" onClick={() => openHomePanel("任务")}>任务</button>
             <div>
               <strong>主线</strong>
               <span>升级市场部到 Lv.20（18/20）</span>
               <small>奖励：钻石 200 资金 20万</small>
             </div>
-            <button className="task-go" type="button">前往</button>
+            <button className="task-go" type="button" onClick={() => openHomePanel("任务")}>前往</button>
           </section>
 
-          <button className="chapter-button" type="button">
+          <button className="chapter-button" type="button" onClick={() => openHomePanel("出门谈判")}>
             <strong>出门谈判</strong>
             <span>第15章</span>
           </button>
 
           <nav className="bottom-nav" aria-label="底部导航">
             {navItems.map((item, index) => (
-              <button className={index === 0 ? "active" : undefined} type="button" key={item}>
+              <button
+                className={activeNav === item ? "active" : undefined}
+                type="button"
+                key={item}
+                onClick={() => {
+                  setActiveNav(item);
+                  if (item !== "首页") {
+                    openHomePanel(item);
+                  }
+                }}
+              >
                 <span>{item.slice(0, 1)}</span>
                 <strong>{item}</strong>
                 {[2, 4, 5].includes(index) && <em />}
               </button>
             ))}
           </nav>
+
+          {selectedPanel && (
+            <section className="home-modal" aria-label={selectedPanel.title}>
+              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActivePanel(null)} />
+              <div className="modal-sheet">
+                <header>
+                  <strong>{selectedPanel.title}</strong>
+                  <button type="button" aria-label="关闭" onClick={() => setActivePanel(null)}>×</button>
+                </header>
+                <div>
+                  {selectedPanel.lines.map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
+                <button
+                  className="modal-action"
+                  type="button"
+                  onClick={activePanel === "设置" ? leaveGame : () => setActivePanel(null)}
+                >
+                  {selectedPanel.action}
+                </button>
+              </div>
+            </section>
+          )}
         </section>
       </main>
     );

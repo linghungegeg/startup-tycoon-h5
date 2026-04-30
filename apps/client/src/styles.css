@@ -712,7 +712,7 @@ input {
   top: 0.6%;
   left: 0.8%;
   right: 0.8%;
-  height: 7.4%;
+  height: 7.8%;
   z-index: 3;
 }
 
@@ -722,7 +722,7 @@ input {
   display: grid;
   grid-template-columns: 38% 1fr;
   align-items: center;
-  width: 27%;
+  width: 27.5%;
   height: 100%;
   border-radius: 0 0 10px 0;
   padding: 0 1.6%;
@@ -774,8 +774,8 @@ input {
 .resource-grid {
   position: absolute;
   top: 2%;
-  left: 30%;
-  right: 1.5%;
+  left: 30.5%;
+  right: 9.2%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6% 2.2%;
@@ -786,13 +786,30 @@ input {
   position: relative;
   min-height: 0;
   border-radius: 5px;
-  padding: 0 11% 0 4%;
+  padding: 0 17% 0 23%;
   overflow: hidden;
   font-size: clamp(9px, 2.6vw, 14px);
   font-weight: 800;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.resource-grid i {
+  position: absolute;
+  left: 4%;
+  top: 50%;
+  display: grid;
+  width: 17%;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  color: #1b2535;
+  background: linear-gradient(180deg, #fff5c6, #d29a34);
+  font-size: clamp(8px, 2.1vw, 12px);
+  font-style: normal;
+  font-weight: 900;
+  transform: translateY(-50%);
 }
 
 .resource-grid button:nth-child(4) {
@@ -816,9 +833,9 @@ input {
 }
 
 .settings-button {
-  top: 4.8%;
+  top: 5.6%;
   right: 0.5%;
-  width: 8%;
+  width: 8.2%;
   height: 52%;
   border: 0;
   color: transparent;
@@ -868,7 +885,21 @@ input {
   border: 0;
   border-radius: 50%;
   padding: 3%;
-  background: radial-gradient(circle at 38% 30%, rgba(255, 245, 205, 0.16), rgba(13, 23, 37, 0.92) 64%);
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255, 245, 205, 0.22), rgba(13, 23, 37, 0.92) 64%),
+    linear-gradient(180deg, rgba(255, 210, 113, 0.18), transparent);
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
+}
+
+.left-actions button:hover,
+.right-actions button:hover,
+.chapter-button:hover,
+.bottom-nav button:hover,
+.task-panel .task-go:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
 }
 
 .left-actions button span,
@@ -909,12 +940,12 @@ input {
 .task-panel {
   position: absolute;
   z-index: 3;
-  left: 3.2%;
+  left: 3.0%;
   bottom: 11.7%;
   display: grid;
   grid-template-columns: 16% 1fr 21%;
   align-items: center;
-  width: 68%;
+  width: 69.2%;
   height: 7.1%;
   border: 1px solid rgba(238, 190, 98, 0.58);
   border-radius: 6px;
@@ -951,7 +982,7 @@ input {
 .task-panel small {
   display: block;
   overflow: hidden;
-  font-size: clamp(10px, 2.7vw, 14px);
+  font-size: clamp(10px, 2.55vw, 13px);
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -972,11 +1003,11 @@ input {
 }
 
 .chapter-button {
-  right: 2.5%;
+  right: 2.1%;
   bottom: 10.2%;
   display: grid;
   place-items: center;
-  width: 21%;
+  width: 21.8%;
   aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 45% 32%, rgba(45, 108, 202, 0.95), rgba(8, 20, 40, 0.95) 67%);
@@ -1027,7 +1058,9 @@ input {
 
 .bottom-nav button.active {
   border: 1px solid rgba(255, 218, 126, 0.95);
-  background: linear-gradient(180deg, rgba(32, 109, 170, 0.86), rgba(16, 42, 73, 0.92));
+  background:
+    linear-gradient(180deg, rgba(38, 127, 196, 0.92), rgba(16, 42, 73, 0.94)),
+    radial-gradient(circle at 50% 14%, rgba(255, 234, 157, 0.36), transparent 42%);
 }
 
 .bottom-nav button span {
@@ -1045,6 +1078,93 @@ input {
   font-size: clamp(13px, 3.8vw, 21px);
   font-weight: 900;
   white-space: nowrap;
+}
+
+.home-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: rgba(4, 8, 14, 0.45);
+  box-shadow: none;
+}
+
+.modal-sheet {
+  position: absolute;
+  left: 5%;
+  right: 5%;
+  bottom: 10.5%;
+  border: 1px solid rgba(246, 204, 116, 0.82);
+  border-radius: 8px 8px 0 0;
+  padding: 3.4% 3.2% 3.8%;
+  color: #fff0c9;
+  background:
+    linear-gradient(180deg, rgba(24, 40, 61, 0.96), rgba(8, 15, 25, 0.98)),
+    rgba(8, 15, 25, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 -16px 42px rgba(0, 0, 0, 0.48);
+}
+
+.modal-sheet header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2.4%;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.modal-sheet header strong {
+  color: #ffd873;
+  font-size: clamp(18px, 5vw, 27px);
+  font-weight: 900;
+}
+
+.modal-sheet header button {
+  position: static;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  min-height: 0;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+  color: #ffe8b2;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.modal-sheet div {
+  display: grid;
+  gap: 8px;
+  padding: 3.2% 0;
+}
+
+.modal-sheet p {
+  color: #efe2c6;
+  font-size: clamp(13px, 3.6vw, 17px);
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.modal-action {
+  position: static;
+  width: 100%;
+  min-height: 42px;
+  border-radius: 5px;
+  color: #51340f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(15px, 4vw, 20px);
+  font-weight: 900;
 }
 
 @media (max-width: 420px) {
