@@ -75,6 +75,10 @@ export type TaskRecord = {
   progress: number;
   target: number;
   rewardLabel: string;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+  rewardReputation: number;
+  rewardActionPower: number;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
@@ -352,6 +356,10 @@ const toTaskRecord = (
     target: number;
     initialProgress: number;
     rewardLabel: string;
+    rewardCash: number;
+    rewardPlatformCoins: number;
+    rewardReputation: number;
+    rewardActionPower: number;
     guideAction: string;
     unlockKind: string;
   },
@@ -371,6 +379,10 @@ const toTaskRecord = (
     progress: Math.min(currentProgress, config.target),
     target: config.target,
     rewardLabel: config.rewardLabel,
+    rewardCash: config.rewardCash,
+    rewardPlatformCoins: config.rewardPlatformCoins,
+    rewardReputation: config.rewardReputation,
+    rewardActionPower: config.rewardActionPower,
     guideAction: config.guideAction,
     unlockKind: readUnlockKind(config.unlockKind),
     isClaimed,
@@ -600,25 +612,39 @@ export const createPrismaGameRepository = (
       return "TASK_ALREADY_CLAIMED";
     }
 
-    const progress = await prisma.playerTaskProgress.upsert({
-      where: {
-        profileId_taskId: {
+    const progress = await prisma.$transaction(async (tx) => {
+      const savedProgress = await tx.playerTaskProgress.upsert({
+        where: {
+          profileId_taskId: {
+            profileId: profile.id,
+            taskId
+          }
+        },
+        update: {
+          progress: currentProgress,
+          dailyDate: isDaily ? today : existing?.dailyDate ?? null,
+          claimedAt: new Date()
+        },
+        create: {
           profileId: profile.id,
-          taskId
+          taskId,
+          progress: currentProgress,
+          dailyDate: isDaily ? today : null,
+          claimedAt: new Date()
         }
-      },
-      update: {
-        progress: currentProgress,
-        dailyDate: isDaily ? today : existing?.dailyDate ?? null,
-        claimedAt: new Date()
-      },
-      create: {
-        profileId: profile.id,
-        taskId,
-        progress: currentProgress,
-        dailyDate: isDaily ? today : null,
-        claimedAt: new Date()
-      }
+      });
+
+      await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: config.rewardCash },
+          platformCoins: { increment: config.rewardPlatformCoins },
+          reputation: { increment: config.rewardReputation },
+          actionPower: { increment: config.rewardActionPower }
+        }
+      });
+
+      return savedProgress;
     });
 
     return toTaskRecord(config, progress, today);

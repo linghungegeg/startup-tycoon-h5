@@ -158,7 +158,26 @@ const createTestRepository = (): GameRepository => {
       target: 1,
       initialProgress: 1,
       rewardLabel: "钻石 120、资金 10万",
+      rewardCash: 100000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 0,
+      rewardActionPower: 0,
       guideAction: "领取奖励",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-first-project",
+      type: "main" as const,
+      title: "推进第一单项目",
+      description: "进入项目中心推进一个经营项目。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "资金 20万、声望 500",
+      rewardCash: 200000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 500,
+      rewardActionPower: 0,
+      guideAction: "前往项目",
       unlockKind: "none" as const
     },
     {
@@ -169,7 +188,26 @@ const createTestRepository = (): GameRepository => {
       target: 1,
       initialProgress: 0,
       rewardLabel: "金币 8,000、培养手册 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 8000,
+      rewardReputation: 0,
+      rewardActionPower: 0,
       guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "daily-project-push",
+      type: "daily" as const,
+      title: "推进项目",
+      description: "推进一次项目进度。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "资金 8万、体力 20",
+      rewardCash: 80000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 0,
+      rewardActionPower: 20,
+      guideAction: "前往项目",
       unlockKind: "none" as const
     },
     {
@@ -180,6 +218,10 @@ const createTestRepository = (): GameRepository => {
       target: 1,
       initialProgress: 0,
       rewardLabel: "声望 300、知识点 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 300,
+      rewardActionPower: 0,
       guideAction: "查看知识",
       unlockKind: "knowledge" as const
     },
@@ -191,6 +233,10 @@ const createTestRepository = (): GameRepository => {
       target: 1,
       initialProgress: 0,
       rewardLabel: "资金 6万、合规评分 2",
+      rewardCash: 60000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 0,
+      rewardActionPower: 0,
       guideAction: "处理支线",
       unlockKind: "compliance" as const
     }
@@ -402,6 +448,10 @@ const createTestRepository = (): GameRepository => {
         dailyDate: isDaily ? today : existing?.dailyDate,
         claimedAt: new Date().toISOString()
       });
+      profile.cash += config.rewardCash;
+      profile.platformCoins += config.rewardPlatformCoins;
+      profile.reputation += config.rewardReputation;
+      profile.actionPower += config.rewardActionPower;
       return toTaskRecord(profile.id, config, today);
     },
     async getCompanyFinance(accountId, serverId) {
@@ -1255,6 +1305,274 @@ test("settles failed projects once and applies company losses", async () => {
     });
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.data?.finance.cash, settled.body.data?.finance.cash);
+  });
+});
+
+test("lists valid phase 6 task configs with knowledge and compliance metadata", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    assert.equal(tasks.status, 200);
+    assert.equal(tasks.body.success, true);
+    const data = tasks.body.data ?? [];
+    const requiredIds = [
+      "main-profile-created",
+      "main-first-project",
+      "daily-train-employee",
+      "daily-project-push",
+      "side-knowledge-labor-contract",
+      "side-compliance-contract-review"
+    ];
+    const listedIds = new Set(data.map((task) => task.id));
+    assert.equal(requiredIds.every((id) => listedIds.has(id)), true);
+
+    for (const task of data) {
+      assert.ok(["main", "daily", "side"].includes(task.type));
+      assert.ok(["none", "knowledge", "compliance"].includes(task.unlockKind));
+      assert.ok(task.title.length > 0);
+      assert.ok(task.description.length > 0);
+      assert.ok(task.rewardLabel.length > 0);
+      assert.ok(task.guideAction.length > 0);
+      assert.ok(task.target > 0);
+      assert.ok(task.progress >= 0 && task.progress <= task.target);
+      assert.equal(task.isClaimable, task.progress >= task.target && !task.isClaimed);
+    }
+
+    const knowledge = data.find((task) => task.id === "side-knowledge-labor-contract");
+    assert.equal(knowledge?.type, "side");
+    assert.equal(knowledge?.unlockKind, "knowledge");
+    assert.equal(knowledge?.guideAction, "查看知识");
+
+    const compliance = data.find((task) => task.id === "side-compliance-contract-review");
+    assert.equal(compliance?.type, "side");
+    assert.equal(compliance?.unlockKind, "compliance");
+    assert.equal(compliance?.guideAction, "处理支线");
+  });
+});
+
+test("claims task rewards once and applies structured resource gains", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const before = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers: auth });
+    const claimed = await requestJson<TaskRecord>(baseUrl, "/tasks/main-profile-created/claim", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200);
+    assert.equal(claimed.body.data?.isClaimed, true);
+    assert.equal(claimed.body.data?.rewardCash, 100000);
+
+    const after = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers: auth });
+    assert.equal(after.body.data?.cash, (before.body.data?.cash ?? 0) + 100000);
+
+    const duplicate = await requestJson<TaskRecord>(baseUrl, "/tasks/main-profile-created/claim", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+
+    const afterDuplicate = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers: auth });
+    assert.equal(afterDuplicate.body.data?.cash, after.body.data?.cash);
+  });
+});
+
+test("refreshes daily tasks by server day without resetting main claims", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+    const dayOneHeaders = { ...auth, "x-server-date": "2026-04-30" };
+    const dayTwoHeaders = { ...auth, "x-server-date": "2026-05-01" };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    await requestJson<TaskRecord>(baseUrl, "/tasks/main-profile-created/claim", {
+      method: "POST",
+      headers: dayOneHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/progress", {
+      method: "POST",
+      headers: dayOneHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const dayOneClaim = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/claim", {
+      method: "POST",
+      headers: dayOneHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(dayOneClaim.status, 200);
+    assert.equal(dayOneClaim.body.data?.isClaimed, true);
+
+    const dayTwoTasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: dayTwoHeaders });
+    const daily = dayTwoTasks.body.data?.find((task) => task.id === "daily-train-employee");
+    assert.equal(daily?.progress, 0);
+    assert.equal(daily?.isClaimed, false);
+    assert.equal(daily?.isClaimable, false);
+    const main = dayTwoTasks.body.data?.find((task) => task.id === "main-profile-created");
+    assert.equal(main?.isClaimed, true);
+
+    await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/progress", {
+      method: "POST",
+      headers: dayTwoHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const dayTwoClaim = await requestJson<TaskRecord>(baseUrl, "/tasks/daily-train-employee/claim", {
+      method: "POST",
+      headers: dayTwoHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(dayTwoClaim.status, 200);
+  });
+});
+
+test("advances business tasks from employee and project actions", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    const employee = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(employee.body.data?.id ?? "")}/train`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const project = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(project.body.data?.id ?? "")}/advance`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    assert.equal(tasks.body.data?.find((task) => task.id === "daily-train-employee")?.isClaimable, true);
+    assert.equal(tasks.body.data?.find((task) => task.id === "daily-project-push")?.isClaimable, true);
+    assert.equal(tasks.body.data?.find((task) => task.id === "main-first-project")?.isClaimable, true);
+  });
+});
+
+test("completes knowledge and compliance side tasks through guided progress", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "alice", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Alice",
+        companyName: "Spark Studio"
+      })
+    });
+
+    for (const taskId of ["side-knowledge-labor-contract", "side-compliance-contract-review"]) {
+      const earlyClaim = await requestJson<TaskRecord>(baseUrl, `/tasks/${taskId}/claim`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(earlyClaim.status, 409);
+      assert.equal(earlyClaim.body.error?.code, "TASK_INCOMPLETE");
+
+      const progressed = await requestJson<TaskRecord>(baseUrl, `/tasks/${taskId}/progress`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(progressed.status, 200);
+      assert.equal(progressed.body.data?.isClaimable, true);
+
+      const claimed = await requestJson<TaskRecord>(baseUrl, `/tasks/${taskId}/claim`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(claimed.status, 200);
+      assert.equal(claimed.body.data?.isClaimed, true);
+    }
   });
 });
 

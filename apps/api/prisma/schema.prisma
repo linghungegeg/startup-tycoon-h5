@@ -254,6 +254,10 @@ model TaskConfig {
   target          Int
   initialProgress Int                  @default(0)
   rewardLabel     String               @db.VarChar(80)
+  rewardCash      Int                  @default(0)
+  rewardPlatformCoins Int              @default(0)
+  rewardReputation Int                 @default(0)
+  rewardActionPower Int                @default(0)
   guideAction     String               @db.VarChar(32)
   unlockKind      String               @default("none") @db.VarChar(24)
   sortOrder       Int                  @default(0)

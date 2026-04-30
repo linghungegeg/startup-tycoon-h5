@@ -132,6 +132,10 @@ type TaskItem = {
   progress: number;
   target: number;
   rewardLabel: string;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+  rewardReputation: number;
+  rewardActionPower: number;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
@@ -490,6 +494,9 @@ function App() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeTaskType, setActiveTaskType] = useState<TaskItem["type"]>("main");
   const [taskError, setTaskError] = useState("");
+  const [taskNotice, setTaskNotice] = useState("");
+  const [claimingTaskId, setClaimingTaskId] = useState("");
+  const [activeKnowledgeTask, setActiveKnowledgeTask] = useState<TaskItem | null>(null);
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
@@ -547,10 +554,20 @@ function App() {
     () => tasks.find((task) => task.type === "main" && !task.isClaimed) ?? tasks.find((task) => task.type === "main"),
     [tasks]
   );
+  const highlightedTask = useMemo(
+    () => tasks.find((task) => task.isClaimable && !task.isClaimed) ?? currentMainTask,
+    [currentMainTask, tasks]
+  );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
   );
+  const activeTaskTip =
+    activeTaskType === "daily"
+      ? "每日任务按服务器日刷新，已领取奖励不会在同一天重复发放。"
+      : activeTaskType === "side"
+        ? "支线任务由知识阅读、合规复核和经营动作触发。"
+        : "主线任务用于推进前 7 日公司成长路线。";
 
   const replaceTask = (nextTask: TaskItem): void => {
     setTasks((currentTasks) => currentTasks.map((task) => (task.id === nextTask.id ? nextTask : task)));
@@ -942,6 +959,7 @@ function App() {
       return;
     }
 
+    setClaimingTaskId(taskId);
     const response = await apiRequest<TaskItem>(
       `/tasks/${encodeURIComponent(taskId)}/claim`,
       {
@@ -953,11 +971,25 @@ function App() {
 
     if (response.success) {
       replaceTask(response.data);
+      setProfile((currentProfile) =>
+        currentProfile === null
+          ? currentProfile
+          : {
+              ...currentProfile,
+              cash: currentProfile.cash + response.data.rewardCash,
+              platformCoins: currentProfile.platformCoins + response.data.rewardPlatformCoins,
+              reputation: currentProfile.reputation + response.data.rewardReputation,
+              actionPower: currentProfile.actionPower + response.data.rewardActionPower
+            }
+      );
+      setTaskNotice(`奖励已发放：${response.data.rewardLabel}`);
       setTaskError("");
+      setClaimingTaskId("");
       return;
     }
 
     setTaskError(response.error.message);
+    setClaimingTaskId("");
   };
 
   const settleFinanceMonth = async (): Promise<void> => {
@@ -1056,8 +1088,8 @@ function App() {
     }
 
     const isSuccess = await runEmployeeAction(`/employees/${encodeURIComponent(selectedEmployee.id)}/train`);
-    if (isSuccess) {
-      void progressTask("daily-train-employee");
+    if (isSuccess && account && selectedServer) {
+      void loadTasks(account.token, selectedServer.id);
     }
   };
 
@@ -1171,8 +1203,9 @@ function App() {
       setSelectedProjectId(response.data.id);
       setProjectError("");
       refreshCompanyAndProjects();
-      void progressTask("main-first-project");
-      void progressTask("daily-project-push");
+      if (account && selectedServer) {
+        void loadTasks(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -1219,14 +1252,13 @@ function App() {
     }
 
     if (task.unlockKind === "knowledge") {
-      openHomePanel("创业知识");
-      void progressTask(task.id);
+      setActiveKnowledgeTask(task);
+      setActivePanel(null);
       return;
     }
 
     if (task.unlockKind === "compliance") {
-      openHomePanel("合规支线");
-      void progressTask(task.id);
+      setActiveKnowledgeTask(task);
     }
   };
 
@@ -1310,9 +1342,9 @@ function App() {
           <section className="task-panel" aria-label="当前任务">
             <button className="task-icon" type="button" onClick={openTaskScreen}>任务</button>
             <div>
-              <strong>主线</strong>
-              <span>{currentMainTask ? `${currentMainTask.title}（${currentMainTask.progress}/${currentMainTask.target}）` : "任务配置读取中"}</span>
-              <small>{currentMainTask ? `奖励：${currentMainTask.rewardLabel}` : "请确认 API 服务已启动"}</small>
+              <strong>{highlightedTask?.isClaimable ? "可领取" : "主线"}</strong>
+              <span>{highlightedTask ? `${highlightedTask.title}（${highlightedTask.progress}/${highlightedTask.target}）` : "任务配置读取中"}</span>
+              <small>{highlightedTask ? `奖励：${highlightedTask.rewardLabel}` : "请确认 API 服务已启动"}</small>
             </div>
             <button className="task-go" type="button" onClick={openTaskScreen}>前往</button>
           </section>
@@ -1598,10 +1630,14 @@ function App() {
                 ))}
               </nav>
 
+              <p className="task-tip">{activeTaskTip}</p>
+              {taskNotice && <p className="task-notice">{taskNotice}</p>}
               {taskError && <p className="task-error">{taskError}</p>}
 
               <section className="task-list" aria-label="任务列表">
-                {visibleTasks.map((task) => (
+                {visibleTasks.length === 0 ? (
+                  <div className="task-empty">当前分类暂无任务，继续经营后会出现新的目标。</div>
+                ) : visibleTasks.map((task) => (
                   <article className={task.isClaimed ? "claimed" : undefined} key={task.id}>
                     <header>
                       <strong>{task.title}</strong>
@@ -1615,13 +1651,54 @@ function App() {
                     </div>
                     <footer>
                       <small>奖励：{task.rewardLabel}</small>
-                      <button disabled={task.isClaimed} type="button" onClick={() => guideTask(task)}>
-                        {task.isClaimed ? "已领取" : task.isClaimable ? "领取" : task.guideAction}
+                      <button disabled={task.isClaimed || claimingTaskId === task.id} type="button" onClick={() => guideTask(task)}>
+                        {claimingTaskId === task.id ? "领取中" : task.isClaimed ? "已领取" : task.isClaimable ? "领取" : task.guideAction}
                       </button>
                     </footer>
                   </article>
                 ))}
               </section>
+            </section>
+          )}
+
+          {activeKnowledgeTask && (
+            <section className="home-modal" aria-label={activeKnowledgeTask.unlockKind === "compliance" ? "合规支线" : "创业知识"}>
+              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActiveKnowledgeTask(null)} />
+              <div className="modal-sheet knowledge-sheet">
+                <header>
+                  <strong>{activeKnowledgeTask.unlockKind === "compliance" ? "合同复核支线" : "创业知识卡"}</strong>
+                  <button type="button" aria-label="关闭" onClick={() => setActiveKnowledgeTask(null)}>×</button>
+                </header>
+                <article>
+                  <h3>{activeKnowledgeTask.title}</h3>
+                  <p>{activeKnowledgeTask.description}</p>
+                  <dl>
+                    <div>
+                      <dt>经营场景</dt>
+                      <dd>{activeKnowledgeTask.unlockKind === "compliance" ? "客户合同进入交付前复核，确认回款、验收和违约条款。" : "员工入职后需要规范签署劳动合同，避免用工争议扩大。"}</dd>
+                    </div>
+                    <div>
+                      <dt>风险提示</dt>
+                      <dd>{activeKnowledgeTask.unlockKind === "compliance" ? "合同条款不清会影响项目结算、客户满意度和现金回收。" : "用工资料不完整会增加劳动争议、赔偿和声誉风险。"}</dd>
+                    </div>
+                    <div>
+                      <dt>游戏影响</dt>
+                      <dd>阅读并确认后推进支线进度，奖励领取仍以后端任务状态为准。</dd>
+                    </div>
+                  </dl>
+                  <small>本内容用于游戏内经营知识提示，不构成法律、财务或投资建议。</small>
+                </article>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void progressTask(activeKnowledgeTask.id);
+                    setActiveKnowledgeTask(null);
+                    openTaskScreen();
+                  }}
+                >
+                  我已理解
+                </button>
+              </div>
             </section>
           )}
 

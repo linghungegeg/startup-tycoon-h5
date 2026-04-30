@@ -52,7 +52,7 @@ const sendJson = <T>(
   body: ApiResponse<T>
 ): void => {
   response.writeHead(statusCode, {
-    "access-control-allow-headers": "authorization, content-type, x-trace-id",
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
@@ -63,7 +63,7 @@ const sendJson = <T>(
 
 const sendOptions = (response: ServerResponse): void => {
   response.writeHead(204, {
-    "access-control-allow-headers": "authorization, content-type, x-trace-id",
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
     "access-control-allow-methods": "GET, POST, OPTIONS",
     "access-control-allow-origin": "*",
     "content-length": "0"
@@ -195,7 +195,14 @@ const readPositiveInteger = (body: unknown, key: string): number | undefined => 
   return value;
 };
 
-const readToday = (): string => new Date().toISOString().slice(0, 10);
+const readToday = (request: IncomingMessage): string => {
+  const header = request.headers["x-server-date"];
+  const candidate = Array.isArray(header) ? header[0] : header;
+
+  return typeof candidate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidate)
+    ? candidate
+    : new Date().toISOString().slice(0, 10);
+};
 
 const readBearerToken = (request: IncomingMessage): string | undefined => {
   const header = request.headers.authorization;
@@ -469,7 +476,7 @@ export const createApiServer = (
         return;
       }
 
-      const tasks = await repository.listTasks(account.id, serverId, readToday());
+      const tasks = await repository.listTasks(account.id, serverId, readToday(request));
       if (tasks === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -630,6 +637,10 @@ export const createApiServer = (
         return;
       }
 
+      if (action === "train") {
+        await repository.advanceTask(account.id, serverId, "daily-train-employee", readToday(request));
+      }
+
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -731,6 +742,11 @@ export const createApiServer = (
         return;
       }
 
+      if (action === "advance") {
+        await repository.advanceTask(account.id, serverId, "main-first-project", readToday(request));
+        await repository.advanceTask(account.id, serverId, "daily-project-push", readToday(request));
+      }
+
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -754,7 +770,7 @@ export const createApiServer = (
           return;
         }
 
-        const task = await repository.advanceTask(account.id, serverId, decodeURIComponent(taskId), readToday());
+        const task = await repository.advanceTask(account.id, serverId, decodeURIComponent(taskId), readToday(request));
         if (task === "PLAYER_NOT_FOUND") {
           sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
           return;
@@ -791,7 +807,7 @@ export const createApiServer = (
           return;
         }
 
-        const task = await repository.claimTask(account.id, serverId, decodeURIComponent(taskId), readToday());
+        const task = await repository.claimTask(account.id, serverId, decodeURIComponent(taskId), readToday(request));
         if (task === "PLAYER_NOT_FOUND") {
           sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
           return;

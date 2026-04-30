@@ -1203,6 +1203,69 @@ input {
   overflow: auto;
 }
 
+.knowledge-sheet {
+  max-height: 74%;
+  overflow: auto;
+}
+
+.knowledge-sheet article {
+  display: grid;
+  gap: 10px;
+  padding: 3.2% 0;
+}
+
+.knowledge-sheet h3 {
+  margin: 0;
+  color: #fff6d8;
+  font-size: clamp(17px, 4.6vw, 24px);
+  font-weight: 900;
+}
+
+.knowledge-sheet dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.knowledge-sheet dl div {
+  border-radius: 5px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.knowledge-sheet dt,
+.knowledge-sheet dd,
+.knowledge-sheet small {
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+}
+
+.knowledge-sheet dt {
+  color: #ffe5a9;
+}
+
+.knowledge-sheet dd {
+  margin: 4px 0 0;
+  color: #efe2c6;
+  line-height: 1.42;
+}
+
+.knowledge-sheet small {
+  color: #d8c9a8;
+  line-height: 1.42;
+}
+
+.knowledge-sheet > button {
+  position: static;
+  width: 100%;
+  min-height: 42px;
+  border-radius: 5px;
+  color: #51340f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(15px, 4vw, 20px);
+  font-weight: 900;
+}
+
 .finance-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1984,14 +2047,29 @@ input {
   background: linear-gradient(180deg, #fff1b5, #d29335);
 }
 
+.task-tip,
+.task-notice,
 .task-error {
   min-height: 24px;
   border-radius: 5px;
   padding: 5px 8px;
-  color: #ffd7c6;
-  background: rgba(138, 47, 31, 0.42);
   font-size: clamp(11px, 3vw, 14px);
   font-weight: 800;
+}
+
+.task-tip {
+  color: #d8c9a8;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.task-notice {
+  color: #eaffd2;
+  background: rgba(41, 105, 57, 0.38);
+}
+
+.task-error {
+  color: #ffd7c6;
+  background: rgba(138, 47, 31, 0.42);
 }
 
 .task-list {
@@ -2075,6 +2153,19 @@ input {
 
 .task-list button {
   flex: 0 0 28%;
+}
+
+.task-empty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  border: 1px solid rgba(246, 204, 116, 0.32);
+  border-radius: 6px;
+  color: #d8c9a8;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(12px, 3.4vw, 16px);
+  font-weight: 800;
+  text-align: center;
 }
 
 @media (max-width: 420px) {
