@@ -51,6 +51,18 @@ type PlayerProfile = {
   avatarId: string;
   founderName: string;
   companyName: string;
+  companyLevel: number;
+  cash: number;
+  platformCoins: number;
+  premiumCurrency: number;
+  reputation: number;
+  actionPower: number;
+  actionPowerLimit: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  pendingEventCount: number;
+  unreadMailCount: number;
+  debtWarning: string;
   createdAt: string;
 };
 
@@ -105,9 +117,9 @@ type TaskItem = {
   isClaimable: boolean;
 };
 
-const sideActions = ["首充豪礼", "福利中心", "七日目标", "创业基金", "专属经理"];
-const rightActions = ["排行榜", "邮件", "限时活动", "投资合作", "商战竞争", "市场营销", "产品研发", "企业并购", "扩建"];
-const navItems = ["首页", "员工", "项目", "商战", "联盟", "背包"];
+const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
+const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
+const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
 const initialEmployees: Employee[] = [
   {
     id: "lin-xia",
@@ -251,10 +263,65 @@ const initialProjects: BusinessProject[] = [
   }
 ];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
+  "财务": {
+    title: "财务",
+    lines: ["查看现金、月收入、月支出和现金流状态。", "财务数据以后端档案为准，刷新后仍保持一致。"],
+    action: "查看财务"
+  },
+  "融资": {
+    title: "融资",
+    lines: ["融资入口用于查看投资合作和公司估值进展。", "融资判断会受到现金流、团队能力和市场环境影响。"],
+    action: "查看融资"
+  },
+  "贷款": {
+    title: "贷款",
+    lines: ["贷款入口用于查看授信、还款和负债预警。", "负债状态会在主页顶部同步提示。"],
+    action: "查看贷款"
+  },
+  "风险": {
+    title: "风险",
+    lines: ["风险入口汇总合同、现金流、用工和舆情提醒。", "待处理事件会在主页状态区展示。"],
+    action: "查看风险"
+  },
+  "合同": {
+    title: "合同",
+    lines: ["合同入口用于处理客户回款、交付条款和合规复核。", "合同状态会影响后续项目和经营事件。"],
+    action: "查看合同"
+  },
+  "首充": {
+    title: "首充",
+    lines: ["首充入口提供创业启动礼包。", "平台币相关消费以后端记录为准。"],
+    action: "查看首充"
+  },
   "首充豪礼": {
     title: "首充豪礼",
     lines: ["首充任意金额可领取创业启动礼包。", "礼包含钻石、资金和橙色员工招募券。"],
     action: "前往充值"
+  },
+  "月卡": {
+    title: "月卡",
+    lines: ["月卡提供每日平台币、行动力和经营补贴。", "每日领取记录由后端系统记录。"],
+    action: "查看月卡"
+  },
+  "礼包": {
+    title: "礼包",
+    lines: ["礼包入口按公司阶段、活动和经营压力展示。", "礼包不直接替代现金流经营。"],
+    action: "查看礼包"
+  },
+  "活动": {
+    title: "活动",
+    lines: ["活动入口展示开服目标、限时挑战和赛季任务。", "活动榜只在活动开启时展示。"],
+    action: "查看活动"
+  },
+  "排行": {
+    title: "排行",
+    lines: ["查看本服公司估值、项目收益和商会贡献排名。", "排行榜每日按服务器时间刷新。"],
+    action: "查看排行"
+  },
+  "VIP": {
+    title: "VIP",
+    lines: ["VIP 入口展示身份、每日礼包和便利权益。", "游戏内平台币消费会计入 VIP 经验。"],
+    action: "查看 VIP"
   },
   "福利中心": {
     title: "福利中心",
@@ -343,12 +410,12 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
   },
   "设置": {
     title: "设置",
-    lines: ["账号切换会回到登录界面。", "后续将开放音效、公告和客服入口。"],
+    lines: ["账号切换会回到登录界面。", "公告、客服和声音设置统一从这里进入。"],
     action: "切换账号"
   },
   "员工": {
     title: "员工管理",
-    lines: ["管理员工岗位、等级、薪资、忠诚度和能力值。", "招募、培养、解雇和股权激励入口将在员工系统开放。"],
+    lines: ["管理员工岗位、等级、薪资、忠诚度和能力值。", "招募、培养、解雇和股权激励都从员工系统进入。"],
     action: "进入员工"
   },
   "项目": {
@@ -361,10 +428,20 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
     lines: ["配置谈判阵容，挑战竞品公司。", "商战积分可兑换员工培养资源。"],
     action: "进入商战"
   },
-  "联盟": {
-    title: "联盟",
-    lines: ["加入联盟可参与集体投资、联盟商战和成员互助。", "联盟功能将在公司等级达标后开放。"],
-    action: "查看联盟"
+  "产品": {
+    title: "产品中心",
+    lines: ["产品线会承接项目经验和研发投入。", "产品中心用于跟踪研发方向、用户增长和商业化表现。"],
+    action: "查看产品"
+  },
+  "市场": {
+    title: "市场中心",
+    lines: ["市场入口用于查看品牌声誉、获客和竞争态势。", "市场变化会影响客户订单、活动传播和竞争压力。"],
+    action: "查看市场"
+  },
+  "商会": {
+    title: "商会",
+    lines: ["加入商会可参与集体投资、商会任务和成员互助。", "商会入口按公司等级和服务器规则进入。"],
+    action: "查看商会"
   },
   "背包": {
     title: "背包",
@@ -376,6 +453,18 @@ const avatarClassById: Record<string, string> = {
   strategist: "strategy",
   builder: "product",
   operator: "operation"
+};
+
+const compactNumber = (value: number): string => {
+  if (value >= 100000000) {
+    return `${(value / 100000000).toFixed(value % 100000000 === 0 ? 0 : 2)}亿`;
+  }
+
+  if (value >= 10000) {
+    return `${(value / 10000).toFixed(value % 10000 === 0 ? 0 : 1)}万`;
+  }
+
+  return value.toLocaleString("zh-CN");
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -473,7 +562,7 @@ function App() {
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
-  const [activeNav, setActiveNav] = useState("首页");
+  const [activeNav, setActiveNav] = useState("公司");
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
@@ -573,8 +662,10 @@ function App() {
 
     const restoreSession = async (): Promise<void> => {
       try {
-        const [sessionResponse, profileResponse] = await Promise.all([
+        const [sessionResponse, serverResponse, avatarResponse, profileResponse] = await Promise.all([
           apiRequest<{ accountId: string; username: string }>("/auth/session", {}, initialSession.account.token),
+          apiRequest<ServerOption[]>("/servers", {}, initialSession.account.token),
+          apiRequest<AvatarOption[]>("/avatars", {}, initialSession.account.token),
           apiRequest<PlayerProfile>(
             `/players?serverId=${encodeURIComponent(initialSession.server.id)}`,
             {},
@@ -586,14 +677,21 @@ function App() {
           return;
         }
 
-        if (!sessionResponse.success || !profileResponse.success) {
+        if (!sessionResponse.success || !serverResponse.success || !avatarResponse.success || !profileResponse.success) {
           clearSession();
           setStep("auth");
           setError("登录状态已过期，请重新登录。");
           return;
         }
 
-        enterGame(initialSession.account, initialSession.server, initialSession.avatar, profileResponse.data);
+        setServers(serverResponse.data);
+        setAvatars(avatarResponse.data);
+        enterGame(
+          initialSession.account,
+          serverResponse.data.find((server) => server.id === profileResponse.data.serverId) ?? initialSession.server,
+          avatarResponse.data.find((avatar) => avatar.id === profileResponse.data.avatarId) ?? initialSession.avatar,
+          profileResponse.data
+        );
       } catch {
         if (isMounted) {
           clearSession();
@@ -972,36 +1070,39 @@ function App() {
               <span className="profile-face">{selectedAvatar.glyph}</span>
               <span>
                 <strong>{profile.founderName || account?.username || "创业新星"}</strong>
-                <em>Lv.38</em>
+                <em>{profile.companyName}</em>
               </span>
-              <b>VIP8</b>
+              <b>Lv.{profile.companyLevel}</b>
             </button>
             <div className="resource-grid" aria-label="资源">
               <button type="button" onClick={() => openHomePanel("创业基金")}>
-                <i>资</i>2.45亿 <span>+</span>
+                <i>资</i>{compactNumber(profile.cash)} <span>+</span>
               </button>
               <button type="button" onClick={() => openHomePanel("福利中心")}>
-                <i>币</i>36,580 <span>+</span>
-              </button>
-              <button type="button" onClick={() => openHomePanel("首充豪礼")}>
-                <i>钻</i>8,680 <span>+</span>
-              </button>
-              <button type="button" onClick={() => openHomePanel("排行榜")}>
-                <i>誉</i>125.6万
+                <i>币</i>{profile.platformCoins.toLocaleString("zh-CN")} <span>+</span>
               </button>
               <button type="button" onClick={() => openHomePanel("出门谈判")}>
-                <i>力</i>120/120 <span>+</span>
+                <i>力</i>{profile.actionPower}/{profile.actionPowerLimit} <span>+</span>
+              </button>
+              <button type="button" onClick={() => openHomePanel("贷款")}>
+                <i>债</i>{profile.debtWarning}
+              </button>
+              <button type="button" onClick={() => openHomePanel("邮件")}>
+                <i>邮</i>{profile.unreadMailCount}
+              </button>
+              <button type="button" onClick={() => openHomePanel("排行")}>
+                <i>誉</i>{compactNumber(profile.reputation)}
               </button>
             </div>
-            <button className="settings-button" type="button" aria-label="设置" onClick={() => openHomePanel("设置")}>设置</button>
+            <button className="settings-button" type="button" aria-label="设置" onClick={() => openHomePanel("设置")} />
           </header>
 
           <section className="left-actions" aria-label="福利入口">
             {sideActions.map((item, index) => (
               <button type="button" key={item} onClick={() => openHomePanel(item)}>
-                <span>{index === 4 ? "经理" : item.slice(0, 1)}</span>
+                <span>{item.slice(0, 2)}</span>
                 <strong>{item}</strong>
-                {index !== 3 && <em />}
+                {[0, 3, 4].includes(index) && <em />}
               </button>
             ))}
           </section>
@@ -1011,7 +1112,7 @@ function App() {
               <button type="button" key={item} onClick={() => openHomePanel(item)}>
                 <span>{item.slice(0, 2)}</span>
                 <strong>{item}</strong>
-                {[1, 2, 4, 5, 6, 7].includes(index) && <em />}
+                {[2, 3, 4, 5, 6].includes(index) && <em />}
               </button>
             ))}
           </section>
@@ -1024,6 +1125,13 @@ function App() {
               <small>{currentMainTask ? `奖励：${currentMainTask.rewardLabel}` : "请确认 API 服务已启动"}</small>
             </div>
             <button className="task-go" type="button" onClick={openTaskScreen}>前往</button>
+          </section>
+
+          <section className="status-strip" aria-label="公司状态">
+            <span>现金流{compactNumber(profile.monthlyIncome - profile.monthlyExpense)}</span>
+            <span>收入{compactNumber(profile.monthlyIncome)}</span>
+            <span>支出{compactNumber(profile.monthlyExpense)}</span>
+            <span>待办{profile.pendingEventCount}</span>
           </section>
 
           <button className="chapter-button" type="button" onClick={() => openHomePanel("出门谈判")}>
@@ -1039,7 +1147,7 @@ function App() {
                 key={item}
                 onClick={() => {
                   setActiveNav(item);
-                  if (item === "首页") {
+                  if (item === "公司") {
                     setActivePanel(null);
                   } else if (item === "员工" || item === "项目") {
                     setActivePanel(null);
@@ -1050,7 +1158,7 @@ function App() {
               >
                 <span>{item.slice(0, 1)}</span>
                 <strong>{item}</strong>
-                {[2, 4, 5].includes(index) && <em />}
+                {[1, 2, 5].includes(index) && <em />}
               </button>
             ))}
           </nav>
@@ -1058,7 +1166,7 @@ function App() {
           {activeNav === "员工" && selectedEmployee && (
             <section className="employee-screen" aria-label="员工系统">
               <header className="employee-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>员工</strong>
                   <span>团队战力 {employeePower.toLocaleString("zh-CN")}</span>
@@ -1139,7 +1247,7 @@ function App() {
           {activeNav === "项目" && selectedProject && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>项目</strong>
                   <span>预计月收益 {totalProjectRevenue.toLocaleString("zh-CN")}万</span>
@@ -1221,7 +1329,7 @@ function App() {
           {activeNav === "任务" && (
             <section className="task-screen" aria-label="任务系统">
               <header className="task-header">
-                <button type="button" onClick={() => setActiveNav("首页")}>返回</button>
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>任务</strong>
                   <span>主线 / 每日 / 支线</span>

@@ -778,7 +778,8 @@ input {
   right: 9.2%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6% 2.2%;
+  grid-template-rows: repeat(2, 1fr);
+  gap: 7% 2.2%;
   height: 84%;
 }
 
@@ -812,14 +813,6 @@ input {
   transform: translateY(-50%);
 }
 
-.resource-grid button:nth-child(4) {
-  grid-column: 1 / 2;
-}
-
-.resource-grid button:nth-child(5) {
-  grid-column: 2 / 3;
-}
-
 .resource-grid span {
   position: absolute;
   top: 0;
@@ -838,6 +831,7 @@ input {
   width: 8.2%;
   height: 52%;
   border: 0;
+  overflow: hidden;
   color: transparent;
   background: transparent;
   box-shadow: none;
@@ -851,7 +845,7 @@ input {
   height: 100%;
   color: #e9d7b1;
   content: "⚙";
-  font-size: clamp(20px, 6vw, 34px);
+  font-size: clamp(18px, 5vw, 28px);
 }
 
 .left-actions,
@@ -873,7 +867,7 @@ input {
   top: 8.5%;
   right: 1.5%;
   width: 16.2%;
-  height: 61.5%;
+  height: 50.5%;
 }
 
 .left-actions button,
@@ -917,10 +911,13 @@ input {
 
 .left-actions button strong,
 .right-actions button strong {
+  overflow: hidden;
+  max-width: 100%;
   margin-top: -4%;
   color: #ffe7a8;
   font-size: clamp(10px, 3vw, 16px);
   font-weight: 900;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1002,6 +999,37 @@ input {
   font-weight: 900;
 }
 
+.status-strip {
+  position: absolute;
+  z-index: 3;
+  left: 3.2%;
+  bottom: 19.5%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.4%;
+  width: 69%;
+  height: 5.2%;
+  padding: 1%;
+  border: 1px solid rgba(238, 190, 98, 0.48);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(14, 29, 43, 0.86), rgba(7, 14, 22, 0.88));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+}
+
+.status-strip span {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  color: #ffe7b2;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(9px, 2.45vw, 13px);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chapter-button {
   right: 2.1%;
   bottom: 10.2%;
@@ -1074,9 +1102,12 @@ input {
 }
 
 .bottom-nav button strong {
+  overflow: hidden;
+  max-width: 100%;
   color: #eadfc5;
   font-size: clamp(13px, 3.8vw, 21px);
   font-weight: 900;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1902,5 +1933,27 @@ input {
 
   .avatar-choice {
     min-height: 86px;
+  }
+
+  .home-canvas {
+    width: min(100vw, 420px);
+    max-height: 100svh;
+  }
+
+  .resource-grid button {
+    padding-right: 13%;
+    padding-left: 20%;
+    font-size: clamp(8px, 2.35vw, 10px);
+  }
+
+  .left-actions button strong,
+  .right-actions button strong,
+  .bottom-nav button strong,
+  .status-strip span {
+    font-size: clamp(9px, 2.55vw, 11px);
+  }
+
+  .task-panel {
+    width: 68%;
   }
 }

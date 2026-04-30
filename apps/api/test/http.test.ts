@@ -182,6 +182,18 @@ const createTestRepository = (): GameRepository => {
       const created: PlayerProfileRecord = {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
+        companyLevel: 1,
+        cash: 2450000,
+        platformCoins: 36580,
+        premiumCurrency: 8680,
+        reputation: 1256000,
+        actionPower: 120,
+        actionPowerLimit: 120,
+        monthlyIncome: 860000,
+        monthlyExpense: 348000,
+        pendingEventCount: 2,
+        unreadMailCount: 1,
+        debtWarning: "低",
         ...profile
       };
       profiles.set(key, created);

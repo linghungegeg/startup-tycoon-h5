@@ -34,8 +34,25 @@ export type PlayerProfileRecord = {
   avatarId: string;
   founderName: string;
   companyName: string;
+  companyLevel: number;
+  cash: number;
+  platformCoins: number;
+  premiumCurrency: number;
+  reputation: number;
+  actionPower: number;
+  actionPowerLimit: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  pendingEventCount: number;
+  unreadMailCount: number;
+  debtWarning: string;
   createdAt: string;
 };
+
+export type CreatePlayerProfileInput = Pick<
+  PlayerProfileRecord,
+  "accountId" | "serverId" | "avatarId" | "founderName" | "companyName"
+>;
 
 export type TaskRecord = {
   id: string;
@@ -62,7 +79,7 @@ export type GameRepository = {
   listServers(): Promise<ServerRecord[]>;
   listAvatars(): Promise<AvatarRecord[]>;
   getProfile(accountId: string, serverId: string): Promise<PlayerProfileRecord | undefined>;
-  createProfile(profile: Omit<PlayerProfileRecord, "id" | "createdAt">): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
+  createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
@@ -90,6 +107,18 @@ const toProfileRecord = (profile: {
   avatarId: string;
   founderName: string;
   companyName: string;
+  companyLevel: number;
+  cash: number;
+  platformCoins: number;
+  premiumCurrency: number;
+  reputation: number;
+  actionPower: number;
+  actionPowerLimit: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  pendingEventCount: number;
+  unreadMailCount: number;
+  debtWarning: string;
   createdAt: Date;
 }): PlayerProfileRecord => ({
   ...profile,
