@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const SESSION_KEY = "wenziyouxi.client.session";
+const REMEMBER_AUTH_KEY = "wenziyouxi.client.rememberAuth";
 const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
@@ -81,6 +82,12 @@ type StoredSession = {
   server: ServerOption;
   avatar: AvatarOption;
   profile: PlayerProfile;
+};
+
+type RememberedAuth = {
+  version: typeof SESSION_VERSION;
+  username: string;
+  password: string;
 };
 
 type Employee = {
@@ -549,6 +556,18 @@ const isStoredSession = (value: unknown): value is StoredSession => {
   );
 };
 
+const isRememberedAuth = (value: unknown): value is RememberedAuth => {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    value.version === SESSION_VERSION &&
+    typeof value.username === "string" &&
+    typeof value.password === "string"
+  );
+};
+
 const loadSession = (): StoredSession | null => {
   const raw = window.localStorage.getItem(SESSION_KEY);
   if (raw === null) {
@@ -563,12 +582,41 @@ const loadSession = (): StoredSession | null => {
   }
 };
 
+const loadRememberedAuth = (): RememberedAuth | null => {
+  const raw = window.localStorage.getItem(REMEMBER_AUTH_KEY);
+  if (raw === null) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isRememberedAuth(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 const saveSession = (session: StoredSession): void => {
   window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 };
 
+const saveRememberedAuth = (username: string, password: string): void => {
+  window.localStorage.setItem(
+    REMEMBER_AUTH_KEY,
+    JSON.stringify({
+      version: SESSION_VERSION,
+      username,
+      password
+    })
+  );
+};
+
 const clearSession = (): void => {
   window.localStorage.removeItem(SESSION_KEY);
+};
+
+const clearRememberedAuth = (): void => {
+  window.localStorage.removeItem(REMEMBER_AUTH_KEY);
 };
 
 const readApiMessage = async (response: Response): Promise<string> => {
@@ -610,10 +658,12 @@ const apiRequest = async <T,>(
 
 function App() {
   const initialSession = loadSession();
+  const rememberedAuth = loadRememberedAuth();
   const [step, setStep] = useState<OnboardingStep>("auth");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [username, setUsername] = useState(initialSession?.account.username ?? "");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(initialSession?.account.username ?? rememberedAuth?.username ?? "");
+  const [password, setPassword] = useState(rememberedAuth?.password ?? "");
+  const [rememberPassword, setRememberPassword] = useState(rememberedAuth !== null);
   const [account, setAccount] = useState<AccountSession | null>(initialSession?.account ?? null);
   const [servers, setServers] = useState<ServerOption[]>(initialSession ? [initialSession.server] : []);
   const [avatars, setAvatars] = useState<AvatarOption[]>(initialSession ? [initialSession.avatar] : []);
@@ -1048,14 +1098,20 @@ function App() {
     setAuthMode(mode);
 
     try {
-      const authPath = mode === "register" ? "/auth/register" : "/auth/login";
-      const auth = await apiRequest<AccountSession>(authPath, {
+      let auth = await apiRequest<AccountSession>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ username: trimmedUsername, password })
       });
 
+      if (!auth.success && mode === "login" && auth.error.code === "INVALID_CREDENTIALS") {
+        auth = await apiRequest<AccountSession>("/auth/register", {
+          method: "POST",
+          body: JSON.stringify({ username: trimmedUsername, password })
+        });
+      }
+
       if (!auth.success) {
-        setError(auth.error.message);
+        setError(auth.error.code === "ACCOUNT_EXISTS" ? "账号已存在，请确认密码后重试。" : auth.error.message);
         return;
       }
 
@@ -1084,6 +1140,11 @@ function App() {
       }
 
       clearSession();
+      if (rememberPassword) {
+        saveRememberedAuth(trimmedUsername, password);
+      } else {
+        clearRememberedAuth();
+      }
       setAccount(auth.data);
       setUsername(trimmedUsername);
       setFounderName("");
@@ -1213,8 +1274,10 @@ function App() {
     clearSession();
     setProfile(null);
     setAccount(null);
-    setUsername("");
-    setPassword("");
+    if (!rememberPassword) {
+      setUsername("");
+      setPassword("");
+    }
     setFounderName("");
     setCompanyName("");
     setStep("auth");
@@ -1723,7 +1786,7 @@ function App() {
     return (
       <main className="game-shell" aria-label="游戏主界面">
         <section className="home-canvas" aria-label="公司经营主页">
-          <img alt="" className="home-bg" src="/game-ui/zhuye-bg.png" />
+          <img alt="" className="home-bg" src="/game-ui/shouyegai.png" />
 
           <header className="home-topbar" aria-label="玩家状态">
             <button className="profile-badge" type="button" onClick={leaveGame}>
@@ -2566,7 +2629,7 @@ function App() {
     return (
       <main className="auth-screen" aria-label="玩家登录">
         <section className="auth-canvas" aria-label="游戏入口">
-          <img alt="" className="design-image" src="/game-ui/zhuce.png" />
+          <img alt="" className="design-image" src="/game-ui/zhucegai2.png" />
           <div className="auth-title" aria-hidden="true">
             <span>写字楼</span>
             <strong>创业记</strong>
@@ -2574,7 +2637,7 @@ function App() {
           </div>
 
           <div className="server-ribbon" aria-label="当前区服">
-            <span className="sr-only">区服：S1 创业中心</span>
+            <span className="server-label">{selectedServer?.name ?? "S1 创业中心"}</span>
             <button aria-label="换服" type="button" />
           </div>
 
@@ -2591,23 +2654,24 @@ function App() {
             <label className="game-input-row">
               <span className="sr-only">密码</span>
               <input
-                autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                autoComplete="current-password"
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder=""
                 type="text"
                 value={password}
               />
             </label>
+            <label className="auth-remember">
+              <input
+                checked={rememberPassword}
+                onChange={(event) => setRememberPassword(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="sr-only">记住密码</span>
+            </label>
             {error && <p className="form-error">{error}</p>}
             <div className="auth-actions">
               <button aria-label={isBusy && authMode === "login" ? "正在登录" : "登录进入游戏"} className="gold-button" disabled={isBusy} type="submit" />
-              <button
-                aria-label={isBusy && authMode === "register" ? "正在注册" : "注册进入游戏"}
-                className="blue-button"
-                disabled={isBusy}
-                type="button"
-                onClick={() => void runAuth("register")}
-              />
             </div>
           </form>
         </section>
