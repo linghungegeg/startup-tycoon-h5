@@ -16,6 +16,8 @@ import type {
   CompanyFinanceRecord,
   CompanyFinanceSettlementRecord,
   EmployeeRecord,
+  EventChoiceRecord,
+  EventRecord,
   GameRepository,
   PlayerProfileRecord,
   ProjectRecord,
@@ -211,6 +213,21 @@ const createTestRepository = (): GameRepository => {
       unlockKind: "none" as const
     },
     {
+      id: "daily-handle-event",
+      type: "daily" as const,
+      title: "处理经营事件",
+      description: "完成一次经营事件决策。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "资金 5万、声望 200",
+      rewardCash: 50000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 200,
+      rewardActionPower: 0,
+      guideAction: "处理事件",
+      unlockKind: "none" as const
+    },
+    {
       id: "side-knowledge-labor-contract",
       type: "side" as const,
       title: "阅读用工合规知识",
@@ -243,6 +260,55 @@ const createTestRepository = (): GameRepository => {
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
   const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
+  const eventConfigs = [
+    {
+      id: "employee-contract-risk",
+      title: "新员工入职资料缺口",
+      source: "员工私信",
+      channel: "chat",
+      summary: "HR 提醒一名新员工还没有完成劳动合同签署。",
+      context: "销售团队准备让新员工直接进入客户项目，但入职材料仍缺少合同签署和岗位确认。",
+      optionA: "立即补齐合同和入职材料",
+      optionAResult: "公司支出增加，但用工争议风险下降。",
+      optionACash: -20000,
+      optionAReputation: 300,
+      optionACustomerSatisfaction: 0,
+      optionARiskDelta: -1,
+      optionB: "先进入项目，手续稍后补齐",
+      optionBResult: "短期不影响交付，但用工和客户现场管理风险上升。",
+      optionBCash: 0,
+      optionBReputation: -800,
+      optionBCustomerSatisfaction: 0,
+      optionBRiskDelta: 1,
+      followupEventId: "customer-contract-review",
+      knowledgeTitle: "劳动合同签署风险",
+      riskExplanation: "入职资料缺口会放大劳动争议和客户现场管理风险。"
+    },
+    {
+      id: "customer-contract-review",
+      title: "客户要求压缩验收周期",
+      source: "客户邮件",
+      channel: "contract",
+      summary: "客户希望缩短验收时间，并保留延期扣款条款。",
+      context: "客户提出快速签约，但验收节点、延期扣款和回款条件都需要在合同中确认。",
+      optionA: "坚持分阶段验收和书面确认",
+      optionAResult: "签约节奏变慢，但回款节点更清晰。",
+      optionACash: -10000,
+      optionAReputation: 500,
+      optionACustomerSatisfaction: 2,
+      optionARiskDelta: -1,
+      optionB: "接受压缩周期换取快速签约",
+      optionBResult: "公司快速拿到现金，但后续验收和扣款风险增加。",
+      optionBCash: 60000,
+      optionBReputation: -500,
+      optionBCustomerSatisfaction: -4,
+      optionBRiskDelta: 1,
+      followupEventId: null,
+      knowledgeTitle: "项目验收条款",
+      riskExplanation: "验收周期压缩会提高短期签约速度，但也会压缩纠错时间。"
+    }
+  ];
+  const playerEvents = new Map<string, EventRecord>();
 
   const getProfileByAccountAndServer = (accountId: string, serverId: string): PlayerProfileRecord | undefined =>
     profiles.get(`${accountId}:${serverId}`);
@@ -308,6 +374,62 @@ const createTestRepository = (): GameRepository => {
       isClaimed,
       isClaimable: currentProgress >= config.target && !isClaimed
     };
+  };
+
+  const formatEventImpact = (cash: number, reputation: number, customerSatisfaction: number, riskDelta: number): string =>
+    [
+      cash === 0 ? undefined : `现金${cash > 0 ? "+" : ""}${cash}`,
+      reputation === 0 ? undefined : `声望${reputation > 0 ? "+" : ""}${reputation}`,
+      customerSatisfaction === 0 ? undefined : `满意度${customerSatisfaction > 0 ? "+" : ""}${customerSatisfaction}`,
+      riskDelta === 0 ? undefined : `风险${riskDelta > 0 ? "+" : ""}${riskDelta}`
+    ].filter(Boolean).join(" / ") || "经营影响稳定";
+
+  const toEventRecord = (
+    profileId: string,
+    config: (typeof eventConfigs)[number],
+    existing?: EventRecord
+  ): EventRecord => ({
+    id: existing?.id ?? `${profileId}:${config.id}`,
+    configId: config.id,
+    title: config.title,
+    source: config.source,
+    channel: config.channel,
+    summary: config.summary,
+    context: config.context,
+    options: [
+      {
+        key: "A",
+        label: config.optionA,
+        impactPreview: formatEventImpact(config.optionACash, config.optionAReputation, config.optionACustomerSatisfaction, config.optionARiskDelta)
+      },
+      {
+        key: "B",
+        label: config.optionB,
+        impactPreview: formatEventImpact(config.optionBCash, config.optionBReputation, config.optionBCustomerSatisfaction, config.optionBRiskDelta)
+      }
+    ],
+    status: existing?.status ?? "pending",
+    selectedOption: existing?.selectedOption ?? null,
+    resultSummary: existing?.resultSummary ?? null,
+    knowledgeTitle: config.knowledgeTitle,
+    knowledgeUnlocked: existing?.knowledgeUnlocked ?? false,
+    riskExplanation: config.riskExplanation,
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    resolvedAt: existing?.resolvedAt ?? null
+  });
+
+  const listEventsForProfile = (profile: PlayerProfileRecord): EventRecord[] => {
+    const ownedEvents = [...playerEvents.values()].filter((event) => event.id.startsWith(`${profile.id}:`));
+    if (ownedEvents.length === 0) {
+      const firstConfig = eventConfigs[0];
+      if (firstConfig !== undefined) {
+        const firstEvent = toEventRecord(profile.id, firstConfig);
+        playerEvents.set(firstEvent.id, firstEvent);
+        ownedEvents.push(firstEvent);
+      }
+    }
+    profile.pendingEventCount = ownedEvents.filter((event) => event.status === "pending").length;
+    return ownedEvents.sort((left, right) => left.status.localeCompare(right.status) || left.createdAt.localeCompare(right.createdAt));
   };
 
   return {
@@ -739,6 +861,81 @@ const createTestRepository = (): GameRepository => {
         finance: toCompanyFinanceRecord(profile)
       };
     },
+    async listEvents(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      return listEventsForProfile(profile);
+    },
+    async chooseEvent(accountId, serverId, eventId, option) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      if (option !== "A" && option !== "B") {
+        return "INVALID_EVENT_OPTION";
+      }
+
+      listEventsForProfile(profile);
+      const event = playerEvents.get(eventId);
+      if (event === undefined || !event.id.startsWith(`${profile.id}:`)) {
+        return "EVENT_NOT_FOUND";
+      }
+      if (event.status === "resolved") {
+        return "EVENT_ALREADY_RESOLVED";
+      }
+
+      const config = eventConfigs.find((item) => item.id === event.configId);
+      if (config === undefined) {
+        return "EVENT_NOT_FOUND";
+      }
+      const cash = option === "A" ? config.optionACash : config.optionBCash;
+      const reputation = option === "A" ? config.optionAReputation : config.optionBReputation;
+      const customerSatisfaction =
+        option === "A" ? config.optionACustomerSatisfaction : config.optionBCustomerSatisfaction;
+      const riskDelta = option === "A" ? config.optionARiskDelta : config.optionBRiskDelta;
+      const resultSummary = option === "A" ? config.optionAResult : config.optionBResult;
+
+      event.status = "resolved";
+      event.selectedOption = option;
+      event.resultSummary = resultSummary;
+      event.knowledgeUnlocked = config.knowledgeTitle !== null;
+      event.resolvedAt = new Date().toISOString();
+      profile.cash += cash;
+      profile.reputation += reputation;
+      profile.customerSatisfaction += customerSatisfaction;
+      if (riskDelta > 0) {
+        profile.riskStatus = "预警";
+      }
+
+      let followupEvent: EventRecord | null = null;
+      if (config.followupEventId !== null) {
+        const followupConfig = eventConfigs.find((item) => item.id === config.followupEventId);
+        if (followupConfig !== undefined) {
+          const followupId = `${profile.id}:${followupConfig.id}`;
+          followupEvent = playerEvents.get(followupId) ?? toEventRecord(profile.id, followupConfig);
+          playerEvents.set(followupId, followupEvent);
+        }
+      }
+
+      profile.pendingEventCount = [...playerEvents.values()].filter(
+        (item) => item.id.startsWith(`${profile.id}:`) && item.status === "pending"
+      ).length;
+
+      return {
+        event,
+        finance: toCompanyFinanceRecord(profile),
+        followupEvent,
+        result: {
+          summary: resultSummary,
+          riskExplanation: config.riskExplanation,
+          knowledgeUnlocked: config.knowledgeTitle !== null,
+          followupEventId: followupEvent?.id ?? null
+        }
+      } satisfies EventChoiceRecord;
+    },
     async disconnect() {}
   };
 };
@@ -780,6 +977,35 @@ const requestJson = async <T>(
     status: response.status,
     body: (await response.json()) as ApiBody<T>
   };
+};
+
+const createPlayerSession = async (
+  baseUrl: string,
+  username = `player${randomUUID().replaceAll("-", "").slice(0, 8)}`
+): Promise<{ token: string; profile: PlayerProfileRecord }> => {
+  const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password: "secret12" })
+  });
+  assert.equal(register.status, 201);
+  assert.equal(register.body.success, true);
+  assert.ok(register.body.data?.token);
+
+  const profile = await requestJson<PlayerProfileRecord>(baseUrl, "/players", {
+    method: "POST",
+    headers: { authorization: `Bearer ${register.body.data.token}` },
+    body: JSON.stringify({
+      serverId: "s1",
+      avatarId: "strategist",
+      founderName: "测试创始人",
+      companyName: "测试科技"
+    })
+  });
+  assert.equal(profile.status, 201);
+  assert.equal(profile.body.success, true);
+  assert.ok(profile.body.data);
+
+  return { token: register.body.data.token, profile: profile.body.data };
 };
 
 test("registers an account, logs in, and returns a session token", async () => {
@@ -1635,6 +1861,126 @@ test("lists, advances, and claims player tasks without duplicate rewards", async
     });
     assert.equal(duplicateClaim.status, 409);
     assert.equal(duplicateClaim.body.error?.code, "TASK_ALREADY_CLAIMED");
+  });
+});
+
+test("lists phase 7 events from modern business channels and persists pending state", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "eventlist");
+
+    const firstList = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(firstList.status, 200);
+    assert.equal(firstList.body.success, true);
+    const firstEvent = firstList.body.data?.[0];
+    assert.ok(firstEvent);
+    assert.equal(firstEvent.status, "pending");
+    assert.equal(firstEvent.source, "员工私信");
+    assert.equal(firstEvent.channel, "chat");
+    assert.equal(firstEvent.options.length, 2);
+    assert.ok(firstEvent.options[0]?.impactPreview.includes("现金"));
+    assert.ok(firstEvent.riskExplanation.length > 0);
+    assert.ok(firstEvent.knowledgeTitle);
+
+    const secondList = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(secondList.status, 200);
+    assert.equal(secondList.body.success, true);
+    assert.equal(secondList.body.data?.[0]?.id, firstEvent.id);
+  });
+});
+
+test("settles event choices once, applies impact, unlocks knowledge, and triggers followup", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "eventsettle");
+    const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(events.status, 200);
+    assert.equal(events.body.success, true);
+    const event = events.body.data?.[0];
+    assert.ok(event);
+
+    const settled = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(event.id)}/choose`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.success, true);
+    assert.equal(settled.body.data?.event.status, "resolved");
+    assert.equal(settled.body.data.event.selectedOption, "A");
+    assert.equal(settled.body.data.event.knowledgeUnlocked, true);
+    assert.equal(settled.body.data.followupEvent?.status, "pending");
+    assert.equal(settled.body.data.finance.cash, profile.cash - 20000);
+    assert.equal(settled.body.data.finance.brandReputation, profile.reputation + 300);
+    assert.ok(settled.body.data.result.riskExplanation.includes("风险"));
+
+    const duplicate = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(event.id)}/choose`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.success, false);
+    assert.equal(duplicate.body.error?.code, "EVENT_ALREADY_RESOLVED");
+
+    const refreshedEvents = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(refreshedEvents.status, 200);
+    assert.equal(refreshedEvents.body.success, true);
+    assert.equal(refreshedEvents.body.data?.filter((item) => item.status === "pending").length, 1);
+    assert.ok(refreshedEvents.body.data?.some((item) => item.configId === "customer-contract-review"));
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(tasks.status, 200);
+    assert.equal(tasks.body.success, true);
+    assert.equal(tasks.body.data?.find((task) => task.id === "daily-handle-event")?.progress, 1);
+    assert.equal(tasks.body.data?.find((task) => task.id === "side-knowledge-labor-contract")?.progress, 1);
+    assert.equal(tasks.body.data?.find((task) => task.id === "side-compliance-contract-review")?.progress, 1);
+  });
+});
+
+test("rejects invalid event choices and isolates events between accounts", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await createPlayerSession(baseUrl, "eventaccounta");
+    const second = await createPlayerSession(baseUrl, "eventaccountb");
+    const firstEvents = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${first.token}` }
+    });
+    assert.equal(firstEvents.status, 200);
+    assert.equal(firstEvents.body.success, true);
+    const firstEvent = firstEvents.body.data?.[0];
+    assert.ok(firstEvent);
+
+    const invalid = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(firstEvent.id)}/choose`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${first.token}` },
+      body: JSON.stringify({ serverId: "s1", option: "C" })
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(invalid.body.success, false);
+
+    const crossAccount = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(firstEvent.id)}/choose`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${second.token}` },
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(crossAccount.status, 404);
+    assert.equal(crossAccount.body.success, false);
+    assert.equal(crossAccount.body.error?.code, "EVENT_NOT_FOUND");
+
+    const secondEvents = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${second.token}` }
+    });
+    assert.equal(secondEvents.status, 200);
+    assert.equal(secondEvents.body.success, true);
+    assert.notEqual(secondEvents.body.data?.[0]?.id, firstEvent.id);
   });
 });
 

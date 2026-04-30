@@ -117,6 +117,7 @@ model PlayerProfile {
   financeReports CompanyFinanceReport[]
   employees   PlayerEmployee[]
   projects    PlayerProject[]
+  events      PlayerEvent[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -225,6 +226,52 @@ model PlayerProject {
   @@unique([profileId, configId])
   @@index([profileId, status])
   @@index([assignedEmployeeId])
+}
+
+model EventConfig {
+  id        String        @id @db.VarChar(48)
+  title     String        @db.VarChar(64)
+  source    String        @db.VarChar(24)
+  channel   String        @db.VarChar(16)
+  summary   String        @db.VarChar(180)
+  context   String        @db.Text
+  optionA   String        @db.VarChar(80)
+  optionAResult String    @db.VarChar(180)
+  optionACash Int         @default(0)
+  optionAReputation Int   @default(0)
+  optionACustomerSatisfaction Int @default(0)
+  optionARiskDelta Int    @default(0)
+  optionB   String        @db.VarChar(80)
+  optionBResult String    @db.VarChar(180)
+  optionBCash Int         @default(0)
+  optionBReputation Int   @default(0)
+  optionBCustomerSatisfaction Int @default(0)
+  optionBRiskDelta Int    @default(0)
+  followupEventId String? @db.VarChar(48)
+  knowledgeTitle String?  @db.VarChar(64)
+  riskExplanation String  @db.VarChar(220)
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  events    PlayerEvent[]
+
+  @@index([channel, sortOrder])
+}
+
+model PlayerEvent {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  configId  String       @db.VarChar(48)
+  status    String       @default("pending") @db.VarChar(16)
+  selectedOption String? @db.VarChar(8)
+  resultSummary String?  @db.VarChar(220)
+  knowledgeUnlocked Boolean @default(false)
+  createdAt DateTime     @default(now())
+  resolvedAt DateTime?
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    EventConfig   @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, configId])
+  @@index([profileId, status])
 }
 
 model CompanyFinanceReport {

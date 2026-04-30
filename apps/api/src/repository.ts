@@ -161,6 +161,43 @@ export type ProjectSettlementRecord = {
   finance: CompanyFinanceRecord;
 };
 
+export type EventOptionRecord = {
+  key: "A" | "B";
+  label: string;
+  impactPreview: string;
+};
+
+export type EventRecord = {
+  id: string;
+  configId: string;
+  title: string;
+  source: string;
+  channel: string;
+  summary: string;
+  context: string;
+  options: EventOptionRecord[];
+  status: "pending" | "resolved";
+  selectedOption: "A" | "B" | null;
+  resultSummary: string | null;
+  knowledgeTitle: string | null;
+  knowledgeUnlocked: boolean;
+  riskExplanation: string;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export type EventChoiceRecord = {
+  event: EventRecord;
+  finance: CompanyFinanceRecord;
+  followupEvent: EventRecord | null;
+  result: {
+    summary: string;
+    riskExplanation: string;
+    knowledgeUnlocked: boolean;
+    followupEventId: string | null;
+  };
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -189,6 +226,8 @@ export type GameRepository = {
   assignProjectEmployee(accountId: string, serverId: string, projectId: string, employeeId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
   advanceProject(accountId: string, serverId: string, projectId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_SETTLED">;
   settleProject(accountId: string, serverId: string, projectId: string): Promise<ProjectSettlementRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_INCOMPLETE">;
+  listEvents(accountId: string, serverId: string): Promise<EventRecord[] | "PLAYER_NOT_FOUND">;
+  chooseEvent(accountId: string, serverId: string, eventId: string, option: "A" | "B"): Promise<EventChoiceRecord | "PLAYER_NOT_FOUND" | "EVENT_NOT_FOUND" | "EVENT_ALREADY_RESOLVED" | "INVALID_EVENT_OPTION">;
   disconnect(): Promise<void>;
 };
 
@@ -339,6 +378,93 @@ const toProjectRecord = (
   result: readProjectResult(project.result),
   summary: project.summary,
   settledAt: project.settledAt?.toISOString() ?? null
+});
+
+const readEventStatus = (status: string): EventRecord["status"] =>
+  status === "resolved" ? "resolved" : "pending";
+
+const readEventOption = (option: string | null): EventRecord["selectedOption"] =>
+  option === "A" || option === "B" ? option : null;
+
+const formatEventImpact = (cash: number, reputation: number, customerSatisfaction: number, riskDelta: number): string => {
+  const parts = [
+    cash === 0 ? undefined : `现金${cash > 0 ? "+" : ""}${cash}`,
+    reputation === 0 ? undefined : `声望${reputation > 0 ? "+" : ""}${reputation}`,
+    customerSatisfaction === 0 ? undefined : `满意度${customerSatisfaction > 0 ? "+" : ""}${customerSatisfaction}`,
+    riskDelta === 0 ? undefined : `风险${riskDelta > 0 ? "+" : ""}${riskDelta}`
+  ].filter((part): part is string => part !== undefined);
+
+  return parts.length === 0 ? "经营影响稳定" : parts.join(" / ");
+};
+
+const toEventRecord = (event: {
+  id: string;
+  configId: string;
+  status: string;
+  selectedOption: string | null;
+  resultSummary: string | null;
+  knowledgeUnlocked: boolean;
+  createdAt: Date;
+  resolvedAt: Date | null;
+  config: {
+    title: string;
+    source: string;
+    channel: string;
+    summary: string;
+    context: string;
+    optionA: string;
+    optionAResult: string;
+    optionACash: number;
+    optionAReputation: number;
+    optionACustomerSatisfaction: number;
+    optionARiskDelta: number;
+    optionB: string;
+    optionBResult: string;
+    optionBCash: number;
+    optionBReputation: number;
+    optionBCustomerSatisfaction: number;
+    optionBRiskDelta: number;
+    knowledgeTitle: string | null;
+    riskExplanation: string;
+  };
+}): EventRecord => ({
+  id: event.id,
+  configId: event.configId,
+  title: event.config.title,
+  source: event.config.source,
+  channel: event.config.channel,
+  summary: event.config.summary,
+  context: event.config.context,
+  options: [
+    {
+      key: "A",
+      label: event.config.optionA,
+      impactPreview: formatEventImpact(
+        event.config.optionACash,
+        event.config.optionAReputation,
+        event.config.optionACustomerSatisfaction,
+        event.config.optionARiskDelta
+      )
+    },
+    {
+      key: "B",
+      label: event.config.optionB,
+      impactPreview: formatEventImpact(
+        event.config.optionBCash,
+        event.config.optionBReputation,
+        event.config.optionBCustomerSatisfaction,
+        event.config.optionBRiskDelta
+      )
+    }
+  ],
+  status: readEventStatus(event.status),
+  selectedOption: readEventOption(event.selectedOption),
+  resultSummary: event.resultSummary,
+  knowledgeTitle: event.config.knowledgeTitle,
+  knowledgeUnlocked: event.knowledgeUnlocked,
+  riskExplanation: event.config.riskExplanation,
+  createdAt: event.createdAt.toISOString(),
+  resolvedAt: event.resolvedAt?.toISOString() ?? null
 });
 
 const readTaskType = (type: string): TaskRecord["type"] =>
@@ -1252,6 +1378,167 @@ export const createPrismaGameRepository = (
     return {
       project: toProjectRecord(settled.project, employee),
       finance: toCompanyFinanceRecord(toProfileRecord(settled.profile))
+    };
+  },
+
+  async listEvents(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const existingCount = await prisma.playerEvent.count({ where: { profileId: profile.id } });
+    if (existingCount === 0) {
+      const firstConfig = await prisma.eventConfig.findFirst({
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+      });
+      if (firstConfig !== null) {
+        await prisma.playerEvent.create({
+          data: {
+            id: randomUUID(),
+            profileId: profile.id,
+            configId: firstConfig.id
+          }
+        });
+      }
+    }
+
+    const events = await prisma.playerEvent.findMany({
+      where: { profileId: profile.id },
+      include: { config: true },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    });
+    const pendingCount = events.filter((event) => event.status !== "resolved").length;
+    if (pendingCount !== profile.pendingEventCount) {
+      await prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: { pendingEventCount: pendingCount }
+      });
+    }
+
+    return events.map(toEventRecord);
+  },
+
+  async chooseEvent(accountId, serverId, eventId, option) {
+    if (option !== "A" && option !== "B") {
+      return "INVALID_EVENT_OPTION";
+    }
+
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const event = await prisma.playerEvent.findFirst({
+      where: {
+        id: eventId,
+        profileId: profile.id
+      },
+      include: { config: true }
+    });
+    if (event === null) {
+      return "EVENT_NOT_FOUND";
+    }
+    if (event.status === "resolved") {
+      return "EVENT_ALREADY_RESOLVED";
+    }
+
+    const cash = option === "A" ? event.config.optionACash : event.config.optionBCash;
+    const reputation = option === "A" ? event.config.optionAReputation : event.config.optionBReputation;
+    const customerSatisfaction =
+      option === "A" ? event.config.optionACustomerSatisfaction : event.config.optionBCustomerSatisfaction;
+    const riskDelta = option === "A" ? event.config.optionARiskDelta : event.config.optionBRiskDelta;
+    const resultSummary = option === "A" ? event.config.optionAResult : event.config.optionBResult;
+
+    const settled = await prisma.$transaction(async (tx) => {
+      const updatedEvent = await tx.playerEvent.update({
+        where: { id: event.id },
+        data: {
+          status: "resolved",
+          selectedOption: option,
+          resultSummary,
+          knowledgeUnlocked: event.config.knowledgeTitle !== null,
+          resolvedAt: new Date()
+        },
+        include: { config: true }
+      });
+
+      let followupEvent: typeof updatedEvent | null = null;
+      if (event.config.followupEventId !== null) {
+        const followupConfig = await tx.eventConfig.findUnique({
+          where: { id: event.config.followupEventId }
+        });
+        const existingFollowup = await tx.playerEvent.findUnique({
+          where: {
+            profileId_configId: {
+              profileId: profile.id,
+              configId: event.config.followupEventId
+            }
+          },
+          include: { config: true }
+        });
+        if (existingFollowup !== null) {
+          followupEvent = existingFollowup;
+        } else if (followupConfig !== null) {
+          followupEvent = await tx.playerEvent.create({
+            data: {
+              id: randomUUID(),
+              profileId: profile.id,
+              configId: followupConfig.id
+            },
+            include: { config: true }
+          });
+        }
+      }
+
+      const pendingCount = await tx.playerEvent.count({
+        where: {
+          profileId: profile.id,
+          status: "pending"
+        }
+      });
+      const riskStatus =
+        riskDelta > 0 ? "预警" : riskDelta < 0 && pendingCount === 0 && profile.riskStatus !== "资金紧张" ? "稳健" : profile.riskStatus;
+
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: cash },
+          reputation: { increment: reputation },
+          customerSatisfaction: { increment: customerSatisfaction },
+          riskStatus,
+          pendingEventCount: pendingCount
+        }
+      });
+
+      return { event: updatedEvent, profile: updatedProfile, followupEvent };
+    });
+
+    const eventRecord = toEventRecord(settled.event);
+    return {
+      event: eventRecord,
+      finance: toCompanyFinanceRecord(toProfileRecord(settled.profile)),
+      followupEvent: settled.followupEvent === null ? null : toEventRecord(settled.followupEvent),
+      result: {
+        summary: resultSummary,
+        riskExplanation: event.config.riskExplanation,
+        knowledgeUnlocked: event.config.knowledgeTitle !== null,
+        followupEventId: settled.followupEvent?.id ?? null
+      }
     };
   },
 

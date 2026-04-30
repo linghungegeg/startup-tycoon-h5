@@ -82,6 +82,22 @@ const taskConfigs = [
     sortOrder: 11
   },
   {
+    id: "daily-handle-event",
+    type: "daily",
+    title: "处理经营事件",
+    description: "完成一次消息、合同或财务事件决策，保持公司经营节奏。",
+    target: 1,
+    initialProgress: 0,
+    rewardLabel: "资金 5万、声望 200",
+    rewardCash: 50000,
+    rewardPlatformCoins: 0,
+    rewardReputation: 200,
+    rewardActionPower: 0,
+    guideAction: "处理事件",
+    unlockKind: "none",
+    sortOrder: 12
+  },
+  {
     id: "side-knowledge-labor-contract",
     type: "side",
     title: "阅读用工合规知识",
@@ -112,6 +128,105 @@ const taskConfigs = [
     guideAction: "处理支线",
     unlockKind: "compliance",
     sortOrder: 21
+  }
+];
+
+const eventConfigs = [
+  {
+    id: "employee-contract-risk",
+    title: "新员工入职资料缺口",
+    source: "员工私信",
+    channel: "chat",
+    summary: "HR 提醒一名新员工还没有完成劳动合同签署。",
+    context: "销售团队准备让新员工直接进入客户项目，但入职材料仍缺少合同签署和岗位确认。",
+    optionA: "立即补齐合同和入职材料",
+    optionAResult: "公司支出增加，但用工争议风险下降，团队对流程更有信心。",
+    optionACash: -20000,
+    optionAReputation: 300,
+    optionACustomerSatisfaction: 0,
+    optionARiskDelta: -1,
+    optionB: "先进入项目，手续稍后补齐",
+    optionBResult: "短期不影响交付，但用工和客户现场管理风险上升。",
+    optionBCash: 0,
+    optionBReputation: -800,
+    optionBCustomerSatisfaction: 0,
+    optionBRiskDelta: 1,
+    followupEventId: "customer-contract-review",
+    knowledgeTitle: "劳动合同签署风险",
+    riskExplanation: "入职资料缺口会放大劳动争议和客户现场管理风险，越早补齐越能降低后续赔偿压力。",
+    sortOrder: 1
+  },
+  {
+    id: "customer-contract-review",
+    title: "客户要求压缩验收周期",
+    source: "客户邮件",
+    channel: "contract",
+    summary: "客户希望缩短验收时间，并保留延期扣款条款。",
+    context: "客户提出快速签约，但验收节点、延期扣款和回款条件都需要在合同中确认。",
+    optionA: "坚持分阶段验收和书面确认",
+    optionAResult: "签约节奏变慢，但回款节点更清晰，项目风险下降。",
+    optionACash: -10000,
+    optionAReputation: 500,
+    optionACustomerSatisfaction: 2,
+    optionARiskDelta: -1,
+    optionB: "接受压缩周期换取快速签约",
+    optionBResult: "公司快速拿到现金，但后续验收和扣款风险增加。",
+    optionBCash: 60000,
+    optionBReputation: -500,
+    optionBCustomerSatisfaction: -4,
+    optionBRiskDelta: 1,
+    followupEventId: null,
+    knowledgeTitle: "项目验收条款",
+    riskExplanation: "验收周期压缩会提高短期签约速度，但也会压缩纠错时间，回款条款不清时容易形成争议。",
+    sortOrder: 2
+  },
+  {
+    id: "finance-warning-cashflow",
+    title: "现金流安全垫下降",
+    source: "财报预警",
+    channel: "finance",
+    summary: "本月固定支出上升，现金安全垫低于财务建议线。",
+    context: "财务建议暂缓非必要招聘和营销投放，优先处理短周期回款项目。",
+    optionA: "收缩支出，优先短周期回款",
+    optionAResult: "现金流压力缓解，但增长速度暂时放慢。",
+    optionACash: 30000,
+    optionAReputation: 0,
+    optionACustomerSatisfaction: 1,
+    optionARiskDelta: -1,
+    optionB: "维持投放，争取下月增长",
+    optionBResult: "增长投入保持，但短期资金压力继续上升。",
+    optionBCash: -50000,
+    optionBReputation: 300,
+    optionBCustomerSatisfaction: 0,
+    optionBRiskDelta: 1,
+    followupEventId: null,
+    knowledgeTitle: "现金流安全垫",
+    riskExplanation: "固定支出持续上升时，现金安全垫不足会限制招聘、交付和应急谈判能力。",
+    sortOrder: 3
+  },
+  {
+    id: "public-opinion-response",
+    title: "客户群出现交付质疑",
+    source: "舆情热搜",
+    channel: "hot",
+    summary: "老客户群里有人质疑项目延期和售后响应速度。",
+    context: "运营负责人建议当天给出交付说明，销售负责人则希望先私下安抚关键客户。",
+    optionA: "公开说明交付排期",
+    optionAResult: "透明沟通提升声誉，但需要投入额外客服和项目管理成本。",
+    optionACash: -15000,
+    optionAReputation: 700,
+    optionACustomerSatisfaction: 2,
+    optionARiskDelta: -1,
+    optionB: "先私下安抚关键客户",
+    optionBResult: "短期成本较低，但公开质疑没有完全消除。",
+    optionBCash: 0,
+    optionBReputation: -400,
+    optionBCustomerSatisfaction: -1,
+    optionBRiskDelta: 1,
+    followupEventId: null,
+    knowledgeTitle: "客户舆情响应",
+    riskExplanation: "舆情事件拖延处理会扩大客户不确定感，透明说明通常能降低后续信任成本。",
+    sortOrder: 4
   }
 ];
 
@@ -344,6 +459,14 @@ const seed = async (): Promise<void> => {
       where: { id: projectConfig.id },
       update: projectConfig,
       create: projectConfig
+    });
+  }
+
+  for (const eventConfig of eventConfigs) {
+    await prisma.eventConfig.upsert({
+      where: { id: eventConfig.id },
+      update: eventConfig,
+      create: eventConfig
     });
   }
 

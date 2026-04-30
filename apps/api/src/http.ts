@@ -486,6 +486,79 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/events") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const events = await repository.listEvents(account.id, serverId);
+      if (events === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(events, traceId));
+      return;
+    }
+
+    const eventChoiceMatch = /^\/events\/([^/]+)\/choose$/.exec(url.pathname);
+    if (request.method === "POST" && eventChoiceMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        const eventId = eventChoiceMatch[1];
+        const option = isRecord(body) && (body.option === "A" || body.option === "B") ? body.option : undefined;
+        if (serverId === undefined || eventId === undefined || option === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, eventId and option are required.", traceId));
+          return;
+        }
+
+        const result = await repository.chooseEvent(account.id, serverId, decodeURIComponent(eventId), option);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "EVENT_NOT_FOUND") {
+          sendJson(response, 404, failure("EVENT_NOT_FOUND", "Event not found.", traceId));
+          return;
+        }
+        if (result === "EVENT_ALREADY_RESOLVED") {
+          sendJson(response, 409, failure("EVENT_ALREADY_RESOLVED", "Event has already been resolved.", traceId));
+          return;
+        }
+        if (result === "INVALID_EVENT_OPTION") {
+          sendJson(response, 400, failure("INVALID_EVENT_OPTION", "Event option must be A or B.", traceId));
+          return;
+        }
+
+        await repository.advanceTask(account.id, serverId, "daily-handle-event", readToday(request));
+        if (result.event.knowledgeUnlocked) {
+          await repository.advanceTask(account.id, serverId, "side-knowledge-labor-contract", readToday(request));
+        }
+        if (result.event.channel === "contract" || result.event.configId.includes("contract")) {
+          await repository.advanceTask(account.id, serverId, "side-compliance-contract-review", readToday(request));
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/company/status") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

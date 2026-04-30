@@ -166,9 +166,47 @@ type CompanyFinance = {
   endingCash?: number;
 };
 
+type EventOption = {
+  key: "A" | "B";
+  label: string;
+  impactPreview: string;
+};
+
+type BusinessEvent = {
+  id: string;
+  configId: string;
+  title: string;
+  source: string;
+  channel: string;
+  summary: string;
+  context: string;
+  options: EventOption[];
+  status: "pending" | "resolved";
+  selectedOption: "A" | "B" | null;
+  resultSummary: string | null;
+  knowledgeTitle: string | null;
+  knowledgeUnlocked: boolean;
+  riskExplanation: string;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+type EventChoiceResult = {
+  event: BusinessEvent;
+  finance: CompanyFinance;
+  followupEvent: BusinessEvent | null;
+  result: {
+    summary: string;
+    riskExplanation: string;
+    knowledgeUnlocked: boolean;
+    followupEventId: string | null;
+  };
+};
+
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
+const eventEntryNames = new Set(["风险", "合同", "邮件"]);
 const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [];
 const homePanelContent: Record<string, { title: string; lines: string[]; action: string }> = {
@@ -501,6 +539,10 @@ function App() {
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
   const [projectError, setProjectError] = useState("");
+  const [events, setEvents] = useState<BusinessEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [eventError, setEventError] = useState("");
+  const [eventNotice, setEventNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -558,6 +600,11 @@ function App() {
     () => tasks.find((task) => task.isClaimable && !task.isClaimed) ?? currentMainTask,
     [currentMainTask, tasks]
   );
+  const selectedEvent = useMemo(
+    () => events.find((item) => item.id === selectedEventId) ?? events[0],
+    [events, selectedEventId]
+  );
+  const pendingEvents = useMemo(() => events.filter((item) => item.status === "pending"), [events]);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
@@ -587,6 +634,31 @@ function App() {
     }
 
     setTaskError(response.error.message);
+  };
+
+  const loadEvents = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<BusinessEvent[]>(
+      `/events?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setEvents(response.data);
+      setSelectedEventId((currentId) => response.data.find((item) => item.id === currentId)?.id ?? response.data[0]?.id ?? "");
+      setEventError("");
+      setProfile((currentProfile) =>
+        currentProfile === null
+          ? currentProfile
+          : {
+              ...currentProfile,
+              pendingEventCount: response.data.filter((item) => item.status === "pending").length
+            }
+      );
+      return;
+    }
+
+    setEventError(response.error.message);
   };
 
   const loadCompanyFinance = async (token: string, nextServerId: string): Promise<void> => {
@@ -730,6 +802,7 @@ function App() {
     }
 
     void loadTasks(account.token, selectedServer.id);
+    void loadEvents(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
@@ -921,12 +994,23 @@ function App() {
   };
 
   const openHomePanel = (panelName: string): void => {
+    if (eventEntryNames.has(panelName)) {
+      setActivePanel(null);
+      setActiveNav("事件");
+      return;
+    }
+
     setActivePanel(panelName);
   };
 
   const openTaskScreen = (): void => {
     setActivePanel(null);
     setActiveNav("任务");
+  };
+
+  const openEventScreen = (): void => {
+    setActivePanel(null);
+    setActiveNav("事件");
   };
 
   const progressTask = async (taskId: string): Promise<void> => {
@@ -1235,6 +1319,52 @@ function App() {
     setProjectError(response.error.message);
   };
 
+  const chooseEvent = async (eventId: string, option: "A" | "B"): Promise<void> => {
+    if (!account || !selectedServer) {
+      setEventError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<EventChoiceResult>(
+      `/events/${encodeURIComponent(eventId)}/choose`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, option })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCompanyFinance(response.data.finance);
+      setEventNotice(response.data.result.summary);
+      setEventError("");
+      await loadEvents(account.token, selectedServer.id);
+      await loadTasks(account.token, selectedServer.id);
+      setProfile((currentProfile) =>
+        currentProfile === null
+          ? currentProfile
+          : {
+              ...currentProfile,
+              cash: response.data.finance.cash,
+              monthlyIncome: response.data.finance.monthlyIncome,
+              monthlyExpense: response.data.finance.monthlyExpense,
+              valuation: response.data.finance.valuation,
+              totalDebt: response.data.finance.totalDebt,
+              creditRating: response.data.finance.creditRating,
+              reputation: response.data.finance.brandReputation,
+              employeeSatisfaction: response.data.finance.employeeSatisfaction,
+              customerSatisfaction: response.data.finance.customerSatisfaction,
+              financeMonth: response.data.finance.financeMonth,
+              operatingDay: response.data.finance.operatingDay,
+              riskStatus: response.data.finance.riskStatus
+            }
+      );
+      return;
+    }
+
+    setEventError(response.error.message);
+  };
+
   const guideTask = (task: TaskItem): void => {
     if (task.isClaimable) {
       void claimTask(task.id);
@@ -1258,7 +1388,7 @@ function App() {
     }
 
     if (task.unlockKind === "compliance") {
-      setActiveKnowledgeTask(task);
+      openEventScreen();
     }
   };
 
@@ -1353,7 +1483,7 @@ function App() {
             <span>现金流{compactNumber(profile.monthlyIncome - profile.monthlyExpense)}</span>
             <span>收入{compactNumber(profile.monthlyIncome)}</span>
             <span>支出{compactNumber(profile.monthlyExpense)}</span>
-            <span>待办{profile.pendingEventCount}</span>
+            <button type="button" onClick={openEventScreen}>待办{profile.pendingEventCount}</button>
           </section>
 
           <button className="chapter-button" type="button" onClick={() => openHomePanel("出门谈判")}>
@@ -1657,6 +1787,99 @@ function App() {
                     </footer>
                   </article>
                 ))}
+              </section>
+            </section>
+          )}
+
+          {activeNav === "事件" && (
+            <section className="event-screen" aria-label="事件中心">
+              <header className="event-header">
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <div>
+                  <strong>事件</strong>
+                  <span>消息 / 邮件 / 合同 / 财报</span>
+                </div>
+                <button type="button" onClick={() => account && selectedServer && void loadEvents(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <section className="event-summary" aria-label="事件概览">
+                <span>待处理 {pendingEvents.length}</span>
+                <span>已处理 {events.length - pendingEvents.length}</span>
+                <span>知识 {events.filter((item) => item.knowledgeUnlocked).length}</span>
+              </section>
+              {eventNotice && <p className="event-notice">{eventNotice}</p>}
+              {eventError && <p className="event-error">{eventError}</p>}
+
+              <section className="event-layout">
+                <div className="event-list" aria-label="事件列表">
+                  {events.length === 0 ? (
+                    <div className="event-empty">暂无经营事件，继续推进公司后会出现新的待办。</div>
+                  ) : events.map((item) => (
+                    <button
+                      className={item.id === selectedEvent?.id ? "selected" : undefined}
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedEventId(item.id)}
+                    >
+                      <span>{item.source}</span>
+                      <strong>{item.title}</strong>
+                      <em>{item.summary}</em>
+                      <small>{item.status === "pending" ? "待决策" : "已处理"}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="event-detail" aria-label="事件详情">
+                  {selectedEvent ? (
+                    <>
+                      <div className="event-title">
+                        <span>{selectedEvent.source.slice(0, 2)}</span>
+                        <strong>{selectedEvent.title}</strong>
+                        <em>{selectedEvent.channel} · {selectedEvent.status === "pending" ? "待处理" : "已结算"}</em>
+                      </div>
+
+                      <p>{selectedEvent.context}</p>
+
+                      <dl className="event-risk">
+                        <div>
+                          <dt>摘要</dt>
+                          <dd>{selectedEvent.summary}</dd>
+                        </div>
+                        <div>
+                          <dt>风险解释</dt>
+                          <dd>{selectedEvent.riskExplanation}</dd>
+                        </div>
+                        <div>
+                          <dt>知识点</dt>
+                          <dd>{selectedEvent.knowledgeUnlocked ? selectedEvent.knowledgeTitle : selectedEvent.knowledgeTitle ?? "待解锁"}</dd>
+                        </div>
+                      </dl>
+
+                      {selectedEvent.status === "pending" ? (
+                        <div className="event-options">
+                          {selectedEvent.options.map((option) => (
+                            <button
+                              key={option.key}
+                              type="button"
+                              onClick={() => void chooseEvent(selectedEvent.id, option.key)}
+                            >
+                              <strong>{option.label}</strong>
+                              <span>{option.impactPreview}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <section className="event-result">
+                          <strong>处理结果</strong>
+                          <p>{selectedEvent.resultSummary}</p>
+                          <span>选择：{selectedEvent.selectedOption}</span>
+                        </section>
+                      )}
+                    </>
+                  ) : (
+                    <div className="event-empty">事件配置读取中，请稍候。</div>
+                  )}
+                </article>
               </section>
             </section>
           )}
