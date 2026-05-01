@@ -1817,6 +1817,22 @@ VIP 权益：
 - 遗留风险：真实随机任务生成仍会把赛季任务放入普通账号任务池，本批未改生成算法；既有成就同步并发唯一键风险仍未处理。
 - 下一阶段入口：Phase 21 第十三实施批次：修正随机任务生成池边界，普通账号不应生成赛季随机任务；同时处理成就同步并发唯一键崩溃。
 
+### Phase 21 第十三实施批次阶段总结：随机任务池边界与成就同步止崩
+
+- 当前稳定点：`b9e4094 feat: add capital random tasks`。
+- 完成内容：普通账号随机任务通用生成池排除 `season` 配置，避免没有通行证时生成“赛季风口机会”；通行证账号仍保留额外赛季随机任务入口。
+- 止崩处理：成就进度同步遇到并发唯一键竞争时，改为捕获唯一键冲突后重新读取当前进度并更新，避免 `PlayerAchievement_profileId_achievementId_key` 竞争导致 API 崩溃。
+- 规则边界：本批不改每日处理上限、可见随机任务数量、通行证额外任务数、随机任务奖励公式和经营道具修正效果；不新增前台组件。
+- 前台表现：普通账号进入专属经理后只展示普通随机任务；成就、称号、知识等初始加载不应再因并发成就同步触发 API 崩溃。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写随机任务查询边界和成就并发唯一键恢复测试，再补最小实现并复跑相关回归。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用新建普通 QA 账号验收，确认专属经理随机任务列表没有“赛季风口机会”；API 健康检查仍返回 200，错误日志为空。
+  - Build Web Apps：本批无前台组件改动，不改变深色商务手游视觉基线和专属经理信息层级。
+  - Game Studio：随机任务仍从专属经理主动进入，不新增弹窗、不遮挡主页 HUD、随机任务详情和底部导航。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "random task config query|achievement sync recovers" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "regular random task generation|season pass adds one daily season random task|random task config query|achievement sync recovers" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：随机任务生成仍是按配置顺序补齐，可继续单独评估公平轮换或任务权重；本批只修普通账号赛季任务越界和成就同步崩溃。
+- 下一阶段入口：Phase 21 第十四实施批次：可继续做随机任务生成公平轮换/权重规则，或进入下一条明确系统主线。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

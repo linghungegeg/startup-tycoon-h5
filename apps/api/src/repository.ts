@@ -2227,6 +2227,19 @@ const VIP3_START_EXPERIENCE = 3000;
 const readCompanyLevel = (experience: number): number =>
   Math.max(1, Math.min(COMPANY_MAX_LEVEL, Math.floor(Math.max(0, experience) / COMPANY_EXPERIENCE_PER_LEVEL) + 1));
 
+export const readRandomTaskConfigWhere = (
+  hasSeasonPass: boolean,
+  usedConfigIds: string[]
+): {
+  isActive: true;
+  id: { notIn: string[] };
+  category?: { not: "season" };
+} => ({
+  isActive: true,
+  id: { notIn: usedConfigIds },
+  ...(hasSeasonPass ? {} : { category: { not: "season" as const } })
+});
+
 const readFullLevelChest = (fullLevelOverflowExperience: number, claimedCount: number): CompanyGrowthRecord["fullLevelChest"] => {
   const earnedCount = Math.floor(fullLevelOverflowExperience / FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE);
   return {
@@ -2510,6 +2523,94 @@ const readAchievementProgress = (
   return 0;
 };
 
+type PlayerAchievementProgressRecord = {
+  progress: number;
+  completedAt: Date | null;
+};
+
+type PlayerAchievementProgressDelegate = {
+  findUnique(args: {
+    where: {
+      profileId_achievementId: {
+        profileId: string;
+        achievementId: string;
+      };
+    };
+  }): Promise<PlayerAchievementProgressRecord | null>;
+  upsert(args: {
+    where: {
+      profileId_achievementId: {
+        profileId: string;
+        achievementId: string;
+      };
+    };
+    update: PlayerAchievementProgressRecord;
+    create: PlayerAchievementProgressRecord & {
+      profileId: string;
+      achievementId: string;
+    };
+  }): Promise<unknown>;
+  update(args: {
+    where: {
+      profileId_achievementId: {
+        profileId: string;
+        achievementId: string;
+      };
+    };
+    data: PlayerAchievementProgressRecord;
+  }): Promise<unknown>;
+};
+
+const isUniqueConstraintError = (error: unknown): boolean =>
+  error instanceof PrismaClientKnownRequestError
+  || (typeof error === "object" && error !== null && "code" in error && error.code === "P2002");
+
+export const syncPlayerAchievementProgress = async (
+  delegate: PlayerAchievementProgressDelegate,
+  profileId: string,
+  achievementId: string,
+  progress: number,
+  completedAt: Date | null
+): Promise<void> => {
+  const where = {
+    profileId_achievementId: {
+      profileId,
+      achievementId
+    }
+  };
+  const existing = await delegate.findUnique({ where });
+  const data = {
+    progress: Math.max(existing?.progress ?? 0, progress),
+    completedAt: existing?.completedAt ?? completedAt
+  };
+
+  try {
+    await delegate.upsert({
+      where,
+      update: data,
+      create: {
+        profileId,
+        achievementId,
+        progress,
+        completedAt
+      }
+    });
+  } catch (error) {
+    if (!isUniqueConstraintError(error)) {
+      throw error;
+    }
+
+    const current = await delegate.findUnique({ where });
+    await delegate.update({
+      where,
+      data: {
+        progress: Math.max(current?.progress ?? 0, progress),
+        completedAt: current?.completedAt ?? completedAt
+      }
+    });
+  }
+};
+
 const syncAchievements = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
@@ -2518,32 +2619,7 @@ const syncAchievements = async (
   for (const config of configs) {
     const progress = readAchievementProgress(profile, config.conditionKind);
     const completedAt = progress >= config.conditionValue ? new Date() : null;
-    const existing = await prisma.playerAchievement.findUnique({
-      where: {
-        profileId_achievementId: {
-          profileId: profile.id,
-          achievementId: config.id
-        }
-      }
-    });
-    await prisma.playerAchievement.upsert({
-      where: {
-        profileId_achievementId: {
-          profileId: profile.id,
-          achievementId: config.id
-        }
-      },
-      update: {
-        progress: Math.max(existing?.progress ?? 0, progress),
-        completedAt: existing?.completedAt ?? completedAt
-      },
-      create: {
-        profileId: profile.id,
-        achievementId: config.id,
-        progress,
-        completedAt
-      }
-    });
+    await syncPlayerAchievementProgress(prisma.playerAchievement, profile.id, config.id, progress, completedAt);
   }
 };
 
@@ -3364,7 +3440,7 @@ export const createPrismaGameRepository = (
         }
       }
       const configs = await prisma.randomTaskConfig.findMany({
-        where: { isActive: true, id: { notIn: [...usedConfigIds] } },
+        where: readRandomTaskConfigWhere(hasSeasonPass, [...usedConfigIds]),
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         take: createCount - selectedConfigs.length
       });

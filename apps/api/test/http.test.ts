@@ -11,6 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
+import { readRandomTaskConfigWhere, syncPlayerAchievementProgress } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminUserRecord,
@@ -74,6 +75,52 @@ type ApiBody<T> = {
   };
   traceId: string;
 };
+
+test("random task config query excludes season tasks without pass", () => {
+  assert.deepEqual(readRandomTaskConfigWhere(false, ["used-config"]), {
+    isActive: true,
+    id: { notIn: ["used-config"] },
+    category: { not: "season" }
+  });
+  assert.deepEqual(readRandomTaskConfigWhere(true, ["used-config"]), {
+    isActive: true,
+    id: { notIn: ["used-config"] }
+  });
+});
+
+test("achievement sync recovers from concurrent unique creation", async () => {
+  const completedAt = new Date("2026-05-01T00:00:00.000Z");
+  let findCount = 0;
+  let updateArgs: unknown;
+  const delegate = {
+    async findUnique() {
+      findCount += 1;
+      return findCount === 1 ? null : { progress: 1, completedAt: null };
+    },
+    async upsert() {
+      throw { code: "P2002" };
+    },
+    async update(args: unknown) {
+      updateArgs = args;
+      return {};
+    }
+  };
+
+  await syncPlayerAchievementProgress(delegate, "profile-1", "profile-created", 3, completedAt);
+
+  assert.deepEqual(updateArgs, {
+    where: {
+      profileId_achievementId: {
+        profileId: "profile-1",
+        achievementId: "profile-created"
+      }
+    },
+    data: {
+      progress: 3,
+      completedAt
+    }
+  });
+});
 
 const createTestRepository = (): GameRepository => {
   const companyMaxLevel = 80;
@@ -6488,6 +6535,41 @@ test("season pass adds one daily season random task", async () => {
     assert.equal(after.body.data?.dailyLimit, 7);
     assert.equal(after.body.data?.tasks.length, 4);
     assert.equal(after.body.data?.tasks.filter((task) => task.category === "season").length, 1);
+  });
+});
+
+test("regular random task generation excludes season tasks", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "regularrandom");
+    const auth = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" };
+    let center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: auth
+    });
+    assert.equal(center.status, 200, JSON.stringify(center.body));
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      assert.equal(center.body.data?.tasks.some((task) => task.category === "season"), false);
+      const pendingTask = center.body.data?.tasks.find((task) => task.status === "pending");
+      if (pendingTask === undefined) {
+        break;
+      }
+      const dismissed = await requestJson<RandomTaskActionRecord>(
+        baseUrl,
+        `/random-tasks/${encodeURIComponent(pendingTask.id)}/dismiss`,
+        {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ serverId: "s1" })
+        }
+      );
+      assert.equal(dismissed.status, 200, JSON.stringify(dismissed.body));
+      center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+        headers: auth
+      });
+      assert.equal(center.status, 200, JSON.stringify(center.body));
+    }
+
+    assert.equal(center.body.data?.tasks.some((task) => task.category === "season"), false);
   });
 });
 
