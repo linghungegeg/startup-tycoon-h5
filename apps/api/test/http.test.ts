@@ -186,6 +186,21 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const projects = new Map<string, ProjectRecord>();
+  const createMainTaskConfig = (id: string, title: string, guideAction: string) => ({
+    id,
+    type: "main" as const,
+    title,
+    description: title,
+    target: 1,
+    initialProgress: 0,
+    rewardLabel: "声望 100",
+    rewardCash: 0,
+    rewardPlatformCoins: 0,
+    rewardReputation: 100,
+    rewardActionPower: 0,
+    guideAction,
+    unlockKind: "none" as const
+  });
   const taskConfigs = [
     {
       id: "main-profile-created",
@@ -501,7 +516,18 @@ const createTestRepository = (): GameRepository => {
       rewardActionPower: 0,
       guideAction: "前往通行证",
       unlockKind: "none" as const
-    }
+    },
+    createMainTaskConfig("main-first-budget", "制定首周预算", "前往财务"),
+    createMainTaskConfig("main-first-report", "阅读经营日报", "前往财务"),
+    createMainTaskConfig("main-cashflow-budget", "制定现金流预算", "前往财务"),
+    createMainTaskConfig("main-cost-structure", "优化成本结构", "前往财务"),
+    createMainTaskConfig("main-loan-plan", "准备贷款方案", "前往贷款"),
+    createMainTaskConfig("main-investor-list", "整理投资人名单", "前往融资"),
+    createMainTaskConfig("main-roadshow-deck", "准备路演材料", "前往融资"),
+    createMainTaskConfig("main-term-review", "复核融资条款", "前往融资"),
+    createMainTaskConfig("main-rank-target", "设定本服排行目标", "前往排行"),
+    createMainTaskConfig("main-cross-server-target", "了解跨服目标", "前往排行"),
+    createMainTaskConfig("main-reputation-plan", "规划声望成长", "前往排行")
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
   const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
@@ -4485,7 +4511,59 @@ test("advances expanded main tasks from real business actions", async () => {
       "main-guild-help-plan",
       "main-season-task-plan"
     ];
-    assert.equal(expected.every((taskId) => claimable.has(taskId)), true);
+    const missing = expected.filter((taskId) => !claimable.has(taskId));
+    assert.deepEqual(missing, []);
+  });
+});
+
+test("advances finance capital and ranking main tasks from real actions", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "expandedmainnext");
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson<CompanyFinanceSettlementRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    await requestJson<CompanyFinanceSettlementRecord>(baseUrl, "/finance/settle-day", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    await requestJson<FundingCenterRecord>(baseUrl, "/finance/fundings?serverId=s1", { headers: auth });
+    const funding = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", investorId: "angel-local-commerce" })
+    });
+    const fundingId = funding.body.data?.funding.id ?? "";
+    await requestJson<FundingActionRecord>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    await requestJson<unknown>(baseUrl, "/leaderboards?serverId=s1", { headers: auth });
+    await requestJson<unknown>(baseUrl, "/cross-server?serverId=s1", { headers: auth });
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    const claimable = new Set((tasks.body.data ?? []).filter((task) => task.isClaimable).map((task) => task.id));
+    const expected = [
+      "main-first-budget",
+      "main-first-report",
+      "main-cashflow-budget",
+      "main-cost-structure",
+      "main-loan-plan",
+      "main-investor-list",
+      "main-roadshow-deck",
+      "main-term-review",
+      "main-rank-target",
+      "main-cross-server-target",
+      "main-reputation-plan"
+    ];
+    const missing = expected.filter((taskId) => !claimable.has(taskId));
+    assert.deepEqual(missing, []);
   });
 });
 

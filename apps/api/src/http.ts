@@ -1084,6 +1084,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-rank-target", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-reputation-plan", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -1132,6 +1134,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-cross-server-target", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -2119,6 +2122,9 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-first-budget", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-first-report", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-cashflow-budget", readToday(request));
       await repository.advanceTask(account.id, serverId, "main-finance-report", readToday(request));
       await repository.advanceTask(account.id, serverId, "daily-finance-review", readToday(request));
       sendJson(response, 200, success(finance, traceId));
@@ -2143,6 +2149,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-cost-structure", readToday(request));
       sendJson(response, 200, success(finance, traceId));
       return;
     }
@@ -2211,6 +2218,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-investor-list", readToday(request));
       sendJson(response, 200, success(fundings, traceId));
       return;
     }
@@ -2488,6 +2496,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "main-capital-choice", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-roadshow-deck", readToday(request));
       await repository.advanceTask(account.id, serverId, "side-investor-relation", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
@@ -2522,6 +2531,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-term-review", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -2559,6 +2569,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "main-capital-choice", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-loan-plan", readToday(request));
       await repository.advanceTask(account.id, serverId, "side-bank-credit", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
