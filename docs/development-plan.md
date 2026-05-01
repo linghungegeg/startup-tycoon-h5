@@ -1641,18 +1641,18 @@ VIP 权益：
 
 ### 阶段总结必须包含
 
-- 当前阶段：
-- 完成内容：
+- 当前阶段：Phase 21 第一实施批次：全功能开放、快节奏等级与随机经营任务。
+- 完成内容：新增公司经验字段、80 级成长计算、任务奖励公司经验、周卡/月卡/成长基金经验倍率基础；新增行动力服务器时间恢复字段和随机任务行动力消耗；新增随机经营任务配置、玩家随机任务、生成、处理和稍后处理 API；新号创建时永久写入 VIP3 起步 `vipExperience = 3000` 且 `totalSpent = 0`；种子配置扩展到 VIP15；前台主页等级进度、专属经理随机任务待办、随机任务选择和行动力/HUD 刷新已接入。
 - 四插件使用证据：
-  - Superpowers：
-  - Browser Use：
-  - Build Web Apps：
-  - Game Studio：
-- 验证命令：
-- 浏览器/截图验收：
-- 遗留风险：
-- 下一阶段入口：
-- 是否可作为稳定点：
+  - Superpowers：以当前稳定点 `e83fe79` 为起点，按 Phase 21 目标收敛最小实现范围，保留 60-80 主线扩容为后续批次，先闭环经验、行动力、VIP15 和随机任务。
+  - Browser Use：刷新 `http://127.0.0.1:5173/`，登录进入主页，确认右侧 6 入口存在；点击专属经理显示随机经营任务；选择“投入精力加班推进”后现金从 310 万增至 319 万，行动力从 250/130 变为 230/130，任务结果显示且未遮挡 HUD 和底部导航。
+  - Build Web Apps：检查新增前台只复用现有 `page-container`、`glass-panel`、`btn-gold`、资源条和深色商务手游风格；随机任务面板挂在专属经理页内，不新增独立视觉体系。
+  - Game Studio：检查随机任务是短决策面板，显示行动力、风险、奖励和稍后处理，不在主页中心常驻遮挡主线任务条、左右入口或底部导航。
+- 验证命令：`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run test -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`git diff --check`。首次 `db:push` 因当前 shell 未加载 `DATABASE_URL` 失败，按根目录 `.env` 注入进程环境后重跑成功；`db:push` 内部 generate 阶段出现 Windows Prisma DLL 占用提示，但此前单独 `db:generate` 已成功，数据库同步和 seed 已成功。
+- 浏览器/截图验收：Browser Use 已确认专属经理随机经营任务可显示、可处理、可刷新 HUD；页面仍保持深色商务手游 UI，右侧入口和底部导航未被遮挡。
+- 遗留风险：60-80 个短主线任务尚未全量扩容；行动力限购目前写入设计和商品购买上限基础，尚未做独立每日购买计数；通行证额外赛季随机任务、满级宝箱和经验去向 UI 仍需下一批实现；既有老号不会被强制迁移到 VIP3，VIP3 赠送只在新建角色和新建钱包时生效。
+- 下一阶段入口：Phase 21 第二实施批次：主线 60-80 短任务扩容、行动力饮料使用/限购、满级后经验去向、通行证赛季随机任务和基金倍率展示。
+- 是否可作为稳定点：本批次通过命令和 Browser Use 验收后可作为阶段稳定点。
 
 ## 12. 创业知识内容规则
 

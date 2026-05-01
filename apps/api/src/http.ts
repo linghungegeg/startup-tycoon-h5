@@ -1911,6 +1911,120 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/company/growth") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const growth = await repository.getCompanyGrowth(account.id, serverId);
+      if (growth === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(growth, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/random-tasks") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const center = await repository.listRandomTasks(account.id, serverId, readToday(request));
+      if (center === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(center, traceId));
+      return;
+    }
+
+    const randomTaskResolveMatch = request.method === "POST" ? /^\/random-tasks\/([^/]+)\/resolve$/.exec(url.pathname) : null;
+    if (randomTaskResolveMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        const option = isRecord(body) && (body.option === "A" || body.option === "B") ? body.option : undefined;
+        const randomTaskId = decodeURIComponent(randomTaskResolveMatch[1] ?? "");
+        if (serverId === undefined || option === undefined || randomTaskId === "") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, randomTaskId and option are required.", traceId));
+          return;
+        }
+
+        const result = await repository.resolveRandomTask(account.id, serverId, randomTaskId, option, readToday(request));
+        if (result === "PLAYER_NOT_FOUND" || result === "RANDOM_TASK_NOT_FOUND") {
+          sendJson(response, 404, failure(result, "Random task not found.", traceId));
+          return;
+        }
+        if (result === "RANDOM_TASK_ALREADY_RESOLVED" || result === "INSUFFICIENT_ACTION_POWER") {
+          sendJson(response, 409, failure(result, "Random task cannot be resolved.", traceId));
+          return;
+        }
+
+        await repository.advanceTask(account.id, serverId, "daily-handle-event", readToday(request));
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const randomTaskDismissMatch = request.method === "POST" ? /^\/random-tasks\/([^/]+)\/dismiss$/.exec(url.pathname) : null;
+    if (randomTaskDismissMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        const randomTaskId = decodeURIComponent(randomTaskDismissMatch[1] ?? "");
+        if (serverId === undefined || randomTaskId === "") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and randomTaskId are required.", traceId));
+          return;
+        }
+
+        const result = await repository.dismissRandomTask(account.id, serverId, randomTaskId, readToday(request));
+        if (result === "PLAYER_NOT_FOUND" || result === "RANDOM_TASK_NOT_FOUND") {
+          sendJson(response, 404, failure(result, "Random task not found.", traceId));
+          return;
+        }
+        if (result === "RANDOM_TASK_ALREADY_RESOLVED") {
+          sendJson(response, 409, failure(result, "Random task cannot be dismissed.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/events") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

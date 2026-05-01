@@ -55,12 +55,14 @@ type PlayerProfile = {
   founderName: string;
   companyName: string;
   companyLevel: number;
+  companyExperience: number;
   cash: number;
   platformCoins: number;
   premiumCurrency: number;
   reputation: number;
   actionPower: number;
   actionPowerLimit: number;
+  actionPowerRecoveredAt: string;
   monthlyIncome: number;
   monthlyExpense: number;
   valuation: number;
@@ -145,11 +147,60 @@ type TaskItem = {
   rewardPlatformCoins: number;
   rewardReputation: number;
   rewardActionPower: number;
+  rewardCompanyExperience: number;
   rewardItem: { id: string; name: string; quantity: number } | null;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
   isClaimable: boolean;
+};
+
+type CompanyGrowth = {
+  profile: PlayerProfile;
+  maxLevel: number;
+  currentLevelExperience: number;
+  nextLevelExperience: number | null;
+  progressToNextBasisPoints: number;
+  fullLevelOverflowExperience: number;
+};
+
+type RandomTask = {
+  id: string;
+  configId: string;
+  category: string;
+  title: string;
+  description: string;
+  source: string;
+  status: "pending" | "resolved" | "dismissed";
+  dailyDate: string;
+  riskLabel: string;
+  expiresAt: string;
+  selectedOption: "A" | "B" | null;
+  resultSummary: string | null;
+  options: Array<{
+    key: "A" | "B";
+    label: string;
+    actionPowerCost: number;
+    cashReward: number;
+    reputationReward: number;
+    companyExperienceReward: number;
+    result: string;
+  }>;
+};
+
+type RandomTaskCenter = {
+  profile: PlayerProfile;
+  tasks: RandomTask[];
+  dailyLimit: number;
+  pendingCount: number;
+  handledToday: number;
+};
+
+type RandomTaskActionResult = {
+  center: RandomTaskCenter;
+  task: RandomTask;
+  profile: PlayerProfile;
+  result: string;
 };
 
 type CompanyFinance = {
@@ -1340,6 +1391,11 @@ function App() {
   const [taskNotice, setTaskNotice] = useState("");
   const [claimingTaskId, setClaimingTaskId] = useState("");
   const [activeKnowledgeTask, setActiveKnowledgeTask] = useState<TaskItem | null>(null);
+  const [companyGrowth, setCompanyGrowth] = useState<CompanyGrowth | null>(null);
+  const [randomTaskCenter, setRandomTaskCenter] = useState<RandomTaskCenter | null>(null);
+  const [randomTaskError, setRandomTaskError] = useState("");
+  const [randomTaskNotice, setRandomTaskNotice] = useState("");
+  const [selectedRandomTaskId, setSelectedRandomTaskId] = useState("");
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
@@ -1480,6 +1536,14 @@ function App() {
     () => tasks.find((task) => task.isClaimable && !task.isClaimed) ?? currentMainTask,
     [currentMainTask, tasks]
   );
+  const pendingRandomTasks = useMemo(
+    () => randomTaskCenter?.tasks.filter((task) => task.status === "pending") ?? [],
+    [randomTaskCenter?.tasks]
+  );
+  const selectedRandomTask = useMemo(
+    () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
+    [pendingRandomTasks, selectedRandomTaskId]
+  );
   const selectedEvent = useMemo(
     () => events.find((item) => item.id === selectedEventId) ?? events[0],
     [events, selectedEventId]
@@ -1609,6 +1673,37 @@ function App() {
     }
 
     setTaskError(response.error.message);
+  };
+
+  const loadCompanyGrowth = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<CompanyGrowth>(
+      `/company/growth?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setCompanyGrowth(response.data);
+      setProfile(response.data.profile);
+    }
+  };
+
+  const loadRandomTasks = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<RandomTaskCenter>(
+      `/random-tasks?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setRandomTaskCenter(response.data);
+      setSelectedRandomTaskId((currentId) => response.data.tasks.find((task) => task.id === currentId && task.status === "pending")?.id ?? response.data.tasks.find((task) => task.status === "pending")?.id ?? "");
+      setProfile(response.data.profile);
+      setRandomTaskError("");
+      return;
+    }
+
+    setRandomTaskError(response.error.message);
   };
 
   const loadEvents = async (token: string, nextServerId: string): Promise<void> => {
@@ -2397,6 +2492,8 @@ function App() {
     }
 
     void loadTasks(account.token, selectedServer.id);
+    void loadCompanyGrowth(account.token, selectedServer.id);
+    void loadRandomTasks(account.token, selectedServer.id);
     void loadEvents(account.token, selectedServer.id);
     void loadCompanyFinance(account.token, selectedServer.id);
     void loadLoanCenter(account.token, selectedServer.id);
@@ -2678,6 +2775,15 @@ function App() {
       return;
     }
 
+    if (panelName === "专属经理") {
+      if (account && selectedServer) {
+        void loadRandomTasks(account.token, selectedServer.id);
+      }
+      setNativeHomePage(null);
+      setActivePanel(panelName);
+      return;
+    }
+
     if (panelName === "背包") {
       setActivePanel(null);
       setActiveNav("背包");
@@ -2764,6 +2870,7 @@ function App() {
     if (response.success) {
       replaceTask(response.data);
       setTaskError("");
+      await loadCompanyGrowth(account.token, selectedServer.id);
       return;
     }
 
@@ -2803,11 +2910,66 @@ function App() {
       setTaskError("");
       setClaimingTaskId("");
       await loadInventoryCenter(account.token, selectedServer.id);
+      await loadCompanyGrowth(account.token, selectedServer.id);
       return;
     }
 
     setTaskError(response.error.message);
     setClaimingTaskId("");
+  };
+
+  const resolveRandomTask = async (taskId: string, option: "A" | "B"): Promise<void> => {
+    if (!account || !selectedServer) {
+      setRandomTaskError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<RandomTaskActionResult>(
+      `/random-tasks/${encodeURIComponent(taskId)}/resolve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, option })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setRandomTaskCenter(response.data.center);
+      setProfile(response.data.profile);
+      setRandomTaskNotice(response.data.result);
+      setRandomTaskError("");
+      await loadCompanyGrowth(account.token, selectedServer.id);
+      await loadTasks(account.token, selectedServer.id);
+      return;
+    }
+
+    setRandomTaskError(response.error.message);
+  };
+
+  const dismissRandomTask = async (taskId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      setRandomTaskError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<RandomTaskActionResult>(
+      `/random-tasks/${encodeURIComponent(taskId)}/dismiss`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setRandomTaskCenter(response.data.center);
+      setProfile(response.data.profile);
+      setRandomTaskNotice(response.data.result);
+      setRandomTaskError("");
+      return;
+    }
+
+    setRandomTaskError(response.error.message);
   };
 
   const settleFinanceMonth = async (): Promise<void> => {
@@ -3390,9 +3552,9 @@ function App() {
                   </span>
                   <span className="flex items-center gap-2 mt-1">
                     <span className="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
-                      <span className="block w-3/4 h-full bg-business-gold shadow-[0_0_8px_rgba(251,191,36,0.5)]" />
+                      <span className="block h-full bg-business-gold shadow-[0_0_8px_rgba(251,191,36,0.5)]" style={{ width: `${(companyGrowth?.progressToNextBasisPoints ?? 0) / 100}%` }} />
                     </span>
-                    <span className="text-[9px] text-slate-400 font-bold">LV.{profile.companyLevel}</span>
+                    <span className="text-[9px] text-slate-400 font-bold">LV.{profile.companyLevel}/{companyGrowth?.maxLevel ?? 80}</span>
                   </span>
                 </span>
               </button>
@@ -5259,7 +5421,7 @@ function App() {
                       </span>
                     </div>
                     <footer>
-                      <small>奖励：{task.rewardLabel}{task.rewardItem ? ` · ${task.rewardItem.name} x${task.rewardItem.quantity}` : ""}</small>
+                      <small>奖励：{task.rewardLabel}{task.rewardCompanyExperience > 0 ? ` · 公司经验 ${task.rewardCompanyExperience}` : ""}{task.rewardItem ? ` · ${task.rewardItem.name} x${task.rewardItem.quantity}` : ""}</small>
                       <button disabled={task.isClaimed || claimingTaskId === task.id} type="button" onClick={() => guideTask(task)}>
                         {claimingTaskId === task.id ? "领取中" : task.isClaimed ? "已领取" : task.isClaimable ? "领取" : task.guideAction}
                       </button>
@@ -5431,6 +5593,53 @@ function App() {
                     <p className="text-xs text-slate-300 font-bold leading-6" key={line}>{line}</p>
                   ))}
                 </section>
+                {activePanel === "专属经理" && (
+                  <section className="glass-panel rounded-3xl p-5 space-y-4" aria-label="随机经营任务">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <strong className="text-sm text-white font-black">随机经营任务</strong>
+                        <p className="mt-1 text-[10px] text-slate-500 font-bold">
+                          今日 {randomTaskCenter?.handledToday ?? 0}/{randomTaskCenter?.dailyLimit ?? 6} · 待办 {pendingRandomTasks.length}
+                        </p>
+                      </div>
+                      <button className="btn-gold px-3 py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => account && selectedServer && void loadRandomTasks(account.token, selectedServer.id)}>
+                        刷新
+                      </button>
+                    </div>
+                    {(randomTaskNotice || randomTaskError) && (
+                      <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${randomTaskError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                        {randomTaskError || randomTaskNotice}
+                      </p>
+                    )}
+                    {selectedRandomTask ? (
+                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <span className="text-[10px] text-business-gold font-black">{selectedRandomTask.source} · {selectedRandomTask.riskLabel}</span>
+                            <h3 className="mt-1 text-sm text-white font-black">{selectedRandomTask.title}</h3>
+                          </div>
+                          <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[9px] text-amber-200 font-black">行动力 {profile.actionPower}/{profile.actionPowerLimit}</span>
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-slate-300 font-bold">{selectedRandomTask.description}</p>
+                        <div className="mt-4 space-y-2">
+                          {selectedRandomTask.options.map((option) => (
+                            <button className="w-full rounded-2xl bg-slate-950/70 border border-white/10 p-3 text-left disabled:opacity-50" disabled={profile.actionPower < option.actionPowerCost} key={option.key} type="button" onClick={() => void resolveRandomTask(selectedRandomTask.id, option.key)}>
+                              <strong className="block text-xs text-white font-black">{option.label}</strong>
+                              <span className="mt-1 block text-[10px] text-slate-400 font-bold">
+                                消耗行动力 {option.actionPowerCost} · 资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        <button className="mt-3 w-full rounded-2xl bg-white/5 border border-white/10 py-3 text-xs text-slate-300 font-black" type="button" onClick={() => void dismissRandomTask(selectedRandomTask.id)}>
+                          稍后处理
+                        </button>
+                      </article>
+                    ) : (
+                      <p className="rounded-2xl bg-slate-900/60 p-4 text-xs text-slate-400 font-bold">当前没有待处理随机任务，继续推进主线或稍后刷新。</p>
+                    )}
+                  </section>
+                )}
                 <button
                   className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
                   type="button"

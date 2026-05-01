@@ -178,12 +178,14 @@ model PlayerProfile {
   founderName String       @db.VarChar(16)
   companyName String       @db.VarChar(24)
   companyLevel Int         @default(1)
+  companyExperience Int    @default(0)
   cash         Int         @default(2450000)
   platformCoins Int        @default(36580)
   premiumCurrency Int      @default(8680)
   reputation   Int         @default(1256000)
   actionPower  Int         @default(120)
   actionPowerLimit Int     @default(120)
+  actionPowerRecoveredAt DateTime @default(now())
   monthlyIncome Int        @default(860000)
   monthlyExpense Int       @default(348000)
   valuation    Int         @default(4800000)
@@ -235,6 +237,7 @@ model PlayerProfile {
   scenarioRuns PlayerScenarioRun[]
   inventoryItems PlayerInventoryItem[]
   itemLedgers PlayerItemLedger[]
+  randomTasks PlayerRandomTask[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -1236,6 +1239,7 @@ model TaskConfig {
   rewardPlatformCoins Int              @default(0)
   rewardReputation Int                 @default(0)
   rewardActionPower Int                @default(0)
+  rewardCompanyExperience Int          @default(0)
   rewardItemId      String?            @db.VarChar(40)
   rewardItemQuantity Int               @default(0)
   guideAction     String               @db.VarChar(32)
@@ -1247,6 +1251,52 @@ model TaskConfig {
 
   @@index([type, sortOrder])
   @@index([rewardItemId])
+}
+
+model RandomTaskConfig {
+  id              String             @id @db.VarChar(48)
+  category        String             @db.VarChar(24)
+  title           String             @db.VarChar(48)
+  description     String             @db.VarChar(180)
+  source          String             @db.VarChar(32)
+  optionALabel    String             @db.VarChar(40)
+  optionAResult   String             @db.VarChar(160)
+  optionAActionPower Int             @default(0)
+  optionACash     Int                @default(0)
+  optionAReputation Int              @default(0)
+  optionACompanyExperience Int       @default(0)
+  optionBLabel    String             @db.VarChar(40)
+  optionBResult   String             @db.VarChar(160)
+  optionBActionPower Int             @default(0)
+  optionBCash     Int                @default(0)
+  optionBReputation Int              @default(0)
+  optionBCompanyExperience Int       @default(0)
+  riskLabel       String             @db.VarChar(32)
+  sortOrder       Int                @default(0)
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  playerTasks     PlayerRandomTask[]
+
+  @@index([category, sortOrder])
+}
+
+model PlayerRandomTask {
+  id          String           @id @default(uuid()) @db.VarChar(36)
+  profileId   String           @db.VarChar(36)
+  configId    String           @db.VarChar(48)
+  dailyDate   String           @db.VarChar(10)
+  status      String           @default("pending") @db.VarChar(16)
+  selectedOption String?       @db.VarChar(1)
+  resultSummary String?        @db.VarChar(180)
+  expiresAt   DateTime
+  createdAt   DateTime         @default(now())
+  resolvedAt  DateTime?
+  profile     PlayerProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config      RandomTaskConfig @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, configId, dailyDate])
+  @@index([profileId, status, dailyDate])
+  @@index([configId])
 }
 
 model PlayerTaskProgress {

@@ -41,12 +41,14 @@ export type PlayerProfileRecord = {
   founderName: string;
   companyName: string;
   companyLevel: number;
+  companyExperience: number;
   cash: number;
   platformCoins: number;
   premiumCurrency: number;
   reputation: number;
   actionPower: number;
   actionPowerLimit: number;
+  actionPowerRecoveredAt: string;
   monthlyIncome: number;
   monthlyExpense: number;
   valuation: number;
@@ -81,11 +83,60 @@ export type TaskRecord = {
   rewardPlatformCoins: number;
   rewardReputation: number;
   rewardActionPower: number;
+  rewardCompanyExperience: number;
   rewardItem: ItemRewardRecord | null;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
   isClaimable: boolean;
+};
+
+export type CompanyGrowthRecord = {
+  profile: PlayerProfileRecord;
+  maxLevel: number;
+  currentLevelExperience: number;
+  nextLevelExperience: number | null;
+  progressToNextBasisPoints: number;
+  fullLevelOverflowExperience: number;
+};
+
+export type RandomTaskRecord = {
+  id: string;
+  configId: string;
+  category: string;
+  title: string;
+  description: string;
+  source: string;
+  status: "pending" | "resolved" | "dismissed";
+  dailyDate: string;
+  riskLabel: string;
+  expiresAt: string;
+  selectedOption: "A" | "B" | null;
+  resultSummary: string | null;
+  options: Array<{
+    key: "A" | "B";
+    label: string;
+    actionPowerCost: number;
+    cashReward: number;
+    reputationReward: number;
+    companyExperienceReward: number;
+    result: string;
+  }>;
+};
+
+export type RandomTaskCenterRecord = {
+  profile: PlayerProfileRecord;
+  tasks: RandomTaskRecord[];
+  dailyLimit: number;
+  pendingCount: number;
+  handledToday: number;
+};
+
+export type RandomTaskActionRecord = {
+  center: RandomTaskCenterRecord;
+  task: RandomTaskRecord;
+  profile: PlayerProfileRecord;
+  result: string;
 };
 
 export type ItemRewardRecord = {
@@ -966,9 +1017,13 @@ export type GameRepository = {
   listAvatars(): Promise<AvatarRecord[]>;
   getProfile(accountId: string, serverId: string): Promise<PlayerProfileRecord | undefined>;
   createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
+  getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
+  listRandomTasks(accountId: string, serverId: string, today: string): Promise<RandomTaskCenterRecord | "PLAYER_NOT_FOUND">;
+  resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER">;
+  dismissRandomTask(accountId: string, serverId: string, randomTaskId: string, today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED">;
   getCompanyFinance(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyMonth(accountId: string, serverId: string, reportMonth: number): Promise<CompanyFinanceSettlementRecord | "PLAYER_NOT_FOUND">;
@@ -1070,12 +1125,14 @@ const toProfileRecord = (profile: {
   founderName: string;
   companyName: string;
   companyLevel: number;
+  companyExperience: number;
   cash: number;
   platformCoins: number;
   premiumCurrency: number;
   reputation: number;
   actionPower: number;
   actionPowerLimit: number;
+  actionPowerRecoveredAt: Date;
   monthlyIncome: number;
   monthlyExpense: number;
   valuation: number;
@@ -1093,6 +1150,7 @@ const toProfileRecord = (profile: {
   createdAt: Date;
 }): PlayerProfileRecord => ({
   ...profile,
+  actionPowerRecoveredAt: profile.actionPowerRecoveredAt.toISOString(),
   createdAt: profile.createdAt.toISOString()
 });
 
@@ -1716,7 +1774,7 @@ const ensureWallet = async (
       profileId: profile.id,
       balance: profile.platformCoins,
       totalSpent: 0,
-      vipExperience: 0
+      vipExperience: VIP3_START_EXPERIENCE
     }
   }).catch(async (error: unknown) => {
     if (error instanceof PrismaClientKnownRequestError && error.code === "P2002") {
@@ -2120,6 +2178,57 @@ const fallbackVipLevel: VipLevelRecord = {
 };
 
 const BASE_ACTION_POWER_LIMIT = 120;
+const COMPANY_MAX_LEVEL = 80;
+const COMPANY_EXPERIENCE_PER_LEVEL = 100;
+const ACTION_POWER_RECOVERY_INTERVAL_MS = 10 * 60 * 1000;
+const ACTION_POWER_RECOVERY_AMOUNT = 10;
+const RANDOM_TASK_VISIBLE_COUNT = 3;
+const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
+const RANDOM_TASK_PRIVILEGE_DAILY_LIMIT = 9;
+const VIP3_START_EXPERIENCE = 3000;
+
+const readCompanyLevel = (experience: number): number =>
+  Math.max(1, Math.min(COMPANY_MAX_LEVEL, Math.floor(Math.max(0, experience) / COMPANY_EXPERIENCE_PER_LEVEL) + 1));
+
+const readCompanyGrowthRecord = (profile: PlayerProfileRecord): CompanyGrowthRecord => {
+  const levelStartExperience = (profile.companyLevel - 1) * COMPANY_EXPERIENCE_PER_LEVEL;
+  const nextLevelExperience = profile.companyLevel >= COMPANY_MAX_LEVEL ? null : profile.companyLevel * COMPANY_EXPERIENCE_PER_LEVEL;
+  return {
+    profile,
+    maxLevel: COMPANY_MAX_LEVEL,
+    currentLevelExperience: Math.max(0, profile.companyExperience - levelStartExperience),
+    nextLevelExperience,
+    progressToNextBasisPoints:
+      nextLevelExperience === null
+        ? 10000
+        : Math.max(0, Math.min(10000, Math.floor(((profile.companyExperience - levelStartExperience) * 10000) / COMPANY_EXPERIENCE_PER_LEVEL))),
+    fullLevelOverflowExperience: profile.companyLevel >= COMPANY_MAX_LEVEL ? Math.max(0, profile.companyExperience - (COMPANY_MAX_LEVEL - 1) * COMPANY_EXPERIENCE_PER_LEVEL) : 0
+  };
+};
+
+const readActionPowerRecoveredAt = (profile: { actionPowerRecoveredAt: Date | string }): Date =>
+  profile.actionPowerRecoveredAt instanceof Date ? profile.actionPowerRecoveredAt : new Date(profile.actionPowerRecoveredAt);
+
+const recoverActionPowerData = (profile: {
+  actionPower: number;
+  actionPowerLimit: number;
+  actionPowerRecoveredAt: Date | string;
+}): { actionPower: number; actionPowerRecoveredAt: Date } => {
+  const recoveredAt = readActionPowerRecoveredAt(profile);
+  const now = new Date();
+  if (profile.actionPower >= profile.actionPowerLimit) {
+    return { actionPower: profile.actionPower, actionPowerRecoveredAt: now };
+  }
+
+  const recoveryTicks = Math.floor((now.getTime() - recoveredAt.getTime()) / ACTION_POWER_RECOVERY_INTERVAL_MS);
+  if (recoveryTicks <= 0) {
+    return { actionPower: profile.actionPower, actionPowerRecoveredAt: recoveredAt };
+  }
+
+  const nextActionPower = Math.min(profile.actionPowerLimit, profile.actionPower + recoveryTicks * ACTION_POWER_RECOVERY_AMOUNT);
+  const nextRecoveredAt = nextActionPower >= profile.actionPowerLimit ? now : new Date(recoveredAt.getTime() + recoveryTicks * ACTION_POWER_RECOVERY_INTERVAL_MS);
+  return { actionPower: nextActionPower, actionPowerRecoveredAt: nextRecoveredAt };
+};
 
 const resolveVipLevels = (levels: VipLevelRecord[], vipExperience: number) => {
   const sorted = [...levels].sort((left, right) => left.requiredExperience - right.requiredExperience);
@@ -2549,6 +2658,7 @@ const toTaskRecord = (
     rewardPlatformCoins: number;
     rewardReputation: number;
     rewardActionPower: number;
+    rewardCompanyExperience: number;
     rewardItemId: string | null;
     rewardItemQuantity: number;
     rewardItem?: { id: string; name: string } | null;
@@ -2575,6 +2685,7 @@ const toTaskRecord = (
     rewardPlatformCoins: config.rewardPlatformCoins,
     rewardReputation: config.rewardReputation,
     rewardActionPower: config.rewardActionPower,
+    rewardCompanyExperience: config.rewardCompanyExperience,
     rewardItem: toItemRewardRecord(config.rewardItem, config.rewardItemQuantity),
     guideAction: config.guideAction,
     unlockKind: readUnlockKind(config.unlockKind),
@@ -2582,6 +2693,123 @@ const toTaskRecord = (
     isClaimable: currentProgress >= config.target && !isClaimed
   };
 };
+
+type TransactionClient = Omit<
+  PrismaClient,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends"
+>;
+
+const grantCompanyExperience = async (
+  tx: TransactionClient,
+  profileId: string,
+  baseExperience: number,
+  source: string
+): Promise<PlayerProfileRecord> => {
+  const profile = await tx.playerProfile.findUnique({ where: { id: profileId } });
+  if (profile === null) {
+    throw new Error("PLAYER_NOT_FOUND");
+  }
+  if (baseExperience <= 0) {
+    return toProfileRecord(profile);
+  }
+
+  const activePrivileges = await tx.playerShopPurchase.findMany({
+    where: {
+      profileId,
+      product: {
+        category: { in: ["weekly_card", "monthly_card", "growth_fund"] }
+      }
+    },
+    include: { product: true },
+    orderBy: { createdAt: "desc" }
+  });
+  const hasGrowthFund = activePrivileges.some((purchase) => purchase.product.category === "growth_fund");
+  const hasCard = activePrivileges.some((purchase) => purchase.product.category === "weekly_card" || purchase.product.category === "monthly_card");
+  const multiplierBasisPoints = hasGrowthFund ? 20000 : hasCard ? 15000 : 10000;
+  const gainedExperience = Math.max(1, Math.floor((baseExperience * multiplierBasisPoints) / 10000));
+  const nextExperience = profile.companyExperience + gainedExperience;
+  const nextLevel = readCompanyLevel(nextExperience);
+  const maxLevelExperience = (COMPANY_MAX_LEVEL - 1) * COMPANY_EXPERIENCE_PER_LEVEL;
+  const overflowExperience = Math.max(0, nextExperience - maxLevelExperience) - Math.max(0, profile.companyExperience - maxLevelExperience);
+  const reputationFromOverflow = nextLevel >= COMPANY_MAX_LEVEL ? Math.floor(Math.max(0, overflowExperience) / 5) : 0;
+
+  const updated = await tx.playerProfile.update({
+    where: { id: profileId },
+    data: {
+      companyExperience: nextExperience,
+      companyLevel: nextLevel,
+      reputation: reputationFromOverflow > 0 ? { increment: reputationFromOverflow } : undefined
+    }
+  });
+
+  if (source === "task_reward") {
+    return toProfileRecord(updated);
+  }
+
+  return toProfileRecord(updated);
+};
+
+const toRandomTaskRecord = (task: {
+  id: string;
+  dailyDate: string;
+  status: string;
+  selectedOption: string | null;
+  resultSummary: string | null;
+  expiresAt: Date;
+  config: {
+    id: string;
+    category: string;
+    title: string;
+    description: string;
+    source: string;
+    optionALabel: string;
+    optionAResult: string;
+    optionAActionPower: number;
+    optionACash: number;
+    optionAReputation: number;
+    optionACompanyExperience: number;
+    optionBLabel: string;
+    optionBResult: string;
+    optionBActionPower: number;
+    optionBCash: number;
+    optionBReputation: number;
+    optionBCompanyExperience: number;
+    riskLabel: string;
+  };
+}): RandomTaskRecord => ({
+  id: task.id,
+  configId: task.config.id,
+  category: task.config.category,
+  title: task.config.title,
+  description: task.config.description,
+  source: task.config.source,
+  status: task.status === "resolved" || task.status === "dismissed" ? task.status : "pending",
+  dailyDate: task.dailyDate,
+  riskLabel: task.config.riskLabel,
+  expiresAt: task.expiresAt.toISOString(),
+  selectedOption: task.selectedOption === "A" || task.selectedOption === "B" ? task.selectedOption : null,
+  resultSummary: task.resultSummary,
+  options: [
+    {
+      key: "A",
+      label: task.config.optionALabel,
+      actionPowerCost: Math.max(0, -task.config.optionAActionPower),
+      cashReward: task.config.optionACash,
+      reputationReward: task.config.optionAReputation,
+      companyExperienceReward: task.config.optionACompanyExperience,
+      result: task.config.optionAResult
+    },
+    {
+      key: "B",
+      label: task.config.optionBLabel,
+      actionPowerCost: Math.max(0, -task.config.optionBActionPower),
+      cashReward: task.config.optionBCash,
+      reputationReward: task.config.optionBReputation,
+      companyExperienceReward: task.config.optionBCompanyExperience,
+      result: task.config.optionBResult
+    }
+  ]
+});
 
 export const createPrismaGameRepository = (
   prisma = new PrismaClient()
@@ -2845,16 +3073,45 @@ export const createPrismaGameRepository = (
         }
       }
     });
-    return profile === null ? undefined : toProfileRecord(profile);
+    if (profile === null) {
+      return undefined;
+    }
+
+    const recovery = recoverActionPowerData(profile);
+    if (recovery.actionPower !== profile.actionPower || recovery.actionPowerRecoveredAt.getTime() !== profile.actionPowerRecoveredAt.getTime()) {
+      const updated = await prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: recovery
+      });
+      return toProfileRecord(updated);
+    }
+
+    return toProfileRecord(profile);
   },
 
   async createProfile(profile) {
     try {
-      const created = await prisma.playerProfile.create({
-        data: {
-          id: randomUUID(),
-          ...profile
-        }
+      const created = await prisma.$transaction(async (tx) => {
+        const nextProfile = await tx.playerProfile.create({
+          data: {
+            id: randomUUID(),
+            ...profile,
+            companyExperience: 0,
+            companyLevel: 1,
+            actionPower: BASE_ACTION_POWER_LIMIT,
+            actionPowerLimit: BASE_ACTION_POWER_LIMIT,
+            actionPowerRecoveredAt: new Date()
+          }
+        });
+        await tx.playerPlatformWallet.create({
+          data: {
+            profileId: nextProfile.id,
+            balance: nextProfile.platformCoins,
+            totalSpent: 0,
+            vipExperience: VIP3_START_EXPERIENCE
+          }
+        });
+        return nextProfile;
       });
       return toProfileRecord(created);
     } catch (error) {
@@ -2863,6 +3120,197 @@ export const createPrismaGameRepository = (
       }
       throw error;
     }
+  },
+
+  async getCompanyGrowth(accountId, serverId) {
+    const profile = await this.getProfile(accountId, serverId);
+    return profile === undefined ? "PLAYER_NOT_FOUND" : readCompanyGrowthRecord(profile);
+  },
+
+  async listRandomTasks(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const recovery = recoverActionPowerData(profile);
+    const currentProfile =
+      recovery.actionPower !== profile.actionPower || recovery.actionPowerRecoveredAt.getTime() !== profile.actionPowerRecoveredAt.getTime()
+        ? await prisma.playerProfile.update({ where: { id: profile.id }, data: recovery })
+        : profile;
+    const hasPrivilege = await prisma.playerShopPurchase.findFirst({
+      where: {
+        profileId: profile.id,
+        product: { category: { in: ["weekly_card", "monthly_card"] } }
+      }
+    });
+    const dailyLimit = hasPrivilege === null ? RANDOM_TASK_BASE_DAILY_LIMIT : RANDOM_TASK_PRIVILEGE_DAILY_LIMIT;
+    const existingToday = await prisma.playerRandomTask.findMany({
+      where: { profileId: profile.id, dailyDate: today },
+      include: { config: true },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    });
+    const pendingCount = existingToday.filter((task) => task.status === "pending").length;
+    const createCount = Math.max(0, Math.min(RANDOM_TASK_VISIBLE_COUNT - pendingCount, dailyLimit - existingToday.length));
+    if (createCount > 0) {
+      const usedConfigIds = new Set(existingToday.map((task) => task.configId));
+      const configs = await prisma.randomTaskConfig.findMany({
+        where: { isActive: true, id: { notIn: [...usedConfigIds] } },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+        take: createCount
+      });
+      const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+      await prisma.playerRandomTask.createMany({
+        data: configs.map((config) => ({
+          profileId: profile.id,
+          configId: config.id,
+          dailyDate: today,
+          expiresAt
+        })),
+        skipDuplicates: true
+      });
+    }
+
+    const tasks = await prisma.playerRandomTask.findMany({
+      where: { profileId: profile.id, dailyDate: today },
+      include: { config: true },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    });
+
+    return {
+      profile: toProfileRecord(currentProfile),
+      tasks: tasks.map(toRandomTaskRecord),
+      dailyLimit,
+      pendingCount: tasks.filter((task) => task.status === "pending").length,
+      handledToday: tasks.filter((task) => task.status !== "pending").length
+    };
+  },
+
+  async resolveRandomTask(accountId, serverId, randomTaskId, option, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const randomTask = await prisma.playerRandomTask.findUnique({
+      where: { id: randomTaskId },
+      include: { config: true }
+    });
+    if (randomTask === null || randomTask.profileId !== profile.id) {
+      return "RANDOM_TASK_NOT_FOUND";
+    }
+    if (randomTask.status !== "pending") {
+      return "RANDOM_TASK_ALREADY_RESOLVED";
+    }
+
+    const actionPowerDelta = option === "A" ? randomTask.config.optionAActionPower : randomTask.config.optionBActionPower;
+    const cashDelta = option === "A" ? randomTask.config.optionACash : randomTask.config.optionBCash;
+    const reputationDelta = option === "A" ? randomTask.config.optionAReputation : randomTask.config.optionBReputation;
+    const companyExperience = option === "A" ? randomTask.config.optionACompanyExperience : randomTask.config.optionBCompanyExperience;
+    const resultSummary = option === "A" ? randomTask.config.optionAResult : randomTask.config.optionBResult;
+    const recovered = recoverActionPowerData(profile);
+    if (actionPowerDelta < 0 && recovered.actionPower < Math.abs(actionPowerDelta)) {
+      return "INSUFFICIENT_ACTION_POWER";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.playerRandomTask.update({
+        where: { id: randomTask.id },
+        data: {
+          status: "resolved",
+          selectedOption: option,
+          resultSummary,
+          resolvedAt: new Date()
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: cashDelta },
+          reputation: { increment: reputationDelta },
+          actionPower: recovered.actionPower + actionPowerDelta,
+          actionPowerRecoveredAt: recovered.actionPowerRecoveredAt
+        }
+      });
+      return grantCompanyExperience(tx, updatedProfile.id, companyExperience, "random_task");
+    });
+
+    const center = await this.listRandomTasks(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND") {
+      return center;
+    }
+    const nextTask = center.tasks.find((task) => task.id === randomTask.id);
+    if (nextTask === undefined) {
+      return "RANDOM_TASK_NOT_FOUND";
+    }
+    return {
+      center,
+      task: nextTask,
+      profile: result,
+      result: resultSummary
+    };
+  },
+
+  async dismissRandomTask(accountId, serverId, randomTaskId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const randomTask = await prisma.playerRandomTask.findUnique({
+      where: { id: randomTaskId },
+      include: { config: true }
+    });
+    if (randomTask === null || randomTask.profileId !== profile.id) {
+      return "RANDOM_TASK_NOT_FOUND";
+    }
+    if (randomTask.status !== "pending") {
+      return "RANDOM_TASK_ALREADY_RESOLVED";
+    }
+
+    await prisma.playerRandomTask.update({
+      where: { id: randomTask.id },
+      data: {
+        status: "dismissed",
+        resultSummary: "已转入专属经理待办，本次不消耗行动力。",
+        resolvedAt: new Date()
+      }
+    });
+    const center = await this.listRandomTasks(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND") {
+      return center;
+    }
+    const nextTask = center.tasks.find((task) => task.id === randomTask.id);
+    if (nextTask === undefined) {
+      return "RANDOM_TASK_NOT_FOUND";
+    }
+    return {
+      center,
+      task: nextTask,
+      profile: center.profile,
+      result: "已转入专属经理待办，本次不消耗行动力。"
+    };
   },
 
   async listTasks(accountId, serverId, today) {
@@ -3005,7 +3453,7 @@ export const createPrismaGameRepository = (
         }
       });
 
-      await tx.playerProfile.update({
+      const rewardedProfile = await tx.playerProfile.update({
         where: { id: profile.id },
         data: {
           cash: { increment: config.rewardCash },
@@ -3014,6 +3462,7 @@ export const createPrismaGameRepository = (
           actionPower: { increment: config.rewardActionPower }
         }
       });
+      await grantCompanyExperience(tx, rewardedProfile.id, config.rewardCompanyExperience, "task_reward");
       await grantInventoryItem(
         tx,
         profile.id,
@@ -4922,7 +5371,7 @@ export const createPrismaGameRepository = (
           profileId: profile.id,
           balance: profile.platformCoins,
           totalSpent: 0,
-          vipExperience: 0
+          vipExperience: VIP3_START_EXPERIENCE
         }
       });
       if (wallet.balance < product.pricePlatformCoins) {
@@ -5026,7 +5475,7 @@ export const createPrismaGameRepository = (
           profileId,
           balance: profile.platformCoins,
           totalSpent: 0,
-          vipExperience: 0
+          vipExperience: VIP3_START_EXPERIENCE
         }
       });
       const nextBalance = wallet.balance + changeAmount;
@@ -5171,7 +5620,7 @@ export const createPrismaGameRepository = (
           profileId: profile.id,
           balance: profile.platformCoins,
           totalSpent: 0,
-          vipExperience: 0
+          vipExperience: VIP3_START_EXPERIENCE
         }
       });
       const nextBalance = wallet.balance + vipCenter.dailyGift.rewardPlatformCoins;
@@ -5569,7 +6018,7 @@ export const createPrismaGameRepository = (
           profileId,
           balance: profile.platformCoins,
           totalSpent: 0,
-          vipExperience: 0
+          vipExperience: VIP3_START_EXPERIENCE
         }
       });
       const nextBalance = wallet.balance + platformCoins;
@@ -5823,7 +6272,7 @@ export const createPrismaGameRepository = (
       const wallet = await tx.playerPlatformWallet.upsert({
         where: { profileId: profile.id },
         update: {},
-        create: { profileId: profile.id, balance: profile.platformCoins, totalSpent: 0, vipExperience: 0 }
+        create: { profileId: profile.id, balance: profile.platformCoins, totalSpent: 0, vipExperience: VIP3_START_EXPERIENCE }
       });
       if (wallet.balance < season.passPricePlatformCoins) return "INSUFFICIENT_PLATFORM_COINS" as const;
       const nextBalance = wallet.balance - season.passPricePlatformCoins;
@@ -6451,7 +6900,7 @@ export const createPrismaGameRepository = (
             profileId: profile.id,
             balance: profile.platformCoins,
             totalSpent: 0,
-            vipExperience: 0
+            vipExperience: VIP3_START_EXPERIENCE
           }
         });
         nextPlatformCoins = wallet.balance + achievement.achievement.rewardPlatformCoins;
