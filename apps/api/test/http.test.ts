@@ -527,7 +527,15 @@ const createTestRepository = (): GameRepository => {
     createMainTaskConfig("main-term-review", "复核融资条款", "前往融资"),
     createMainTaskConfig("main-rank-target", "设定本服排行目标", "前往排行"),
     createMainTaskConfig("main-cross-server-target", "了解跨服目标", "前往排行"),
-    createMainTaskConfig("main-reputation-plan", "规划声望成长", "前往排行")
+    createMainTaskConfig("main-reputation-plan", "规划声望成长", "前往排行"),
+    createMainTaskConfig("main-pass-value", "查看通行证价值", "前往通行证"),
+    createMainTaskConfig("main-activity-shop-plan", "规划活动商店", "前往通行证"),
+    createMainTaskConfig("main-vip-benefit-review", "查看 VIP 起步权益", "前往VIP"),
+    createMainTaskConfig("main-week-card-value", "评估经营周卡", "前往特权"),
+    createMainTaskConfig("main-growth-fund-check", "查看成长基金", "前往特权"),
+    createMainTaskConfig("main-fund-node", "查看基金节点", "前往特权"),
+    createMainTaskConfig("main-action-power-plan", "制定行动力计划", "前往背包"),
+    createMainTaskConfig("main-full-level-plan", "了解满级去向", "前往通行证")
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
   const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
@@ -1133,6 +1141,30 @@ const createTestRepository = (): GameRepository => {
       durationDays: 30,
       purchaseLimit: 1,
       summary: "提供 30 天经营补贴入口，第一版先发放即时启动补贴。"
+    },
+    {
+      id: "weekly-operation-card",
+      name: "经营周卡",
+      category: "weekly_card",
+      pricePlatformCoins: 680,
+      rewardCash: 160000,
+      rewardActionPower: 120,
+      rewardReputation: 360,
+      durationDays: 7,
+      purchaseLimit: 1,
+      summary: "绑定 7 日留存的轻权益，提供行动力和员工培养材料。"
+    },
+    {
+      id: "growth-fund-weekly",
+      name: "7日成长基金",
+      category: "growth_fund",
+      pricePlatformCoins: 980,
+      rewardCash: 320000,
+      rewardActionPower: 80,
+      rewardReputation: 700,
+      durationDays: 7,
+      purchaseLimit: 1,
+      summary: "绑定 D1-D7 主线节点，承接首周留存转化。"
     },
     {
       id: "headhunter-ticket",
@@ -3041,6 +3073,13 @@ const createTestRepository = (): GameRepository => {
     async listShop(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       return profile === undefined ? "PLAYER_NOT_FOUND" : toShopCenter(profile);
+    },
+    async listInventory(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return { items: [], recentLedgers: [] };
     },
     async purchaseShopProduct(accountId, serverId, productId, requestId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5633,6 +5672,21 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
     assert.equal(duplicateClaim.status, 409);
     assert.equal(duplicateClaim.body.error?.code, "ACTIVITY_REWARD_ALREADY_CLAIMED");
 
+    const activityShop = await requestJson(baseUrl, "/activity-shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", itemId: "activity-risk-insurance", requestId: "activity-shop-main-001" })
+    });
+    assert.equal(activityShop.status, 201, JSON.stringify(activityShop.body));
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(tasks.status, 200);
+    const claimableTasks = new Set((tasks.body.data ?? []).filter((task) => task.isClaimable).map((task) => task.id));
+    const missingSeasonTasks = ["main-pass-value", "main-activity-shop-plan", "main-full-level-plan"].filter((taskId) => !claimableTasks.has(taskId));
+    assert.deepEqual(missingSeasonTasks, []);
+
     const started = await requestJson<{ run: { id: string; initialState: { cashDays: number; debtRatioBasisPoints: number } } }>(
       baseUrl,
       "/scenarios/cashflow-rescue/start",
@@ -5735,6 +5789,44 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
     });
     assert.equal(limited.status, 409);
     assert.equal(limited.body.error?.code, "PURCHASE_LIMIT_REACHED");
+
+    const weekly = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "weekly-operation-card", requestId: "weekly-card-main-001" })
+    });
+    assert.equal(weekly.status, 201, JSON.stringify(weekly.body));
+
+    const growthFund = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "growth-fund-weekly", requestId: "growth-fund-main-001" })
+    });
+    assert.equal(growthFund.status, 201, JSON.stringify(growthFund.body));
+
+    const vip = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(vip.status, 200);
+
+    const inventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(inventory.status, 200);
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(tasks.status, 200);
+    const claimableTasks = new Set((tasks.body.data ?? []).filter((task) => task.isClaimable).map((task) => task.id));
+    const missingPrivilegeTasks = [
+      "main-week-card-value",
+      "main-growth-fund-check",
+      "main-fund-node",
+      "main-vip-benefit-review",
+      "main-action-power-plan"
+    ].filter((taskId) => !claimableTasks.has(taskId));
+    assert.deepEqual(missingPrivilegeTasks, []);
   });
 });
 

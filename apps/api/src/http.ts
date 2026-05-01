@@ -1524,6 +1524,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-vip-benefit-review", readToday(request));
       sendJson(response, 200, success(vip, traceId));
       return;
     }
@@ -1600,6 +1601,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-action-power-plan", readToday(request));
       sendJson(response, 200, success(inventory, traceId));
       return;
     }
@@ -1642,6 +1644,13 @@ export const createApiServer = (
           return;
         }
 
+        if (result.product.category === "weekly_card") {
+          await repository.advanceTask(account.id, serverId, "main-week-card-value", readToday(request));
+        }
+        if (result.product.category === "growth_fund") {
+          await repository.advanceTask(account.id, serverId, "main-growth-fund-check", readToday(request));
+          await repository.advanceTask(account.id, serverId, "main-fund-node", readToday(request));
+        }
         sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
@@ -1709,6 +1718,8 @@ export const createApiServer = (
         sendJson(response, 404, failure("SEASON_NOT_FOUND", "Season config not found.", traceId));
         return;
       }
+      await repository.advanceTask(account.id, serverId, "main-pass-value", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-full-level-plan", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -1766,6 +1777,8 @@ export const createApiServer = (
           return;
         }
         await repository.advanceTask(account.id, serverId, "main-season-start", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-pass-value", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-full-level-plan", readToday(request));
         sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
@@ -1834,6 +1847,7 @@ export const createApiServer = (
           sendJson(response, result.endsWith("NOT_FOUND") ? 404 : 409, failure(result, "Activity shop item cannot be purchased.", traceId));
           return;
         }
+        await repository.advanceTask(account.id, serverId, "main-activity-shop-plan", readToday(request));
         sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";

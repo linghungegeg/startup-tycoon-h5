@@ -1697,6 +1697,20 @@ VIP 权益：
 - 遗留风险：VIP、特权、通行证、活动商店、行动力计划和满级去向主线仍需下一小批单独绑定；活动商店链路在本批测试拆分时出现超时，需要下一批先做判别性排查再实现，不在本批叠加试探性补丁。
 - 下一阶段入口：Phase 21 第五实施批次：VIP/特权/通行证/活动商店/背包主线真实动作绑定，然后进入行动力恢复、行动力饮料使用、每日限购和满级经验去向。
 
+### Phase 21 第五实施批次阶段总结：VIP 特权通行证与背包主线绑定
+
+- 当前稳定点：`3ed8a9d feat: bind finance ranking main tasks`。
+- 完成内容：将 8 条剩余商业化与长期目标主线接入真实动作，包括查看通行证价值、规划活动商店、查看 VIP 起步权益、评估经营周卡、查看成长基金、查看基金节点、制定行动力计划和了解满级去向。
+- 任务完成规则：本批只在现有成功接口上补任务推进，不新增数据库字段、不新增前台 UI、不改变购买模型；玩家查看 VIP、查看背包、购买经营周卡、购买成长基金、查看通行证、购买通行证和购买活动商店道具即可推动对应主线。
+- 四插件使用证据：
+  - Superpowers：按 TDD 和完成前验证流程，先用失败断言确认 VIP/特权/通行证/活动商店/背包主线缺少真实动作，再补最小 `advanceTask` hook。
+  - Browser Use：本批无前台 UI 改动，浏览器验收保留为本地页面可打开、主页 HUD 不变和 API 健康可用；主线完成性由 API 集成测试覆盖。
+  - Build Web Apps：确认本批不改 React 页面、不增加右侧入口、不改变特权/通行证/商业的深色商务手游视觉基线。
+  - Game Studio：确认任务推进来自玩家主动查看或购买动作，不新增打断式弹窗，不遮挡主页 HUD、右侧 6 入口、主线任务条和底部导航。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "lists wallet and buys shop products" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "phase 19 runs season activity pass rewards" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`git diff --check`。
+- 遗留风险：行动力恢复机制、行动力饮料使用、每日限购、满级后经验去向和通行证额外赛季随机任务仍未实现；下一批开始前必须先确认行动力作为创始人精力的恢复、消耗、返还和商业边界。
+- 下一阶段入口：Phase 21 第六实施批次：行动力恢复、行动力饮料使用、每日限购、随机任务行动力增减、满级经验去向和通行证额外赛季随机任务。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。
