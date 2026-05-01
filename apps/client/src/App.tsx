@@ -201,6 +201,11 @@ type RandomTaskActionResult = {
   task: RandomTask;
   profile: PlayerProfile;
   result: string;
+  usedItem?: {
+    itemId: string;
+    itemName: string;
+    effectSummary: string;
+  };
 };
 
 type CompanyFinance = {
@@ -1405,6 +1410,7 @@ function App() {
   const [selectedRandomTaskId, setSelectedRandomTaskId] = useState("");
   const [managerTab, setManagerTab] = useState<"events" | "random">("events");
   const [randomTaskModalId, setRandomTaskModalId] = useState("");
+  const [randomTaskModifierItemId, setRandomTaskModifierItemId] = useState("");
   const [snoozedRandomTaskIds, setSnoozedRandomTaskIds] = useState<string[]>([]);
   const [randomTaskGameEnteredAt, setRandomTaskGameEnteredAt] = useState(() => Date.now());
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
@@ -1651,6 +1657,17 @@ function App() {
   const selectedInventoryItem = useMemo(
     () => inventoryCenter?.items.find((item) => item.itemId === "action-drink") ?? inventoryCenter?.items[0] ?? null,
     [inventoryCenter?.items]
+  );
+  const riskInsuranceItem = useMemo(
+    () => inventoryCenter?.items.find((item) => item.itemId === "risk-insurance") ?? null,
+    [inventoryCenter?.items]
+  );
+  const activeRandomTaskAllowsRiskInsurance = useMemo(
+    () =>
+      activeRandomTask !== null &&
+      activeRandomTask.category !== "season" &&
+      activeRandomTask.options.some((option) => option.cashReward < 0 || option.reputationReward < 0),
+    [activeRandomTask]
   );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
@@ -2939,6 +2956,7 @@ function App() {
   const openRandomTaskModal = (taskId: string): void => {
     setSelectedRandomTaskId(taskId);
     setRandomTaskModalId(taskId);
+    setRandomTaskModifierItemId("");
     setRandomTaskNotice("");
     setRandomTaskError("");
   };
@@ -2953,6 +2971,7 @@ function App() {
     }
 
     setRandomTaskModalId("");
+    setRandomTaskModifierItemId("");
   };
 
   const closeNativeHomePage = (): void => {
@@ -3027,7 +3046,7 @@ function App() {
     setClaimingTaskId("");
   };
 
-  const resolveRandomTask = async (taskId: string, option: "A" | "B"): Promise<void> => {
+  const resolveRandomTask = async (taskId: string, option: "A" | "B", modifierItemId?: string): Promise<void> => {
     if (!account || !selectedServer) {
       setRandomTaskError("账号或区服状态缺失，请重新登录。");
       return;
@@ -3037,7 +3056,7 @@ function App() {
       `/random-tasks/${encodeURIComponent(taskId)}/resolve`,
       {
         method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id, option })
+        body: JSON.stringify({ serverId: selectedServer.id, option, modifierItemId })
       },
       account.token
     );
@@ -3048,6 +3067,8 @@ function App() {
       setRandomTaskNotice(response.data.result);
       setRandomTaskError("");
       setRandomTaskModalId("");
+      setRandomTaskModifierItemId("");
+      await loadInventoryCenter(account.token, selectedServer.id);
       await loadCompanyGrowth(account.token, selectedServer.id);
       await loadTasks(account.token, selectedServer.id);
       return;
@@ -5834,23 +5855,46 @@ function App() {
                     </span>
                   )}
 
+                  {activeRandomTaskAllowsRiskInsurance && (
+                    <label className="random-task-modifier">
+                      <input
+                        checked={randomTaskModifierItemId === "risk-insurance"}
+                        disabled={(riskInsuranceItem?.quantity ?? 0) <= 0}
+                        type="checkbox"
+                        onChange={(event) => setRandomTaskModifierItemId(event.target.checked ? "risk-insurance" : "")}
+                      />
+                      <span>
+                        <strong>风险保险 x{riskInsuranceItem?.quantity ?? 0}</strong>
+                        <em>{(riskInsuranceItem?.quantity ?? 0) > 0 ? "降低本次现金或声望损失" : "背包暂无可用保险"}</em>
+                      </span>
+                    </label>
+                  )}
+
                   <div className="random-task-options">
-                    {activeRandomTask.options.map((option) => (
-                      <button
-                        disabled={profile.actionPower < option.actionPowerCost}
-                        key={option.key}
-                        type="button"
-                        onClick={() => void resolveRandomTask(activeRandomTask.id, option.key)}
-                      >
-                        <span>
-                          <strong>{option.label}</strong>
-                          <em>行动力 -{option.actionPowerCost}</em>
-                        </span>
-                        <small>
-                          资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
-                        </small>
-                      </button>
-                    ))}
+                    {activeRandomTask.options.map((option) => {
+                      const shouldUseRiskInsurance =
+                        randomTaskModifierItemId === "risk-insurance" &&
+                        (riskInsuranceItem?.quantity ?? 0) > 0 &&
+                        activeRandomTask.category !== "season" &&
+                        (option.cashReward < 0 || option.reputationReward < 0);
+                      return (
+                        <button
+                          disabled={profile.actionPower < option.actionPowerCost}
+                          key={option.key}
+                          type="button"
+                          onClick={() => void resolveRandomTask(activeRandomTask.id, option.key, shouldUseRiskInsurance ? "risk-insurance" : undefined)}
+                        >
+                          <span>
+                            <strong>{option.label}</strong>
+                            <em>行动力 -{option.actionPowerCost}</em>
+                          </span>
+                          <small>
+                            资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
+                            {shouldUseRiskInsurance ? " · 使用风险保险" : ""}
+                          </small>
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <button className="random-task-snooze" type="button" onClick={snoozeRandomTaskModal}>

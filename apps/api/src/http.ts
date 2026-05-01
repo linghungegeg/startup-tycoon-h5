@@ -2027,15 +2027,24 @@ export const createApiServer = (
         const body = await readBody(request);
         const serverId = readServerId(body);
         const option = isRecord(body) && (body.option === "A" || body.option === "B") ? body.option : undefined;
+        const modifierItemId = isRecord(body) ? readString(body, "modifierItemId") : "";
         const randomTaskId = decodeURIComponent(randomTaskResolveMatch[1] ?? "");
         if (serverId === undefined || option === undefined || randomTaskId === "") {
           sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, randomTaskId and option are required.", traceId));
           return;
         }
 
-        const result = await repository.resolveRandomTask(account.id, serverId, randomTaskId, option, readToday(request));
+        const result = await repository.resolveRandomTask(account.id, serverId, randomTaskId, option, readToday(request), modifierItemId === "" ? undefined : modifierItemId);
         if (result === "PLAYER_NOT_FOUND" || result === "RANDOM_TASK_NOT_FOUND") {
           sendJson(response, 404, failure(result, "Random task not found.", traceId));
+          return;
+        }
+        if (result === "ITEM_NOT_FOUND") {
+          sendJson(response, 404, failure("ITEM_NOT_FOUND", "Inventory item not found.", traceId));
+          return;
+        }
+        if (result === "ITEM_NOT_USABLE") {
+          sendJson(response, 409, failure("ITEM_NOT_USABLE", "Inventory item cannot be used here.", traceId));
           return;
         }
         if (result === "RANDOM_TASK_ALREADY_RESOLVED" || result === "INSUFFICIENT_ACTION_POWER") {

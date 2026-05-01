@@ -1741,6 +1741,21 @@ VIP 权益：
 - 遗留风险：满级宝箱仍只是设计方向，尚未实现宝箱进度和领奖；风险保险、市场情报、财务顾问卡等经营道具尚未接入随机任务结果修正。
 - 下一阶段入口：Phase 21 第八实施批次：单独实现经营道具使用规则，优先从风险保险或市场情报中选择一条最小闭环。
 
+### Phase 21 第八实施批次阶段总结：风险保险随机任务修正
+
+- 当前稳定点：`31032b8 feat: add pass season random task`。
+- 完成内容：风险保险接入随机经营任务结算；玩家在适用的非赛季随机任务中可选择使用 `risk-insurance`，结算成功后扣减 1 个风险保险并写入道具流水，现金或声望的负向结果按减半后的损失结算。
+- 前台变化：随机任务弹窗在适用任务且背包有风险保险时显示“风险保险 xN”开关；勾选后可用决策按钮展示“使用风险保险”，结算成功后刷新 HUD、随机任务状态和背包库存。
+- 规则边界：风险保险只降低损失，不完全取消失败；不减免行动力消耗，不放大公司经验，不影响赛季额外随机任务和排行榜结算；市场情报、财务顾问卡仍留到后续批次单独实现。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认传入 `modifierItemId = "risk-insurance"` 时随机任务仍按原始损失结算，再补最小实现。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认专属经理随机任务弹窗出现“风险保险 x2”开关；勾选后决策按钮显示“使用风险保险”；结算后提示“风险保险已生效，降低了本次经营损失”；背包页仍可看到剩余风险保险。
+  - Build Web Apps：前台只在现有随机任务弹窗内新增一条紧凑经营道具栏，沿用深色遮罩、玻璃面板和金色/绿色强调，不新增页面和入口。
+  - Game Studio：风险保险属于玩家主动选择的经营缓冲，不强制弹购买，不连续叠加弹窗；弹窗仍保留标题、来源、说明、2 个决策和稍后处理，未遮挡主流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "uses risk insurance" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`。
+- 遗留风险：市场情报、财务顾问卡尚未接入随机任务结果修正；满级宝箱仍只是展示方向，尚未实现进度和领奖。
+- 下一阶段入口：Phase 21 第九实施批次：市场情报接入市场/赛季随机任务，继续保持每次随机任务最多使用 1 个经营道具。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

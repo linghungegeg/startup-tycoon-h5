@@ -1278,9 +1278,32 @@ const createTestRepository = (): GameRepository => {
       durationDays: 0,
       purchaseLimit: 0,
       summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。"
+    },
+    {
+      id: "risk-insurance-trial",
+      name: "风险保险体验包",
+      category: "risk_insurance",
+      pricePlatformCoins: 520,
+      rewardCash: 0,
+      rewardActionPower: 0,
+      rewardReputation: 0,
+      rewardItemId: "risk-insurance",
+      rewardItemQuantity: 1,
+      durationDays: 0,
+      purchaseLimit: 0,
+      summary: "提供一次风险保险，用于降低随机经营任务损失。"
     }
   ];
   const itemConfigs = [
+    {
+      id: "risk-insurance",
+      name: "风险保险",
+      category: "operation",
+      rarity: "优秀",
+      icon: "shield-check",
+      summary: "用于降低一次经营事件、合同或市场波动的损失。",
+      usageHint: "经营事件、市场竞争、活动商店"
+    },
     {
       id: "action-drink",
       name: "行动力饮料",
@@ -2416,7 +2439,7 @@ const createTestRepository = (): GameRepository => {
         handledToday: tasks.filter((task) => task.status !== "pending").length
       } satisfies RandomTaskCenterRecord;
     },
-    async resolveRandomTask(accountId, serverId, randomTaskId, option, today) {
+    async resolveRandomTask(accountId, serverId, randomTaskId, option, today, modifierItemId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
@@ -2433,15 +2456,51 @@ const createTestRepository = (): GameRepository => {
       if (profile.actionPower < selected.actionPowerCost) {
         return "INSUFFICIENT_ACTION_POWER";
       }
+      if (modifierItemId !== undefined && modifierItemId !== "risk-insurance") {
+        return "ITEM_NOT_USABLE";
+      }
+      const canUseRiskInsurance = modifierItemId === "risk-insurance" && task.category !== "season" && (selected.cashReward < 0 || selected.reputationReward < 0);
+      if (modifierItemId === "risk-insurance" && !canUseRiskInsurance) {
+        return "ITEM_NOT_USABLE";
+      }
+      const usedItem = canUseRiskInsurance
+        ? inventoryItems.get(`${profile.id}:risk-insurance`)
+        : undefined;
+      if (modifierItemId === "risk-insurance" && (usedItem === undefined || usedItem.quantity <= 0)) {
+        return "ITEM_NOT_FOUND";
+      }
+      const nextCashReward = canUseRiskInsurance && selected.cashReward < 0 ? Math.trunc(selected.cashReward / 2) : selected.cashReward;
+      const nextReputationReward = canUseRiskInsurance && selected.reputationReward < 0 ? Math.trunc(selected.reputationReward / 2) : selected.reputationReward;
+      const effectSummary = "风险保险已生效，降低了本次经营损失。";
+      if (usedItem !== undefined) {
+        usedItem.quantity -= 1;
+        usedItem.updatedAt = new Date().toISOString();
+        itemLedgers.unshift({
+          id: randomUUID(),
+          profileId: profile.id,
+          itemId: "risk-insurance",
+          changeQuantity: -1,
+          balanceAfter: usedItem.quantity,
+          source: "random_task_modifier",
+          reason: "随机任务使用：风险保险",
+          createdAt: new Date().toISOString()
+        });
+      }
       profile.actionPower -= selected.actionPowerCost;
-      profile.cash += selected.cashReward;
-      profile.reputation += selected.reputationReward;
+      profile.cash += nextCashReward;
+      profile.reputation += nextReputationReward;
       task.status = "resolved";
       task.selectedOption = option;
-      task.resultSummary = selected.result;
+      task.resultSummary = usedItem === undefined ? selected.result : `${selected.result} ${effectSummary}`;
       const center = await this.listRandomTasks(accountId, serverId, today);
       assert.notEqual(center, "PLAYER_NOT_FOUND");
-      return { center, task, profile, result: selected.result } satisfies RandomTaskActionRecord;
+      return {
+        center,
+        task,
+        profile,
+        result: task.resultSummary,
+        usedItem: usedItem === undefined ? undefined : { itemId: "risk-insurance", itemName: "风险保险", effectSummary }
+      } satisfies RandomTaskActionRecord;
     },
     async dismissRandomTask(accountId, serverId, randomTaskId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -6231,6 +6290,53 @@ test("season pass adds one daily season random task", async () => {
     assert.equal(after.body.data?.dailyLimit, 7);
     assert.equal(after.body.data?.tasks.length, 4);
     assert.equal(after.body.data?.tasks.filter((task) => task.category === "season").length, 1);
+  });
+});
+
+test("uses risk insurance to reduce random task losses", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "riskmodifier");
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", productId: "risk-insurance-trial", requestId: "risk-insurance-20260501" })
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+
+    const beforeInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(beforeInventory.status, 200);
+    assert.equal(beforeInventory.body.data?.items.find((item) => item.itemId === "risk-insurance")?.quantity, 1);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(center.status, 200);
+    const financeTask = center.body.data?.tasks.find((task) => task.category === "finance");
+    assert.ok(financeTask);
+    const reputationBefore = center.body.data?.profile.reputation ?? 0;
+
+    const resolved = await requestJson<RandomTaskActionRecord & { usedItem?: { itemId: string; effectSummary: string } }>(
+      baseUrl,
+      `/random-tasks/${encodeURIComponent(financeTask.id)}/resolve`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+        body: JSON.stringify({ serverId: "s1", option: "B", modifierItemId: "risk-insurance" })
+      }
+    );
+    assert.equal(resolved.status, 200, JSON.stringify(resolved.body));
+    assert.equal(resolved.body.data?.profile.reputation, reputationBefore - 40);
+    assert.equal(resolved.body.data?.usedItem?.itemId, "risk-insurance");
+    assert.match(resolved.body.data?.result ?? "", /风险保险已生效/);
+
+    const afterInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(afterInventory.status, 200);
+    assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "risk-insurance"), false);
+    assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
   });
 });
 

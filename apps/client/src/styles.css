@@ -4022,6 +4022,48 @@ input {
   background: rgba(239, 68, 68, 0.16);
 }
 
+.random-task-modifier {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  border-radius: 16px;
+  padding: 10px 12px;
+  color: #d1fae5;
+  background: rgba(6, 78, 59, 0.22);
+}
+
+.random-task-modifier input {
+  width: 16px;
+  height: 16px;
+  accent-color: #34d399;
+}
+
+.random-task-modifier span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.random-task-modifier strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.random-task-modifier em {
+  color: #a7f3d0;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.random-task-modifier:has(input:disabled) {
+  opacity: 0.58;
+}
+
 .random-task-options {
   display: grid;
   gap: 10px;

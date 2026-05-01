@@ -137,6 +137,11 @@ export type RandomTaskActionRecord = {
   task: RandomTaskRecord;
   profile: PlayerProfileRecord;
   result: string;
+  usedItem?: {
+    itemId: string;
+    itemName: string;
+    effectSummary: string;
+  };
 };
 
 export type ItemRewardRecord = {
@@ -1029,7 +1034,7 @@ export type GameRepository = {
   advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
   listRandomTasks(accountId: string, serverId: string, today: string): Promise<RandomTaskCenterRecord | "PLAYER_NOT_FOUND">;
-  resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER">;
+  resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string, modifierItemId?: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
   dismissRandomTask(accountId: string, serverId: string, randomTaskId: string, today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED">;
   getCompanyFinance(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
@@ -2195,6 +2200,7 @@ const RANDOM_TASK_PASS_VISIBLE_BONUS = 1;
 const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
 const RANDOM_TASK_PRIVILEGE_DAILY_LIMIT = 9;
 const RANDOM_TASK_PASS_DAILY_LIMIT_BONUS = 1;
+const RISK_INSURANCE_ITEM_ID = "risk-insurance";
 const VIP3_START_EXPERIENCE = 3000;
 
 const readCompanyLevel = (experience: number): number =>
@@ -2821,6 +2827,25 @@ const toRandomTaskRecord = (task: {
   ]
 });
 
+const canUseRiskInsurance = (category: string, cashDelta: number, reputationDelta: number): boolean =>
+  category !== "season" && (cashDelta < 0 || reputationDelta < 0);
+
+const applyRiskInsurance = (
+  category: string,
+  cashDelta: number,
+  reputationDelta: number
+): { cashDelta: number; reputationDelta: number; effectSummary: string } | undefined => {
+  if (!canUseRiskInsurance(category, cashDelta, reputationDelta)) {
+    return undefined;
+  }
+
+  return {
+    cashDelta: cashDelta < 0 ? Math.trunc(cashDelta / 2) : cashDelta,
+    reputationDelta: reputationDelta < 0 ? Math.trunc(reputationDelta / 2) : reputationDelta,
+    effectSummary: "风险保险已生效，降低了本次经营损失。"
+  };
+};
+
 export const createPrismaGameRepository = (
   prisma = new PrismaClient()
 ): GameRepository => ({
@@ -3231,7 +3256,7 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async resolveRandomTask(accountId, serverId, randomTaskId, option, today) {
+  async resolveRandomTask(accountId, serverId, randomTaskId, option, today, modifierItemId) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -3256,22 +3281,65 @@ export const createPrismaGameRepository = (
     }
 
     const actionPowerDelta = option === "A" ? randomTask.config.optionAActionPower : randomTask.config.optionBActionPower;
-    const cashDelta = option === "A" ? randomTask.config.optionACash : randomTask.config.optionBCash;
-    const reputationDelta = option === "A" ? randomTask.config.optionAReputation : randomTask.config.optionBReputation;
+    const rawCashDelta = option === "A" ? randomTask.config.optionACash : randomTask.config.optionBCash;
+    const rawReputationDelta = option === "A" ? randomTask.config.optionAReputation : randomTask.config.optionBReputation;
     const companyExperience = option === "A" ? randomTask.config.optionACompanyExperience : randomTask.config.optionBCompanyExperience;
     const resultSummary = option === "A" ? randomTask.config.optionAResult : randomTask.config.optionBResult;
     const recovered = recoverActionPowerData(profile);
     if (actionPowerDelta < 0 && recovered.actionPower < Math.abs(actionPowerDelta)) {
       return "INSUFFICIENT_ACTION_POWER";
     }
+    if (modifierItemId !== undefined && modifierItemId !== RISK_INSURANCE_ITEM_ID) {
+      return "ITEM_NOT_USABLE";
+    }
+    const insuranceEffect = modifierItemId === RISK_INSURANCE_ITEM_ID
+      ? applyRiskInsurance(randomTask.config.category, rawCashDelta, rawReputationDelta)
+      : undefined;
+    if (modifierItemId === RISK_INSURANCE_ITEM_ID && insuranceEffect === undefined) {
+      return "ITEM_NOT_USABLE";
+    }
+    const cashDelta = insuranceEffect?.cashDelta ?? rawCashDelta;
+    const reputationDelta = insuranceEffect?.reputationDelta ?? rawReputationDelta;
+    const finalResultSummary = insuranceEffect === undefined ? resultSummary : `${resultSummary} ${insuranceEffect.effectSummary}`;
 
     const result = await prisma.$transaction(async (tx) => {
+      let usedItem: RandomTaskActionRecord["usedItem"];
+      if (modifierItemId === RISK_INSURANCE_ITEM_ID && insuranceEffect !== undefined) {
+        const inventoryItem = await tx.playerInventoryItem.findUnique({
+          where: { profileId_itemId: { profileId: profile.id, itemId: modifierItemId } },
+          include: { item: true }
+        });
+        if (inventoryItem === null || inventoryItem.quantity <= 0) {
+          return "ITEM_NOT_FOUND" as const;
+        }
+        const nextQuantity = inventoryItem.quantity - 1;
+        await tx.playerInventoryItem.update({
+          where: { id: inventoryItem.id },
+          data: { quantity: nextQuantity }
+        });
+        await tx.playerItemLedger.create({
+          data: {
+            profileId: profile.id,
+            itemId: modifierItemId,
+            changeQuantity: -1,
+            balanceAfter: nextQuantity,
+            source: "random_task_modifier",
+            referenceId: randomTask.id,
+            reason: `随机任务使用：${inventoryItem.item.name}`
+          }
+        });
+        usedItem = {
+          itemId: modifierItemId,
+          itemName: inventoryItem.item.name,
+          effectSummary: insuranceEffect.effectSummary
+        };
+      }
       await tx.playerRandomTask.update({
         where: { id: randomTask.id },
         data: {
           status: "resolved",
           selectedOption: option,
-          resultSummary,
+          resultSummary: finalResultSummary,
           resolvedAt: new Date()
         }
       });
@@ -3284,8 +3352,14 @@ export const createPrismaGameRepository = (
           actionPowerRecoveredAt: recovered.actionPowerRecoveredAt
         }
       });
-      return grantCompanyExperience(tx, updatedProfile.id, companyExperience, "random_task");
+      return {
+        profile: await grantCompanyExperience(tx, updatedProfile.id, companyExperience, "random_task"),
+        usedItem
+      };
     });
+    if (result === "ITEM_NOT_FOUND") {
+      return result;
+    }
 
     const center = await this.listRandomTasks(accountId, serverId, today);
     if (center === "PLAYER_NOT_FOUND") {
@@ -3298,8 +3372,9 @@ export const createPrismaGameRepository = (
     return {
       center,
       task: nextTask,
-      profile: result,
-      result: resultSummary
+      profile: result.profile,
+      result: finalResultSummary,
+      usedItem: result.usedItem
     };
   },
 
