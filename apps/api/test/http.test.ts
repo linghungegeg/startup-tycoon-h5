@@ -321,6 +321,186 @@ const createTestRepository = (): GameRepository => {
       rewardActionPower: 25,
       guideAction: "前往员工",
       unlockKind: "none" as const
+    },
+    {
+      id: "main-recruit-channel",
+      type: "main" as const,
+      title: "评估招聘渠道",
+      description: "完成一次员工招募。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "猎头券 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 180,
+      rewardActionPower: 0,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-train-core",
+      type: "main" as const,
+      title: "培养核心成员",
+      description: "完成一次员工培养。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "培养手册 1、声望 150",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 150,
+      rewardActionPower: 0,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-equity-plan",
+      type: "main" as const,
+      title: "讨论股权激励",
+      description: "完成一次员工股权激励。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "声望 220",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 220,
+      rewardActionPower: 0,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-client-brief",
+      type: "main" as const,
+      title: "阅读客户需求",
+      description: "启动一个项目。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "资金 7万",
+      rewardCash: 70000,
+      rewardPlatformCoins: 0,
+      rewardReputation: 90,
+      rewardActionPower: 0,
+      guideAction: "前往项目",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-delivery-plan",
+      type: "main" as const,
+      title: "制定交付计划",
+      description: "推进一次项目。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "项目加速券 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 160,
+      rewardActionPower: 0,
+      guideAction: "前往项目",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-project-margin",
+      type: "main" as const,
+      title: "核算项目毛利",
+      description: "结算一个项目。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "财务顾问卡 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 160,
+      rewardActionPower: 0,
+      guideAction: "前往财务",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-user-research",
+      type: "main" as const,
+      title: "做用户调研",
+      description: "启动一条产品线。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "市场情报 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 180,
+      rewardActionPower: 0,
+      guideAction: "前往产品",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-tech-debt-check",
+      type: "main" as const,
+      title: "检查技术债",
+      description: "完成一次产品重构。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "风险保险 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 160,
+      rewardActionPower: 0,
+      guideAction: "前往产品",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-market-position",
+      type: "main" as const,
+      title: "确定市场定位",
+      description: "进入一个市场赛道。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "市场情报 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 200,
+      rewardActionPower: 0,
+      guideAction: "前往市场",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-competitor-scan",
+      type: "main" as const,
+      title: "扫描竞争对手",
+      description: "触发一次竞争对手动作。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "声望 220",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 220,
+      rewardActionPower: 0,
+      guideAction: "前往市场",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-guild-help-plan",
+      type: "main" as const,
+      title: "准备商会互助",
+      description: "发布一次商会互助。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "限定称号碎片 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 160,
+      rewardActionPower: 0,
+      guideAction: "前往商会",
+      unlockKind: "none" as const
+    },
+    {
+      id: "main-season-task-plan",
+      type: "main" as const,
+      title: "制定赛季任务计划",
+      description: "推进一次赛季任务。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "赛季经验券 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 180,
+      rewardActionPower: 0,
+      guideAction: "前往通行证",
+      unlockKind: "none" as const
     }
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
@@ -4205,6 +4385,107 @@ test("completes knowledge and compliance side tasks through guided progress", as
       assert.equal(claimed.status, 200);
       assert.equal(claimed.body.data?.isClaimed, true);
     }
+  });
+});
+
+test("advances expanded main tasks from real business actions", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "expandedmain");
+    const auth = { authorization: `Bearer ${token}` };
+
+    const employee = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const employeeId = employee.body.data?.id ?? "";
+    await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(employeeId)}/train`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(employeeId)}/equity`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const project = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const projectId = project.body.data?.id ?? "";
+    for (let index = 0; index < 3; index += 1) {
+      await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+    }
+    await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const product = await requestJson<ProductActionRecord>(baseUrl, "/products/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", productConfigId: "crm-lite-saas" })
+    });
+    const productId = product.body.data?.product.id ?? "";
+    await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/refactor`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    await requestJson<MarketActionRecord>(baseUrl, "/markets/enter", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    await requestJson<MarketActionRecord>(baseUrl, "/markets/competitor-action", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", guildName: "首轮创业会" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+
+    await requestJson<SeasonTaskProgressRecord>(baseUrl, "/season/tasks/season-daily-project/progress", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    const claimable = new Set((tasks.body.data ?? []).filter((task) => task.isClaimable).map((task) => task.id));
+    const expected = [
+      "main-recruit-channel",
+      "main-train-core",
+      "main-equity-plan",
+      "main-client-brief",
+      "main-delivery-plan",
+      "main-project-margin",
+      "main-user-research",
+      "main-tech-debt-check",
+      "main-market-position",
+      "main-competitor-scan",
+      "main-guild-help-plan",
+      "main-season-task-plan"
+    ];
+    assert.equal(expected.every((taskId) => claimable.has(taskId)), true);
   });
 });
 

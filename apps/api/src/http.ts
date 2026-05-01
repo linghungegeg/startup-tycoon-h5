@@ -1393,6 +1393,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "daily-guild-contribution", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-guild-help-plan", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -1728,6 +1729,7 @@ export const createApiServer = (
           return;
         }
         await repository.advanceTask(account.id, serverId, "main-season-start", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-season-task-plan", readToday(request));
         await repository.advanceTask(account.id, serverId, "daily-season-progress", readToday(request));
         sendJson(response, 200, success(result, traceId));
       } catch (error) {
@@ -2286,6 +2288,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "main-market-entry", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-market-position", readToday(request));
       await repository.advanceTask(account.id, serverId, "side-competitor-response", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
@@ -2319,6 +2322,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-competitor-scan", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
     }
@@ -2398,6 +2402,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "main-product-launch", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-user-research", readToday(request));
       await repository.advanceTask(account.id, serverId, "side-product-incident", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
@@ -2443,6 +2448,9 @@ export const createApiServer = (
         return;
       }
 
+      if (action === "refactor") {
+        await repository.advanceTask(account.id, serverId, "main-tech-debt-check", readToday(request));
+      }
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -2692,6 +2700,7 @@ export const createApiServer = (
       }
 
       await repository.advanceTask(account.id, serverId, "main-first-employee", readToday(request));
+      await repository.advanceTask(account.id, serverId, "main-recruit-channel", readToday(request));
       sendJson(response, 201, success(employee, traceId));
       return;
     }
@@ -2733,9 +2742,11 @@ export const createApiServer = (
 
       if (action === "train") {
         await repository.advanceTask(account.id, serverId, "daily-train-employee", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-train-core", readToday(request));
       }
       if (action === "equity") {
         await repository.advanceTask(account.id, serverId, "side-founder-pressure", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-equity-plan", readToday(request));
       }
 
       sendJson(response, 200, success(result, traceId));
@@ -2786,6 +2797,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-client-brief", readToday(request));
       sendJson(response, 201, success(project, traceId));
       return;
     }
@@ -2841,7 +2853,11 @@ export const createApiServer = (
 
       if (action === "advance") {
         await repository.advanceTask(account.id, serverId, "main-first-project", readToday(request));
+        await repository.advanceTask(account.id, serverId, "main-delivery-plan", readToday(request));
         await repository.advanceTask(account.id, serverId, "daily-project-push", readToday(request));
+      }
+      if (action === "settle") {
+        await repository.advanceTask(account.id, serverId, "main-project-margin", readToday(request));
       }
 
       sendJson(response, 200, success(result, traceId));
