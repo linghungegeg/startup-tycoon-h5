@@ -489,6 +489,60 @@ export type ExternalPaymentReservationRecord = {
   createdAt: string;
 };
 
+export type VipLevelRecord = {
+  level: number;
+  name: string;
+  requiredExperience: number;
+  dailyGiftPlatformCoins: number;
+  dailyGiftActionPower: number;
+  actionPowerLimitBonus: number;
+  quickSettleTimes: number;
+  trainingQueueBonus: number;
+  recruitRefreshTimes: number;
+  shopDiscountBasisPoints: number;
+  title: string;
+  avatarFrame: string;
+  summary: string;
+};
+
+export type VipCenterRecord = {
+  wallet: PlatformWalletRecord;
+  currentLevel: VipLevelRecord;
+  nextLevel: VipLevelRecord | null;
+  progressToNextBasisPoints: number;
+  benefits: {
+    title: string;
+    avatarFrame: string;
+    actionPowerLimit: number;
+    quickSettleTimes: number;
+    trainingQueueBonus: number;
+    recruitRefreshTimes: number;
+    shopDiscountBasisPoints: number;
+  };
+  dailyGift: {
+    date: string;
+    isClaimed: boolean;
+    rewardPlatformCoins: number;
+    rewardActionPower: number;
+  };
+};
+
+export type VipDailyGiftRecord = {
+  vipCenter: VipCenterRecord;
+  profile: PlayerProfileRecord;
+  result: string;
+};
+
+export type AdminVipAdjustmentRecord = {
+  vipCenter: VipCenterRecord;
+  auditLogId: string;
+};
+
+export type AdminVipConfigRecord = {
+  config: VipLevelRecord;
+  auditLogId: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -541,6 +595,12 @@ export type GameRepository = {
   purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
   adjustPlatformCoins(adminUserId: string, profileId: string, changeAmount: number, source: PlatformCoinLedgerSource, reason: string): Promise<AdminWalletAdjustmentRecord | "PLAYER_NOT_FOUND" | "INVALID_PLATFORM_COIN_SOURCE" | "INSUFFICIENT_PLATFORM_COINS">;
   reserveExternalPayment(accountId: string, serverId: string, productId: string | null, amountCents: number, platformCoins: number): Promise<ExternalPaymentReservationRecord | "PLAYER_NOT_FOUND">;
+  getVipCenter(accountId: string, serverId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
+  claimVipDailyGift(accountId: string, serverId: string, today: string): Promise<VipDailyGiftRecord | "PLAYER_NOT_FOUND" | "VIP_DAILY_GIFT_ALREADY_CLAIMED">;
+  adjustVipExperience(adminUserId: string, profileId: string, vipExperience: number, reason: string): Promise<AdminVipAdjustmentRecord | "PLAYER_NOT_FOUND">;
+  getAdminVipRecord(profileId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
+  listVipLevelConfigs(): Promise<VipLevelRecord[]>;
+  upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   disconnect(): Promise<void>;
 };
 
@@ -1302,6 +1362,105 @@ const toShopCenterRecord = async (
       pricePlatformCoins: purchase.pricePlatformCoins,
       createdAt: purchase.createdAt.toISOString()
     }))
+  };
+};
+
+const toVipLevelRecord = (level: {
+  level: number;
+  name: string;
+  requiredExperience: number;
+  dailyGiftPlatformCoins: number;
+  dailyGiftActionPower: number;
+  actionPowerLimitBonus: number;
+  quickSettleTimes: number;
+  trainingQueueBonus: number;
+  recruitRefreshTimes: number;
+  shopDiscountBasisPoints: number;
+  title: string;
+  avatarFrame: string;
+  summary: string;
+}): VipLevelRecord => ({
+  ...level
+});
+
+const fallbackVipLevel: VipLevelRecord = {
+  level: 0,
+  name: "VIP 0",
+  requiredExperience: 0,
+  dailyGiftPlatformCoins: 0,
+  dailyGiftActionPower: 20,
+  actionPowerLimitBonus: 0,
+  quickSettleTimes: 0,
+  trainingQueueBonus: 0,
+  recruitRefreshTimes: 0,
+  shopDiscountBasisPoints: 10000,
+  title: "创业新星",
+  avatarFrame: "basic",
+  summary: "基础身份，保留每日行动力补给。"
+};
+
+const BASE_ACTION_POWER_LIMIT = 120;
+
+const resolveVipLevels = (levels: VipLevelRecord[], vipExperience: number) => {
+  const sorted = [...levels].sort((left, right) => left.requiredExperience - right.requiredExperience);
+  const currentLevel = [...sorted].reverse().find((level) => vipExperience >= level.requiredExperience) ?? sorted[0] ?? fallbackVipLevel;
+  const nextLevel = sorted.find((level) => level.requiredExperience > currentLevel.requiredExperience) ?? null;
+  const progressToNextBasisPoints =
+    nextLevel === null
+      ? 10000
+      : Math.max(
+          0,
+          Math.min(
+            10000,
+            Math.floor(
+              ((vipExperience - currentLevel.requiredExperience) * 10000) /
+                Math.max(1, nextLevel.requiredExperience - currentLevel.requiredExperience)
+            )
+          )
+        );
+
+  return { currentLevel, nextLevel, progressToNextBasisPoints };
+};
+
+const toVipCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord,
+  today: string
+): Promise<VipCenterRecord> => {
+  const wallet = await toPlatformWalletRecord(prisma, profile);
+  const levels = (await prisma.vipLevelConfig.findMany({
+    orderBy: [{ requiredExperience: "asc" }, { sortOrder: "asc" }]
+  })).map(toVipLevelRecord);
+  const { currentLevel, nextLevel, progressToNextBasisPoints } = resolveVipLevels(levels, wallet.vipExperience);
+  const gift = await prisma.playerVipDailyGift.findUnique({
+    where: {
+      profileId_giftDate: {
+        profileId: profile.id,
+        giftDate: today
+      }
+    }
+  });
+
+  return {
+    wallet,
+    currentLevel,
+    nextLevel,
+    progressToNextBasisPoints,
+    benefits: {
+      title: currentLevel.title,
+      avatarFrame: currentLevel.avatarFrame,
+      actionPowerLimit: Math.max(profile.actionPowerLimit, BASE_ACTION_POWER_LIMIT + currentLevel.actionPowerLimitBonus),
+      quickSettleTimes: currentLevel.quickSettleTimes,
+      trainingQueueBonus: currentLevel.trainingQueueBonus,
+      recruitRefreshTimes: currentLevel.recruitRefreshTimes,
+      shopDiscountBasisPoints: currentLevel.shopDiscountBasisPoints
+    },
+    dailyGift: {
+      date: today,
+      isClaimed: gift !== null,
+      rewardPlatformCoins: currentLevel.dailyGiftPlatformCoins,
+      rewardActionPower: currentLevel.dailyGiftActionPower
+    }
   };
 };
 
@@ -3741,6 +3900,189 @@ export const createPrismaGameRepository = (
       platformCoins: order.platformCoins,
       status: order.status,
       createdAt: order.createdAt.toISOString()
+    };
+  },
+
+  async getVipCenter(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toVipCenterRecord(prisma, toProfileRecord(profile), today);
+  },
+
+  async claimVipDailyGift(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const existing = await prisma.playerVipDailyGift.findUnique({
+      where: {
+        profileId_giftDate: {
+          profileId: profile.id,
+          giftDate: today
+        }
+      }
+    });
+    if (existing !== null) {
+      return "VIP_DAILY_GIFT_ALREADY_CLAIMED";
+    }
+
+    const vipCenter = await toVipCenterRecord(prisma, toProfileRecord(profile), today);
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId: profile.id },
+        update: {},
+        create: {
+          profileId: profile.id,
+          balance: profile.platformCoins,
+          totalSpent: 0,
+          vipExperience: 0
+        }
+      });
+      const nextBalance = wallet.balance + vipCenter.dailyGift.rewardPlatformCoins;
+      const updatedWallet = await tx.playerPlatformWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: nextBalance
+        }
+      });
+      const gift = await tx.playerVipDailyGift.create({
+        data: {
+          profileId: profile.id,
+          walletId: wallet.id,
+          vipLevel: vipCenter.currentLevel.level,
+          giftDate: today,
+          rewardPlatformCoins: vipCenter.dailyGift.rewardPlatformCoins,
+          rewardActionPower: vipCenter.dailyGift.rewardActionPower
+        }
+      });
+      if (vipCenter.dailyGift.rewardPlatformCoins > 0) {
+        await tx.platformCoinLedger.create({
+          data: {
+            profileId: profile.id,
+            walletId: wallet.id,
+            changeAmount: vipCenter.dailyGift.rewardPlatformCoins,
+            balanceAfter: nextBalance,
+            source: "system_compensation",
+            referenceId: gift.id,
+            reason: `领取 ${vipCenter.currentLevel.name} 每日礼包`
+          }
+        });
+      }
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          platformCoins: nextBalance,
+          actionPower: { increment: vipCenter.dailyGift.rewardActionPower },
+          actionPowerLimit: Math.max(profile.actionPowerLimit, vipCenter.benefits.actionPowerLimit)
+        }
+      });
+
+      return { wallet: updatedWallet, profile: updatedProfile };
+    });
+
+    return {
+      vipCenter: await toVipCenterRecord(prisma, toProfileRecord(result.profile), today),
+      profile: toProfileRecord(result.profile),
+      result: `${vipCenter.currentLevel.name} 每日礼包已领取。`
+    };
+  },
+
+  async adjustVipExperience(adminUserId, profileId, vipExperience, reason) {
+    const profile = await prisma.playerProfile.findUnique({ where: { id: profileId } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId },
+        update: {
+          vipExperience
+        },
+        create: {
+          profileId,
+          balance: profile.platformCoins,
+          totalSpent: 0,
+          vipExperience
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_vip_adjust",
+          targetType: "player_vip",
+          targetId: profileId,
+          detail: JSON.stringify({ vipExperience, reason })
+        }
+      });
+
+      return { wallet, auditLogId: audit.id };
+    });
+    void result.wallet;
+
+    return {
+      vipCenter: await toVipCenterRecord(prisma, toProfileRecord(profile), new Date().toISOString().slice(0, 10)),
+      auditLogId: result.auditLogId
+    };
+  },
+
+  async getAdminVipRecord(profileId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { id: profileId } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toVipCenterRecord(prisma, toProfileRecord(profile), today);
+  },
+
+  async listVipLevelConfigs() {
+    const levels = await prisma.vipLevelConfig.findMany({
+      orderBy: [{ requiredExperience: "asc" }, { sortOrder: "asc" }]
+    });
+
+    return levels.map(toVipLevelRecord);
+  },
+
+  async upsertVipLevelConfig(adminUserId, config, reason) {
+    const result = await prisma.$transaction(async (tx) => {
+      const saved = await tx.vipLevelConfig.upsert({
+        where: { level: config.level },
+        update: config,
+        create: config
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_vip_config_upsert",
+          targetType: "vip_level_config",
+          targetId: String(config.level),
+          detail: JSON.stringify({ config, reason })
+        }
+      });
+
+      return { saved, auditLogId: audit.id };
+    });
+
+    return {
+      config: toVipLevelRecord(result.saved),
+      auditLogId: result.auditLogId
     };
   },
 

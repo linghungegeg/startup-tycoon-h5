@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { ApiConfig } from "./config.js";
 import { createPasswordRecord, verifyPassword } from "./password.js";
-import { createPrismaGameRepository, type AccountRecord, type GameRepository } from "./repository.js";
+import { createPrismaGameRepository, type AccountRecord, type GameRepository, type VipLevelRecord } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -211,6 +211,60 @@ const readToday = (request: IncomingMessage): string => {
   return typeof candidate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(candidate)
     ? candidate
     : new Date().toISOString().slice(0, 10);
+};
+
+const validateVipLevelConfig = (body: unknown): { config: VipLevelRecord; reason: string } | string => {
+  if (!isRecord(body)) {
+    return "Request body must be a JSON object.";
+  }
+
+  const level = readInteger(body, "level");
+  const requiredExperience = readInteger(body, "requiredExperience");
+  const dailyGiftPlatformCoins = readInteger(body, "dailyGiftPlatformCoins");
+  const dailyGiftActionPower = readInteger(body, "dailyGiftActionPower");
+  const actionPowerLimitBonus = readInteger(body, "actionPowerLimitBonus");
+  const quickSettleTimes = readInteger(body, "quickSettleTimes");
+  const trainingQueueBonus = readInteger(body, "trainingQueueBonus");
+  const recruitRefreshTimes = readInteger(body, "recruitRefreshTimes");
+  const shopDiscountBasisPoints = readInteger(body, "shopDiscountBasisPoints");
+  const reason = readString(body, "reason");
+  const config: VipLevelRecord = {
+    level: level ?? -1,
+    name: readString(body, "name"),
+    requiredExperience: requiredExperience ?? -1,
+    dailyGiftPlatformCoins: dailyGiftPlatformCoins ?? -1,
+    dailyGiftActionPower: dailyGiftActionPower ?? -1,
+    actionPowerLimitBonus: actionPowerLimitBonus ?? -1,
+    quickSettleTimes: quickSettleTimes ?? -1,
+    trainingQueueBonus: trainingQueueBonus ?? -1,
+    recruitRefreshTimes: recruitRefreshTimes ?? -1,
+    shopDiscountBasisPoints: shopDiscountBasisPoints ?? -1,
+    title: readString(body, "title"),
+    avatarFrame: readString(body, "avatarFrame"),
+    summary: readString(body, "summary")
+  };
+
+  if (
+    config.level < 0 ||
+    config.name.length < 2 ||
+    config.requiredExperience < 0 ||
+    config.dailyGiftPlatformCoins < 0 ||
+    config.dailyGiftActionPower < 0 ||
+    config.actionPowerLimitBonus < 0 ||
+    config.quickSettleTimes < 0 ||
+    config.trainingQueueBonus < 0 ||
+    config.recruitRefreshTimes < 0 ||
+    config.shopDiscountBasisPoints < 1 ||
+    config.shopDiscountBasisPoints > 10000 ||
+    config.title.length < 2 ||
+    config.avatarFrame.length < 2 ||
+    config.summary.length < 4 ||
+    reason.length < 2
+  ) {
+    return "Valid VIP config fields and reason are required.";
+  }
+
+  return { config, reason };
 };
 
 const readBearerToken = (request: IncomingMessage): string | undefined => {
@@ -438,6 +492,101 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/vip") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const profileId = url.searchParams.get("profileId")?.trim();
+      if (profileId === undefined || profileId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "profileId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.getAdminVipRecord(profileId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/vip/configs") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listVipLevelConfigs(), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/vip/configs") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const vipConfig = validateVipLevelConfig(await readBody(request));
+        if (typeof vipConfig === "string") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", vipConfig, traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(await repository.upsertVipLevelConfig(admin.id, vipConfig.config, vipConfig.reason), traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/vip/adjust") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const reason = readString(body, "reason");
+        const vipExperience = readInteger(body, "vipExperience");
+        if (profileId === "" || reason.length < 2 || vipExperience === undefined || vipExperience < 0) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, non-negative vipExperience and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.adjustVipExperience(admin.id, profileId, vipExperience, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/servers") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -540,6 +689,60 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(wallet, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/vip") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const vip = await repository.getVipCenter(account.id, serverId, readToday(request));
+      if (vip === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(vip, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/vip/daily-gift") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+
+        const result = await repository.claimVipDailyGift(account.id, serverId, readToday(request));
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "VIP_DAILY_GIFT_ALREADY_CLAIMED") {
+          sendJson(response, 409, failure("VIP_DAILY_GIFT_ALREADY_CLAIMED", "VIP daily gift already claimed.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
       return;
     }
 

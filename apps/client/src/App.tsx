@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "shop" | "bag" | "negotiation";
+type NativeHomePage = "leaderboard" | "shop" | "bag" | "negotiation" | "vip";
 
 type ApiSuccess<T> = {
   success: true;
@@ -479,6 +479,50 @@ type ShopPurchaseResult = {
   purchase: ShopCenter["purchases"][number];
   profile: PlayerProfile;
   isDuplicate: boolean;
+  result: string;
+};
+
+type VipLevel = {
+  level: number;
+  name: string;
+  requiredExperience: number;
+  dailyGiftPlatformCoins: number;
+  dailyGiftActionPower: number;
+  actionPowerLimitBonus: number;
+  quickSettleTimes: number;
+  trainingQueueBonus: number;
+  recruitRefreshTimes: number;
+  shopDiscountBasisPoints: number;
+  title: string;
+  avatarFrame: string;
+  summary: string;
+};
+
+type VipCenter = {
+  wallet: PlatformWallet;
+  currentLevel: VipLevel;
+  nextLevel: VipLevel | null;
+  progressToNextBasisPoints: number;
+  benefits: {
+    title: string;
+    avatarFrame: string;
+    actionPowerLimit: number;
+    quickSettleTimes: number;
+    trainingQueueBonus: number;
+    recruitRefreshTimes: number;
+    shopDiscountBasisPoints: number;
+  };
+  dailyGift: {
+    date: string;
+    isClaimed: boolean;
+    rewardPlatformCoins: number;
+    rewardActionPower: number;
+  };
+};
+
+type VipDailyGiftResult = {
+  vipCenter: VipCenter;
+  profile: PlayerProfile;
   result: string;
 };
 
@@ -1073,6 +1117,9 @@ function App() {
   const [selectedShopProductId, setSelectedShopProductId] = useState("");
   const [shopError, setShopError] = useState("");
   const [shopNotice, setShopNotice] = useState("");
+  const [vipCenter, setVipCenter] = useState<VipCenter | null>(null);
+  const [vipError, setVipError] = useState("");
+  const [vipNotice, setVipNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -1430,6 +1477,19 @@ function App() {
     );
   };
 
+  const applyVipCenter = (nextVipCenter: VipCenter): void => {
+    setVipCenter(nextVipCenter);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            platformCoins: nextVipCenter.wallet.balance,
+            actionPowerLimit: Math.max(currentProfile.actionPowerLimit, nextVipCenter.benefits.actionPowerLimit)
+          }
+    );
+  };
+
   const loadLoanCenter = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<LoanCenter>(
       `/finance/loans?serverId=${encodeURIComponent(nextServerId)}`,
@@ -1508,6 +1568,22 @@ function App() {
     }
 
     setShopError(response.error.message);
+  };
+
+  const loadVipCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<VipCenter>(
+      `/vip?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyVipCenter(response.data);
+      setVipError("");
+      return;
+    }
+
+    setVipError(response.error.message);
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -1642,6 +1718,7 @@ function App() {
     void loadProductCenter(account.token, selectedServer.id);
     void loadMarketCenter(account.token, selectedServer.id);
     void loadShopCenter(account.token, selectedServer.id);
+    void loadVipCenter(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -1857,6 +1934,15 @@ function App() {
       setNativeHomePage("shop");
       if (account && selectedServer) {
         void loadShopCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
+    if (panelName === "VIP") {
+      setActivePanel(null);
+      setNativeHomePage("vip");
+      if (account && selectedServer) {
+        void loadVipCenter(account.token, selectedServer.id);
       }
       return;
     }
@@ -2374,10 +2460,38 @@ function App() {
       setShopNotice(response.data.result);
       setShopError("");
       await loadShopCenter(account.token, selectedServer.id);
+      await loadVipCenter(account.token, selectedServer.id);
       return;
     }
 
     setShopError(response.error.message);
+  };
+
+  const claimVipDailyGift = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      setVipError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<VipDailyGiftResult>(
+      "/vip/daily-gift",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setProfile(response.data.profile);
+      applyVipCenter(response.data.vipCenter);
+      setVipNotice(response.data.result);
+      setVipError("");
+      await loadShopCenter(account.token, selectedServer.id);
+      return;
+    }
+
+    setVipError(response.error.message);
   };
 
   const resolveCrisis = async (route: "financing" | "cost_cut" | "restructure"): Promise<void> => {
@@ -2462,7 +2576,9 @@ function App() {
                   <span className="block w-12 h-12 rounded-full border-2 border-business-gold p-0.5 overflow-hidden shadow-lg shadow-business-gold/10">
                     <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full object-cover rounded-full" />
                   </span>
-                  <span className="absolute -bottom-1 -right-1 bg-business-gold text-business-dark text-[9px] font-black px-1.5 rounded-sm border border-business-dark">VIP 8</span>
+                  <span className="absolute -bottom-1 -right-1 bg-business-gold text-business-dark text-[9px] font-black px-1.5 rounded-sm border border-business-dark">
+                    VIP {vipCenter?.currentLevel.level ?? 0}
+                  </span>
                 </span>
                 <span className="flex flex-col min-w-0">
                   <span className="flex items-center gap-1.5">
@@ -2725,6 +2841,84 @@ function App() {
                 {!shopCenter && (
                   <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城配置读取中，请确认 API 服务已启动。</p>
                 )}
+              </div>
+            </section>
+          )}
+
+          {nativeHomePage === "vip" && (
+            <section className="page-container page-active" aria-label="VIP中心" data-testid="native-vip">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="award" className="w-7 h-7 text-business-gold" />
+                  <h2 className="text-xl font-black text-white italic uppercase">VIP 创业权益</h2>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭VIP中心" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-business-gold font-black uppercase">当前等级</div>
+                      <h3 className="mt-1 text-3xl font-black italic text-white">{vipCenter?.currentLevel.name ?? "VIP 0"}</h3>
+                      <p className="mt-1 text-xs text-slate-300 font-bold">{vipCenter?.benefits.title ?? "创业新星"} · {vipCenter?.benefits.avatarFrame ?? "basic"}</p>
+                    </div>
+                    <div className="w-20 h-20 rounded-full border-2 border-business-gold bg-business-gold/10 flex items-center justify-center">
+                      <Icon name="award" className="w-11 h-11 text-business-gold" />
+                    </div>
+                  </div>
+                  <div className="mt-5">
+                    <div className="flex items-center justify-between text-[10px] font-black text-slate-400">
+                      <span>VIP经验 {compactNumber(vipCenter?.wallet.vipExperience ?? shopCenter?.wallet.vipExperience ?? 0)}</span>
+                      <span>{vipCenter?.nextLevel ? `距离 ${vipCenter.nextLevel.name}` : "已达当前上限"}</span>
+                    </div>
+                    <div className="mt-2 h-3 rounded-full bg-slate-900 overflow-hidden border border-business-gold/30">
+                      <div className="h-full bg-business-gold" style={{ width: `${(vipCenter?.progressToNextBasisPoints ?? 0) / 100}%` }} />
+                    </div>
+                  </div>
+                </section>
+                {(vipNotice || vipError) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${vipError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {vipError || vipNotice}
+                  </p>
+                )}
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <strong className="block text-sm text-white font-black">每日礼包</strong>
+                      <span className="text-[10px] text-slate-400 font-bold">
+                        平台币 {vipCenter?.dailyGift.rewardPlatformCoins ?? 0} · 行动力 {vipCenter?.dailyGift.rewardActionPower ?? 0}
+                      </span>
+                    </div>
+                    <button
+                      className="btn-gold px-5 py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                      type="button"
+                      disabled={vipCenter?.dailyGift.isClaimed}
+                      onClick={() => void claimVipDailyGift()}
+                    >
+                      {vipCenter?.dailyGift.isClaimed ? "今日已领" : "领取"}
+                    </button>
+                  </div>
+                </section>
+                <section className="grid grid-cols-2 gap-3">
+                  {[
+                    ["行动力上限", vipCenter?.benefits.actionPowerLimit ?? profile.actionPowerLimit],
+                    ["快速结算", vipCenter?.benefits.quickSettleTimes ?? 0],
+                    ["培训队列", vipCenter?.benefits.trainingQueueBonus ?? 0],
+                    ["招聘刷新", vipCenter?.benefits.recruitRefreshTimes ?? 0],
+                    ["商城折扣", `${((vipCenter?.benefits.shopDiscountBasisPoints ?? 10000) / 100).toFixed(0)}%`],
+                    ["专属称号", vipCenter?.benefits.title ?? "创业新星"]
+                  ].map(([label, value]) => (
+                    <div className="glass-panel rounded-2xl p-3" key={label}>
+                      <div className="text-[10px] text-slate-500 font-bold">{label}</div>
+                      <div className="mt-1 text-sm text-white font-black">{value}</div>
+                    </div>
+                  ))}
+                </section>
+                <p className="text-[10px] leading-5 text-slate-500 font-bold px-1">
+                  VIP 权益只提供便利、身份和轻量效率，不直接清空负债、免除经营风险或改变排行榜名次。
+                </p>
               </div>
             </section>
           )}

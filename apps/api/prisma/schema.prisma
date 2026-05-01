@@ -128,6 +128,7 @@ model PlayerProfile {
   platformCoinLedgers PlatformCoinLedger[]
   shopPurchases PlayerShopPurchase[]
   paymentOrders ExternalPaymentOrder[]
+  vipDailyGifts PlayerVipDailyGift[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -144,6 +145,44 @@ model PlayerPlatformWallet {
   updatedAt   DateTime      @updatedAt
   profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   ledgers     PlatformCoinLedger[]
+  vipDailyGifts PlayerVipDailyGift[]
+}
+
+model VipLevelConfig {
+  level       Int           @id
+  name        String        @db.VarChar(32)
+  requiredExperience Int
+  dailyGiftPlatformCoins Int @default(0)
+  dailyGiftActionPower Int   @default(0)
+  actionPowerLimitBonus Int  @default(0)
+  quickSettleTimes Int       @default(0)
+  trainingQueueBonus Int     @default(0)
+  recruitRefreshTimes Int    @default(0)
+  shopDiscountBasisPoints Int @default(10000)
+  title       String        @db.VarChar(32)
+  avatarFrame String        @db.VarChar(32)
+  summary     String        @db.VarChar(180)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+
+  @@index([requiredExperience])
+  @@index([sortOrder])
+}
+
+model PlayerVipDailyGift {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  walletId    String        @db.VarChar(36)
+  vipLevel    Int
+  giftDate    String        @db.VarChar(10)
+  rewardPlatformCoins Int
+  rewardActionPower Int
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  wallet      PlayerPlatformWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, giftDate])
+  @@index([walletId, createdAt])
 }
 
 model PlatformCoinLedger {

@@ -40,7 +40,8 @@ import type {
   ProjectSettlementRecord,
   ServerRecord,
   ShopCenterRecord,
-  TaskRecord
+  TaskRecord,
+  VipCenterRecord
 } from "../src/repository.js";
 
 const config: ApiConfig = {
@@ -893,7 +894,70 @@ const createTestRepository = (): GameRepository => {
       summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。"
     }
   ];
+  const vipLevels = [
+    {
+      level: 0,
+      name: "VIP 0",
+      requiredExperience: 0,
+      dailyGiftPlatformCoins: 0,
+      dailyGiftActionPower: 20,
+      actionPowerLimitBonus: 0,
+      quickSettleTimes: 0,
+      trainingQueueBonus: 0,
+      recruitRefreshTimes: 0,
+      shopDiscountBasisPoints: 10000,
+      title: "创业新星",
+      avatarFrame: "basic",
+      summary: "基础身份，保留每日行动力补给。"
+    },
+    {
+      level: 1,
+      name: "VIP 1",
+      requiredExperience: 680,
+      dailyGiftPlatformCoins: 30,
+      dailyGiftActionPower: 30,
+      actionPowerLimitBonus: 10,
+      quickSettleTimes: 1,
+      trainingQueueBonus: 0,
+      recruitRefreshTimes: 1,
+      shopDiscountBasisPoints: 9800,
+      title: "创业先驱",
+      avatarFrame: "gold-line",
+      summary: "解锁轻量便利和基础身份展示。"
+    },
+    {
+      level: 2,
+      name: "VIP 2",
+      requiredExperience: 1280,
+      dailyGiftPlatformCoins: 60,
+      dailyGiftActionPower: 50,
+      actionPowerLimitBonus: 20,
+      quickSettleTimes: 2,
+      trainingQueueBonus: 1,
+      recruitRefreshTimes: 2,
+      shopDiscountBasisPoints: 9500,
+      title: "增长合伙人",
+      avatarFrame: "gold-ring",
+      summary: "增强项目推进和员工培养便利。"
+    },
+    {
+      level: 3,
+      name: "VIP 3",
+      requiredExperience: 3000,
+      dailyGiftPlatformCoins: 120,
+      dailyGiftActionPower: 80,
+      actionPowerLimitBonus: 40,
+      quickSettleTimes: 3,
+      trainingQueueBonus: 1,
+      recruitRefreshTimes: 3,
+      shopDiscountBasisPoints: 9200,
+      title: "资本新贵",
+      avatarFrame: "royal-gold",
+      summary: "提供更高身份展示和经营便利。"
+    }
+  ];
   const shopPurchases = new Map<string, ShopCenterRecord["purchases"][number] & { profileId: string }>();
+  const vipDailyGifts = new Set<string>();
   const ensureWallet = (profile: PlayerProfileRecord): PlatformWalletRecord => {
     const existing = wallets.get(profile.id);
     if (existing !== undefined) {
@@ -957,6 +1021,37 @@ const createTestRepository = (): GameRepository => {
       .filter((purchase) => purchase.profileId === profile.id)
       .map(({ profileId: _profileId, ...purchase }) => purchase)
   });
+  const toVipCenter = (profile: PlayerProfileRecord, today: string): VipCenterRecord => {
+    const wallet = ensureWallet(profile);
+    const currentLevel = [...vipLevels].reverse().find((level) => wallet.vipExperience >= level.requiredExperience) ?? vipLevels[0];
+    const nextLevel = vipLevels.find((level) => level.requiredExperience > currentLevel.requiredExperience) ?? null;
+    const progressToNextBasisPoints =
+      nextLevel === null
+        ? 10000
+        : Math.floor(((wallet.vipExperience - currentLevel.requiredExperience) * 10000) / Math.max(1, nextLevel.requiredExperience - currentLevel.requiredExperience));
+
+    return {
+      wallet,
+      currentLevel,
+      nextLevel,
+      progressToNextBasisPoints,
+      benefits: {
+        title: currentLevel.title,
+        avatarFrame: currentLevel.avatarFrame,
+        actionPowerLimit: Math.max(profile.actionPowerLimit, 120 + currentLevel.actionPowerLimitBonus),
+        quickSettleTimes: currentLevel.quickSettleTimes,
+        trainingQueueBonus: currentLevel.trainingQueueBonus,
+        recruitRefreshTimes: currentLevel.recruitRefreshTimes,
+        shopDiscountBasisPoints: currentLevel.shopDiscountBasisPoints
+      },
+      dailyGift: {
+        date: today,
+        isClaimed: vipDailyGifts.has(`${profile.id}:${today}`),
+        rewardPlatformCoins: currentLevel.dailyGiftPlatformCoins,
+        rewardActionPower: currentLevel.dailyGiftActionPower
+      }
+    };
+  };
 
   return {
     async createAccount(account) {
@@ -2088,6 +2183,66 @@ const createTestRepository = (): GameRepository => {
         platformCoins,
         status: "reserved",
         createdAt: new Date().toISOString()
+      };
+    },
+    async getVipCenter(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toVipCenter(profile, today);
+    },
+    async claimVipDailyGift(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const key = `${profile.id}:${today}`;
+      if (vipDailyGifts.has(key)) {
+        return "VIP_DAILY_GIFT_ALREADY_CLAIMED";
+      }
+      const vipCenter = toVipCenter(profile, today);
+      const wallet = ensureWallet(profile);
+      wallet.balance += vipCenter.dailyGift.rewardPlatformCoins;
+      profile.platformCoins = wallet.balance;
+      profile.actionPower += vipCenter.dailyGift.rewardActionPower;
+      profile.actionPowerLimit = Math.max(profile.actionPowerLimit, vipCenter.benefits.actionPowerLimit);
+      vipDailyGifts.add(key);
+      if (vipCenter.dailyGift.rewardPlatformCoins > 0) {
+        addLedger(profile.id, vipCenter.dailyGift.rewardPlatformCoins, wallet.balance, "system_compensation", key, `领取 ${vipCenter.currentLevel.name} 每日礼包`);
+      }
+      return {
+        vipCenter: toVipCenter(profile, today),
+        profile,
+        result: `${vipCenter.currentLevel.name} 每日礼包已领取。`
+      };
+    },
+    async adjustVipExperience(adminUserId, profileId, vipExperience, reason) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const wallet = ensureWallet(profile);
+      wallet.vipExperience = vipExperience;
+      return {
+        vipCenter: toVipCenter(profile, new Date().toISOString().slice(0, 10)),
+        auditLogId: `${adminUserId}:${profileId}:${reason}`
+      };
+    },
+    async getAdminVipRecord(profileId, today) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toVipCenter(profile, today);
+    },
+    async listVipLevelConfigs() {
+      return [...vipLevels].sort((left, right) => left.requiredExperience - right.requiredExperience);
+    },
+    async upsertVipLevelConfig(adminUserId, config, reason) {
+      const index = vipLevels.findIndex((item) => item.level === config.level);
+      if (index === -1) {
+        vipLevels.push(config);
+      } else {
+        vipLevels[index] = config;
+      }
+      return {
+        config,
+        auditLogId: `${adminUserId}:vip-config:${config.level}:${reason}`
       };
     },
     async disconnect() {}
@@ -3771,5 +3926,163 @@ test("admin platform coin adjustment requires admin auth and writes audit-backed
     assert.equal(data.profile.platformCoins, data.wallet.balance);
     assert.ok(data.auditLogId);
     assert.equal(data.wallet.ledgers[0]?.source, "admin_grant");
+  });
+});
+
+test("platform coin spending upgrades VIP and enables daily gift once per day", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "vipbuyer");
+    const before = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(before.status, 200);
+    assert.equal(before.body.data?.currentLevel.level, 0);
+
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId: randomUUID() })
+    });
+    assert.equal(bought.status, 201);
+
+    const after = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(after.status, 200);
+    assert.equal(after.body.data?.wallet.vipExperience, 1280);
+    assert.equal(after.body.data?.currentLevel.level, 2);
+    assert.equal(after.body.data?.benefits.title, "增长合伙人");
+    assert.ok((after.body.data?.benefits.actionPowerLimit ?? 0) > profile.actionPowerLimit);
+
+    const gift = await requestJson(baseUrl, "/vip/daily-gift", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(gift.status, 200);
+    const giftData = gift.body.data as { vipCenter: VipCenterRecord; profile: PlayerProfileRecord };
+    assert.equal(giftData.vipCenter.dailyGift.isClaimed, true);
+    assert.equal(giftData.profile.platformCoins, profile.platformCoins - 1280 + 60);
+
+    const duplicate = await requestJson(baseUrl, "/vip/daily-gift", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "VIP_DAILY_GIFT_ALREADY_CLAIMED");
+  });
+});
+
+test("admin coin grants do not increase VIP experience but admin VIP adjustment audits", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "vipadmin");
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const granted = await requestJson(baseUrl, "/admin/wallet/adjust", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        source: "admin_grant",
+        changeAmount: 5000,
+        reason: "运营补偿不加 VIP"
+      })
+    });
+    assert.equal(granted.status, 200);
+
+    const playerVip = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(playerVip.status, 200);
+    assert.equal(playerVip.body.data?.wallet.vipExperience, 0);
+    assert.equal(playerVip.body.data?.currentLevel.level, 0);
+
+    const adjusted = await requestJson(baseUrl, "/admin/vip/adjust", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        vipExperience: 3000,
+        reason: "客服修正 VIP 经验"
+      })
+    });
+    assert.equal(adjusted.status, 200);
+    const adjustedData = adjusted.body.data as { vipCenter: VipCenterRecord; auditLogId: string };
+    assert.equal(adjustedData.vipCenter.currentLevel.level, 3);
+    assert.ok(adjustedData.auditLogId);
+
+    const adminVip = await requestJson<VipCenterRecord>(baseUrl, `/admin/vip?profileId=${encodeURIComponent(profile.id)}`, {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(adminVip.status, 200);
+    assert.equal(adminVip.body.data?.currentLevel.level, 3);
+  });
+});
+
+test("admin can query and configure VIP level benefits", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "vipconfig");
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const configs = await requestJson<VipCenterRecord["currentLevel"][]>(baseUrl, "/admin/vip/configs", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(configs.status, 200);
+    assert.ok(configs.body.data?.some((config) => config.level === 2));
+
+    const upserted = await requestJson(baseUrl, "/admin/vip/configs", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        level: 4,
+        name: "VIP 4",
+        requiredExperience: 5000,
+        dailyGiftPlatformCoins: 180,
+        dailyGiftActionPower: 100,
+        actionPowerLimitBonus: 60,
+        quickSettleTimes: 4,
+        trainingQueueBonus: 2,
+        recruitRefreshTimes: 4,
+        shopDiscountBasisPoints: 9000,
+        title: "战略投资人",
+        avatarFrame: "royal-black-gold",
+        summary: "提供更高身份展示和经营便利。",
+        reason: "配置 VIP4 权益"
+      })
+    });
+    assert.equal(upserted.status, 200);
+    const configData = upserted.body.data as { config: VipCenterRecord["currentLevel"]; auditLogId: string };
+    assert.equal(configData.config.level, 4);
+    assert.ok(configData.auditLogId);
+
+    const adjusted = await requestJson(baseUrl, "/admin/vip/adjust", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        vipExperience: 5000,
+        reason: "验证 VIP4 配置生效"
+      })
+    });
+    assert.equal(adjusted.status, 200);
+
+    const playerVip = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(playerVip.status, 200);
+    assert.equal(playerVip.body.data?.currentLevel.level, 4);
+    assert.equal(playerVip.body.data?.benefits.title, "战略投资人");
+    assert.equal(playerVip.body.data?.dailyGift.rewardPlatformCoins, 180);
   });
 });

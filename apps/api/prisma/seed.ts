@@ -767,6 +767,73 @@ const shopProductConfigs = [
   }
 ];
 
+const vipLevelConfigs = [
+  {
+    level: 0,
+    name: "VIP 0",
+    requiredExperience: 0,
+    dailyGiftPlatformCoins: 0,
+    dailyGiftActionPower: 20,
+    actionPowerLimitBonus: 0,
+    quickSettleTimes: 0,
+    trainingQueueBonus: 0,
+    recruitRefreshTimes: 0,
+    shopDiscountBasisPoints: 10000,
+    title: "创业新星",
+    avatarFrame: "basic",
+    summary: "基础身份，保留每日行动力补给。",
+    sortOrder: 0
+  },
+  {
+    level: 1,
+    name: "VIP 1",
+    requiredExperience: 680,
+    dailyGiftPlatformCoins: 30,
+    dailyGiftActionPower: 30,
+    actionPowerLimitBonus: 10,
+    quickSettleTimes: 1,
+    trainingQueueBonus: 0,
+    recruitRefreshTimes: 1,
+    shopDiscountBasisPoints: 9800,
+    title: "创业先驱",
+    avatarFrame: "gold-line",
+    summary: "解锁轻量便利和基础身份展示。",
+    sortOrder: 1
+  },
+  {
+    level: 2,
+    name: "VIP 2",
+    requiredExperience: 1280,
+    dailyGiftPlatformCoins: 60,
+    dailyGiftActionPower: 50,
+    actionPowerLimitBonus: 20,
+    quickSettleTimes: 2,
+    trainingQueueBonus: 1,
+    recruitRefreshTimes: 2,
+    shopDiscountBasisPoints: 9500,
+    title: "增长合伙人",
+    avatarFrame: "gold-ring",
+    summary: "增强项目推进和员工培养便利。",
+    sortOrder: 2
+  },
+  {
+    level: 3,
+    name: "VIP 3",
+    requiredExperience: 3000,
+    dailyGiftPlatformCoins: 120,
+    dailyGiftActionPower: 80,
+    actionPowerLimitBonus: 40,
+    quickSettleTimes: 3,
+    trainingQueueBonus: 1,
+    recruitRefreshTimes: 3,
+    shopDiscountBasisPoints: 9200,
+    title: "资本新贵",
+    avatarFrame: "platinum",
+    summary: "提供更多容错和信息优势，不直接消除经营风险。",
+    sortOrder: 3
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -843,6 +910,14 @@ const seed = async (): Promise<void> => {
       where: { id: shopProductConfig.id },
       update: shopProductConfig,
       create: shopProductConfig
+    });
+  }
+
+  for (const vipLevelConfig of vipLevelConfigs) {
+    await prisma.vipLevelConfig.upsert({
+      where: { level: vipLevelConfig.level },
+      update: vipLevelConfig,
+      create: vipLevelConfig
     });
   }
 
