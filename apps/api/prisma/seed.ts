@@ -429,7 +429,7 @@ const taskConfigs = [
     description: "推进一次项目进度，确保公司每天都有经营动作。",
     target: 1,
     initialProgress: 0,
-    rewardLabel: "资金 8万、体力 20",
+    rewardLabel: "资金 8万、行动力 20",
     rewardCash: 80000,
     rewardPlatformCoins: 0,
     rewardReputation: 0,

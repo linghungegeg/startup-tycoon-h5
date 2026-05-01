@@ -1392,6 +1392,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "daily-guild-contribution", readToday(request));
       sendJson(response, 200, success(result, traceId));
       return;
     }
@@ -2732,6 +2733,9 @@ export const createApiServer = (
 
       if (action === "train") {
         await repository.advanceTask(account.id, serverId, "daily-train-employee", readToday(request));
+      }
+      if (action === "equity") {
+        await repository.advanceTask(account.id, serverId, "side-founder-pressure", readToday(request));
       }
 
       sendJson(response, 200, success(result, traceId));

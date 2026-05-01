@@ -239,7 +239,7 @@ const createTestRepository = (): GameRepository => {
       description: "推进一次项目进度。",
       target: 1,
       initialProgress: 0,
-      rewardLabel: "资金 8万、体力 20",
+      rewardLabel: "资金 8万、行动力 20",
       rewardCash: 80000,
       rewardPlatformCoins: 0,
       rewardReputation: 0,
@@ -260,6 +260,21 @@ const createTestRepository = (): GameRepository => {
       rewardReputation: 200,
       rewardActionPower: 0,
       guideAction: "处理事件",
+      unlockKind: "none" as const
+    },
+    {
+      id: "daily-guild-contribution",
+      type: "daily" as const,
+      title: "商会协作",
+      description: "完成一次商会互助。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "声望 220、限定称号碎片 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 220,
+      rewardActionPower: 0,
+      guideAction: "前往商会",
       unlockKind: "none" as const
     },
     {
@@ -291,6 +306,21 @@ const createTestRepository = (): GameRepository => {
       rewardActionPower: 0,
       guideAction: "处理支线",
       unlockKind: "compliance" as const
+    },
+    {
+      id: "side-founder-pressure",
+      type: "side" as const,
+      title: "创始人压力管理",
+      description: "通过员工长期激励缓解团队压力。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "员工好感礼物 1、行动力 25",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 420,
+      rewardActionPower: 25,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
     }
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
@@ -4104,6 +4134,11 @@ test("advances business tasks from employee and project actions", async () => {
       headers: auth,
       body: JSON.stringify({ serverId: "s1" })
     });
+    await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(employee.body.data?.id ?? "")}/equity`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
 
     const project = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
       method: "POST",
@@ -4120,6 +4155,7 @@ test("advances business tasks from employee and project actions", async () => {
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-train-employee")?.isClaimable, true);
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-project-push")?.isClaimable, true);
     assert.equal(tasks.body.data?.find((task) => task.id === "main-first-project")?.isClaimable, true);
+    assert.equal(tasks.body.data?.find((task) => task.id === "side-founder-pressure")?.isClaimable, true);
   });
 });
 
@@ -5680,6 +5716,11 @@ test("phase 14 achievements titles knowledge and guild basics work together", as
     assert.equal(helped.status, 200);
     assert.equal(helped.body.data?.guildCenter.helpRequests.length, 1);
     assert.ok((helped.body.data?.guildCenter.guild?.contributionScore ?? 0) > 0);
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(tasks.body.data?.find((task) => task.id === "daily-guild-contribution")?.isClaimable, true);
   });
 });
 
