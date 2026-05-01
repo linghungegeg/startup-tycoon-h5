@@ -1802,6 +1802,21 @@ VIP 权益：
 - 遗留风险：融资/贷款类随机任务配置尚未扩容；浏览器回归中再次触发既有成就同步并发唯一键崩溃，重启 API 后满级宝箱链路可完成，本批不混入该无关修复。
 - 下一阶段入口：Phase 21 第十二实施批次：融资/贷款类随机任务配置扩容，补足财务顾问卡适用内容池。
 
+### Phase 21 第十二实施批次阶段总结：融资贷款随机任务扩容
+
+- 当前稳定点：`bf66094 feat: add full level chest rewards`。
+- 完成内容：随机经营任务池新增融资类 `random-funding-term-sheet` 和贷款类 `random-loan-rate-review`，补足财务顾问卡对 `funding`、`loan` 类任务的真实内容承载。
+- 规则边界：本批只新增任务配置和测试覆盖，不改随机任务生成算法、不改每日上限、不改财务顾问卡结算公式、不新增前台组件；既有市场情报、风险保险和财务类任务行为保持不变。
+- 前台表现：专属经理随机任务列表可出现“投资条款临时调整”和“银行贷款利率复核”；打开融资任务弹窗后沿用既有经营道具栏，显示“财务顾问卡 xN”和“优化本次现金流判断”，勾选后决策按钮追加“使用财务顾问卡”。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认任务池缺少 `funding`、`loan` 随机任务，再补最小配置并复跑全量 API 测试。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认专属经理出现融资任务“投资条款临时调整”；弹窗显示“财务顾问卡 x2”；勾选并结算后提示“财务顾问卡已生效，优化了本次现金流判断”，HUD 从 `360/120` 刷新到 `345/120`，背包财务顾问卡从 2 扣到 1，并生成贷款任务“银行贷款利率复核”待办。
+  - Build Web Apps：前台无新增视觉体系，只复用既有专属经理列表、短决策弹窗、道具开关和深色商务手游基线。
+  - Game Studio：新增融资/贷款随机任务仍从专属经理待办进入，不强制弹出购买或多层弹窗，不遮挡主页 HUD、底部导航和背包主流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "lists funding and loan random tasks" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`npm run db:seed -w @wenziyouxi/api`。
+- 遗留风险：真实随机任务生成仍会把赛季任务放入普通账号任务池，本批未改生成算法；既有成就同步并发唯一键风险仍未处理。
+- 下一阶段入口：Phase 21 第十三实施批次：修正随机任务生成池边界，普通账号不应生成赛季随机任务；同时处理成就同步并发唯一键崩溃。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

@@ -627,6 +627,46 @@ const createTestRepository = (): GameRepository => {
       optionBCompanyExperience: 35
     },
     {
+      id: "random-funding-term-sheet",
+      category: "funding",
+      title: "投资条款临时调整",
+      description: "投资人希望提高估值但增加对赌条款，需要判断是否接受。",
+      source: "投资人来电",
+      riskLabel: "融资条款",
+      optionALabel: "请财务顾问复核条款",
+      optionAResult: "融资谈判更稳，公司现金流获得补强。",
+      optionAActionPower: -15,
+      optionACash: 100000,
+      optionAReputation: 220,
+      optionACompanyExperience: 70,
+      optionBLabel: "先口头接受条件",
+      optionBResult: "推进速度更快，但声望承压。",
+      optionBActionPower: 0,
+      optionBCash: 30000,
+      optionBReputation: -120,
+      optionBCompanyExperience: 30
+    },
+    {
+      id: "random-loan-rate-review",
+      category: "loan",
+      title: "银行贷款利率复核",
+      description: "银行给出一份短期经营贷方案，需要决定是否投入时间复核利率和还款节奏。",
+      source: "银行经理",
+      riskLabel: "贷款利率",
+      optionALabel: "复核还款节奏",
+      optionAResult: "贷款成本被压低，现金流更从容。",
+      optionAActionPower: -10,
+      optionACash: 80000,
+      optionAReputation: 160,
+      optionACompanyExperience: 60,
+      optionBLabel: "按默认方案推进",
+      optionBResult: "节省精力，但现金收益有限。",
+      optionBActionPower: 0,
+      optionBCash: 20000,
+      optionBReputation: -60,
+      optionBCompanyExperience: 25
+    },
+    {
       id: "random-season-opportunity",
       category: "season",
       title: "赛季风口机会",
@@ -6595,6 +6635,106 @@ test("uses finance advisor card to improve finance random task results", async (
     assert.equal(afterInventory.status, 200);
     assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "finance-advisor-card"), false);
     assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
+  });
+});
+
+test("lists funding and loan random tasks for finance advisor usage", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "capitalmodifiers");
+    const auth = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" };
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", productId: "finance-advisor-trial", requestId: "capital-advisor-20260501" })
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+
+    let center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: auth
+    });
+    assert.equal(center.status, 200, JSON.stringify(center.body));
+
+    for (let attempt = 0; attempt < 6 && !center.body.data?.tasks.some((task) => task.category === "funding"); attempt += 1) {
+      const pendingTask = center.body.data?.tasks.find((task) => task.status === "pending");
+      assert.ok(pendingTask);
+      const dismissed = await requestJson<RandomTaskActionRecord>(
+        baseUrl,
+        `/random-tasks/${encodeURIComponent(pendingTask.id)}/dismiss`,
+        {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ serverId: "s1" })
+        }
+      );
+      assert.equal(dismissed.status, 200, JSON.stringify(dismissed.body));
+      center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+        headers: auth
+      });
+      assert.equal(center.status, 200, JSON.stringify(center.body));
+    }
+
+    const fundingTask = center.body.data?.tasks.find((task) => task.category === "funding");
+    assert.ok(fundingTask);
+    const fundingCashBefore = center.body.data?.profile.cash ?? 0;
+    const fundingResolved = await requestJson<RandomTaskActionRecord>(
+      baseUrl,
+      `/random-tasks/${encodeURIComponent(fundingTask.id)}/resolve`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1", option: "A", modifierItemId: "finance-advisor-card" })
+      }
+    );
+    assert.equal(fundingResolved.status, 200, JSON.stringify(fundingResolved.body));
+    assert.equal(fundingResolved.body.data?.usedItem?.itemId, "finance-advisor-card");
+    assert.ok((fundingResolved.body.data?.profile.cash ?? 0) > fundingCashBefore);
+
+    const boughtAgain = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", productId: "finance-advisor-trial", requestId: "capital-advisor-20260501-b" })
+    });
+    assert.equal(boughtAgain.status, 201, JSON.stringify(boughtAgain.body));
+
+    center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: auth
+    });
+    assert.equal(center.status, 200, JSON.stringify(center.body));
+
+    for (let attempt = 0; attempt < 6 && !center.body.data?.tasks.some((task) => task.category === "loan"); attempt += 1) {
+      const pendingTask = center.body.data?.tasks.find((task) => task.status === "pending");
+      assert.ok(pendingTask);
+      const dismissed = await requestJson<RandomTaskActionRecord>(
+        baseUrl,
+        `/random-tasks/${encodeURIComponent(pendingTask.id)}/dismiss`,
+        {
+          method: "POST",
+          headers: auth,
+          body: JSON.stringify({ serverId: "s1" })
+        }
+      );
+      assert.equal(dismissed.status, 200, JSON.stringify(dismissed.body));
+      center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+        headers: auth
+      });
+      assert.equal(center.status, 200, JSON.stringify(center.body));
+    }
+
+    const loanTask = center.body.data?.tasks.find((task) => task.category === "loan");
+    assert.ok(loanTask);
+    const loanCashBefore = center.body.data?.profile.cash ?? 0;
+    const loanResolved = await requestJson<RandomTaskActionRecord>(
+      baseUrl,
+      `/random-tasks/${encodeURIComponent(loanTask.id)}/resolve`,
+      {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1", option: "A", modifierItemId: "finance-advisor-card" })
+      }
+    );
+    assert.equal(loanResolved.status, 200, JSON.stringify(loanResolved.body));
+    assert.equal(loanResolved.body.data?.usedItem?.itemId, "finance-advisor-card");
+    assert.ok((loanResolved.body.data?.profile.cash ?? 0) > loanCashBefore);
   });
 });
 
