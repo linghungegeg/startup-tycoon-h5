@@ -976,11 +976,18 @@ export type KnowledgeEntryRecord = {
   category: string;
   title: string;
   summary: string;
+  scenarioText: string;
+  riskText: string;
+  gameImpactText: string;
+  actionTipText: string;
+  sourceName: string;
   sourceUrl: string;
   collectedAt: string;
   contentVersion: string;
   disclaimer: string;
-  unlockedAt: string;
+  reviewStatus: string;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
 };
 
 export type GuildCenterRecord = {
@@ -2721,29 +2728,48 @@ const toAchievementRecord = (achievement: {
   ].filter(Boolean).join("、") || "履历记录"
 });
 
-const toKnowledgeEntryRecord = (unlock: {
-  unlockedAt: Date;
+const LOCKED_KNOWLEDGE_SUMMARY = "完成对应经营履历后解锁完整知识卡。";
+
+const toKnowledgeEntryRecord = (
   knowledge: {
     id: string;
     title: string;
     summary: string;
+    scenarioText: string;
+    riskText: string;
+    gameImpactText: string;
+    actionTipText: string;
+    sourceName: string;
     sourceUrl: string;
     collectedAt: string;
     contentVersion: string;
     disclaimer: string;
+    reviewStatus: string;
     category: { name: string };
+  },
+  unlockedAt: Date | null
+): KnowledgeEntryRecord => {
+  const isUnlocked = unlockedAt !== null;
+
+  return {
+    id: knowledge.id,
+    category: knowledge.category.name,
+    title: knowledge.title,
+    summary: isUnlocked ? knowledge.summary : LOCKED_KNOWLEDGE_SUMMARY,
+    scenarioText: isUnlocked ? knowledge.scenarioText : "",
+    riskText: isUnlocked ? knowledge.riskText : "",
+    gameImpactText: isUnlocked ? knowledge.gameImpactText : "",
+    actionTipText: isUnlocked ? knowledge.actionTipText : "",
+    sourceName: knowledge.sourceName,
+    sourceUrl: knowledge.sourceUrl,
+    collectedAt: knowledge.collectedAt,
+    contentVersion: knowledge.contentVersion,
+    disclaimer: knowledge.disclaimer,
+    reviewStatus: knowledge.reviewStatus,
+    isUnlocked,
+    unlockedAt: unlockedAt?.toISOString() ?? null
   };
-}): KnowledgeEntryRecord => ({
-  id: unlock.knowledge.id,
-  category: unlock.knowledge.category.name,
-  title: unlock.knowledge.title,
-  summary: unlock.knowledge.summary,
-  sourceUrl: unlock.knowledge.sourceUrl,
-  collectedAt: unlock.knowledge.collectedAt,
-  contentVersion: unlock.knowledge.contentVersion,
-  disclaimer: unlock.knowledge.disclaimer,
-  unlockedAt: unlock.unlockedAt.toISOString()
-});
+};
 
 const toLoanCenterRecord = async (
   prisma: PrismaClient,
@@ -7424,13 +7450,18 @@ export const createPrismaGameRepository = (
     if (profile === null) {
       return "PLAYER_NOT_FOUND";
     }
-    const unlocks = await prisma.playerKnowledgeUnlock.findMany({
-      where: { profileId: profile.id },
-      include: { knowledge: { include: { category: true } } },
-      orderBy: { unlockedAt: "desc" }
-    });
+    const [entries, unlocks] = await Promise.all([
+      prisma.knowledgeEntry.findMany({
+        include: { category: true },
+        orderBy: [{ category: { sortOrder: "asc" } }, { sortOrder: "asc" }, { id: "asc" }]
+      }),
+      prisma.playerKnowledgeUnlock.findMany({
+        where: { profileId: profile.id }
+      })
+    ]);
+    const unlockedAtByKnowledgeId = new Map(unlocks.map((unlock) => [unlock.knowledgeId, unlock.unlockedAt]));
 
-    return unlocks.map(toKnowledgeEntryRecord);
+    return entries.map((entry) => toKnowledgeEntryRecord(entry, unlockedAtByKnowledgeId.get(entry.id) ?? null));
   },
 
   async getGuildCenter(accountId, serverId) {

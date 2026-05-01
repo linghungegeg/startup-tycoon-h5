@@ -1702,47 +1702,65 @@ const createTestRepository = (): GameRepository => {
       isHidden: false
     }
   ];
+  const createKnowledgeRecord = (
+    id: string,
+    category: string,
+    title: string,
+    sourceName = "中国人大网",
+    sourceUrl = "https://www.npc.gov.cn/npc/c2/c30834/202312/t20231229_433967.html"
+  ) => ({
+    id,
+    category,
+    title,
+    summary: `${title}的游戏化经营解释。`,
+    scenarioText: `${title}对应一个经营决策场景。`,
+    riskText: `${title}处理不当会增加经营风险。`,
+    gameImpactText: `${title}会影响现金、声望或客户满意度。`,
+    actionTipText: `处理${title}前先确认资料和边界。`,
+    sourceName,
+    sourceUrl,
+    collectedAt: "2026-05-02",
+    contentVersion: "2026.05.phase22",
+    disclaimer: "仅作游戏科普，不构成法律建议",
+    reviewStatus: "published"
+  });
   const knowledgeEntries = [
-    {
-      id: "company-registration-basics",
-      category: "创业基础",
-      title: "公司档案与主体登记",
-      summary: "公司档案对应真实创业里的主体信息。",
-      sourceUrl: "https://www.samr.gov.cn/",
-      collectedAt: "2026-05-01",
-      contentVersion: "2026.05",
-      disclaimer: "仅作游戏科普，不构成法律建议"
-    },
-    {
-      id: "cashflow-safety-line",
-      category: "财务合规",
-      title: "现金流安全线",
-      summary: "持续正向现金流反映早期公司的生存质量。",
-      sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
-      collectedAt: "2026-05-01",
-      contentVersion: "2026.05",
-      disclaimer: "仅作游戏科普，不构成法律建议"
-    },
-    {
-      id: "valuation-method-note",
-      category: "财务合规",
-      title: "估值只是谈判结果",
-      summary: "估值受到现金流、增长、债务和市场预期影响。",
-      sourceUrl: "https://www.sec.gov/education",
-      collectedAt: "2026-05-01",
-      contentVersion: "2026.05",
-      disclaimer: "仅作游戏科普，不构成法律建议"
-    },
-    {
-      id: "ai-agent-season-playbook",
-      category: "赛季运营",
-      title: "AI Agent 风口活动复盘",
-      summary: "赛季活动用于模拟新技术窗口期的产品增长和运营节奏管理。",
-      sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
-      collectedAt: "2026-05-01",
-      contentVersion: "2026.05",
-      disclaimer: "仅作游戏科普，不构成法律建议"
-    }
+    createKnowledgeRecord("company-registration-basics", "公司设立与股权", "公司档案与主体登记"),
+    createKnowledgeRecord("company-capital-contribution", "公司设立与股权", "出资期限与资金承诺"),
+    createKnowledgeRecord("valuation-method-note", "公司设立与股权", "股权稀释与估值谈判"),
+    createKnowledgeRecord("director-duty-basics", "公司设立与股权", "董监高责任边界"),
+    createKnowledgeRecord("labor-written-contract", "劳动用工", "书面劳动合同"),
+    createKnowledgeRecord("labor-probation-risk", "劳动用工", "试用期边界"),
+    createKnowledgeRecord("labor-overtime-pay", "劳动用工", "加班与薪酬"),
+    createKnowledgeRecord("labor-exit-compensation", "劳动用工", "离职与经济补偿"),
+    createKnowledgeRecord("contract-formation-basics", "合同与客户", "合同成立"),
+    createKnowledgeRecord("contract-acceptance-payment", "合同与客户", "验收与回款"),
+    createKnowledgeRecord("contract-breach-liability", "合同与客户", "违约责任"),
+    createKnowledgeRecord("contract-confidentiality", "合同与客户", "保密条款"),
+    createKnowledgeRecord("data-consent-basics", "数据与隐私", "用户同意"),
+    createKnowledgeRecord("data-minimum-necessary", "数据与隐私", "最小必要"),
+    createKnowledgeRecord("data-sensitive-info", "数据与隐私", "敏感个人信息"),
+    createKnowledgeRecord("data-leak-response", "数据与隐私", "数据泄露响应"),
+    createKnowledgeRecord("ad-false-promotion", "广告与营销", "虚假宣传"),
+    createKnowledgeRecord("ad-endorsement-risk", "广告与营销", "广告代言"),
+    createKnowledgeRecord("ad-live-commerce", "广告与营销", "直播带货"),
+    createKnowledgeRecord("ad-competitor-comparison", "广告与营销", "竞品比较宣传"),
+    createKnowledgeRecord("ip-trademark-registration", "知识产权", "商标注册", "国家知识产权局", "https://www.cnipa.gov.cn/art/2019/7/30/art_95_28179.html"),
+    createKnowledgeRecord("ip-software-copyright", "知识产权", "软件著作权"),
+    createKnowledgeRecord("ip-employee-code-ownership", "知识产权", "员工代码归属"),
+    createKnowledgeRecord("ip-copycat-risk", "知识产权", "竞品抄袭风险"),
+    createKnowledgeRecord("tax-invoice-management", "税务与财务", "发票管理", "国家税务总局", "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html"),
+    createKnowledgeRecord("tax-declaration", "税务与财务", "纳税申报", "国家税务总局", "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html"),
+    createKnowledgeRecord("tax-cost-booking", "税务与财务", "成本入账", "国家税务总局", "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html"),
+    createKnowledgeRecord("cashflow-safety-line", "税务与财务", "财报真实性", "国家税务总局", "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html"),
+    createKnowledgeRecord("capital-loan-contract", "融资贷款与债务", "借款合同"),
+    createKnowledgeRecord("capital-guarantee-duty", "融资贷款与债务", "担保责任"),
+    createKnowledgeRecord("capital-term-sheet", "融资贷款与债务", "融资条款"),
+    createKnowledgeRecord("capital-debt-restructure", "融资贷款与债务", "债务重组"),
+    createKnowledgeRecord("platform-unfair-competition", "平台运营与竞争", "不正当竞争"),
+    createKnowledgeRecord("platform-user-agreement", "平台运营与竞争", "用户协议"),
+    createKnowledgeRecord("platform-content-review", "平台运营与竞争", "内容审核"),
+    createKnowledgeRecord("ai-agent-season-playbook", "平台运营与竞争", "活动规则透明")
   ];
   const playerTitles = new Map<string, { profileId: string; titleId: string; source: string; obtainedAt: string; expiresAt: string | null }>();
   const titleEquipment = new Map<string, string>();
@@ -4157,22 +4175,33 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      return [...knowledgeUnlocks.values()]
-        .filter((unlock) => unlock.profileId === profile.id)
-        .map((unlock) => {
-          const knowledge = knowledgeEntries.find((entry) => entry.id === unlock.knowledgeId);
-          return {
-            id: unlock.knowledgeId,
-            category: knowledge?.category ?? "",
-            title: knowledge?.title ?? "",
-            summary: knowledge?.summary ?? "",
-            sourceUrl: knowledge?.sourceUrl ?? "",
-            collectedAt: knowledge?.collectedAt ?? "",
-            contentVersion: knowledge?.contentVersion ?? "",
-            disclaimer: knowledge?.disclaimer ?? "",
-            unlockedAt: unlock.unlockedAt
-          };
-        }) satisfies KnowledgeEntryRecord[];
+      const unlockedAtByKnowledgeId = new Map(
+        [...knowledgeUnlocks.values()]
+          .filter((unlock) => unlock.profileId === profile.id)
+          .map((unlock) => [unlock.knowledgeId, unlock.unlockedAt])
+      );
+      return knowledgeEntries.map((knowledge) => {
+        const unlockedAt = unlockedAtByKnowledgeId.get(knowledge.id) ?? null;
+        const isUnlocked = unlockedAt !== null;
+        return {
+          id: knowledge.id,
+          category: knowledge.category,
+          title: knowledge.title,
+          summary: isUnlocked ? knowledge.summary : "完成对应经营履历后解锁完整知识卡。",
+          scenarioText: isUnlocked ? knowledge.scenarioText : "",
+          riskText: isUnlocked ? knowledge.riskText : "",
+          gameImpactText: isUnlocked ? knowledge.gameImpactText : "",
+          actionTipText: isUnlocked ? knowledge.actionTipText : "",
+          sourceName: knowledge.sourceName,
+          sourceUrl: knowledge.sourceUrl,
+          collectedAt: knowledge.collectedAt,
+          contentVersion: knowledge.contentVersion,
+          disclaimer: knowledge.disclaimer,
+          reviewStatus: knowledge.reviewStatus,
+          isUnlocked,
+          unlockedAt
+        };
+      }) satisfies KnowledgeEntryRecord[];
     },
     async getGuildCenter(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -7226,6 +7255,72 @@ test("phase 14 achievements titles knowledge and guild basics work together", as
       headers: { authorization: `Bearer ${token}` }
     });
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-guild-contribution")?.isClaimable, true);
+  });
+});
+
+test("phase 22 knowledge catalog lists full v1 cards without leaking locked details", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "knowledgecatalog");
+
+    const knowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(knowledge.status, 200);
+    assert.equal(knowledge.body.data?.length, 36);
+
+    const categories = new Set(knowledge.body.data?.map((entry) => entry.category));
+    assert.deepEqual([...categories], [
+      "公司设立与股权",
+      "劳动用工",
+      "合同与客户",
+      "数据与隐私",
+      "广告与营销",
+      "知识产权",
+      "税务与财务",
+      "融资贷款与债务",
+      "平台运营与竞争"
+    ]);
+
+    const locked = knowledge.body.data?.find((entry) => entry.id === "labor-written-contract");
+    assert.equal(locked?.isUnlocked, false);
+    assert.equal(locked?.unlockedAt, null);
+    assert.equal(locked?.summary, "完成对应经营履历后解锁完整知识卡。");
+    assert.equal(locked?.scenarioText, "");
+    assert.equal(locked?.riskText, "");
+    assert.equal(locked?.gameImpactText, "");
+    assert.equal(locked?.actionTipText, "");
+    assert.equal(locked?.sourceName, "中国人大网");
+    assert.equal(locked?.reviewStatus, "published");
+  });
+});
+
+test("phase 22 achievement unlock returns complete knowledge card fields for legacy ids", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "knowledgelegacy");
+
+    const claimed = await requestJson<AchievementClaimRecord>(baseUrl, "/achievements/profile-created/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200);
+
+    const knowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(knowledge.status, 200);
+
+    const unlocked = knowledge.body.data?.find((entry) => entry.id === "company-registration-basics");
+    assert.equal(unlocked?.isUnlocked, true);
+    assert.ok(unlocked?.unlockedAt);
+    assert.equal(unlocked?.category, "公司设立与股权");
+    assert.equal(unlocked?.sourceName, "中国人大网");
+    assert.equal(unlocked?.reviewStatus, "published");
+    assert.match(unlocked?.sourceUrl ?? "", /^https:\/\/www\.npc\.gov\.cn\//);
+    assert.notEqual(unlocked?.scenarioText, "");
+    assert.notEqual(unlocked?.riskText, "");
+    assert.notEqual(unlocked?.gameImpactText, "");
+    assert.notEqual(unlocked?.actionTipText, "");
   });
 });
 

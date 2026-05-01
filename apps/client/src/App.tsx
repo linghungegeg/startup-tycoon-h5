@@ -767,11 +767,18 @@ type KnowledgeEntry = {
   category: string;
   title: string;
   summary: string;
+  scenarioText: string;
+  riskText: string;
+  gameImpactText: string;
+  actionTipText: string;
+  sourceName: string;
   sourceUrl: string;
   collectedAt: string;
   contentVersion: string;
   disclaimer: string;
-  unlockedAt: string;
+  reviewStatus: string;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
 };
 
 type GuildCenter = {
@@ -1473,6 +1480,7 @@ function App() {
   const [titleCenter, setTitleCenter] = useState<TitleCenter | null>(null);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+  const [selectedKnowledgeEntryId, setSelectedKnowledgeEntryId] = useState("");
   const [guildCenter, setGuildCenter] = useState<GuildCenter | null>(null);
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
@@ -1497,6 +1505,29 @@ function App() {
     () => avatars.find((avatar) => avatar.id === avatarId) ?? avatars[0],
     [avatarId, avatars]
   );
+  const knowledgeByCategory = useMemo(() => {
+    const groups: Array<{ category: string; entries: KnowledgeEntry[] }> = [];
+    for (const entry of knowledgeEntries) {
+      const group = groups.find((item) => item.category === entry.category);
+      if (group) {
+        group.entries.push(entry);
+      } else {
+        groups.push({ category: entry.category, entries: [entry] });
+      }
+    }
+    return groups;
+  }, [knowledgeEntries]);
+  const selectedKnowledgeEntry = useMemo(
+    () => knowledgeEntries.find((entry) => entry.id === selectedKnowledgeEntryId) ?? knowledgeEntries.find((entry) => entry.isUnlocked) ?? knowledgeEntries[0],
+    [knowledgeEntries, selectedKnowledgeEntryId]
+  );
+  const activeTaskKnowledgeEntry = useMemo(() => {
+    if (activeKnowledgeTask === null) {
+      return undefined;
+    }
+    const knowledgeId = activeKnowledgeTask.unlockKind === "compliance" ? "contract-acceptance-payment" : "labor-written-contract";
+    return knowledgeEntries.find((entry) => entry.id === knowledgeId);
+  }, [activeKnowledgeTask, knowledgeEntries]);
   const reportTelemetry = useCallback((
     token: string,
     nextServerId: string,
@@ -2351,6 +2382,7 @@ function App() {
     }
     if (knowledge.success) {
       setKnowledgeEntries(knowledge.data);
+      setSelectedKnowledgeEntryId((currentId) => currentId || knowledge.data.find((entry) => entry.isUnlocked)?.id || knowledge.data[0]?.id || "");
       if (knowledge.data.length > 0) {
         reportTelemetry(token, nextServerId, "knowledge_view", "knowledge-center", { count: knowledge.data.length });
       }
@@ -4251,17 +4283,70 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <strong className="text-sm text-white font-black">知识库</strong>
-                    <span className="text-[10px] text-business-gold">{knowledgeEntries.length} 张</span>
+                    <span className="text-[10px] text-business-gold">{knowledgeEntries.filter((entry) => entry.isUnlocked).length}/{knowledgeEntries.length} 张</span>
                   </div>
                   {knowledgeEntries.length === 0 ? (
                     <p className="text-xs text-slate-400 font-bold">领取成就后解锁知识卡。</p>
-                  ) : knowledgeEntries.slice(0, 3).map((entry) => (
-                    <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 mb-2" key={entry.id}>
-                      <strong className="block text-xs text-white font-black">{entry.title}</strong>
-                      <p className="mt-1 text-[9px] text-slate-400">{entry.summary}</p>
-                      <span className="mt-2 block text-[8px] text-business-gold">{entry.category} · {entry.contentVersion} · {entry.disclaimer}</span>
-                    </article>
-                  ))}
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex gap-2 overflow-x-auto pb-1 scroll-hide">
+                        {knowledgeByCategory.map((group) => (
+                          <button
+                            className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black border ${selectedKnowledgeEntry?.category === group.category ? "bg-business-gold text-business-dark border-business-gold" : "bg-slate-900/60 text-slate-300 border-white/5"}`}
+                            key={group.category}
+                            type="button"
+                            onClick={() => setSelectedKnowledgeEntryId(group.entries[0]?.id ?? "")}
+                          >
+                            {group.category} {group.entries.filter((entry) => entry.isUnlocked).length}/{group.entries.length}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(knowledgeByCategory.find((group) => group.category === selectedKnowledgeEntry?.category)?.entries ?? knowledgeEntries).map((entry) => (
+                          <button
+                            className={`min-h-16 rounded-2xl border p-3 text-left ${entry.id === selectedKnowledgeEntry?.id ? "border-business-gold bg-business-gold/10" : "border-white/5 bg-slate-900/60"}`}
+                            key={entry.id}
+                            type="button"
+                            onClick={() => setSelectedKnowledgeEntryId(entry.id)}
+                          >
+                            <strong className="block text-[11px] text-white font-black leading-4">{entry.title}</strong>
+                            <span className={`mt-1 block text-[9px] font-black ${entry.isUnlocked ? "text-business-gold" : "text-slate-500"}`}>{entry.isUnlocked ? "已解锁" : "未解锁"}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {selectedKnowledgeEntry && (
+                        <article className="rounded-2xl bg-slate-900/70 border border-white/5 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <strong className="block text-sm text-white font-black">{selectedKnowledgeEntry.title}</strong>
+                              <span className="mt-1 block text-[9px] text-business-gold">{selectedKnowledgeEntry.category} · {selectedKnowledgeEntry.contentVersion}</span>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black ${selectedKnowledgeEntry.isUnlocked ? "bg-business-gold text-business-dark" : "bg-slate-800 text-slate-400"}`}>{selectedKnowledgeEntry.isUnlocked ? "完整" : "锁定"}</span>
+                          </div>
+                          <p className="mt-3 text-xs text-slate-300 font-bold leading-5">{selectedKnowledgeEntry.summary}</p>
+                          {selectedKnowledgeEntry.isUnlocked && (
+                            <dl className="mt-3 space-y-2">
+                              {[
+                                ["经营场景", selectedKnowledgeEntry.scenarioText],
+                                ["风险提示", selectedKnowledgeEntry.riskText],
+                                ["游戏影响", selectedKnowledgeEntry.gameImpactText],
+                                ["行动建议", selectedKnowledgeEntry.actionTipText]
+                              ].map(([label, value]) => (
+                                <div className="rounded-xl bg-slate-950/60 border border-white/5 p-3" key={label}>
+                                  <dt className="text-[9px] text-business-gold font-black">{label}</dt>
+                                  <dd className="mt-1 text-[11px] text-slate-300 font-bold leading-5">{value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                          <a className="mt-3 block text-[9px] text-business-gold underline decoration-business-gold/40" href={selectedKnowledgeEntry.sourceUrl} target="_blank" rel="noreferrer">
+                            {selectedKnowledgeEntry.sourceName} · {selectedKnowledgeEntry.collectedAt}
+                          </a>
+                          <span className="mt-2 block text-[8px] text-slate-500">{selectedKnowledgeEntry.disclaimer}</span>
+                        </article>
+                      )}
+                    </div>
+                  )}
                 </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -5888,22 +5973,31 @@ function App() {
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
                 <article className="glass-panel rounded-3xl p-5">
                   <h3 className="text-lg text-white font-black">{activeKnowledgeTask.title}</h3>
-                  <p className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.description}</p>
+                  <p className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.summary || activeKnowledgeTask.description}</p>
                   <dl className="mt-5 space-y-3">
                     <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
                       <dt className="text-[10px] text-business-gold font-black">经营场景</dt>
-                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.unlockKind === "compliance" ? "客户合同进入交付前复核，确认回款、验收和违约条款。" : "员工入职后需要规范签署劳动合同，避免用工争议扩大。"}</dd>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.scenarioText || (activeKnowledgeTask.unlockKind === "compliance" ? "客户合同进入交付前复核，确认回款、验收和违约条款。" : "员工入职后需要规范签署劳动合同，避免用工争议扩大。")}</dd>
                     </div>
                     <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
                       <dt className="text-[10px] text-business-gold font-black">风险提示</dt>
-                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.unlockKind === "compliance" ? "合同条款不清会影响项目结算、客户满意度和现金回收。" : "用工资料不完整会增加劳动争议、赔偿和声誉风险。"}</dd>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.riskText || (activeKnowledgeTask.unlockKind === "compliance" ? "合同条款不清会影响项目结算、客户满意度和现金回收。" : "用工资料不完整会增加劳动争议、赔偿和声誉风险。")}</dd>
                     </div>
                     <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
                       <dt className="text-[10px] text-business-gold font-black">游戏影响</dt>
-                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">阅读并确认后推进支线进度，奖励领取仍以后端任务状态为准。</dd>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.gameImpactText || "阅读并确认后推进支线进度，奖励领取仍以后端任务状态为准。"}</dd>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
+                      <dt className="text-[10px] text-business-gold font-black">行动建议</dt>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.actionTipText || "先确认资料、流程和经营边界，再推进高风险动作。"}</dd>
                     </div>
                   </dl>
-                  <p className="mt-4 text-[10px] text-slate-500 font-bold leading-5">本内容用于游戏内经营知识提示，不构成法律、财务或投资建议。</p>
+                  {activeTaskKnowledgeEntry && (
+                    <a className="mt-4 block text-[10px] text-business-gold underline decoration-business-gold/40" href={activeTaskKnowledgeEntry.sourceUrl} target="_blank" rel="noreferrer">
+                      {activeTaskKnowledgeEntry.sourceName} · {activeTaskKnowledgeEntry.collectedAt} · {activeTaskKnowledgeEntry.contentVersion}
+                    </a>
+                  )}
+                  <p className="mt-4 text-[10px] text-slate-500 font-bold leading-5">{activeTaskKnowledgeEntry?.disclaimer ?? "本内容用于游戏内经营知识提示，不构成法律、财务或投资建议。"}</p>
                 </article>
                 <button
                   className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"

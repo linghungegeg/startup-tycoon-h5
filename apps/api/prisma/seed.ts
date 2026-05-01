@@ -2272,56 +2272,99 @@ const achievementConfigs = [
 ];
 
 const knowledgeCategories = [
-  { id: "startup", name: "创业基础", sortOrder: 1 },
-  { id: "finance", name: "财务合规", sortOrder: 2 },
-  { id: "season", name: "赛季运营", sortOrder: 3 }
+  { id: "company", name: "公司设立与股权", sortOrder: 1 },
+  { id: "labor", name: "劳动用工", sortOrder: 2 },
+  { id: "contract", name: "合同与客户", sortOrder: 3 },
+  { id: "data", name: "数据与隐私", sortOrder: 4 },
+  { id: "marketing", name: "广告与营销", sortOrder: 5 },
+  { id: "ip", name: "知识产权", sortOrder: 6 },
+  { id: "tax", name: "税务与财务", sortOrder: 7 },
+  { id: "capital", name: "融资贷款与债务", sortOrder: 8 },
+  { id: "platform", name: "平台运营与竞争", sortOrder: 9 }
 ];
 
+const KNOWLEDGE_DISCLAIMER = "仅作游戏科普，不构成法律建议";
+const KNOWLEDGE_COLLECTED_AT = "2026-05-02";
+const KNOWLEDGE_CONTENT_VERSION = "2026.05.phase22";
+const sources = {
+  companyLaw: { name: "中国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202312/t20231229_433967.html" },
+  civilCode: { name: "全国人大法律法规库", url: "https://wb.flk.npc.gov.cn/flfg/PDF/bd53dd912c1048f2aecbaa229238334b.pdf" },
+  laborContract: { name: "中国人大网", url: "https://www.npc.gov.cn/zgrdw/npc/xinwen/lfgz/zxfl/2007-06/29/content_368169.htm" },
+  pipl: { name: "中国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313143.html" },
+  advertising: { name: "全国人大法律法规库", url: "https://wb.flk.npc.gov.cn/flfg/PDF/a8e849c56e4e4c00939dbf8dd6a16569.pdf" },
+  trademark: { name: "国家知识产权局", url: "https://www.cnipa.gov.cn/art/2019/7/30/art_95_28179.html" },
+  copyright: { name: "中国人大网", url: "https://www.npc.gov.cn/c2/c30834/202011/t20201119_308796.html" },
+  tax: { name: "国家税务总局", url: "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html" },
+  antiUnfair: { name: "中国人大网", url: "https://www.npc.gov.cn/c2/c30834/202506/t20250627_446247.html" },
+  ecommerce: { name: "中国人大网", url: "https://www.npc.gov.cn/WZWSREL3pncmR3L25wYy9sZnp0L3JseXcvMjAxOC0wOC8zMS9jb250ZW50XzIwNjA4MjcuaHRt" }
+};
+
+const createKnowledgeEntry = (
+  id: string,
+  categoryId: string,
+  title: string,
+  summary: string,
+  scenarioText: string,
+  riskText: string,
+  gameImpactText: string,
+  actionTipText: string,
+  source: { name: string; url: string },
+  sortOrder: number
+) => ({
+  id,
+  categoryId,
+  title,
+  summary,
+  scenarioText,
+  riskText,
+  gameImpactText,
+  actionTipText,
+  sourceName: source.name,
+  sourceUrl: source.url,
+  collectedAt: KNOWLEDGE_COLLECTED_AT,
+  contentVersion: KNOWLEDGE_CONTENT_VERSION,
+  disclaimer: KNOWLEDGE_DISCLAIMER,
+  reviewStatus: "published",
+  sortOrder
+});
+
 const knowledgeEntries = [
-  {
-    id: "company-registration-basics",
-    categoryId: "startup",
-    title: "公司档案与主体登记",
-    summary: "游戏中公司档案对应真实创业里的主体信息、经营范围和团队责任边界。",
-    sourceUrl: "https://www.samr.gov.cn/",
-    collectedAt: "2026-05-01",
-    contentVersion: "2026.05",
-    disclaimer: "仅作游戏科普，不构成法律建议",
-    sortOrder: 1
-  },
-  {
-    id: "cashflow-safety-line",
-    categoryId: "finance",
-    title: "现金流安全线",
-    summary: "持续正向现金流比单月利润更能反映早期公司的生存质量。",
-    sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
-    collectedAt: "2026-05-01",
-    contentVersion: "2026.05",
-    disclaimer: "仅作游戏科普，不构成法律建议",
-    sortOrder: 2
-  },
-  {
-    id: "valuation-method-note",
-    categoryId: "finance",
-    title: "估值只是谈判结果",
-    summary: "估值会受到现金流、增长、债务和市场预期影响，不等同于可立即变现的现金。",
-    sourceUrl: "https://www.sec.gov/education",
-    collectedAt: "2026-05-01",
-    contentVersion: "2026.05",
-    disclaimer: "仅作游戏科普，不构成法律建议",
-    sortOrder: 3
-  },
-  {
-    id: "ai-agent-season-playbook",
-    categoryId: "season",
-    title: "AI Agent 风口活动复盘",
-    summary: "赛季活动用于模拟新技术窗口期的产品增长、现金流约束和运营节奏管理。",
-    sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
-    collectedAt: "2026-05-01",
-    contentVersion: "2026.05",
-    disclaimer: "仅作游戏科普，不构成法律建议",
-    sortOrder: 19
-  }
+  createKnowledgeEntry("company-registration-basics", "company", "公司档案与主体登记", "公司档案对应真实创业里的主体信息、经营范围和责任边界。", "创建公司时，玩家填写的名称、赛道和创始团队相当于经营主体档案。", "主体信息不清会让合同、发票、融资和员工关系都缺少稳定承接方。", "档案越清晰，后续项目验收、融资谈判和合规事件越容易解释。", "先确认主体、经营范围和关键负责人，再推进高风险经营动作。", sources.companyLaw, 1),
+  createKnowledgeEntry("company-capital-contribution", "company", "出资期限与资金承诺", "股东出资是公司信用的一部分，不能只看账面认缴数字。", "融资或扩张前，团队会承诺投入资金、技术或资源支持公司。", "承诺与实际投入长期脱节，会削弱现金流和外部信任。", "资金承诺失控会提高债务和融资事件的失败概率。", "把资金承诺拆成可执行节点，先保现金安全线。", sources.companyLaw, 2),
+  createKnowledgeEntry("valuation-method-note", "company", "股权稀释与估值谈判", "估值是谈判结果，不等同于马上能花的现金。", "投资人给出条款时，玩家需要在现金、估值和股权之间取舍。", "只追高估值可能带来更强对赌、控制权压力和后续融资难度。", "融资选择会影响创始人股权、声望和后续董事会压力。", "谈条款时同时看现金到账、股权比例、约束条款和下一轮空间。", sources.companyLaw, 3),
+  createKnowledgeEntry("director-duty-basics", "company", "董监高责任边界", "管理层决策需要服务公司利益，重大事项不能只凭个人偏好。", "当玩家选择裁员、融资或高风险项目时，相当于管理层作出经营判断。", "重大决策缺少记录和论证，会让争议事件更难解释。", "规范决策记录可降低声誉风险和后续合规事件压力。", "对高风险动作保留目标、备选方案和复盘结果。", sources.companyLaw, 4),
+  createKnowledgeEntry("labor-written-contract", "labor", "书面劳动合同", "员工入职后应尽快把岗位、薪酬、期限和职责写清楚。", "招募核心员工后，公司需要把口头承诺落到可追踪的用工资料。", "长期只靠口头约定，容易引发薪酬、岗位和离职争议。", "用工资料完整会降低员工事件中的赔偿和声誉波动。", "入职流程优先补齐合同、岗位说明和薪酬确认。", sources.laborContract, 5),
+  createKnowledgeEntry("labor-probation-risk", "labor", "试用期边界", "试用期不是低成本随意淘汰员工的工具。", "团队扩招时，玩家可能用试用期观察员工是否匹配岗位。", "试用期约定不清或考核缺证据，会放大离职纠纷。", "规范试用目标能让招聘和培养系统的风险更可控。", "设定清晰考核标准，并保留辅导与反馈记录。", sources.laborContract, 6),
+  createKnowledgeEntry("labor-overtime-pay", "labor", "加班与薪酬", "项目冲刺要管理工时、调休和薪酬预期。", "赶交付时提高推进速度，通常会推高员工压力。", "长期让团队无补偿高压工作，会触发满意度下降和离职风险。", "合理安排冲刺节奏可减少员工压力事件。", "用排期、调休和补偿预算替代无边界加班。", sources.laborContract, 7),
+  createKnowledgeEntry("labor-exit-compensation", "labor", "离职与经济补偿", "裁撤和离职需要按原因、程序和补偿边界处理。", "现金流紧张时，玩家可能选择降本裁撤或替换岗位。", "程序粗糙会把短期省钱变成声誉和赔偿成本。", "离职处理会影响现金、员工满意度和品牌风险。", "先确认岗位调整理由、沟通记录和补偿预算。", sources.laborContract, 8),
+  createKnowledgeEntry("contract-formation-basics", "contract", "合同成立", "客户确认、交付范围、价格和期限要形成稳定记录。", "拿到客户订单时，玩家需要判断是否马上开工。", "只凭聊天承诺开工，后续容易出现价格和范围争议。", "合同清晰会提高项目验收和回款稳定性。", "开工前确认主体、标的、价格、期限和违约处理。", sources.civilCode, 9),
+  createKnowledgeEntry("contract-acceptance-payment", "contract", "验收与回款", "验收节点决定项目收入何时真正落袋。", "项目进入交付尾声时，客户可能压缩验收或拖延付款。", "验收条件模糊会把利润卡在应收账款里。", "验收条款会影响现金流、客户满意度和项目结算。", "把里程碑、验收材料和付款触发条件写进合同。", sources.civilCode, 10),
+  createKnowledgeEntry("contract-breach-liability", "contract", "违约责任", "违约条款是项目延期、拒付和质量争议的风险阀门。", "客户临时改需求或公司延期交付时，违约责任会决定损失分配。", "没有责任边界，争议会直接拖累现金和声誉。", "清晰违约责任能降低事件结算中的不确定损失。", "对延期、拒付、质量返工分别设定处理方案。", sources.civilCode, 11),
+  createKnowledgeEntry("contract-confidentiality", "contract", "保密条款", "客户数据、商业计划和技术方案需要明确保密边界。", "玩家承接大客户项目时，团队会接触客户资料和竞品信息。", "保密范围不清，容易触发客户流失和赔偿争议。", "保密管理会影响客户满意度和品牌风险。", "限定访问权限，并在合同中写清保密范围和期限。", sources.civilCode, 12),
+  createKnowledgeEntry("data-consent-basics", "data", "用户同意", "收集和使用个人信息要有清楚的告知和同意路径。", "产品上线增长功能时，玩家可能希望采集更多用户数据。", "未说明用途就收集数据，会增加合规事件和舆情风险。", "数据合规会影响产品增长、声誉和监管压力。", "把数据用途、范围和退出方式放在用户能看懂的位置。", sources.pipl, 13),
+  createKnowledgeEntry("data-minimum-necessary", "data", "最小必要", "数据采集不应超过实现功能所需的合理范围。", "运营活动想要提升转化时，系统可能要求更多用户字段。", "多收无关数据会提高泄露损失和整改成本。", "克制采集能降低产品合规压力。", "每个字段都要能解释它服务哪个功能。", sources.pipl, 14),
+  createKnowledgeEntry("data-sensitive-info", "data", "敏感个人信息", "身份、金融、位置等敏感信息要更谨慎处理。", "金融、招聘或实名认证功能可能接触高敏感数据。", "敏感信息处理不当会显著放大损害后果。", "敏感数据事件会严重影响声望和用户留存。", "先确认必要性，再加强告知、权限和加密保护。", sources.pipl, 15),
+  createKnowledgeEntry("data-leak-response", "data", "数据泄露响应", "发生泄露风险时，拖延比承认问题更危险。", "服务器异常或供应商失误可能造成用户数据暴露。", "没有响应预案会让小事故扩大成信任危机。", "及时处置能降低舆情和合规损失。", "准备排查、止损、通知和复盘四步清单。", sources.pipl, 16),
+  createKnowledgeEntry("ad-false-promotion", "marketing", "虚假宣传", "营销承诺要能被产品能力和证据支撑。", "推广期为了冲用户，玩家可能夸大产品效果。", "宣传与实际不符，会触发退费、投诉和监管风险。", "真实营销能稳定声望和客户满意度。", "上线前核对每句卖点是否有数据或功能支持。", sources.advertising, 17),
+  createKnowledgeEntry("ad-endorsement-risk", "marketing", "广告代言", "代言或背书不能替代产品真实能力。", "活动推广时，公司可能请达人或客户案例背书。", "背书内容失真，会把外部流量变成舆情压力。", "代言风险会影响活动榜声望和产品转化。", "让背书材料只描述可核验体验，不承诺无法保证的结果。", sources.advertising, 18),
+  createKnowledgeEntry("ad-live-commerce", "marketing", "直播带货", "直播销售也要守住商品信息、价格和售后承诺。", "玩家做增长冲刺时，可能使用直播或短视频渠道带量。", "口播承诺与售后规则不一致，会集中引发投诉。", "直播活动会影响现金回收和品牌声望。", "提前给主播一页可说清单和禁说清单。", sources.advertising, 19),
+  createKnowledgeEntry("ad-competitor-comparison", "marketing", "竞品比较宣传", "比较竞品时要避免贬损和无法证明的结论。", "市场竞争中，玩家可能选择正面喊话竞品。", "不实比较会引发不正当竞争和舆情反噬。", "克制比较能降低竞品反击事件强度。", "只比较可验证指标，避免攻击性表达。", sources.advertising, 20),
+  createKnowledgeEntry("ip-trademark-registration", "ip", "商标注册", "品牌名称和标识需要尽早做权利检索和注册规划。", "产品起名、上线活动和跨服品牌展示都会积累品牌资产。", "未检索就推广，可能遇到重名、抢注或侵权风险。", "商标规划会影响品牌声望和市场扩张。", "确定品牌名前先检索近似标识，再安排核心类别申请。", sources.trademark, 21),
+  createKnowledgeEntry("ip-software-copyright", "ip", "软件著作权", "软件作品的代码和文档可以形成可证明的知识产权资产。", "技术产品完成关键版本后，公司需要沉淀研发成果。", "权属证据不足，会削弱融资、合作和维权能力。", "研发资产清晰有助于融资和竞品防守。", "保留版本记录、贡献记录和发布材料。", sources.copyright, 22),
+  createKnowledgeEntry("ip-employee-code-ownership", "ip", "员工代码归属", "员工职务成果应在合同和制度中明确归属。", "核心工程师开发关键模块时，代码资产会迅速累积。", "权属边界模糊，会在离职或融资尽调时爆雷。", "代码归属清楚能降低融资和竞品事件风险。", "在劳动合同、保密协议和代码仓库记录中同步权属边界。", sources.copyright, 23),
+  createKnowledgeEntry("ip-copycat-risk", "ip", "竞品抄袭风险", "发现相似产品时，要先取证再决定防守或反击。", "竞品复制界面、文案或核心功能时，玩家需要选择应对方式。", "情绪化公开指控可能反伤品牌，还会丢失证据链。", "规范取证能提升市场反击成功率。", "先固化证据，再评估商标、著作权和不正当竞争路径。", sources.copyright, 24),
+  createKnowledgeEntry("tax-invoice-management", "tax", "发票管理", "发票是收入、成本和税务合规的关键凭证。", "项目回款和采购支出进入账务时，需要匹配真实交易。", "票据和业务不匹配，会提高税务检查风险。", "发票管理影响财务报表可信度和现金流判断。", "把合同、验收、付款和发票放在同一条记录链上。", sources.tax, 25),
+  createKnowledgeEntry("tax-declaration", "tax", "纳税申报", "纳税申报要跟着经营节奏稳定执行。", "公司月度结算后，收入、成本和税费需要进入申报流程。", "延误或漏报会带来滞纳、补缴和信用压力。", "稳定申报能减少财务风险事件。", "把申报节点加入月度经营清单，不等现金紧张时再补。", sources.tax, 26),
+  createKnowledgeEntry("tax-cost-booking", "tax", "成本入账", "成本要能解释业务用途、金额和凭证来源。", "投放、服务器、招聘和外包支出都会影响利润表。", "无法证明的成本会削弱报表可信度。", "成本记录影响现金流安全线和融资尽调。", "支出发生时同步记录合同、票据、付款和用途。", sources.tax, 27),
+  createKnowledgeEntry("cashflow-safety-line", "tax", "财报真实性", "真实财报比漂亮数字更能支撑长期经营。", "玩家看到月收入增长时，也要关注应收、负债和成本结构。", "粉饰数据会误导融资和经营决策。", "真实报表能让现金流预警、贷款和融资更稳定。", "每月复盘收入、支出、债务和应收，不只看估值。", sources.tax, 28),
+  createKnowledgeEntry("capital-loan-contract", "capital", "借款合同", "借款要看本金、利率、期限、还款方式和违约后果。", "现金紧张时，玩家可能选择银行贷款或短期借款。", "只看到账金额，忽视还款节奏，会让债务压力滚大。", "贷款条款直接影响月支出、信用和现金流危机。", "借款前先测算最坏收入场景下能否按期还款。", sources.civilCode, 29),
+  createKnowledgeEntry("capital-guarantee-duty", "capital", "担保责任", "给公司或他人担保会把外部风险带回自己账上。", "融资谈判或合作中，对方可能要求创始人或关联方担保。", "担保触发后，现金流风险会突然放大。", "担保会提高债务危机和信用降级概率。", "明确担保范围、期限和触发条件，不轻易做无限承诺。", sources.civilCode, 30),
+  createKnowledgeEntry("capital-term-sheet", "capital", "融资条款", "投资条款不只看金额，还要看控制权、清算和退出安排。", "投资人给出 term sheet 时，玩家要判断接受、谈判或拒绝。", "忽视特殊权利，可能导致后续经营被动。", "条款质量会影响估值、股权和董事会压力。", "把资金、股权、权利、义务和下一轮影响一起评估。", sources.companyLaw, 31),
+  createKnowledgeEntry("capital-debt-restructure", "capital", "债务重组", "债务重组是止血工具，不是免费延期。", "现金流危机中，玩家可选择融资、降本或债务重组。", "重组会影响信用、声誉和未来融资成本。", "重组路线能降低破产风险，但会留下信用代价。", "优先算清债务规模、现金回收周期和可承受月供。", sources.civilCode, 32),
+  createKnowledgeEntry("platform-unfair-competition", "platform", "不正当竞争", "市场竞争要守住诚实信用和商业道德底线。", "竞品降价、挖人或舆论战出现时，玩家可能选择激进反击。", "虚假宣传、混淆和商业诋毁会让反击变成新风险。", "合规竞争能降低市场战中的声誉损失。", "反击前先判断证据、表达边界和可承受成本。", sources.antiUnfair, 33),
+  createKnowledgeEntry("platform-user-agreement", "platform", "用户协议", "用户协议是产品规则、服务边界和争议处理的说明书。", "平台功能上线前，需要让用户理解关键规则。", "规则缺失会让退款、封禁和活动争议难以处理。", "协议清晰能降低客服压力和合规事件。", "把核心服务、费用、限制、申诉和退出路径写清楚。", sources.ecommerce, 34),
+  createKnowledgeEntry("platform-content-review", "platform", "内容审核", "用户内容平台要有发布规则和处置机制。", "社区、评价或直播功能开放后，用户内容会影响品牌安全。", "没有审核机制，违规内容会变成平台责任和舆情风险。", "内容治理影响留存、声望和活动安全。", "建立发布规范、举报入口和分级处置记录。", sources.ecommerce, 35),
+  createKnowledgeEntry("ai-agent-season-playbook", "platform", "活动规则透明", "赛季活动要让目标、排名、奖励和限制可理解。", "AI Agent 风口榜模拟限时活动中的增长冲刺。", "规则不透明会让玩家和用户质疑公平性。", "活动规则清晰能提升参与率并降低争议。", "上线活动前同步目标、时间、奖励、限制和异常处理方式。", sources.ecommerce, 36)
 ];
 
 const seasonConfigs = [
