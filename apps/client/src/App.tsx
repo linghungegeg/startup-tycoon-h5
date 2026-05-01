@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "shop" | "bag" | "negotiation" | "vip";
+type NativeHomePage = "leaderboard" | "season" | "shop" | "bag" | "negotiation" | "vip";
 
 type ApiSuccess<T> = {
   success: true;
@@ -553,6 +553,64 @@ type LeaderboardCenter = {
     rows: LeaderboardRow[];
     snapshotDate: string;
   }>;
+};
+
+type SeasonStatus = "upcoming" | "active" | "ended";
+
+type SeasonCenter = {
+  season: {
+    id: string;
+    name: string;
+    theme: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    points: number;
+    pass: { isPurchased: boolean; pricePlatformCoins: number };
+  };
+  tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; isClaimed: boolean }>;
+  activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activityBoards: LeaderboardCenter["activityBoards"];
+  shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; isAvailable: boolean; lockedReason: string | null }>;
+  scenarios: Array<{ id: string; name: string; summary: string; bestScore: number | null }>;
+  wallet: PlatformWallet;
+};
+
+type SeasonTaskProgressResult = {
+  season: SeasonCenter["season"];
+  task: SeasonCenter["tasks"][number];
+};
+
+type SeasonPassPurchaseResult = {
+  season: SeasonCenter["season"];
+  wallet: PlatformWallet;
+  isDuplicate: boolean;
+};
+
+type SeasonActivityActionResult = {
+  season: SeasonCenter["season"];
+  activity: SeasonCenter["activities"][number];
+  profile: PlayerProfile;
+};
+
+type ActivityShopPurchaseResult = {
+  season: SeasonCenter["season"];
+  wallet: PlatformWallet;
+  item: SeasonCenter["shopItems"][number];
+  profile: PlayerProfile;
+  isDuplicate: boolean;
+};
+
+type ScenarioRunResult = {
+  run: {
+    id: string;
+    scenarioId: string;
+    initialState: { cashDays: number; debtRatioBasisPoints: number; coreEmployeeRisk: string; customerDelay: string };
+    choices: string[];
+    score: number | null;
+    grade: string | null;
+    rewardClaimed: boolean;
+  };
 };
 
 type CrossServerCenter = {
@@ -1258,6 +1316,10 @@ function App() {
   const [vipCenter, setVipCenter] = useState<VipCenter | null>(null);
   const [vipError, setVipError] = useState("");
   const [vipNotice, setVipNotice] = useState("");
+  const [seasonCenter, setSeasonCenter] = useState<SeasonCenter | null>(null);
+  const [seasonError, setSeasonError] = useState("");
+  const [seasonNotice, setSeasonNotice] = useState("");
+  const [scenarioRun, setScenarioRun] = useState<ScenarioRunResult["run"] | null>(null);
   const [leaderboardCenter, setLeaderboardCenter] = useState<LeaderboardCenter | null>(null);
   const [crossServerCenter, setCrossServerCenter] = useState<CrossServerCenter | null>(null);
   const [titleCenter, setTitleCenter] = useState<TitleCenter | null>(null);
@@ -1427,6 +1489,11 @@ function App() {
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
+  const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
+  const primarySeasonActivity = seasonCenter?.activities[0] ?? null;
+  const primaryActivityBoard = seasonCenter?.activityBoards[0] ?? null;
+  const primaryActivityShopItem = seasonCenter?.shopItems[0] ?? null;
+  const primaryScenario = seasonCenter?.scenarios[0] ?? null;
   const activeTaskTip =
     activeTaskType === "daily"
       ? "每日任务按服务器日刷新，已领取奖励不会在同一天重复发放。"
@@ -1753,6 +1820,166 @@ function App() {
     }
 
     setVipError(response.error.message);
+  };
+
+  const loadSeasonCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<SeasonCenter>(
+      `/season?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setSeasonCenter(response.data);
+      setSeasonError("");
+      return;
+    }
+
+    setSeasonError(response.error.message);
+  };
+
+  const runSeasonAction = async <T,>(
+    path: string,
+    body: Record<string, unknown>,
+    onSuccess: (data: T) => void,
+    notice: string
+  ): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<T>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      onSuccess(response.data);
+      await loadSeasonCenter(account.token, selectedServer.id);
+      setSeasonNotice(notice);
+      setSeasonError("");
+      return;
+    }
+
+    setSeasonError(response.error.message);
+  };
+
+  const progressSeasonTask = async (taskId: string): Promise<void> => {
+    await runSeasonAction<SeasonTaskProgressResult>(
+      `/season/tasks/${encodeURIComponent(taskId)}/progress`,
+      {},
+      (data) => {
+        setSeasonCenter((current) => current === null ? current : {
+          ...current,
+          season: data.season,
+          tasks: current.tasks.map((task) => task.id === data.task.id ? data.task : task)
+        });
+      },
+      "赛季任务进度已更新。"
+    );
+  };
+
+  const purchaseSeasonPass = async (): Promise<void> => {
+    if (!seasonCenter) {
+      return;
+    }
+
+    await runSeasonAction<SeasonPassPurchaseResult>(
+      "/season/pass/purchase",
+      { seasonId: seasonCenter.season.id, requestId: `season-pass-${Date.now()}` },
+      (data) => {
+        setSeasonCenter((current) => current === null ? current : { ...current, season: data.season, wallet: data.wallet });
+      },
+      "赛季通行证已开通，VIP 经验同步增加。"
+    );
+  };
+
+  const joinSeasonActivity = async (activityId: string): Promise<void> => {
+    await runSeasonAction<SeasonActivityActionResult>(
+      `/activities/${encodeURIComponent(activityId)}/join`,
+      {},
+      (data) => {
+        setSeasonCenter((current) => current === null ? current : {
+          ...current,
+          season: data.season,
+          activities: current.activities.map((activity) => activity.id === data.activity.id ? data.activity : activity)
+        });
+      },
+      "活动报名成功。"
+    );
+  };
+
+  const progressSeasonActivity = async (activityId: string): Promise<void> => {
+    await runSeasonAction<SeasonActivityActionResult>(
+      `/activities/${encodeURIComponent(activityId)}/progress`,
+      { scoreDelta: 260 },
+      (data) => {
+        setProfile(data.profile);
+        setSeasonCenter((current) => current === null ? current : {
+          ...current,
+          season: data.season,
+          activities: current.activities.map((activity) => activity.id === data.activity.id ? data.activity : activity)
+        });
+      },
+      "活动积分已推进。"
+    );
+  };
+
+  const claimSeasonActivity = async (activityId: string): Promise<void> => {
+    await runSeasonAction<SeasonActivityActionResult>(
+      `/activities/${encodeURIComponent(activityId)}/claim`,
+      {},
+      (data) => {
+        setProfile(data.profile);
+        setSeasonCenter((current) => current === null ? current : {
+          ...current,
+          season: data.season,
+          activities: current.activities.map((activity) => activity.id === data.activity.id ? data.activity : activity)
+        });
+      },
+      "活动奖励已领取。"
+    );
+  };
+
+  const purchaseActivityShopItem = async (itemId: string): Promise<void> => {
+    await runSeasonAction<ActivityShopPurchaseResult>(
+      "/activity-shop/purchase",
+      { itemId, requestId: `activity-shop-${Date.now()}` },
+      (data) => {
+        setProfile(data.profile);
+        setSeasonCenter((current) => current === null ? current : { ...current, season: data.season, wallet: data.wallet });
+      },
+      "活动商店道具已兑换。"
+    );
+  };
+
+  const startSeasonScenario = async (scenarioId: string): Promise<void> => {
+    await runSeasonAction<ScenarioRunResult>(
+      `/scenarios/${encodeURIComponent(scenarioId)}/start`,
+      {},
+      (data) => setScenarioRun(data.run),
+      "经营剧本已启动。"
+    );
+  };
+
+  const settleSeasonScenario = async (): Promise<void> => {
+    if (!scenarioRun || !account || !selectedServer) {
+      return;
+    }
+
+    await runSeasonAction<ScenarioRunResult>(
+      `/scenarios/${encodeURIComponent(scenarioRun.id)}/settle`,
+      { choices: ["cost_cut", "debt_restructure", "compliance_fix"] },
+      (data) => {
+        setScenarioRun(data.run);
+        void loadSeasonCenter(account.token, selectedServer.id);
+      },
+      "经营剧本已结算并发放奖励。"
+    );
   };
 
   const loadPhase14Center = async (token: string, nextServerId: string): Promise<void> => {
@@ -2278,6 +2505,15 @@ function App() {
   };
 
   const openHomePanel = (panelName: string): void => {
+    if (panelName === "活动" || panelName === "限时活动") {
+      setActivePanel(null);
+      setNativeHomePage("season");
+      if (account && selectedServer) {
+        void loadSeasonCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
     if (panelName === "排行榜" || panelName === "排行") {
       setActivePanel(null);
       setNativeHomePage("leaderboard");
@@ -3066,6 +3302,147 @@ function App() {
               </button>
             ))}
           </nav>
+
+          {nativeHomePage === "season" && (
+            <section className="page-container page-active" aria-label="赛季活动" data-testid="native-season">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="calendar" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">{seasonCenter?.season.name ?? "Season 活动中心"}</h2>
+                    <span className="text-[10px] text-slate-500">{seasonCenter ? `${seasonCenter.season.startDate} 至 ${seasonCenter.season.endDate}` : "赛季配置读取中"}</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭赛季活动" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="px-6 grid grid-cols-3 gap-2 mb-4">
+                <div className="glass-panel rounded-2xl p-2 text-center">
+                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.points ?? 0}</strong>
+                  <span className="text-[9px] text-slate-500">赛季积分</span>
+                </div>
+                <div className="glass-panel rounded-2xl p-2 text-center">
+                  <strong className="block text-sm text-white font-black">{seasonCenter?.season.status === "active" ? "进行中" : "未开放"}</strong>
+                  <span className="text-[9px] text-slate-500">赛季状态</span>
+                </div>
+                <div className="glass-panel rounded-2xl p-2 text-center">
+                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.pass.isPurchased ? "已开通" : `${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}</strong>
+                  <span className="text-[9px] text-slate-500">通行证</span>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
+                {(seasonNotice || seasonError) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {seasonError || seasonNotice}
+                  </p>
+                )}
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">赛季任务</strong>
+                      <span className="text-[9px] text-slate-500">{primarySeasonTask?.description ?? "推进经营动作获得赛季积分"}</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{primarySeasonTask ? `${primarySeasonTask.progress}/${primarySeasonTask.target}` : "0/0"}</span>
+                  </div>
+                  <button
+                    className="btn-gold w-full py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                    disabled={!primarySeasonTask || primarySeasonTask.isClaimed}
+                    type="button"
+                    onClick={() => primarySeasonTask && void progressSeasonTask(primarySeasonTask.id)}
+                  >
+                    {primarySeasonTask?.isClaimed ? "任务已完成" : "推进赛季任务"}
+                  </button>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">赛季通行证</strong>
+                      <span className="text-[9px] text-slate-500">消耗平台币，计入 VIP 经验。</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{seasonCenter?.wallet.balance ?? profile.platformCoins} 平台币</span>
+                  </div>
+                  <button
+                    className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45"
+                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
+                    type="button"
+                    onClick={() => void purchaseSeasonPass()}
+                  >
+                    {seasonCenter?.season.pass.isPurchased ? "已开通" : `开通 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
+                  </button>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">{primarySeasonActivity?.name ?? "限时活动"}</strong>
+                      <span className="text-[9px] text-slate-500">活动榜随活动开放显示。</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{primarySeasonActivity ? `${primarySeasonActivity.score}/${primarySeasonActivity.targetScore}` : "0/0"}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={!primarySeasonActivity || primarySeasonActivity.isJoined} type="button" onClick={() => primarySeasonActivity && void joinSeasonActivity(primarySeasonActivity.id)}>
+                      {primarySeasonActivity?.isJoined ? "已报名" : "报名"}
+                    </button>
+                    <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!primarySeasonActivity || !primarySeasonActivity.isJoined || primarySeasonActivity.rewardClaimed} type="button" onClick={() => primarySeasonActivity && void progressSeasonActivity(primarySeasonActivity.id)}>
+                      推进
+                    </button>
+                    <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={!primarySeasonActivity || primarySeasonActivity.score < primarySeasonActivity.targetScore || primarySeasonActivity.rewardClaimed} type="button" onClick={() => primarySeasonActivity && void claimSeasonActivity(primarySeasonActivity.id)}>
+                      {primarySeasonActivity?.rewardClaimed ? "已领" : "领奖"}
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {(primaryActivityBoard?.rows ?? []).slice(0, 3).map((row) => (
+                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
+                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                        <div className="flex-1 min-w-0">
+                          <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                          <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动称号待争夺"}</span>
+                        </div>
+                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                      </div>
+                    ))}
+                    {seasonCenter && seasonCenter.activityBoards.length === 0 && <p className="text-xs text-slate-400 font-bold">活动榜未开启。</p>}
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">{primaryActivityShopItem?.name ?? "活动商店"}</strong>
+                      <span className="text-[9px] text-slate-500">{primaryActivityShopItem?.summary ?? "用活动积分兑换限时资源。"}</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{primaryActivityShopItem?.costPoints ?? 0} 分</span>
+                  </div>
+                  <button className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45" disabled={!primaryActivityShopItem || !primaryActivityShopItem.isAvailable} type="button" onClick={() => primaryActivityShopItem && void purchaseActivityShopItem(primaryActivityShopItem.id)}>
+                    {primaryActivityShopItem?.lockedReason ?? "兑换"}
+                  </button>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">{primaryScenario?.name ?? "经营剧本"}</strong>
+                      <span className="text-[9px] text-slate-500">{primaryScenario?.summary ?? "按经营选择结算评分和奖励。"}</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{scenarioRun?.grade ?? primaryScenario?.bestScore ?? "-"}</span>
+                  </div>
+                  {scenarioRun && (
+                    <div className="mb-3 grid grid-cols-2 gap-2 text-center">
+                      <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{scenarioRun.initialState.cashDays}</strong><span className="text-[9px] text-slate-500">现金天数</span></div>
+                      <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{scenarioRun.score ?? "-"}</strong><span className="text-[9px] text-slate-500">评分</span></div>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <button className="rounded-xl border border-white/10 py-2 text-xs font-black text-white disabled:opacity-45" disabled={!primaryScenario || scenarioRun?.score !== null && scenarioRun !== null} type="button" onClick={() => primaryScenario && void startSeasonScenario(primaryScenario.id)}>
+                      启动剧本
+                    </button>
+                    <button className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45" disabled={!scenarioRun || scenarioRun.score !== null} type="button" onClick={() => void settleSeasonScenario()}>
+                      结算剧本
+                    </button>
+                  </div>
+                </section>
+                {!seasonCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">赛季活动读取中，请确认 API 服务已启动。</p>}
+              </div>
+            </section>
+          )}
 
           {nativeHomePage === "leaderboard" && (
             <section className="page-container page-active" aria-label="排行榜" data-testid="native-leaderboard">

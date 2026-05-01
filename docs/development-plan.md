@@ -1431,20 +1431,20 @@ VIP 权益：
 
 开发内容：
 
-- [ ] 赛季系统。
-- [ ] 赛季任务。
-- [ ] 赛季积分。
-- [ ] 赛季通行证。
-- [ ] 限时活动列表。
-- [ ] 活动报名。
-- [ ] 活动进度。
-- [ ] 活动结算。
-- [ ] 活动临时榜。
-- [ ] 活动商店。
-- [ ] 经营残局配置。
-- [ ] 经营残局进入、决策、评分、奖励。
-- [ ] 赛季称号、赛季成就、赛季知识卡。
-- [ ] 后台赛季、活动、奖励、残局配置。
+- [x] 赛季系统。
+- [x] 赛季任务。
+- [x] 赛季积分。
+- [x] 赛季通行证。
+- [x] 限时活动列表。
+- [x] 活动报名。
+- [x] 活动进度。
+- [x] 活动结算。
+- [x] 活动临时榜。
+- [x] 活动商店。
+- [x] 经营残局配置。
+- [x] 经营残局进入、决策、评分、奖励。
+- [x] 赛季称号、赛季成就、赛季知识卡。
+- [x] 后台赛季、活动、奖励、残局配置。
 
 验收标准：
 
@@ -1466,6 +1466,22 @@ VIP 权益：
 - 经营残局评分测试。
 - 后台活动配置测试。
 - `lint/typecheck/build` 全部通过。
+
+阶段总结：
+
+- 完成后端赛季、赛季任务、赛季积分、通行证购买、限时活动报名/进度/领奖、活动临时榜、活动商店、经营残局启动/评分/奖励闭环。
+- 新增赛季称号 `AI风口先锋`、赛季成就 `AI 风口上榜` 和赛季知识卡 `AI Agent 风口活动复盘`；活动领奖完成赛季成就，成就领取解锁知识卡。
+- 前台“活动/限时活动”入口进入赛季活动页，沿用主页深色商务手游基线，展示赛季任务、通行证、活动榜、活动商店和经营剧本；修复原生页面层级低于底部导航导致按钮被遮挡的问题。
+- 后台配置中心新增赛季、活动、经营剧本配置可见性。
+- 四插件检查：
+  - Superpowers：确认 Phase 19 目标、成功标准、最小范围和当前稳定点 `070d37d`，按 TDD 先写 Phase 19 红测再实现。
+  - Browser Use：本地验收 `http://127.0.0.1:5173/` 注册登录恢复、打开“活动”、推进赛季任务、活动报名/进度/领奖、活动商店兑换、经营剧本结算；验收 `http://127.0.0.1:5174/` 后台配置中心可见赛季/活动/剧本。
+  - Build Web Apps：检查新增赛季页沿用当前主页 HTML/UI 基线，保持深色背景、金色强调、glass-panel、btn-gold、顶部资源栏和底部导航体系一致。
+  - Game Studio：检查赛季页作为玩法入口不遮挡 HUD，奖励反馈、活动榜、商店、剧本按钮在移动端可读；发现并修复页面层级低于底部导航的点击遮挡问题。
+- 验证命令：`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm test -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`git diff --check`。首次 `db:generate` 因本地 API dev 进程占用 Prisma Windows DLL 失败，停止 API 相关 dev/watch 进程后重跑通过。
+- 遗留风险：Phase 19 完成单赛季单活动单剧本的最小长期运营闭环，尚未做多赛季轮换、复杂活动日历和后台编辑表单。
+- 下一阶段入口：当前计划未定义 Phase 20；后续应先补充下一阶段目标再继续。
+- 是否可作为稳定点：可以。
 
 ## 8. 每阶段四插件强制流程
 

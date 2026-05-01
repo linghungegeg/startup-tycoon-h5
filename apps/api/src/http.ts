@@ -1663,6 +1663,207 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/season") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+      const result = await repository.getSeasonCenter(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "SEASON_NOT_FOUND") {
+        sendJson(response, 404, failure("SEASON_NOT_FOUND", "Season config not found.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const seasonTaskMatch = request.method === "POST" ? /^\/season\/tasks\/([^/]+)\/progress$/.exec(url.pathname) : null;
+    if (seasonTaskMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+        const result = await repository.progressSeasonTask(account.id, serverId, decodeURIComponent(seasonTaskMatch[1] ?? ""), readToday(request));
+        if (typeof result === "string") {
+          sendJson(response, result === "PLAYER_NOT_FOUND" || result.endsWith("NOT_FOUND") ? 404 : 409, failure(result, "Season task cannot be progressed.", traceId));
+          return;
+        }
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/season/pass/purchase") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be an object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const seasonId = readString(body, "seasonId");
+        const requestId = readString(body, "requestId");
+        if (serverId === undefined || seasonId === "" || requestId.length < 8 || requestId.length > 64) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, seasonId and requestId are required.", traceId));
+          return;
+        }
+        const result = await repository.purchaseSeasonPass(account.id, serverId, seasonId, requestId, readToday(request));
+        if (typeof result === "string") {
+          sendJson(response, result === "INSUFFICIENT_PLATFORM_COINS" ? 409 : 404, failure(result, "Season pass cannot be purchased.", traceId));
+          return;
+        }
+        sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const activityMatch = request.method === "POST" ? /^\/activities\/([^/]+)\/(join|progress|claim)$/.exec(url.pathname) : null;
+    if (activityMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+        const activityId = decodeURIComponent(activityMatch[1] ?? "");
+        const action = activityMatch[2] ?? "";
+        const scoreDelta = action === "progress" ? readPositiveInteger(body, "scoreDelta") : undefined;
+        if (action === "progress" && scoreDelta === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "scoreDelta is required.", traceId));
+          return;
+        }
+        const result = action === "join"
+          ? await repository.joinActivity(account.id, serverId, activityId, readToday(request))
+          : action === "progress"
+            ? await repository.progressActivity(account.id, serverId, activityId, scoreDelta ?? 0, readToday(request))
+            : await repository.claimActivityReward(account.id, serverId, activityId, readToday(request));
+        if (typeof result === "string") {
+          sendJson(response, result.endsWith("NOT_FOUND") ? 404 : 409, failure(result, "Activity action cannot be completed.", traceId));
+          return;
+        }
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/activity-shop/purchase") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be an object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const itemId = readString(body, "itemId");
+        const requestId = readString(body, "requestId");
+        if (serverId === undefined || itemId === "" || requestId.length < 8 || requestId.length > 64) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, itemId and requestId are required.", traceId));
+          return;
+        }
+        const result = await repository.purchaseActivityShopItem(account.id, serverId, itemId, requestId, readToday(request));
+        if (typeof result === "string") {
+          sendJson(response, result.endsWith("NOT_FOUND") ? 404 : 409, failure(result, "Activity shop item cannot be purchased.", traceId));
+          return;
+        }
+        sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const scenarioStartMatch = request.method === "POST" ? /^\/scenarios\/([^/]+)\/start$/.exec(url.pathname) : null;
+    if (scenarioStartMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        if (serverId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+          return;
+        }
+        const result = await repository.startScenario(account.id, serverId, decodeURIComponent(scenarioStartMatch[1] ?? ""));
+        if (typeof result === "string") {
+          sendJson(response, result === "PLAYER_NOT_FOUND" ? 404 : 404, failure(result, "Scenario cannot be started.", traceId));
+          return;
+        }
+        sendJson(response, 201, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    const scenarioSettleMatch = request.method === "POST" ? /^\/scenarios\/([^/]+)\/settle$/.exec(url.pathname) : null;
+    if (scenarioSettleMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      try {
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        const choices = isRecord(body) && Array.isArray(body.choices) ? body.choices.filter((item): item is string => typeof item === "string") : [];
+        if (serverId === undefined || choices.length === 0) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and choices are required.", traceId));
+          return;
+        }
+        const result = await repository.settleScenario(account.id, serverId, decodeURIComponent(scenarioSettleMatch[1] ?? ""), choices);
+        if (typeof result === "string") {
+          sendJson(response, 404, failure(result, "Scenario run not found.", traceId));
+          return;
+        }
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/tasks") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

@@ -898,6 +898,15 @@ const titleConfigs = [
     bonusLabel: "VIP身份展示",
     durationDays: 0,
     sortOrder: 5
+  },
+  {
+    id: "season-ai-pioneer",
+    name: "AI风口先锋",
+    category: "season",
+    source: "season",
+    bonusLabel: "赛季活动展示",
+    durationDays: 30,
+    sortOrder: 6
   }
 ];
 
@@ -946,12 +955,28 @@ const achievementConfigs = [
     rewardKnowledgeId: "valuation-method-note",
     isHidden: true,
     sortOrder: 3
+  },
+  {
+    id: "season-ai-agent-growth",
+    name: "AI 风口上榜",
+    category: "season",
+    description: "完成 AI Agent 风口榜活动目标。",
+    conditionKind: "manual_season",
+    conditionValue: 1,
+    rewardCash: 0,
+    rewardPlatformCoins: 0,
+    rewardActionPower: 0,
+    rewardTitleId: "season-ai-pioneer",
+    rewardKnowledgeId: "ai-agent-season-playbook",
+    isHidden: false,
+    sortOrder: 19
   }
 ];
 
 const knowledgeCategories = [
   { id: "startup", name: "创业基础", sortOrder: 1 },
-  { id: "finance", name: "财务合规", sortOrder: 2 }
+  { id: "finance", name: "财务合规", sortOrder: 2 },
+  { id: "season", name: "赛季运营", sortOrder: 3 }
 ];
 
 const knowledgeEntries = [
@@ -987,6 +1012,91 @@ const knowledgeEntries = [
     contentVersion: "2026.05",
     disclaimer: "仅作游戏科普，不构成法律建议",
     sortOrder: 3
+  },
+  {
+    id: "ai-agent-season-playbook",
+    categoryId: "season",
+    title: "AI Agent 风口活动复盘",
+    summary: "赛季活动用于模拟新技术窗口期的产品增长、现金流约束和运营节奏管理。",
+    sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
+    collectedAt: "2026-05-01",
+    contentVersion: "2026.05",
+    disclaimer: "仅作游戏科普，不构成法律建议",
+    sortOrder: 19
+  }
+];
+
+const seasonConfigs = [
+  {
+    id: "season-ai-agent-2026",
+    name: "AI Agent 元年",
+    theme: "用产品增长和现金流穿越新风口。",
+    startDate: "2026-05-01",
+    endDate: "2026-05-30",
+    passPricePlatformCoins: 880,
+    sortOrder: 1
+  }
+];
+
+const seasonTaskConfigs = [
+  {
+    id: "season-daily-project",
+    seasonId: "season-ai-agent-2026",
+    title: "推进一次风口项目",
+    description: "完成一次项目或产品推进，为赛季积累增长积分。",
+    target: 1,
+    rewardPoints: 120,
+    sortOrder: 1
+  }
+];
+
+const activityConfigs = [
+  {
+    id: "ai-agent-growth",
+    seasonId: "season-ai-agent-2026",
+    name: "AI Agent 风口榜",
+    startDate: "2026-05-01",
+    endDate: "2026-05-20",
+    leaderboardKey: "activity-ai-agent-growth",
+    targetScore: 200,
+    rewardCash: 120000,
+    rewardReputation: 600,
+    rewardPoints: 260,
+    rewardTitleId: "season-ai-pioneer",
+    sortOrder: 1
+  }
+];
+
+const activityShopItemConfigs = [
+  {
+    id: "activity-risk-insurance",
+    seasonId: "season-ai-agent-2026",
+    name: "风口风险保险",
+    costPoints: 180,
+    rewardActionPower: 30,
+    rewardReputation: 120,
+    purchaseLimit: 1,
+    summary: "用于活动期降低一次经营波动，当前发放行动力和声望。",
+    isActive: true,
+    sortOrder: 1
+  }
+];
+
+const scenarioConfigs = [
+  {
+    id: "cashflow-rescue",
+    name: "现金流 15 天救援",
+    summary: "固定危机场景：现金紧张、负债率高、核心员工波动和客户延期付款同时出现。",
+    initialStateJson: JSON.stringify({
+      cashDays: 15,
+      debtRatioBasisPoints: 8000,
+      coreEmployeeRisk: "核心员工准备离职",
+      customerDelay: "大客户延期付款"
+    }),
+    rewardCash: 90000,
+    rewardReputation: 500,
+    rewardTitleId: "cashflow-master",
+    sortOrder: 1
   }
 ];
 
@@ -1118,6 +1228,46 @@ const seed = async (): Promise<void> => {
       where: { level: vipLevelConfig.level },
       update: vipLevelConfig,
       create: vipLevelConfig
+    });
+  }
+
+  for (const seasonConfig of seasonConfigs) {
+    await prisma.seasonConfig.upsert({
+      where: { id: seasonConfig.id },
+      update: seasonConfig,
+      create: seasonConfig
+    });
+  }
+
+  for (const seasonTaskConfig of seasonTaskConfigs) {
+    await prisma.seasonTaskConfig.upsert({
+      where: { id: seasonTaskConfig.id },
+      update: seasonTaskConfig,
+      create: seasonTaskConfig
+    });
+  }
+
+  for (const activityConfig of activityConfigs) {
+    await prisma.activityConfig.upsert({
+      where: { id: activityConfig.id },
+      update: activityConfig,
+      create: activityConfig
+    });
+  }
+
+  for (const activityShopItemConfig of activityShopItemConfigs) {
+    await prisma.activityShopItemConfig.upsert({
+      where: { id: activityShopItemConfig.id },
+      update: activityShopItemConfig,
+      create: activityShopItemConfig
+    });
+  }
+
+  for (const scenarioConfig of scenarioConfigs) {
+    await prisma.scenarioConfig.upsert({
+      where: { id: scenarioConfig.id },
+      update: scenarioConfig,
+      create: scenarioConfig
     });
   }
 

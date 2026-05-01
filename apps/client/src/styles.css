@@ -1791,7 +1791,7 @@ input {
 .page-container {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  z-index: 120;
   display: none;
   flex-direction: column;
   background: #020617;

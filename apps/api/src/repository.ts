@@ -416,6 +416,8 @@ export type PlatformCoinLedgerSource =
   | "admin_deduct"
   | "admin_correction"
   | "shop_purchase"
+  | "season_pass_purchase"
+  | "activity_shop_purchase"
   | "activity_reward"
   | "reserved_payment"
   | "system_compensation";
@@ -647,6 +649,9 @@ export type AdminConfigCenterRecord = {
     reason: string;
     createdAt: string;
   }>;
+  seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string }>;
+  activities: Array<{ id: string; name: string; status: string; leaderboardKey: string }>;
+  scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
 export type AdminTitleActionRecord = {
@@ -745,6 +750,64 @@ export type LeaderboardCenterRecord = {
 export type LeaderboardSettlementRecord = {
   leaderboard: LeaderboardCenterRecord;
   deliveredRewards: number;
+};
+
+export type SeasonStatus = "upcoming" | "active" | "ended";
+
+export type SeasonCenterRecord = {
+  season: {
+    id: string;
+    name: string;
+    theme: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    points: number;
+    pass: { isPurchased: boolean; pricePlatformCoins: number };
+  };
+  tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; isClaimed: boolean }>;
+  activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activityBoards: LeaderboardBoardRecord[];
+  shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; isAvailable: boolean; lockedReason: string | null }>;
+  scenarios: Array<{ id: string; name: string; summary: string; bestScore: number | null }>;
+  wallet: PlatformWalletRecord;
+};
+
+export type SeasonTaskProgressRecord = {
+  season: SeasonCenterRecord["season"];
+  task: SeasonCenterRecord["tasks"][number];
+};
+
+export type SeasonPassPurchaseRecord = {
+  season: SeasonCenterRecord["season"];
+  wallet: PlatformWalletRecord;
+  isDuplicate: boolean;
+};
+
+export type ActivityActionRecord = {
+  season: SeasonCenterRecord["season"];
+  activity: SeasonCenterRecord["activities"][number];
+  profile: PlayerProfileRecord;
+};
+
+export type ActivityShopPurchaseRecord = {
+  season: SeasonCenterRecord["season"];
+  wallet: PlatformWalletRecord;
+  item: SeasonCenterRecord["shopItems"][number];
+  profile: PlayerProfileRecord;
+  isDuplicate: boolean;
+};
+
+export type ScenarioRunRecord = {
+  run: {
+    id: string;
+    scenarioId: string;
+    initialState: { cashDays: number; debtRatioBasisPoints: number; coreEmployeeRisk: string; customerDelay: string };
+    choices: string[];
+    score: number | null;
+    grade: string | null;
+    rewardClaimed: boolean;
+  };
 };
 
 export type CrossServerGroupRecord = {
@@ -924,6 +987,15 @@ export type GameRepository = {
   settleAdminLeaderboards(adminUserId: string, serverId: string, today: string, reason: string): Promise<(LeaderboardSettlementRecord & { auditLogId: string }) | "PLAYER_NOT_FOUND">;
   listAdminCrossServerGroups(): Promise<AdminCrossServerGroupListRecord>;
   assignAdminCrossServerGroup(adminUserId: string, serverId: string, groupId: string, reason: string): Promise<AdminCrossServerGroupAssignmentRecord | "SERVER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  getSeasonCenter(accountId: string, serverId: string, today: string): Promise<SeasonCenterRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND">;
+  progressSeasonTask(accountId: string, serverId: string, taskId: string, today: string): Promise<SeasonTaskProgressRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "SEASON_TASK_NOT_FOUND" | "SEASON_NOT_ACTIVE">;
+  purchaseSeasonPass(accountId: string, serverId: string, seasonId: string, requestId: string, today: string): Promise<SeasonPassPurchaseRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "SEASON_NOT_ACTIVE" | "INSUFFICIENT_PLATFORM_COINS">;
+  joinActivity(accountId: string, serverId: string, activityId: string, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_ACTIVE">;
+  progressActivity(accountId: string, serverId: string, activityId: string, scoreDelta: number, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_JOINED" | "ACTIVITY_NOT_ACTIVE">;
+  claimActivityReward(accountId: string, serverId: string, activityId: string, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_JOINED" | "ACTIVITY_INCOMPLETE" | "ACTIVITY_REWARD_ALREADY_CLAIMED" | "ACTIVITY_NOT_ACTIVE">;
+  purchaseActivityShopItem(accountId: string, serverId: string, itemId: string, requestId: string, today: string): Promise<ActivityShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "ACTIVITY_SHOP_ITEM_NOT_FOUND" | "INSUFFICIENT_ACTIVITY_POINTS" | "PURCHASE_LIMIT_REACHED">;
+  startScenario(accountId: string, serverId: string, scenarioId: string): Promise<ScenarioRunRecord | "PLAYER_NOT_FOUND" | "SCENARIO_NOT_FOUND">;
+  settleScenario(accountId: string, serverId: string, runId: string, choices: string[]): Promise<ScenarioRunRecord | "PLAYER_NOT_FOUND" | "SCENARIO_RUN_NOT_FOUND">;
   getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
   settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
   getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
@@ -1709,6 +1781,193 @@ const toShopCenterRecord = async (
   };
 };
 
+const readSeasonStatus = (startDate: string, endDate: string, today: string): SeasonStatus => {
+  if (today < startDate) {
+    return "upcoming";
+  }
+  return today > endDate ? "ended" : "active";
+};
+
+const readScenarioState = (initialStateJson: string): ScenarioRunRecord["run"]["initialState"] => {
+  const fallback = {
+    cashDays: 15,
+    debtRatioBasisPoints: 8000,
+    coreEmployeeRisk: "核心员工准备离职",
+    customerDelay: "大客户延期付款"
+  };
+  try {
+    const parsed = JSON.parse(initialStateJson) as Partial<typeof fallback>;
+    return {
+      cashDays: typeof parsed.cashDays === "number" ? parsed.cashDays : fallback.cashDays,
+      debtRatioBasisPoints: typeof parsed.debtRatioBasisPoints === "number" ? parsed.debtRatioBasisPoints : fallback.debtRatioBasisPoints,
+      coreEmployeeRisk: typeof parsed.coreEmployeeRisk === "string" ? parsed.coreEmployeeRisk : fallback.coreEmployeeRisk,
+      customerDelay: typeof parsed.customerDelay === "string" ? parsed.customerDelay : fallback.customerDelay
+    };
+  } catch {
+    return fallback;
+  }
+};
+
+const scoreScenarioChoices = (choices: string[]): { score: number; grade: string } => {
+  const weights = new Map([
+    ["cost_cut", 28],
+    ["debt_restructure", 32],
+    ["compliance_fix", 32],
+    ["customer_negotiate", 24],
+    ["bridge_funding", 20]
+  ]);
+  const score = Math.min(100, choices.reduce((sum, choice) => sum + (weights.get(choice) ?? 0), 0));
+  return { score, grade: score >= 90 ? "S" : score >= 75 ? "A" : score >= 60 ? "B" : "C" };
+};
+
+const toSeasonCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord,
+  today: string
+): Promise<SeasonCenterRecord | "SEASON_NOT_FOUND"> => {
+  const season = await prisma.seasonConfig.findFirst({
+    orderBy: [{ sortOrder: "asc" }, { startDate: "asc" }]
+  });
+  if (season === null) {
+    return "SEASON_NOT_FOUND";
+  }
+
+  const [progress, pass, tasks, taskProgresses, activities, activityStates, shopItems, shopPurchases, scenarios, scenarioRuns, wallet] = await Promise.all([
+    prisma.playerSeasonProgress.upsert({
+      where: { profileId_seasonId: { profileId: profile.id, seasonId: season.id } },
+      update: {},
+      create: { profileId: profile.id, seasonId: season.id, points: 0 }
+    }),
+    prisma.playerSeasonPassPurchase.findUnique({ where: { profileId_seasonId: { profileId: profile.id, seasonId: season.id } } }),
+    prisma.seasonTaskConfig.findMany({ where: { seasonId: season.id }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.playerSeasonTaskProgress.findMany({ where: { profileId: profile.id } }),
+    prisma.activityConfig.findMany({ where: { seasonId: season.id }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.playerActivityState.findMany({ where: { profileId: profile.id } }),
+    prisma.activityShopItemConfig.findMany({ where: { seasonId: season.id, isActive: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.playerActivityShopPurchase.findMany({ where: { profileId: profile.id } }),
+    prisma.scenarioConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.playerScenarioRun.findMany({ where: { profileId: profile.id, score: { not: null } } }),
+    toPlatformWalletRecord(prisma, profile)
+  ]);
+  const taskProgressById = new Map(taskProgresses.map((item) => [item.taskId, item]));
+  const activityStateById = new Map(activityStates.map((item) => [item.activityId, item]));
+  const purchaseCounts = shopPurchases.reduce<Map<string, number>>((counts, purchase) => {
+    counts.set(purchase.itemId, (counts.get(purchase.itemId) ?? 0) + 1);
+    return counts;
+  }, new Map());
+  const bestScenarioScores = scenarioRuns.reduce<Map<string, number>>((scores, run) => {
+    if (run.score !== null) {
+      scores.set(run.scenarioId, Math.max(scores.get(run.scenarioId) ?? 0, run.score));
+    }
+    return scores;
+  }, new Map());
+
+  const activityBoards = await Promise.all(activities.map(async (activity) => {
+    const states = await prisma.playerActivityState.findMany({
+      where: { activityId: activity.id, score: { gt: 0 } },
+      include: { profile: true },
+      orderBy: [{ score: "desc" }],
+      take: 20
+    });
+    return {
+      key: activity.leaderboardKey,
+      name: activity.name,
+      scope: "activity" as const,
+      isActive: readSeasonStatus(activity.startDate, activity.endDate, today) === "active",
+      rows: states.map((state, index) => ({
+        rank: index + 1,
+        profileId: state.profileId,
+        founderName: state.profile.founderName,
+        companyName: state.profile.companyName,
+        value: state.score,
+        valueLabel: `${state.score} 分`,
+        equippedTitle: null
+      })),
+      snapshotDate: today
+    };
+  }));
+
+  return {
+    season: {
+      id: season.id,
+      name: season.name,
+      theme: season.theme,
+      status: readSeasonStatus(season.startDate, season.endDate, today),
+      startDate: season.startDate,
+      endDate: season.endDate,
+      points: progress.points,
+      pass: {
+        isPurchased: pass !== null,
+        pricePlatformCoins: season.passPricePlatformCoins
+      }
+    },
+    tasks: tasks.map((task) => {
+      const state = taskProgressById.get(task.id);
+      return {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        progress: state?.progress ?? 0,
+        target: task.target,
+        rewardPoints: task.rewardPoints,
+        isClaimed: state?.claimedAt !== null && state?.claimedAt !== undefined
+      };
+    }),
+    activities: activities.map((activity) => {
+      const state = activityStateById.get(activity.id);
+      return {
+        id: activity.id,
+        name: activity.name,
+        status: readSeasonStatus(activity.startDate, activity.endDate, today),
+        isJoined: state?.isJoined ?? false,
+        score: state?.score ?? 0,
+        targetScore: activity.targetScore,
+        rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined
+      };
+    }),
+    activityBoards: activityBoards.filter((board) => board.isActive),
+    shopItems: shopItems.map((item) => {
+      const limitReached = item.purchaseLimit > 0 && (purchaseCounts.get(item.id) ?? 0) >= item.purchaseLimit;
+      const hasEnoughPoints = progress.points >= item.costPoints;
+      return {
+        id: item.id,
+        name: item.name,
+        costPoints: item.costPoints,
+        summary: item.summary,
+        isAvailable: !limitReached && hasEnoughPoints,
+        lockedReason: limitReached ? "兑换次数已达上限" : hasEnoughPoints ? null : "赛季积分不足"
+      };
+    }),
+    scenarios: scenarios.map((scenario) => ({
+      id: scenario.id,
+      name: scenario.name,
+      summary: scenario.summary,
+      bestScore: bestScenarioScores.get(scenario.id) ?? null
+    })),
+    wallet
+  };
+};
+
+const toScenarioRunRecord = (run: {
+  id: string;
+  scenarioId: string;
+  initialStateJson: string;
+  choicesJson: string | null;
+  score: number | null;
+  grade: string | null;
+  rewardClaimedAt: Date | null;
+}): ScenarioRunRecord => ({
+  run: {
+    id: run.id,
+    scenarioId: run.scenarioId,
+    initialState: readScenarioState(run.initialStateJson),
+    choices: run.choicesJson === null ? [] : JSON.parse(run.choicesJson) as string[],
+    score: run.score,
+    grade: run.grade,
+    rewardClaimed: run.rewardClaimedAt !== null
+  }
+});
+
 const toVipLevelRecord = (level: {
   level: number;
   name: string;
@@ -1913,6 +2172,37 @@ const unlockKnowledge = async (
       profileId,
       knowledgeId,
       source
+    }
+  });
+};
+
+const completeAchievement = async (
+  prisma: PrismaClient,
+  profileId: string,
+  achievementId: string,
+  progress: number
+): Promise<void> => {
+  const config = await prisma.achievementConfig.findUnique({ where: { id: achievementId } });
+  if (config === null) {
+    return;
+  }
+
+  await prisma.playerAchievement.upsert({
+    where: {
+      profileId_achievementId: {
+        profileId,
+        achievementId
+      }
+    },
+    update: {
+      progress,
+      completedAt: new Date()
+    },
+    create: {
+      profileId,
+      achievementId,
+      progress,
+      completedAt: new Date()
     }
   });
 };
@@ -4933,13 +5223,16 @@ export const createPrismaGameRepository = (
   },
 
   async getAdminConfigCenter() {
-    const [titles, achievements, knowledgeEntries, shopProducts, leaderboardSnapshots, mailCompensations] = await Promise.all([
+    const [titles, achievements, knowledgeEntries, shopProducts, leaderboardSnapshots, mailCompensations, seasons, activities, scenarios] = await Promise.all([
       prisma.titleConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.achievementConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.knowledgeEntry.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }], take: 100 }),
       prisma.shopProductConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.leaderboardSnapshot.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 }),
-      prisma.adminMailCompensation.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 })
+      prisma.adminMailCompensation.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 }),
+      prisma.seasonConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.scenarioConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] })
     ]);
 
     return {
@@ -4990,6 +5283,24 @@ export const createPrismaGameRepository = (
         platformCoins: mail.platformCoins,
         reason: mail.reason,
         createdAt: mail.createdAt.toISOString()
+      })),
+      seasons: seasons.map((season) => ({
+        id: season.id,
+        name: season.name,
+        status: readSeasonStatus(season.startDate, season.endDate, new Date().toISOString().slice(0, 10)),
+        startDate: season.startDate,
+        endDate: season.endDate
+      })),
+      activities: activities.map((activity) => ({
+        id: activity.id,
+        name: activity.name,
+        status: readSeasonStatus(activity.startDate, activity.endDate, new Date().toISOString().slice(0, 10)),
+        leaderboardKey: activity.leaderboardKey
+      })),
+      scenarios: scenarios.map((scenario) => ({
+        id: scenario.id,
+        name: scenario.name,
+        rewardTitleId: scenario.rewardTitleId
       }))
     };
   },
@@ -5291,6 +5602,192 @@ export const createPrismaGameRepository = (
       },
       auditLogId: result.auditLogId
     };
+  },
+
+  async getSeasonCenter(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    return profile === null ? "PLAYER_NOT_FOUND" : toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
+  },
+
+  async progressSeasonTask(accountId, serverId, taskId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const season = await prisma.seasonConfig.findFirst({ orderBy: [{ sortOrder: "asc" }, { startDate: "asc" }] });
+    if (season === null) return "SEASON_NOT_FOUND";
+    if (readSeasonStatus(season.startDate, season.endDate, today) !== "active") return "SEASON_NOT_ACTIVE";
+    const task = await prisma.seasonTaskConfig.findUnique({ where: { id: taskId } });
+    if (task === null || task.seasonId !== season.id) return "SEASON_TASK_NOT_FOUND";
+
+    await prisma.$transaction(async (tx) => {
+      const state = await tx.playerSeasonTaskProgress.upsert({
+        where: { profileId_taskId: { profileId: profile.id, taskId } },
+        update: { progress: { increment: 1 } },
+        create: { profileId: profile.id, taskId, progress: 1 }
+      });
+      if (state.claimedAt === null && state.progress + 1 >= task.target) {
+        await tx.playerSeasonTaskProgress.update({ where: { id: state.id }, data: { progress: task.target, claimedAt: new Date() } });
+        await tx.playerSeasonProgress.upsert({
+          where: { profileId_seasonId: { profileId: profile.id, seasonId: season.id } },
+          update: { points: { increment: task.rewardPoints } },
+          create: { profileId: profile.id, seasonId: season.id, points: task.rewardPoints }
+        });
+      }
+    });
+
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
+    if (center === "SEASON_NOT_FOUND") return center;
+    const taskRecord = center.tasks.find((item) => item.id === taskId);
+    return taskRecord === undefined ? "SEASON_TASK_NOT_FOUND" : { season: center.season, task: taskRecord };
+  },
+
+  async purchaseSeasonPass(accountId, serverId, seasonId, requestId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const season = await prisma.seasonConfig.findUnique({ where: { id: seasonId } });
+    if (season === null) return "SEASON_NOT_FOUND";
+    if (readSeasonStatus(season.startDate, season.endDate, today) !== "active") return "SEASON_NOT_ACTIVE";
+
+    const existing = await prisma.playerSeasonPassPurchase.findUnique({ where: { profileId_requestId: { profileId: profile.id, requestId } } });
+    if (existing !== null) {
+      const currentProfile = await prisma.playerProfile.findUniqueOrThrow({ where: { id: profile.id } });
+      const center = await toSeasonCenterRecord(prisma, toProfileRecord(currentProfile), today);
+      return center === "SEASON_NOT_FOUND" ? center : { season: center.season, wallet: await toPlatformWalletRecord(prisma, toProfileRecord(currentProfile)), isDuplicate: true };
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId: profile.id },
+        update: {},
+        create: { profileId: profile.id, balance: profile.platformCoins, totalSpent: 0, vipExperience: 0 }
+      });
+      if (wallet.balance < season.passPricePlatformCoins) return "INSUFFICIENT_PLATFORM_COINS" as const;
+      const nextBalance = wallet.balance - season.passPricePlatformCoins;
+      const updatedWallet = await tx.playerPlatformWallet.update({
+        where: { id: wallet.id },
+        data: { balance: nextBalance, totalSpent: { increment: season.passPricePlatformCoins }, vipExperience: { increment: season.passPricePlatformCoins } }
+      });
+      const purchase = await tx.playerSeasonPassPurchase.create({ data: { profileId: profile.id, seasonId: season.id, requestId, pricePlatformCoins: season.passPricePlatformCoins } });
+      await tx.platformCoinLedger.create({
+        data: { profileId: profile.id, walletId: wallet.id, changeAmount: -season.passPricePlatformCoins, balanceAfter: nextBalance, source: "season_pass_purchase", referenceId: purchase.id, reason: `购买赛季通行证：${season.name}` }
+      });
+      await tx.playerProfile.update({ where: { id: profile.id }, data: { platformCoins: nextBalance } });
+      return updatedWallet;
+    });
+    if (result === "INSUFFICIENT_PLATFORM_COINS") return result;
+    const currentProfile = await prisma.playerProfile.findUniqueOrThrow({ where: { id: profile.id } });
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(currentProfile), today);
+    return center === "SEASON_NOT_FOUND" ? center : { season: center.season, wallet: await toPlatformWalletRecord(prisma, toProfileRecord(currentProfile)), isDuplicate: false };
+  },
+
+  async joinActivity(accountId, serverId, activityId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const activity = await prisma.activityConfig.findUnique({ where: { id: activityId } });
+    if (activity === null) return "ACTIVITY_NOT_FOUND";
+    if (readSeasonStatus(activity.startDate, activity.endDate, today) !== "active") return "ACTIVITY_NOT_ACTIVE";
+    await prisma.playerActivityState.upsert({
+      where: { profileId_activityId: { profileId: profile.id, activityId } },
+      update: { isJoined: true },
+      create: { profileId: profile.id, activityId, isJoined: true, score: 0 }
+    });
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
+    return center === "SEASON_NOT_FOUND" ? "ACTIVITY_NOT_FOUND" : { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile: toProfileRecord(profile) };
+  },
+
+  async progressActivity(accountId, serverId, activityId, scoreDelta, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const activity = await prisma.activityConfig.findUnique({ where: { id: activityId } });
+    if (activity === null) return "ACTIVITY_NOT_FOUND";
+    if (readSeasonStatus(activity.startDate, activity.endDate, today) !== "active") return "ACTIVITY_NOT_ACTIVE";
+    const state = await prisma.playerActivityState.findUnique({ where: { profileId_activityId: { profileId: profile.id, activityId } } });
+    if (state === null || !state.isJoined) return "ACTIVITY_NOT_JOINED";
+    await prisma.$transaction([
+      prisma.playerActivityState.update({ where: { id: state.id }, data: { score: { increment: scoreDelta } } }),
+      prisma.playerSeasonProgress.upsert({
+        where: { profileId_seasonId: { profileId: profile.id, seasonId: activity.seasonId } },
+        update: { points: { increment: scoreDelta } },
+        create: { profileId: profile.id, seasonId: activity.seasonId, points: scoreDelta }
+      })
+    ]);
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
+    return center === "SEASON_NOT_FOUND" ? "ACTIVITY_NOT_FOUND" : { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile: toProfileRecord(profile) };
+  },
+
+  async claimActivityReward(accountId, serverId, activityId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const activity = await prisma.activityConfig.findUnique({ where: { id: activityId } });
+    if (activity === null) return "ACTIVITY_NOT_FOUND";
+    if (readSeasonStatus(activity.startDate, activity.endDate, today) !== "active") return "ACTIVITY_NOT_ACTIVE";
+    const state = await prisma.playerActivityState.findUnique({ where: { profileId_activityId: { profileId: profile.id, activityId } } });
+    if (state === null || !state.isJoined) return "ACTIVITY_NOT_JOINED";
+    if (state.score < activity.targetScore) return "ACTIVITY_INCOMPLETE";
+    if (state.rewardClaimedAt !== null) return "ACTIVITY_REWARD_ALREADY_CLAIMED";
+    const updatedProfile = await prisma.$transaction(async (tx) => {
+      await tx.playerActivityState.update({ where: { id: state.id }, data: { rewardClaimedAt: new Date() } });
+      await tx.playerSeasonProgress.upsert({
+        where: { profileId_seasonId: { profileId: profile.id, seasonId: activity.seasonId } },
+        update: { points: { increment: activity.rewardPoints } },
+        create: { profileId: profile.id, seasonId: activity.seasonId, points: activity.rewardPoints }
+      });
+      if (activity.rewardTitleId !== null) {
+        await tx.playerTitle.upsert({ where: { profileId_titleId: { profileId: profile.id, titleId: activity.rewardTitleId } }, update: {}, create: { profileId: profile.id, titleId: activity.rewardTitleId, source: "season" } });
+      }
+      await completeAchievement(tx as PrismaClient, profile.id, "season-ai-agent-growth", 1);
+      return tx.playerProfile.update({ where: { id: profile.id }, data: { cash: { increment: activity.rewardCash }, reputation: { increment: activity.rewardReputation } } });
+    });
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(updatedProfile), today);
+    return center === "SEASON_NOT_FOUND" ? "ACTIVITY_NOT_FOUND" : { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile: toProfileRecord(updatedProfile) };
+  },
+
+  async purchaseActivityShopItem(accountId, serverId, itemId, requestId, today) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const existing = await prisma.playerActivityShopPurchase.findUnique({ where: { profileId_requestId: { profileId: profile.id, requestId } } });
+    if (existing !== null) {
+      const center = await toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
+      return center === "SEASON_NOT_FOUND" ? center : { season: center.season, wallet: await toPlatformWalletRecord(prisma, toProfileRecord(profile)), item: center.shopItems.find((item) => item.id === existing.itemId)!, profile: toProfileRecord(profile), isDuplicate: true };
+    }
+    const item = await prisma.activityShopItemConfig.findUnique({ where: { id: itemId } });
+    if (item === null || !item.isActive) return "ACTIVITY_SHOP_ITEM_NOT_FOUND";
+    const progress = await prisma.playerSeasonProgress.findUnique({ where: { profileId_seasonId: { profileId: profile.id, seasonId: item.seasonId } } });
+    if (progress === null || progress.points < item.costPoints) return "INSUFFICIENT_ACTIVITY_POINTS";
+    const count = await prisma.playerActivityShopPurchase.count({ where: { profileId: profile.id, itemId } });
+    if (item.purchaseLimit > 0 && count >= item.purchaseLimit) return "PURCHASE_LIMIT_REACHED";
+    const updatedProfile = await prisma.$transaction(async (tx) => {
+      await tx.playerSeasonProgress.update({ where: { id: progress.id }, data: { points: { decrement: item.costPoints } } });
+      await tx.playerActivityShopPurchase.create({ data: { profileId: profile.id, itemId, requestId, costPoints: item.costPoints } });
+      return tx.playerProfile.update({ where: { id: profile.id }, data: { actionPower: { increment: item.rewardActionPower }, reputation: { increment: item.rewardReputation } } });
+    });
+    const center = await toSeasonCenterRecord(prisma, toProfileRecord(updatedProfile), today);
+    return center === "SEASON_NOT_FOUND" ? center : { season: center.season, wallet: await toPlatformWalletRecord(prisma, toProfileRecord(updatedProfile)), item: center.shopItems.find((entry) => entry.id === itemId)!, profile: toProfileRecord(updatedProfile), isDuplicate: false };
+  },
+
+  async startScenario(accountId, serverId, scenarioId) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const scenario = await prisma.scenarioConfig.findUnique({ where: { id: scenarioId } });
+    if (scenario === null) return "SCENARIO_NOT_FOUND";
+    return toScenarioRunRecord(await prisma.playerScenarioRun.create({ data: { profileId: profile.id, scenarioId, initialStateJson: scenario.initialStateJson } }));
+  },
+
+  async settleScenario(accountId, serverId, runId, choices) {
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) return "PLAYER_NOT_FOUND";
+    const run = await prisma.playerScenarioRun.findUnique({ where: { id: runId }, include: { scenario: true } });
+    if (run === null || run.profileId !== profile.id) return "SCENARIO_RUN_NOT_FOUND";
+    if (run.score !== null) return toScenarioRunRecord(run);
+    const score = scoreScenarioChoices(choices);
+    const updated = await prisma.$transaction(async (tx) => {
+      const nextRun = await tx.playerScenarioRun.update({ where: { id: run.id }, data: { choicesJson: JSON.stringify(choices), score: score.score, grade: score.grade, rewardClaimedAt: new Date(), settledAt: new Date() } });
+      if (run.scenario.rewardTitleId !== null) {
+        await tx.playerTitle.upsert({ where: { profileId_titleId: { profileId: profile.id, titleId: run.scenario.rewardTitleId } }, update: {}, create: { profileId: profile.id, titleId: run.scenario.rewardTitleId, source: "scenario" } });
+      }
+      await tx.playerProfile.update({ where: { id: profile.id }, data: { cash: { increment: run.scenario.rewardCash }, reputation: { increment: run.scenario.rewardReputation } } });
+      return nextRun;
+    });
+    return toScenarioRunRecord(updated);
   },
 
   async getLeaderboards(accountId, serverId, today) {

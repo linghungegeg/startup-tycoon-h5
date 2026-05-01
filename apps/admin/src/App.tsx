@@ -127,6 +127,9 @@ type ConfigCenter = {
   shopProducts: Array<{ id: string; name: string; category: string; pricePlatformCoins: number; purchaseLimit: number; isActive: boolean }>;
   leaderboardSnapshots: Array<{ id: string; serverId: string; boardName: string; snapshotDate: string; createdAt: string }>;
   mailCompensations: Array<{ id: string; profileId: string; subject: string; platformCoins: number; reason: string; createdAt: string }>;
+  seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string }>;
+  activities: Array<{ id: string; name: string; status: string; leaderboardKey: string }>;
+  scenarios: Array<{ id: string; name: string; rewardTitleId: string }>;
 };
 
 type AuditLog = {
@@ -289,7 +292,10 @@ export default function App() {
     knowledgeEntries: [],
     shopProducts: [],
     leaderboardSnapshots: [],
-    mailCompensations: []
+    mailCompensations: [],
+    seasons: [],
+    activities: [],
+    scenarios: []
   });
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -474,7 +480,7 @@ export default function App() {
     setPlayers([]);
     setVipConfigs([]);
     setCrossGroups([]);
-    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [] });
+    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
     setAnalytics(null);
     setAuditLogs([]);
   };
@@ -1228,6 +1234,33 @@ export default function App() {
                   <h3>商品配置</h3>
                   {configCenter.shopProducts.slice(0, 6).map((product) => (
                     <p key={product.id}>{product.name}：{formatNumber(product.pricePlatformCoins)} 平台币 / {product.isActive ? "启用" : "停用"}</p>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="赛季活动剧本配置">
+              <div className="table-toolbar">
+                <strong>赛季 / 活动 / 经营剧本</strong>
+                <span>{configCenter.seasons.length} 个赛季，{configCenter.activities.length} 个活动</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>赛季配置</h3>
+                  {configCenter.seasons.map((season) => (
+                    <p key={season.id}>{season.name}：{season.status} / {season.startDate} - {season.endDate}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>活动配置</h3>
+                  {configCenter.activities.map((activity) => (
+                    <p key={activity.id}>{activity.name}：{activity.status} / {activity.leaderboardKey}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>经营剧本</h3>
+                  {configCenter.scenarios.map((scenario) => (
+                    <p key={scenario.id}>{scenario.name}：奖励称号 {scenario.rewardTitleId}</p>
                   ))}
                 </div>
               </div>

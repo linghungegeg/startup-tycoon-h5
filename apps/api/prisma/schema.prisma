@@ -227,6 +227,12 @@ model PlayerProfile {
   guildHelpRequests GuildHelpRequest[]
   crossServerSignups CrossServerSignup[]
   mailCompensations AdminMailCompensation[]
+  seasonProgresses PlayerSeasonProgress[]
+  seasonTasks PlayerSeasonTaskProgress[]
+  seasonPassPurchases PlayerSeasonPassPurchase[]
+  activityStates PlayerActivityState[]
+  activityShopPurchases PlayerActivityShopPurchase[]
+  scenarioRuns PlayerScenarioRun[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -281,6 +287,174 @@ model PlayerVipDailyGift {
 
   @@unique([profileId, giftDate])
   @@index([walletId, createdAt])
+}
+
+model SeasonConfig {
+  id          String   @id @db.VarChar(40)
+  name        String   @db.VarChar(64)
+  theme       String   @db.VarChar(64)
+  startDate   String   @db.VarChar(10)
+  endDate     String   @db.VarChar(10)
+  passPricePlatformCoins Int @default(0)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  tasks       SeasonTaskConfig[]
+  progresses  PlayerSeasonProgress[]
+  passPurchases PlayerSeasonPassPurchase[]
+  activities  ActivityConfig[]
+  shopItems   ActivityShopItemConfig[]
+
+  @@index([startDate, endDate])
+  @@index([sortOrder])
+}
+
+model SeasonTaskConfig {
+  id          String   @id @db.VarChar(48)
+  seasonId    String   @db.VarChar(40)
+  title       String   @db.VarChar(64)
+  description String   @db.VarChar(180)
+  target      Int
+  rewardPoints Int
+  sortOrder   Int      @default(0)
+  season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  progresses  PlayerSeasonTaskProgress[]
+
+  @@index([seasonId, sortOrder])
+}
+
+model PlayerSeasonProgress {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  seasonId    String   @db.VarChar(40)
+  points      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, seasonId])
+  @@index([seasonId, points])
+}
+
+model PlayerSeasonTaskProgress {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  taskId      String   @db.VarChar(48)
+  progress    Int      @default(0)
+  claimedAt   DateTime?
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  task        SeasonTaskConfig @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, taskId])
+  @@index([profileId, claimedAt])
+}
+
+model PlayerSeasonPassPurchase {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  seasonId    String   @db.VarChar(40)
+  requestId   String   @db.VarChar(64)
+  pricePlatformCoins Int
+  createdAt   DateTime @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, seasonId])
+  @@unique([profileId, requestId])
+}
+
+model ActivityConfig {
+  id          String   @id @db.VarChar(48)
+  seasonId    String   @db.VarChar(40)
+  name        String   @db.VarChar(64)
+  startDate   String   @db.VarChar(10)
+  endDate     String   @db.VarChar(10)
+  leaderboardKey String @db.VarChar(48)
+  targetScore Int
+  rewardCash  Int      @default(0)
+  rewardReputation Int @default(0)
+  rewardPoints Int     @default(0)
+  rewardTitleId String? @db.VarChar(40)
+  sortOrder   Int      @default(0)
+  season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  states      PlayerActivityState[]
+
+  @@index([seasonId, startDate, endDate])
+}
+
+model PlayerActivityState {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  activityId  String   @db.VarChar(48)
+  isJoined    Boolean  @default(false)
+  score       Int      @default(0)
+  rewardClaimedAt DateTime?
+  updatedAt   DateTime @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  activity    ActivityConfig @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, activityId])
+  @@index([activityId, score])
+}
+
+model ActivityShopItemConfig {
+  id          String   @id @db.VarChar(48)
+  seasonId    String   @db.VarChar(40)
+  name        String   @db.VarChar(64)
+  costPoints  Int
+  rewardActionPower Int @default(0)
+  rewardReputation Int @default(0)
+  purchaseLimit Int    @default(0)
+  summary     String   @db.VarChar(180)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  purchases   PlayerActivityShopPurchase[]
+
+  @@index([seasonId, sortOrder])
+}
+
+model PlayerActivityShopPurchase {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  itemId      String   @db.VarChar(48)
+  requestId   String   @db.VarChar(64)
+  costPoints  Int
+  createdAt   DateTime @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  item        ActivityShopItemConfig @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, requestId])
+  @@index([profileId, itemId])
+}
+
+model ScenarioConfig {
+  id          String   @id @db.VarChar(48)
+  name        String   @db.VarChar(64)
+  summary     String   @db.VarChar(180)
+  initialStateJson String @db.Text
+  rewardCash  Int      @default(0)
+  rewardReputation Int @default(0)
+  rewardTitleId String? @db.VarChar(40)
+  sortOrder   Int      @default(0)
+  runs        PlayerScenarioRun[]
+}
+
+model PlayerScenarioRun {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  profileId   String   @db.VarChar(36)
+  scenarioId  String   @db.VarChar(48)
+  initialStateJson String @db.Text
+  choicesJson String?  @db.Text
+  score       Int?
+  grade       String?  @db.VarChar(8)
+  rewardClaimedAt DateTime?
+  createdAt   DateTime @default(now())
+  settledAt   DateTime?
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  scenario    ScenarioConfig @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, scenarioId, createdAt])
 }
 
 model LeaderboardSnapshot {

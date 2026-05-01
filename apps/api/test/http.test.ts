@@ -979,7 +979,8 @@ const createTestRepository = (): GameRepository => {
     { id: "startup-founder", name: "初创老板", category: "growth", source: "achievement", bonusLabel: "身份展示", durationDays: 0 },
     { id: "cashflow-master", name: "现金流大师", category: "finance", source: "achievement", bonusLabel: "现金流榜展示", durationDays: 0 },
     { id: "server-richest", name: "本服首富", category: "rank", source: "leaderboard", bonusLabel: "排行榜展示", durationDays: 7 },
-    { id: "cross-unicorn", name: "跨服独角兽", category: "rank", source: "cross_server", bonusLabel: "跨服榜展示", durationDays: 7 }
+    { id: "cross-unicorn", name: "跨服独角兽", category: "rank", source: "cross_server", bonusLabel: "跨服榜展示", durationDays: 7 },
+    { id: "season-ai-pioneer", name: "AI风口先锋", category: "season", source: "season", bonusLabel: "赛季活动展示", durationDays: 30 }
   ];
   const achievementConfigs = [
     {
@@ -1023,6 +1024,20 @@ const createTestRepository = (): GameRepository => {
       rewardTitleId: null,
       rewardKnowledgeId: "valuation-method-note",
       isHidden: true
+    },
+    {
+      id: "season-ai-agent-growth",
+      name: "AI 风口上榜",
+      category: "season",
+      description: "完成 AI Agent 风口榜活动目标。",
+      conditionKind: "manual_season",
+      conditionValue: 1,
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardActionPower: 0,
+      rewardTitleId: "season-ai-pioneer",
+      rewardKnowledgeId: "ai-agent-season-playbook",
+      isHidden: false
     }
   ];
   const knowledgeEntries = [
@@ -1055,6 +1070,16 @@ const createTestRepository = (): GameRepository => {
       collectedAt: "2026-05-01",
       contentVersion: "2026.05",
       disclaimer: "仅作游戏科普，不构成法律建议"
+    },
+    {
+      id: "ai-agent-season-playbook",
+      category: "赛季运营",
+      title: "AI Agent 风口活动复盘",
+      summary: "赛季活动用于模拟新技术窗口期的产品增长和运营节奏管理。",
+      sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
+      collectedAt: "2026-05-01",
+      contentVersion: "2026.05",
+      disclaimer: "仅作游戏科普，不构成法律建议"
     }
   ];
   const playerTitles = new Map<string, { profileId: string; titleId: string; source: string; obtainedAt: string; expiresAt: string | null }>();
@@ -1068,6 +1093,87 @@ const createTestRepository = (): GameRepository => {
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string }>();
   const telemetryEvents = new Map<string, { id: string; accountId: string; serverId: string; eventName: string; targetId: string | null; metadata: Record<string, string | number | boolean | null> }>();
   const apiRequestLogs: Array<{ traceId: string; method: string; path: string; statusCode: number; durationMs: number }> = [];
+  const seasonConfig = {
+    id: "season-ai-agent-2026",
+    name: "AI Agent 元年",
+    theme: "用产品增长和现金流穿越新风口。",
+    startDate: "2026-05-01",
+    endDate: "2026-05-30",
+    passPricePlatformCoins: 880
+  };
+  const seasonTasks = [
+    { id: "season-daily-project", title: "推进一次风口项目", description: "完成一次项目或产品推进。", target: 1, rewardPoints: 120 }
+  ];
+  const activityConfigs = [
+    { id: "ai-agent-growth", name: "AI Agent 风口榜", startDate: "2026-05-01", endDate: "2026-05-20", leaderboardKey: "activity-ai-agent-growth", targetScore: 200, rewardCash: 120000, rewardReputation: 600, rewardPoints: 260, rewardTitleId: "season-ai-pioneer" }
+  ];
+  const activityShopItems = [
+    { id: "activity-risk-insurance", name: "风口风险保险", costPoints: 180, summary: "降低一次经营波动。", rewardActionPower: 30, rewardReputation: 120, purchaseLimit: 1 }
+  ];
+  const scenarioConfigs = [
+    { id: "cashflow-rescue", name: "现金流 15 天救援", summary: "现金紧张、负债率高、员工波动和客户延期付款。", rewardCash: 90000, rewardReputation: 500, rewardTitleId: "cashflow-master" }
+  ];
+  const seasonProgresses = new Map<string, { points: number }>();
+  const seasonTaskProgresses = new Map<string, { progress: number; claimedAt: string | null }>();
+  const seasonPassPurchases = new Map<string, { profileId: string; seasonId: string; requestId: string; pricePlatformCoins: number }>();
+  const activityStates = new Map<string, { profileId: string; activityId: string; isJoined: boolean; score: number; rewardClaimedAt: string | null }>();
+  const activityShopPurchases = new Map<string, { profileId: string; itemId: string; requestId: string; costPoints: number }>();
+  const scenarioRuns = new Map<string, { id: string; profileId: string; scenarioId: string; choices: string[]; score: number | null; grade: string | null; rewardClaimed: boolean }>();
+  const seasonStatus = (startDate: string, endDate: string, today: string) => today < startDate ? "upcoming" : today > endDate ? "ended" : "active";
+  const seasonKey = (profileId: string) => `${profileId}:${seasonConfig.id}`;
+  const seasonTaskKey = (profileId: string, taskId: string) => `${profileId}:${taskId}`;
+  const activityKey = (profileId: string, activityId: string) => `${profileId}:${activityId}`;
+  const toSeasonCenter = (profile: PlayerProfileRecord, today: string) => {
+    const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+    const wallet = ensureWallet(profile);
+    const boards = activityConfigs
+      .filter((activity) => seasonStatus(activity.startDate, activity.endDate, today) === "active")
+      .map((activity) => ({
+        key: activity.leaderboardKey,
+        name: activity.name,
+        scope: "activity" as const,
+        isActive: true,
+        rows: [...activityStates.values()]
+          .filter((state) => state.activityId === activity.id && state.score > 0)
+          .sort((left, right) => right.score - left.score)
+          .map((state, index) => {
+            const rowProfile = [...profiles.values()].find((item) => item.id === state.profileId)!;
+            return { rank: index + 1, profileId: state.profileId, founderName: rowProfile.founderName, companyName: rowProfile.companyName, value: state.score, valueLabel: `${state.score} 分`, equippedTitle: null };
+          }),
+        snapshotDate: today
+      }));
+    return {
+      season: {
+        id: seasonConfig.id,
+        name: seasonConfig.name,
+        theme: seasonConfig.theme,
+        status: seasonStatus(seasonConfig.startDate, seasonConfig.endDate, today),
+        startDate: seasonConfig.startDate,
+        endDate: seasonConfig.endDate,
+        points: progress.points,
+        pass: {
+          isPurchased: [...seasonPassPurchases.values()].some((purchase) => purchase.profileId === profile.id && purchase.seasonId === seasonConfig.id),
+          pricePlatformCoins: seasonConfig.passPricePlatformCoins
+        }
+      },
+      tasks: seasonTasks.map((task) => {
+        const state = seasonTaskProgresses.get(seasonTaskKey(profile.id, task.id));
+        return { ...task, progress: state?.progress ?? 0, isClaimed: state?.claimedAt !== null && state?.claimedAt !== undefined };
+      }),
+      activities: activityConfigs.map((activity) => {
+        const state = activityStates.get(activityKey(profile.id, activity.id));
+        return { id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, today), isJoined: state?.isJoined ?? false, score: state?.score ?? 0, targetScore: activity.targetScore, rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined };
+      }),
+      activityBoards: boards,
+      shopItems: activityShopItems.map((item) => {
+        const count = [...activityShopPurchases.values()].filter((purchase) => purchase.profileId === profile.id && purchase.itemId === item.id).length;
+        const limitReached = item.purchaseLimit > 0 && count >= item.purchaseLimit;
+        return { id: item.id, name: item.name, costPoints: item.costPoints, summary: item.summary, isAvailable: !limitReached && progress.points >= item.costPoints, lockedReason: limitReached ? "兑换次数已达上限" : progress.points >= item.costPoints ? null : "赛季积分不足" };
+      }),
+      scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, summary: scenario.summary, bestScore: [...scenarioRuns.values()].filter((run) => run.profileId === profile.id && run.scenarioId === scenario.id && run.score !== null).reduce<number | null>((best, run) => Math.max(best ?? 0, run.score ?? 0), null) })),
+      wallet
+    };
+  };
   const ensureWallet = (profile: PlayerProfileRecord): PlatformWalletRecord => {
     const existing = wallets.get(profile.id);
     if (existing !== undefined) {
@@ -1558,7 +1664,10 @@ const createTestRepository = (): GameRepository => {
           isActive: product.isActive
         })),
         leaderboardSnapshots: [],
-        mailCompensations: []
+        mailCompensations: [],
+        seasons: [{ id: seasonConfig.id, name: seasonConfig.name, status: seasonStatus(seasonConfig.startDate, seasonConfig.endDate, new Date().toISOString().slice(0, 10)), startDate: seasonConfig.startDate, endDate: seasonConfig.endDate }],
+        activities: activityConfigs.map((activity) => ({ id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, new Date().toISOString().slice(0, 10)), leaderboardKey: activity.leaderboardKey })),
+        scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
     },
     async listAdminAuditLogs() {
@@ -2861,6 +2970,129 @@ const createTestRepository = (): GameRepository => {
         config,
         auditLogId: `${adminUserId}:vip-config:${config.level}:${reason}`
       };
+    },
+    async getSeasonCenter(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toSeasonCenter(profile, today);
+    },
+    async progressSeasonTask(accountId, serverId, taskId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const task = seasonTasks.find((item) => item.id === taskId);
+      if (task === undefined) return "SEASON_TASK_NOT_FOUND";
+      const key = seasonTaskKey(profile.id, taskId);
+      const state = seasonTaskProgresses.get(key) ?? { progress: 0, claimedAt: null };
+      state.progress = Math.min(task.target, state.progress + 1);
+      if (state.claimedAt === null && state.progress >= task.target) {
+        state.claimedAt = today;
+        const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+        progress.points += task.rewardPoints;
+        seasonProgresses.set(seasonKey(profile.id), progress);
+      }
+      seasonTaskProgresses.set(key, state);
+      const center = toSeasonCenter(profile, today);
+      return { season: center.season, task: center.tasks.find((item) => item.id === taskId)! };
+    },
+    async purchaseSeasonPass(accountId, serverId, seasonId, requestId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      if (seasonId !== seasonConfig.id) return "SEASON_NOT_FOUND";
+      const existing = [...seasonPassPurchases.values()].find((purchase) => purchase.profileId === profile.id && purchase.requestId === requestId);
+      const wallet = ensureWallet(profile);
+      if (existing !== undefined) return { season: toSeasonCenter(profile, today).season, wallet, isDuplicate: true };
+      if (wallet.balance < seasonConfig.passPricePlatformCoins) return "INSUFFICIENT_PLATFORM_COINS";
+      wallet.balance -= seasonConfig.passPricePlatformCoins;
+      wallet.totalSpent += seasonConfig.passPricePlatformCoins;
+      wallet.vipExperience += seasonConfig.passPricePlatformCoins;
+      profile.platformCoins = wallet.balance;
+      seasonPassPurchases.set(`${profile.id}:${requestId}`, { profileId: profile.id, seasonId, requestId, pricePlatformCoins: seasonConfig.passPricePlatformCoins });
+      addLedger(profile.id, -seasonConfig.passPricePlatformCoins, wallet.balance, "season_pass_purchase", requestId, `购买赛季通行证：${seasonConfig.name}`);
+      return { season: toSeasonCenter(profile, today).season, wallet, isDuplicate: false };
+    },
+    async joinActivity(accountId, serverId, activityId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const activity = activityConfigs.find((item) => item.id === activityId);
+      if (activity === undefined) return "ACTIVITY_NOT_FOUND";
+      const state = activityStates.get(activityKey(profile.id, activityId)) ?? { profileId: profile.id, activityId, isJoined: false, score: 0, rewardClaimedAt: null };
+      state.isJoined = true;
+      activityStates.set(activityKey(profile.id, activityId), state);
+      const center = toSeasonCenter(profile, today);
+      return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
+    },
+    async progressActivity(accountId, serverId, activityId, scoreDelta, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const state = activityStates.get(activityKey(profile.id, activityId));
+      if (state === undefined || !state.isJoined) return "ACTIVITY_NOT_JOINED";
+      state.score += scoreDelta;
+      const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+      progress.points += scoreDelta;
+      seasonProgresses.set(seasonKey(profile.id), progress);
+      const center = toSeasonCenter(profile, today);
+      return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
+    },
+    async claimActivityReward(accountId, serverId, activityId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const activity = activityConfigs.find((item) => item.id === activityId);
+      if (activity === undefined) return "ACTIVITY_NOT_FOUND";
+      const state = activityStates.get(activityKey(profile.id, activityId));
+      if (state === undefined || !state.isJoined) return "ACTIVITY_NOT_JOINED";
+      if (state.score < activity.targetScore) return "ACTIVITY_INCOMPLETE";
+      if (state.rewardClaimedAt !== null) return "ACTIVITY_REWARD_ALREADY_CLAIMED";
+      state.rewardClaimedAt = today;
+      profile.cash += activity.rewardCash;
+      profile.reputation += activity.rewardReputation;
+      const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+      progress.points += activity.rewardPoints;
+      seasonProgresses.set(seasonKey(profile.id), progress);
+      addTitle(profile.id, activity.rewardTitleId, "season", today);
+      achievements.set(achievementKey(profile.id, "season-ai-agent-growth"), { profileId: profile.id, achievementId: "season-ai-agent-growth", progress: 1, completedAt: today, claimedAt: null });
+      const center = toSeasonCenter(profile, today);
+      return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
+    },
+    async purchaseActivityShopItem(accountId, serverId, itemId, requestId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const item = activityShopItems.find((entry) => entry.id === itemId);
+      if (item === undefined) return "ACTIVITY_SHOP_ITEM_NOT_FOUND";
+      const existing = [...activityShopPurchases.values()].find((purchase) => purchase.profileId === profile.id && purchase.requestId === requestId);
+      const centerBefore = toSeasonCenter(profile, today);
+      if (existing !== undefined) return { season: centerBefore.season, wallet: ensureWallet(profile), item: centerBefore.shopItems.find((entry) => entry.id === itemId)!, profile, isDuplicate: true };
+      const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+      if (progress.points < item.costPoints) return "INSUFFICIENT_ACTIVITY_POINTS";
+      progress.points -= item.costPoints;
+      profile.actionPower += item.rewardActionPower;
+      profile.reputation += item.rewardReputation;
+      activityShopPurchases.set(`${profile.id}:${requestId}`, { profileId: profile.id, itemId, requestId, costPoints: item.costPoints });
+      const center = toSeasonCenter(profile, today);
+      return { season: center.season, wallet: ensureWallet(profile), item: center.shopItems.find((entry) => entry.id === itemId)!, profile, isDuplicate: false };
+    },
+    async startScenario(accountId, serverId, scenarioId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      if (!scenarioConfigs.some((scenario) => scenario.id === scenarioId)) return "SCENARIO_NOT_FOUND";
+      const id = randomUUID();
+      scenarioRuns.set(id, { id, profileId: profile.id, scenarioId, choices: [], score: null, grade: null, rewardClaimed: false });
+      return { run: { id, scenarioId, initialState: { cashDays: 15, debtRatioBasisPoints: 8000, coreEmployeeRisk: "核心员工准备离职", customerDelay: "大客户延期付款" }, choices: [], score: null, grade: null, rewardClaimed: false } };
+    },
+    async settleScenario(accountId, serverId, runId, choices) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const run = scenarioRuns.get(runId);
+      if (run === undefined || run.profileId !== profile.id) return "SCENARIO_RUN_NOT_FOUND";
+      if (run.score === null) {
+        run.choices = choices;
+        run.score = Math.min(100, choices.reduce((sum, choice) => sum + (choice === "cost_cut" ? 28 : choice === "debt_restructure" ? 32 : choice === "compliance_fix" ? 32 : 0), 0));
+        run.grade = run.score >= 90 ? "S" : run.score >= 75 ? "A" : "B";
+        run.rewardClaimed = true;
+        const scenario = scenarioConfigs.find((item) => item.id === run.scenarioId)!;
+        profile.cash += scenario.rewardCash;
+        profile.reputation += scenario.rewardReputation;
+        addTitle(profile.id, scenario.rewardTitleId, "scenario", new Date().toISOString().slice(0, 10));
+      }
+      return { run: { id: run.id, scenarioId: run.scenarioId, initialState: { cashDays: 15, debtRatioBasisPoints: 8000, coreEmployeeRisk: "核心员工准备离职", customerDelay: "大客户延期付款" }, choices: run.choices, score: run.score, grade: run.grade, rewardClaimed: run.rewardClaimed } };
     },
     async getLeaderboards(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -4877,6 +5109,185 @@ test("phase 18 rejects mismatched external payment reservations", async () => {
 
     assert.equal(reserved.status, 400);
     assert.equal(reserved.body.error?.code, "VALIDATION_ERROR");
+  });
+});
+
+test("phase 19 runs season activity pass rewards and scenario scoring", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "seasonplayer");
+    const center = await requestJson<{
+      season: { id: string; name: string; status: string; points: number; pass: { isPurchased: boolean; pricePlatformCoins: number } };
+      tasks: Array<{ id: string; progress: number; target: number; isClaimed: boolean }>;
+      activities: Array<{ id: string; status: string; isJoined: boolean; score: number; rewardClaimed: boolean }>;
+      activityBoards: Array<{ key: string; scope: string; isActive: boolean }>;
+      shopItems: Array<{ id: string; costPoints: number; isAvailable: boolean }>;
+      scenarios: Array<{ id: string; name: string; bestScore: number | null }>;
+      wallet: { balance: number; vipExperience: number };
+    }>(baseUrl, "/season?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(center.status, 200);
+    assert.equal(center.body.data?.season.status, "active");
+    assert.equal(center.body.data?.activityBoards.some((board) => board.scope === "activity" && board.isActive), true);
+    assert.equal(center.body.data?.activities[0]?.isJoined, false);
+
+    const task = await requestJson<{ season: { points: number }; task: { progress: number; isClaimed: boolean } }>(
+      baseUrl,
+      "/season/tasks/season-daily-project/progress",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      }
+    );
+    assert.equal(task.status, 200);
+    assert.equal(task.body.data?.task.progress, 1);
+    assert.equal(task.body.data?.task.isClaimed, true);
+    assert.equal(task.body.data?.season.points, 120);
+
+    const pass = await requestJson<{ wallet: { balance: number; vipExperience: number }; isDuplicate: boolean }>(
+      baseUrl,
+      "/season/pass/purchase",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1", seasonId: "season-ai-agent-2026", requestId: "season-pass-req-001" })
+      }
+    );
+    assert.equal(pass.status, 201);
+    assert.equal(pass.body.data?.wallet.balance, profile.platformCoins - 880);
+    assert.equal(pass.body.data?.wallet.vipExperience, 880);
+
+    const duplicatePass = await requestJson<{ wallet: { balance: number; vipExperience: number }; isDuplicate: boolean }>(
+      baseUrl,
+      "/season/pass/purchase",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1", seasonId: "season-ai-agent-2026", requestId: "season-pass-req-001" })
+      }
+    );
+    assert.equal(duplicatePass.status, 200);
+    assert.equal(duplicatePass.body.data?.isDuplicate, true);
+    assert.equal(duplicatePass.body.data?.wallet.vipExperience, 880);
+
+    const joined = await requestJson<{ activity: { isJoined: boolean } }>(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(joined.status, 200);
+    assert.equal(joined.body.data?.activity.isJoined, true);
+
+    const progressed = await requestJson<{ activity: { score: number }; season: { points: number } }>(
+      baseUrl,
+      "/activities/ai-agent-growth/progress",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
+      }
+    );
+    assert.equal(progressed.status, 200, JSON.stringify(progressed.body));
+    assert.equal(progressed.body.data?.activity.score, 260);
+    assert.equal(progressed.body.data?.season.points, 380);
+
+    const claimed = await requestJson<{ activity: { rewardClaimed: boolean }; profile: { cash: number; reputation: number } }>(
+      baseUrl,
+      "/activities/ai-agent-growth/claim",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      }
+    );
+    assert.equal(claimed.status, 200);
+    assert.equal(claimed.body.data?.activity.rewardClaimed, true);
+    assert.equal(claimed.body.data?.profile.cash, profile.cash + 120000);
+    assert.equal(claimed.body.data?.profile.reputation, profile.reputation + 600);
+
+    const seasonAchievements = await requestJson<AchievementRecord[]>(baseUrl, "/achievements?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(seasonAchievements.status, 200);
+    assert.equal(seasonAchievements.body.data?.find((item) => item.id === "season-ai-agent-growth")?.isCompleted, true);
+
+    const seasonAchievementClaim = await requestJson<AchievementClaimRecord>(
+      baseUrl,
+      "/achievements/season-ai-agent-growth/claim",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      }
+    );
+    assert.equal(seasonAchievementClaim.status, 200);
+
+    const seasonKnowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(seasonKnowledge.status, 200);
+    assert.equal(seasonKnowledge.body.data?.some((entry) => entry.id === "ai-agent-season-playbook"), true);
+
+    const duplicateClaim = await requestJson(baseUrl, "/activities/ai-agent-growth/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicateClaim.status, 409);
+    assert.equal(duplicateClaim.body.error?.code, "ACTIVITY_REWARD_ALREADY_CLAIMED");
+
+    const started = await requestJson<{ run: { id: string; initialState: { cashDays: number; debtRatioBasisPoints: number } } }>(
+      baseUrl,
+      "/scenarios/cashflow-rescue/start",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      }
+    );
+    assert.equal(started.status, 201);
+    assert.equal(started.body.data?.run.initialState.cashDays, 15);
+    assert.equal(started.body.data?.run.initialState.debtRatioBasisPoints, 8000);
+
+    const runId = started.body.data?.run.id ?? "";
+    const settled = await requestJson<{ run: { score: number; grade: string; rewardClaimed: boolean } }>(
+      baseUrl,
+      `/scenarios/${encodeURIComponent(runId)}/settle`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1", choices: ["cost_cut", "debt_restructure", "compliance_fix"] })
+      }
+    );
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.run.score, 92);
+    assert.equal(settled.body.data?.run.grade, "S");
+    assert.equal(settled.body.data?.run.rewardClaimed, true);
+  });
+});
+
+test("phase 19 exposes season activity and scenario configs to admin", async () => {
+  await withServer(async (baseUrl) => {
+    const admin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(admin.status, 200);
+
+    const configCenter = await requestJson<{
+      seasons: Array<{ id: string; name: string; status: string }>;
+      activities: Array<{ id: string; name: string; status: string; leaderboardKey: string }>;
+      scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
+    }>(baseUrl, "/admin/config-center", {
+      headers: { authorization: `Bearer ${admin.body.data?.token ?? ""}` }
+    });
+
+    assert.equal(configCenter.status, 200);
+    assert.ok(configCenter.body.data?.seasons.some((season) => season.id === "season-ai-agent-2026" && season.status === "active"));
+    assert.ok(configCenter.body.data?.activities.some((activity) => activity.id === "ai-agent-growth" && activity.leaderboardKey === "activity-ai-agent-growth"));
+    assert.ok(configCenter.body.data?.scenarios.some((scenario) => scenario.id === "cashflow-rescue" && scenario.rewardTitleId === "cashflow-master"));
   });
 });
 
