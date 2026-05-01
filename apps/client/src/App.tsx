@@ -2987,6 +2987,7 @@ function App() {
       setClaimingTaskId("");
       await loadInventoryCenter(account.token, selectedServer.id);
       await loadCompanyGrowth(account.token, selectedServer.id);
+      await loadTasks(account.token, selectedServer.id);
       return;
     }
 
@@ -3491,6 +3492,10 @@ function App() {
       return;
     }
 
+    if (task.type === "main") {
+      void progressTask(task.id);
+    }
+
     if (task.guideAction.includes("员工")) {
       setActiveNav("员工");
       return;
@@ -3513,6 +3518,21 @@ function App() {
       return;
     }
 
+    if (task.guideAction.includes("商业")) {
+      openHomePanel("商业");
+      return;
+    }
+
+    if (task.guideAction.includes("特权")) {
+      openHomePanel("特权");
+      return;
+    }
+
+    if (task.guideAction.includes("VIP")) {
+      openHomePanel("VIP");
+      return;
+    }
+
     if (task.guideAction.includes("融资")) {
       setActiveNav("融资");
       return;
@@ -3528,6 +3548,11 @@ function App() {
       return;
     }
 
+    if (task.guideAction.includes("排行")) {
+      openHomePanel("排行");
+      return;
+    }
+
     if (task.guideAction.includes("通行证")) {
       openHomePanel("通行证");
       return;
@@ -3535,6 +3560,16 @@ function App() {
 
     if (task.guideAction.includes("商会")) {
       openHomePanel("商会");
+      return;
+    }
+
+    if (task.guideAction.includes("背包")) {
+      openHomePanel("背包");
+      return;
+    }
+
+    if (task.guideAction.includes("事件")) {
+      openEventScreen();
       return;
     }
 

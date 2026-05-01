@@ -170,6 +170,76 @@ const itemConfigs = [
   }
 ];
 
+const expandedMainTaskConfigs = [
+  { id: "main-office-signage", title: "确认公司门头", description: "完善办公室门头、公司简介和核心业务一句话，让玩家理解公司身份展示。", rewardLabel: "资金 5万、声望 120", rewardCash: 50000, rewardReputation: 120, rewardItemId: null, rewardItemQuantity: 0, guideAction: "领取奖励" },
+  { id: "main-first-budget", title: "制定首周预算", description: "确认现金、行动力和员工培养材料的首周使用顺序，避免资源一开始就分散。", rewardLabel: "财务顾问卡 1", rewardCash: 0, rewardReputation: 120, rewardItemId: "finance-advisor-card", rewardItemQuantity: 1, guideAction: "前往财务" },
+  { id: "main-founder-rhythm", title: "建立创始人节奏", description: "理解行动力代表创始人精力，高收益动作需要消耗行动力并等待恢复。", rewardLabel: "行动力 20", rewardCash: 0, rewardReputation: 100, rewardActionPower: 20, rewardItemId: null, rewardItemQuantity: 0, guideAction: "领取奖励" },
+  { id: "main-risk-review", title: "查看首次风险提示", description: "进入专属经理待办，了解合同、财务、舆情和随机经营任务会怎样影响公司。", rewardLabel: "风险保险 1", rewardCash: 0, rewardReputation: 140, rewardItemId: "risk-insurance", rewardItemQuantity: 1, guideAction: "处理事件" },
+  { id: "main-first-report", title: "阅读经营日报", description: "复盘现金、声望、行动力和公司等级，确认下一步该优先推进什么。", rewardLabel: "资金 6万、经验", rewardCash: 60000, rewardReputation: 80, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往财务" },
+  { id: "main-first-week-plan", title: "确定首周目标", description: "把公司启动、团队、项目、产品、融资、市场和赛季拆成首周路线。", rewardLabel: "行动力饮料 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "action-drink", rewardItemQuantity: 1, guideAction: "领取奖励" },
+  { id: "main-first-kpi", title: "设置第一组指标", description: "确认现金流、估值、声望和团队满意度是短期最重要的经营指标。", rewardLabel: "声望 180", rewardCash: 0, rewardReputation: 180, rewardItemId: null, rewardItemQuantity: 0, guideAction: "领取奖励" },
+  { id: "main-role-map", title: "梳理岗位地图", description: "理解工程、产品、销售、运营、财务、法务和投资关系岗位的经营价值。", rewardLabel: "培养手册 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "training-manual", rewardItemQuantity: 1, guideAction: "前往员工" },
+  { id: "main-train-core", title: "培养核心成员", description: "给核心员工安排一次成长动作，形成员工养成和项目成功率之间的联系。", rewardLabel: "培养手册 1、声望 150", rewardCash: 0, rewardReputation: 150, rewardItemId: "training-manual", rewardItemQuantity: 1, guideAction: "前往员工" },
+  { id: "main-staff-loyalty", title: "关注员工忠诚", description: "查看忠诚度、压力和好感礼物，理解员工不是一次性战力。", rewardLabel: "员工好感礼物 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "employee-gift", rewardItemQuantity: 1, guideAction: "前往员工" },
+  { id: "main-team-pressure", title: "处理团队压力", description: "确认创始人精力、员工压力和项目交付速度之间存在取舍。", rewardLabel: "行动力 15、声望 120", rewardCash: 0, rewardReputation: 120, rewardActionPower: 15, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往员工" },
+  { id: "main-equity-plan", title: "讨论股权激励", description: "为核心员工预留长期激励思路，连接团队稳定和公司估值成长。", rewardLabel: "声望 220", rewardCash: 0, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往员工" },
+  { id: "main-recruit-channel", title: "评估招聘渠道", description: "理解普通招募、猎头招募和定向猎头分别适合不同经营阶段。", rewardLabel: "猎头券 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "headhunter-ticket", rewardItemQuantity: 1, guideAction: "前往员工" },
+  { id: "main-manager-brief", title: "配置管理分工", description: "把员工放入项目、产品、市场和融资场景，形成公司团队分工。", rewardLabel: "培养手册 2", rewardCash: 0, rewardReputation: 180, rewardItemId: "training-manual", rewardItemQuantity: 2, guideAction: "前往员工" },
+  { id: "main-client-brief", title: "阅读客户需求", description: "确认客户预算、验收周期和交付风险，避免项目只看收入不看成本。", rewardLabel: "资金 7万", rewardCash: 70000, rewardReputation: 90, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往项目" },
+  { id: "main-scope-confirm", title: "确认项目范围", description: "把需求边界、延期风险和回款节点写清楚，提高项目交付可控性。", rewardLabel: "风险保险 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "risk-insurance", rewardItemQuantity: 1, guideAction: "前往项目" },
+  { id: "main-delivery-plan", title: "制定交付计划", description: "安排员工能力和行动力投入，理解项目推进不是无成本点击。", rewardLabel: "项目加速券 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "project-accelerator", rewardItemQuantity: 1, guideAction: "前往项目" },
+  { id: "main-quality-check", title: "做一次质量检查", description: "在交付前检查风险，避免客户满意度和公司声望受到损失。", rewardLabel: "声望 220", rewardCash: 0, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往项目" },
+  { id: "main-acceptance-review", title: "推进验收复盘", description: "理解验收、回款和客户复购是项目线长期收益的关键。", rewardLabel: "资金 10万", rewardCash: 100000, rewardReputation: 120, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往项目" },
+  { id: "main-repeat-contract", title: "争取客户复购", description: "用更稳定的交付结果争取复购，让项目成为长期现金流来源。", rewardLabel: "资金 12万、声望 180", rewardCash: 120000, rewardReputation: 180, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往项目" },
+  { id: "main-project-margin", title: "核算项目毛利", description: "查看收入、成本和员工投入，理解现金流比单次订单金额更重要。", rewardLabel: "财务顾问卡 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "finance-advisor-card", rewardItemQuantity: 1, guideAction: "前往财务" },
+  { id: "main-user-research", title: "做用户调研", description: "确认产品目标用户、留存问题和付费理由，为产品线提供方向。", rewardLabel: "市场情报 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "market-intel", rewardItemQuantity: 1, guideAction: "前往产品" },
+  { id: "main-mvp-scope", title: "确定 MVP 范围", description: "缩小首版产品范围，控制技术债和现金消耗。", rewardLabel: "项目加速券 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "project-accelerator", rewardItemQuantity: 1, guideAction: "前往产品" },
+  { id: "main-tech-debt-check", title: "检查技术债", description: "理解产品增长过快会带来技术债、事故和用户流失。", rewardLabel: "风险保险 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "risk-insurance", rewardItemQuantity: 1, guideAction: "前往产品" },
+  { id: "main-retention-review", title: "查看留存指标", description: "把用户数、留存率和付费率放在一起判断产品是否健康。", rewardLabel: "声望 240", rewardCash: 0, rewardReputation: 240, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往产品" },
+  { id: "main-payment-test", title: "验证付费理由", description: "理解玩家付费点要来自明确经营需求，不能只靠弹窗。", rewardLabel: "资金 8万、声望 180", rewardCash: 80000, rewardReputation: 180, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往商业" },
+  { id: "main-growth-channel", title: "测试增长渠道", description: "用市场情报判断渠道质量，为产品增长和市场竞争做准备。", rewardLabel: "市场情报 1", rewardCash: 0, rewardReputation: 220, rewardItemId: "market-intel", rewardItemQuantity: 1, guideAction: "前往市场" },
+  { id: "main-product-roadmap", title: "制定产品路线图", description: "把 MVP、增长、技术债和商业化节点整理成产品路线。", rewardLabel: "资金 10万、声望 220", rewardCash: 100000, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往产品" },
+  { id: "main-cashflow-budget", title: "制定现金流预算", description: "确认月收入、月支出和负债风险，理解融资前先看现金流。", rewardLabel: "财务顾问卡 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "finance-advisor-card", rewardItemQuantity: 1, guideAction: "前往财务" },
+  { id: "main-cost-structure", title: "优化成本结构", description: "拆解员工薪资、项目投入和市场预算，降低扩张前的现金压力。", rewardLabel: "资金 12万", rewardCash: 120000, rewardReputation: 120, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往财务" },
+  { id: "main-loan-plan", title: "准备贷款方案", description: "了解授信、还款压力和信用评级，不把贷款当作无限现金。", rewardLabel: "资金 10万、风险保险 1", rewardCash: 100000, rewardReputation: 160, rewardItemId: "risk-insurance", rewardItemQuantity: 1, guideAction: "前往贷款" },
+  { id: "main-investor-list", title: "整理投资人名单", description: "选择适合阶段的投资人，理解声望和增长指标会影响谈判。", rewardLabel: "声望 260", rewardCash: 0, rewardReputation: 260, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往融资" },
+  { id: "main-roadshow-deck", title: "准备路演材料", description: "把团队、项目、产品和财务指标整理成融资叙事。", rewardLabel: "财务顾问卡 1、声望 180", rewardCash: 0, rewardReputation: 180, rewardItemId: "finance-advisor-card", rewardItemQuantity: 1, guideAction: "前往融资" },
+  { id: "main-term-review", title: "复核融资条款", description: "权衡估值、股权稀释和现金安全垫，避免只追求高估值。", rewardLabel: "资金 15万、声望 220", rewardCash: 150000, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往融资" },
+  { id: "main-fund-node", title: "查看基金节点", description: "理解成长基金与等级节点、经营动作和经验倍率之间的关系。", rewardLabel: "行动力饮料 1、声望 160", rewardCash: 0, rewardReputation: 160, rewardItemId: "action-drink", rewardItemQuantity: 1, guideAction: "前往特权" },
+  { id: "main-market-position", title: "确定市场定位", description: "选择赛道定位，理解市场不是只拼现金，还拼声望和产品质量。", rewardLabel: "市场情报 1", rewardCash: 0, rewardReputation: 200, rewardItemId: "market-intel", rewardItemQuantity: 1, guideAction: "前往市场" },
+  { id: "main-competitor-scan", title: "扫描竞争对手", description: "观察竞品价格、渠道和舆情，准备市场反击方案。", rewardLabel: "声望 220", rewardCash: 0, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往市场" },
+  { id: "main-price-strategy", title: "制定定价策略", description: "在现金回收、客户满意度和品牌定位之间做取舍。", rewardLabel: "资金 9万、声望 160", rewardCash: 90000, rewardReputation: 160, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往市场" },
+  { id: "main-channel-test", title: "测试渠道投放", description: "用有限预算验证渠道效果，不盲目扩张市场支出。", rewardLabel: "市场情报 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "market-intel", rewardItemQuantity: 1, guideAction: "前往市场" },
+  { id: "main-brand-pr", title: "建立品牌曝光", description: "用声望承接融资、市场、商会和排行榜展示价值。", rewardLabel: "声望 320", rewardCash: 0, rewardReputation: 320, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往市场" },
+  { id: "main-public-opinion", title: "预案舆情风险", description: "准备舆情应对和风险保险，避免市场增长带来失控成本。", rewardLabel: "风险保险 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "risk-insurance", rewardItemQuantity: 1, guideAction: "处理事件" },
+  { id: "main-market-sprint", title: "完成市场冲刺", description: "把市场、产品、项目和团队能力组合成一次增长冲刺。", rewardLabel: "资金 15万、声望 260", rewardCash: 150000, rewardReputation: 260, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往市场" },
+  { id: "main-guild-join-plan", title: "规划商会协作", description: "理解商会互助、贡献和长期社交目标，不把商会当成单独按钮。", rewardLabel: "声望 220", rewardCash: 0, rewardReputation: 220, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往商会" },
+  { id: "main-guild-help-plan", title: "准备商会互助", description: "通过成员互助连接日常留存、声望和排行榜展示。", rewardLabel: "限定称号碎片 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "founder-title-shard", rewardItemQuantity: 1, guideAction: "前往商会" },
+  { id: "main-rank-target", title: "设定本服排行目标", description: "把估值、声望、赛季积分和称号展示变成长期对比目标。", rewardLabel: "声望 260", rewardCash: 0, rewardReputation: 260, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往排行" },
+  { id: "main-cross-server-target", title: "了解跨服目标", description: "明确跨服排行更偏长期荣誉和展示，不直接出售碾压胜利。", rewardLabel: "限定称号碎片 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "founder-title-shard", rewardItemQuantity: 1, guideAction: "前往排行" },
+  { id: "main-season-task-plan", title: "制定赛季任务计划", description: "把每日任务、随机任务和赛季任务组合成 7 日留存路线。", rewardLabel: "赛季经验券 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "season-exp-ticket", rewardItemQuantity: 1, guideAction: "前往通行证" },
+  { id: "main-pass-value", title: "查看通行证价值", description: "理解通行证提供奖励线、赛季任务和经验倍率参与上限。", rewardLabel: "赛季经验券 1、声望 160", rewardCash: 0, rewardReputation: 160, rewardItemId: "season-exp-ticket", rewardItemQuantity: 1, guideAction: "前往通行证" },
+  { id: "main-activity-shop-plan", title: "规划活动商店", description: "把活动积分兑换成道具、称号碎片和行动力补给。", rewardLabel: "限定称号碎片 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "founder-title-shard", rewardItemQuantity: 1, guideAction: "前往通行证" },
+  { id: "main-vip-benefit-review", title: "查看 VIP 起步权益", description: "确认新号 VIP3 是身份和便利起点，不计入真实消费。", rewardLabel: "行动力 25、声望 180", rewardCash: 0, rewardReputation: 180, rewardActionPower: 25, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往VIP" },
+  { id: "main-week-card-value", title: "评估经营周卡", description: "理解周卡提供经验倍率、每日行动力和经营材料，不直接卖胜利。", rewardLabel: "行动力饮料 1", rewardCash: 0, rewardReputation: 180, rewardItemId: "action-drink", rewardItemQuantity: 1, guideAction: "前往特权" },
+  { id: "main-growth-fund-check", title: "查看成长基金", description: "把等级节点奖励和首日冲级目标连接起来，形成 7 日付费承接。", rewardLabel: "资金 12万、声望 180", rewardCash: 120000, rewardReputation: 180, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往特权" },
+  { id: "main-action-power-plan", title: "制定行动力计划", description: "理解恢复、饮料、礼包和 VIP 上限，避免行动力成为无限购买资源。", rewardLabel: "行动力饮料 1", rewardCash: 0, rewardReputation: 160, rewardItemId: "action-drink", rewardItemQuantity: 1, guideAction: "前往背包" },
+  { id: "main-reputation-plan", title: "规划声望成长", description: "确认声望影响融资、市场、商会、排行和随机任务选择。", rewardLabel: "声望 360", rewardCash: 0, rewardReputation: 360, rewardItemId: null, rewardItemQuantity: 0, guideAction: "前往排行" },
+  { id: "main-full-level-plan", title: "了解满级去向", description: "提前理解 80 级后经验不会浪费，将进入声望积分、赛季贡献或满级宝箱。", rewardLabel: "赛季经验券 1", rewardCash: 0, rewardReputation: 220, rewardItemId: "season-exp-ticket", rewardItemQuantity: 1, guideAction: "前往通行证" },
+  { id: "main-founder-summary", title: "完成首轮创业闭环", description: "完成公司启动、团队、项目、产品、财务、市场、商会和赛季的首轮理解。", rewardLabel: "资金 30万、声望 500", rewardCash: 300000, rewardReputation: 500, rewardItemId: "office-skin-ticket", rewardItemQuantity: 1, guideAction: "领取奖励" }
+].map((task, index) => ({
+  type: "main",
+  target: 1,
+  initialProgress: task.guideAction === "领取奖励" ? 1 : 0,
+  rewardPlatformCoins: 0,
+  rewardActionPower: 0,
+  unlockKind: "none",
+  sortOrder: index + 9,
+  ...task
+}));
+
+const expandedMainTaskExperienceRewards = Object.fromEntries(expandedMainTaskConfigs.map((task, index) => [task.id, 90 + (index % 8) * 10]));
+
 const taskConfigs = [
   {
     id: "main-profile-created",
@@ -315,6 +385,7 @@ const taskConfigs = [
     unlockKind: "none",
     sortOrder: 8
   },
+  ...expandedMainTaskConfigs,
   {
     id: "daily-login",
     type: "daily",
@@ -578,6 +649,7 @@ const taskCompanyExperienceRewards: Record<string, number> = {
   "main-capital-choice": 180,
   "main-market-entry": 180,
   "main-season-start": 220,
+  ...expandedMainTaskExperienceRewards,
   "daily-login": 40,
   "daily-train-employee": 50,
   "daily-project-push": 60,

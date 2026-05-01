@@ -3336,7 +3336,14 @@ export const createPrismaGameRepository = (
       })
     ]);
     const progressByTaskId = new Map(progresses.map((progress) => [progress.taskId, progress]));
-    return configs.map((config) => toTaskRecord(config, progressByTaskId.get(config.id), today));
+    const taskRecords = configs.map((config) => toTaskRecord(config, progressByTaskId.get(config.id), today));
+    const firstOpenMainTask = taskRecords.find((task) => task.type === "main" && !task.isClaimed);
+
+    if (firstOpenMainTask === undefined) {
+      return taskRecords;
+    }
+
+    return taskRecords.filter((task) => task.type !== "main" || task.isClaimed || task.id === firstOpenMainTask.id);
   },
 
   async advanceTask(accountId, serverId, taskId, today) {
