@@ -70,6 +70,48 @@ model GameServer {
   sortOrder     Int             @default(0)
   createdAt     DateTime        @default(now())
   profiles      PlayerProfile[]
+  crossServerMemberships CrossServerGroupServer[]
+}
+
+model CrossServerGroup {
+  id          String        @id @db.VarChar(32)
+  name        String        @db.VarChar(48)
+  ruleLabel   String        @db.VarChar(120)
+  isActive    Boolean       @default(true)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  servers     CrossServerGroupServer[]
+  signups     CrossServerSignup[]
+
+  @@index([isActive, sortOrder])
+}
+
+model CrossServerGroupServer {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  groupId     String        @db.VarChar(32)
+  serverId    String        @db.VarChar(32)
+  sortOrder   Int           @default(0)
+  group       CrossServerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  server      GameServer    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@unique([serverId])
+  @@index([groupId, sortOrder])
+}
+
+model CrossServerSignup {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  groupId     String        @db.VarChar(32)
+  profileId   String        @db.VarChar(36)
+  serverId    String        @db.VarChar(32)
+  signupDate  String        @db.VarChar(10)
+  status      String        @default("active") @db.VarChar(16)
+  createdAt   DateTime      @default(now())
+  group       CrossServerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, groupId])
+  @@index([groupId, status])
+  @@index([serverId, status])
 }
 
 model AvatarOption {
@@ -136,6 +178,7 @@ model PlayerProfile {
   knowledgeUnlocks PlayerKnowledgeUnlock[]
   guildMembership GuildMember?
   guildHelpRequests GuildHelpRequest[]
+  crossServerSignups CrossServerSignup[]
 
   @@unique([accountId, serverId])
   @@index([serverId])

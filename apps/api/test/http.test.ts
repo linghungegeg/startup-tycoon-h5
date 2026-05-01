@@ -28,6 +28,7 @@ import type {
   AchievementRecord,
   GuildActionRecord,
   GuildCenterRecord,
+  CrossServerCenterRecord,
   KnowledgeEntryRecord,
   LeaderboardCenterRecord,
   LeaderboardSettlementRecord,
@@ -89,6 +90,14 @@ const createTestRepository = (): GameRepository => {
   const servers: ServerRecord[] = [
     { id: "s1", name: "长宁一服", status: "recommended", label: "推荐", isRecommended: true },
     { id: "s2", name: "滨江新区", status: "new", label: "新服", isRecommended: false }
+  ];
+  const crossServerGroups = [
+    {
+      id: "new-growth-pool",
+      name: "开服成长池",
+      ruleLabel: "按开服时间与活跃度分池，避免老服碾压新服。",
+      serverIds: ["s1", "s2"]
+    }
   ];
   const avatars: AvatarRecord[] = [
     { id: "strategist", name: "策略型创始人", glyph: "策", specialty: "融资谈判与方向判断" },
@@ -969,7 +978,8 @@ const createTestRepository = (): GameRepository => {
   const titleConfigs = [
     { id: "startup-founder", name: "初创老板", category: "growth", source: "achievement", bonusLabel: "身份展示", durationDays: 0 },
     { id: "cashflow-master", name: "现金流大师", category: "finance", source: "achievement", bonusLabel: "现金流榜展示", durationDays: 0 },
-    { id: "server-richest", name: "本服首富", category: "rank", source: "leaderboard", bonusLabel: "排行榜展示", durationDays: 7 }
+    { id: "server-richest", name: "本服首富", category: "rank", source: "leaderboard", bonusLabel: "排行榜展示", durationDays: 7 },
+    { id: "cross-unicorn", name: "跨服独角兽", category: "rank", source: "cross_server", bonusLabel: "跨服榜展示", durationDays: 7 }
   ];
   const achievementConfigs = [
     {
@@ -1052,6 +1062,7 @@ const createTestRepository = (): GameRepository => {
   const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
   const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
   const leaderboardRewards = new Set<string>();
+  const crossServerSignups = new Set<string>();
   const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string }>();
@@ -1276,6 +1287,38 @@ const createTestRepository = (): GameRepository => {
         { key: "guild", name: "商会榜", scope: "server", isActive: true, rows: rowsFor("guild"), snapshotDate: today }
       ],
       activityBoards: []
+    };
+  };
+  const buildCrossServerCenter = (profile: PlayerProfileRecord, today: string): CrossServerCenterRecord | "CROSS_SERVER_GROUP_NOT_FOUND" => {
+    const group = crossServerGroups.find((item) => item.serverIds.includes(profile.serverId));
+    if (group === undefined) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const rowsFor = (key: string) => [...profiles.values()]
+      .filter((item) => group.serverIds.includes(item.serverId))
+      .map((item) => {
+        const member = guildMembers.get(item.id);
+        const value = key === "cross-guild" ? member?.contributionScore ?? 0 : item.valuation;
+        return {
+          rank: 0,
+          profileId: item.id,
+          founderName: item.founderName,
+          companyName: item.companyName,
+          value,
+          valueLabel: `${value.toLocaleString("zh-CN")}`,
+          equippedTitle: toTitleCenter(item, today).equippedTitle?.name ?? null
+        };
+      })
+      .sort((left, right) => right.value - left.value)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+
+    return {
+      group,
+      isRegistered: crossServerSignups.has(`${profile.id}:${group.id}`),
+      boards: [
+        { key: "cross-company-value", name: "跨服创业大赛榜", scope: "cross", isActive: true, rows: rowsFor("cross-company-value"), snapshotDate: today },
+        { key: "cross-guild", name: "跨服商会榜", scope: "cross", isActive: true, rows: rowsFor("cross-guild"), snapshotDate: today }
+      ]
     };
   };
   const toGuildCenter = (profile: PlayerProfileRecord): GuildCenterRecord => {
@@ -2533,6 +2576,49 @@ const createTestRepository = (): GameRepository => {
         }
       }
       return { leaderboard, deliveredRewards } satisfies LeaderboardSettlementRecord;
+    },
+    async getCrossServerCenter(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return buildCrossServerCenter(profile, today);
+    },
+    async registerCrossServer(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const group = crossServerGroups.find((item) => item.serverIds.includes(serverId));
+      if (group === undefined) {
+        return "CROSS_SERVER_GROUP_NOT_FOUND";
+      }
+      crossServerSignups.add(`${profile.id}:${group.id}`);
+      return buildCrossServerCenter(profile, today);
+    },
+    async settleCrossServerRewards(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const center = buildCrossServerCenter(profile, today);
+      if (center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return center;
+      }
+      let deliveredRewards = 0;
+      for (const board of center.boards) {
+        for (const row of board.rows.slice(0, 3)) {
+          const key = `${row.profileId}:${board.key}:${today}`;
+          if (!leaderboardRewards.has(key)) {
+            leaderboardRewards.add(key);
+            deliveredRewards += 1;
+            if (board.key === "cross-company-value" && row.rank === 1) {
+              addTitle(row.profileId, "cross-unicorn", "cross_server", today);
+            }
+          }
+        }
+      }
+      return { leaderboard: { boards: center.boards, activityBoards: [] }, deliveredRewards } satisfies LeaderboardSettlementRecord;
     },
     async listTitles(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -4585,5 +4671,60 @@ test("phase 14 achievements titles knowledge and guild basics work together", as
     assert.equal(helped.status, 200);
     assert.equal(helped.body.data?.guildCenter.helpRequests.length, 1);
     assert.ok((helped.body.data?.guildCenter.guild?.contributionScore ?? 0) > 0);
+  });
+});
+
+test("phase 15 cross server groups signup leaderboards and rewards are idempotent", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "crossranker");
+
+    const center = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(center.status, 200);
+    assert.equal(center.body.data?.group.name, "开服成长池");
+    assert.equal(center.body.data?.isRegistered, false);
+    assert.equal(center.body.data?.boards.length, 2);
+    assert.ok(center.body.data?.boards.every((board) => board.scope === "cross"));
+
+    const registered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/register", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(registered.status, 200);
+    assert.equal(registered.body.data?.isRegistered, true);
+
+    const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200);
+    assert.ok((settled.body.data?.deliveredRewards ?? 0) > 0);
+
+    const duplicate = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.data?.deliveredRewards, 0);
+
+    const equipped = await requestJson<TitleCenterRecord>(baseUrl, "/titles/equip", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", titleId: "cross-unicorn" })
+    });
+    assert.equal(equipped.status, 200);
+    assert.equal(equipped.body.data?.equippedTitle?.name, "跨服独角兽");
+
+    const expiredEquip = await requestJson(baseUrl, "/titles/equip", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-09" },
+      body: JSON.stringify({ serverId: "s1", titleId: "cross-unicorn" })
+    });
+    assert.equal(expiredEquip.status, 409);
+    assert.equal(expiredEquip.body.error?.code, "TITLE_EXPIRED");
   });
 });

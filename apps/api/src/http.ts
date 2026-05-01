@@ -631,6 +631,84 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/cross-server") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.getCrossServerCenter(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/register") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.registerCrossServer(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/settle") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleCrossServerRewards(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/titles") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

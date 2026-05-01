@@ -1203,13 +1203,13 @@ VIP 权益：
 
 开发内容：
 
-- [ ] 跨服分组。
-- [ ] 跨服创业大赛。
-- [ ] 跨服商会榜。
-- [ ] 跨服奖励结算。
-- [ ] 跨服称号发放和过期。
-- [ ] 跨服活动报名。
-- [ ] 跨服数据快照。
+- [x] 跨服分组。
+- [x] 跨服创业大赛。
+- [x] 跨服商会榜。
+- [x] 跨服奖励结算。
+- [x] 跨服称号发放和过期。
+- [x] 跨服活动报名。
+- [x] 跨服数据快照。
 
 验收标准：
 
@@ -1228,6 +1228,21 @@ VIP 权益：
 - 跨服称号过期测试。
 - 跨服数据快照一致性测试。
 - `lint/typecheck/build` 全部通过。
+
+阶段总结：
+
+- 当前阶段：Phase 15：跨服系统。
+- 完成内容：落地跨服分组、区服入池配置、跨服报名、跨服创业大赛榜、跨服商会榜、跨服数据快照、跨服奖励幂等结算、跨服称号发放与过期，并接入 Rank 荣誉中心。
+- 四插件使用证据：
+  - Superpowers：确认 Phase 15 成功标准、当前稳定点 `a08316f`、最小改动范围和 TDD 验证主线。
+  - Browser Use：通过 in-app browser 打开 `http://127.0.0.1:5173/`，进入 Rank 荣誉中心，验证跨服模块、报名、结算反馈和 Console；仅有既有 Tailwind CDN warning。
+  - Build Web Apps：检查新增跨服面板沿用主页/荣誉中心的深色商务手游基线、金色强调、`glass-panel`、`btn-gold`、紧凑资源栏和底部导航。
+  - Game Studio：检查跨服入口和奖励反馈位于荣誉中心内页，不遮挡主页 HUD、底部导航和主流程，移动竖屏可读。
+- 验证命令：`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm test -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`。
+- 浏览器/截图验收：Browser Use 截图确认跨服创业大赛、分池说明、跨服创业大赛榜、跨服商会榜、已报名状态和跨服奖励结算反馈；Console 当前只有既有 Tailwind CDN warning。
+- 遗留风险：后台调整跨服分组的可视化管理属于 Phase 16 运营后台，本阶段已提供数据库配置结构和种子分组。
+- 下一阶段入口：Phase 16。
+- 是否可作为稳定点：可以。
 
 ### Phase 16：运营后台
 

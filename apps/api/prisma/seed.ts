@@ -16,6 +16,25 @@ const avatars = [
   { id: "operator", name: "运营型创始人", glyph: "营", specialty: "增长运营与现金回收", sortOrder: 3 }
 ];
 
+const crossServerGroups = [
+  {
+    id: "new-growth-pool",
+    name: "开服成长池",
+    ruleLabel: "按开服时间与活跃度分池，避免老服碾压新服。",
+    isActive: true,
+    sortOrder: 1,
+    serverIds: ["s1", "s2"]
+  },
+  {
+    id: "roadshow-pool",
+    name: "路演竞争池",
+    ruleLabel: "繁忙服单独入池，后续按活跃度扩容。",
+    isActive: true,
+    sortOrder: 2,
+    serverIds: ["s3"]
+  }
+];
+
 const taskConfigs = [
   {
     id: "main-profile-created",
@@ -863,13 +882,22 @@ const titleConfigs = [
     sortOrder: 3
   },
   {
+    id: "cross-unicorn",
+    name: "跨服独角兽",
+    category: "rank",
+    source: "cross_server",
+    bonusLabel: "跨服榜展示",
+    durationDays: 7,
+    sortOrder: 4
+  },
+  {
     id: "strategic-investor",
     name: "战略投资人",
     category: "vip",
     source: "vip",
     bonusLabel: "VIP身份展示",
     durationDays: 0,
-    sortOrder: 4
+    sortOrder: 5
   }
 ];
 
@@ -1004,6 +1032,29 @@ const seed = async (): Promise<void> => {
       update: avatar,
       create: avatar
     });
+  }
+
+  for (const group of crossServerGroups) {
+    const { serverIds, ...groupConfig } = group;
+    await prisma.crossServerGroup.upsert({
+      where: { id: group.id },
+      update: groupConfig,
+      create: groupConfig
+    });
+    for (const [index, serverId] of serverIds.entries()) {
+      await prisma.crossServerGroupServer.upsert({
+        where: { serverId },
+        update: {
+          groupId: group.id,
+          sortOrder: index + 1
+        },
+        create: {
+          groupId: group.id,
+          serverId,
+          sortOrder: index + 1
+        }
+      });
+    }
   }
 
   for (const taskConfig of taskConfigs) {

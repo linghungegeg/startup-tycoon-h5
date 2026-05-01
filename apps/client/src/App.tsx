@@ -555,6 +555,22 @@ type LeaderboardCenter = {
   }>;
 };
 
+type CrossServerCenter = {
+  group: {
+    id: string;
+    name: string;
+    ruleLabel: string;
+    serverIds: string[];
+  };
+  isRegistered: boolean;
+  boards: LeaderboardCenter["boards"];
+};
+
+type LeaderboardSettlement = {
+  leaderboard: LeaderboardCenter;
+  deliveredRewards: number;
+};
+
 type TitleItem = {
   id: string;
   name: string;
@@ -1243,6 +1259,7 @@ function App() {
   const [vipError, setVipError] = useState("");
   const [vipNotice, setVipNotice] = useState("");
   const [leaderboardCenter, setLeaderboardCenter] = useState<LeaderboardCenter | null>(null);
+  const [crossServerCenter, setCrossServerCenter] = useState<CrossServerCenter | null>(null);
   const [titleCenter, setTitleCenter] = useState<TitleCenter | null>(null);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
@@ -1388,6 +1405,7 @@ function App() {
     [activeTaskType, tasks]
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
+  const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
   const activeTaskTip =
     activeTaskType === "daily"
       ? "每日任务按服务器日刷新，已领取奖励不会在同一天重复发放。"
@@ -1717,8 +1735,9 @@ function App() {
   };
 
   const loadPhase14Center = async (token: string, nextServerId: string): Promise<void> => {
-    const [leaderboards, titles, achievementList, knowledge, guild] = await Promise.all([
+    const [leaderboards, crossServer, titles, achievementList, knowledge, guild] = await Promise.all([
       apiRequest<LeaderboardCenter>(`/leaderboards?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<CrossServerCenter>(`/cross-server?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<TitleCenter>(`/titles?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<AchievementItem[]>(`/achievements?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<KnowledgeEntry[]>(`/knowledge?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
@@ -1727,6 +1746,9 @@ function App() {
 
     if (leaderboards.success) {
       setLeaderboardCenter(leaderboards.data);
+    }
+    if (crossServer.success) {
+      setCrossServerCenter(crossServer.data);
     }
     if (titles.success) {
       setTitleCenter(titles.data);
@@ -1741,8 +1763,56 @@ function App() {
       setGuildCenter(guild.data);
     }
 
-    const firstError = [leaderboards, titles, achievementList, knowledge, guild].find((response) => !response.success);
+    const firstError = [leaderboards, crossServer, titles, achievementList, knowledge, guild].find((response) => !response.success);
     setPhase14Error(firstError && !firstError.success ? firstError.error.message : "");
+  };
+
+  const registerCrossServer = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<CrossServerCenter>(
+      "/cross-server/register",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCrossServerCenter(response.data);
+      setPhase14Notice(`${response.data.group.name} 报名成功。`);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const settleCrossServer = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<LeaderboardSettlement>(
+      "/cross-server/settle",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服奖励已结算 ${response.data.deliveredRewards} 份。` : "跨服奖励已结算，本日没有重复发放。");
+      setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
+      return;
+    }
+
+    setPhase14Error(response.error.message);
   };
 
   const claimAchievement = async (achievementId: string): Promise<void> => {
@@ -3020,6 +3090,48 @@ function App() {
                     <div className="text-[10px] font-black text-business-gold">{row.valueLabel}</div>
                   </article>
                 ))}
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服分组读取中"}</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{crossServerCenter?.isRegistered ? "已报名" : "未报名"}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    {(crossServerCenter?.boards ?? []).map((board) => (
+                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={board.key}>
+                        <strong className="block text-xs text-white font-black">{board.name}</strong>
+                        <span className="text-[9px] text-slate-500">{board.snapshotDate}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    {(primaryCrossLeaderboard?.rows ?? []).slice(0, 3).map((row) => (
+                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
+                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                        <div className="flex-1 min-w-0">
+                          <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                          <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "跨服称号待争夺"}</span>
+                        </div>
+                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                      disabled={crossServerCenter?.isRegistered}
+                      type="button"
+                      onClick={() => void registerCrossServer()}
+                    >
+                      {crossServerCenter?.isRegistered ? "已报名" : "报名跨服"}
+                    </button>
+                    <button className="rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleCrossServer()}>
+                      结算跨服
+                    </button>
                   </div>
                 </section>
                 <section className="glass-panel rounded-3xl p-4">

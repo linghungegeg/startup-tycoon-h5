@@ -572,6 +572,19 @@ export type LeaderboardSettlementRecord = {
   deliveredRewards: number;
 };
 
+export type CrossServerGroupRecord = {
+  id: string;
+  name: string;
+  ruleLabel: string;
+  serverIds: string[];
+};
+
+export type CrossServerCenterRecord = {
+  group: CrossServerGroupRecord;
+  isRegistered: boolean;
+  boards: LeaderboardBoardRecord[];
+};
+
 export type TitleRecord = {
   id: string;
   name: string;
@@ -725,6 +738,9 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
   settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
+  getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   listTitles(accountId: string, serverId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND">;
   equipTitle(accountId: string, serverId: string, titleId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND" | "TITLE_EXPIRED">;
   listAchievements(accountId: string, serverId: string): Promise<AchievementRecord[] | "PLAYER_NOT_FOUND">;
@@ -1611,6 +1627,11 @@ const leaderboardConfigs = [
   { key: "guild", name: "商会榜" }
 ] as const;
 
+const crossServerLeaderboardConfigs = [
+  { key: "cross-company-value", name: "跨服创业大赛榜" },
+  { key: "cross-guild", name: "跨服商会榜" }
+] as const;
+
 const formatLeaderboardValue = (key: string, value: number): string => {
   if (key === "cashflow") {
     return `净现金流 ${value.toLocaleString("zh-CN")}`;
@@ -1620,6 +1641,9 @@ const formatLeaderboardValue = (key: string, value: number): string => {
   }
   if (key === "guild") {
     return `贡献 ${value.toLocaleString("zh-CN")}`;
+  }
+  if (key === "cross-guild") {
+    return `跨服贡献 ${value.toLocaleString("zh-CN")}`;
   }
 
   return `估值 ${value.toLocaleString("zh-CN")}`;
@@ -4582,6 +4606,208 @@ export const createPrismaGameRepository = (
 
     return {
       leaderboard,
+      deliveredRewards
+    };
+  },
+
+  async getCrossServerCenter(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const groupServer = await prisma.crossServerGroupServer.findUnique({
+      where: { serverId },
+      include: {
+        group: {
+          include: {
+            servers: { orderBy: { sortOrder: "asc" } }
+          }
+        }
+      }
+    });
+    if (groupServer === null || !groupServer.group.isActive) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+
+    const serverIds = groupServer.group.servers.map((item) => item.serverId);
+    const [profiles, signup] = await Promise.all([
+      prisma.playerProfile.findMany({
+        where: { serverId: { in: serverIds } },
+        include: {
+          guildMembership: true,
+          titleEquipment: true,
+          playerTitles: { include: { title: true } }
+        }
+      }),
+      prisma.crossServerSignup.findUnique({
+        where: {
+          profileId_groupId: {
+            profileId: profile.id,
+            groupId: groupServer.groupId
+          }
+        }
+      })
+    ]);
+
+    const boards = await Promise.all(crossServerLeaderboardConfigs.map(async (config) => {
+      const rows = profiles
+        .map((item) => {
+          const value = config.key === "cross-guild" ? item.guildMembership?.contributionScore ?? 0 : item.valuation;
+          const equipped = item.playerTitles.find((title) => title.titleId === item.titleEquipment?.titleId);
+          return {
+            rank: 0,
+            profileId: item.id,
+            founderName: item.founderName,
+            companyName: item.companyName,
+            value,
+            valueLabel: formatLeaderboardValue(config.key, value),
+            equippedTitle: equipped?.title.name ?? null
+          };
+        })
+        .sort((left, right) => right.value - left.value)
+        .slice(0, 20)
+        .map((row, index) => ({ ...row, rank: index + 1 }));
+
+      await prisma.leaderboardSnapshot.upsert({
+        where: {
+          serverId_boardKey_snapshotDate: {
+            serverId: groupServer.groupId,
+            boardKey: config.key,
+            snapshotDate: today
+          }
+        },
+        update: {
+          entriesJson: JSON.stringify(rows)
+        },
+        create: {
+          serverId: groupServer.groupId,
+          boardKey: config.key,
+          boardName: config.name,
+          snapshotDate: today,
+          entriesJson: JSON.stringify(rows)
+        }
+      });
+
+      return {
+        key: config.key,
+        name: config.name,
+        scope: "cross" as const,
+        isActive: true,
+        rows,
+        snapshotDate: today
+      };
+    }));
+
+    return {
+      group: {
+        id: groupServer.group.id,
+        name: groupServer.group.name,
+        ruleLabel: groupServer.group.ruleLabel,
+        serverIds
+      },
+      isRegistered: signup?.status === "active",
+      boards
+    };
+  },
+
+  async registerCrossServer(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const groupServer = await prisma.crossServerGroupServer.findUnique({
+      where: { serverId },
+      include: { group: true }
+    });
+    if (groupServer === null || !groupServer.group.isActive) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+
+    await prisma.crossServerSignup.upsert({
+      where: {
+        profileId_groupId: {
+          profileId: profile.id,
+          groupId: groupServer.groupId
+        }
+      },
+      update: {
+        status: "active",
+        signupDate: today
+      },
+      create: {
+        profileId: profile.id,
+        serverId,
+        groupId: groupServer.groupId,
+        signupDate: today
+      }
+    });
+
+    return this.getCrossServerCenter(accountId, serverId, today);
+  },
+
+  async settleCrossServerRewards(accountId, serverId, today) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+
+    let deliveredRewards = 0;
+    for (const board of center.boards) {
+      for (const row of board.rows.slice(0, 3)) {
+        const rewardPlatformCoins = row.rank === 1 ? 180 : row.rank === 2 ? 120 : 80;
+        const rewardTitleId = board.key === "cross-company-value" && row.rank === 1 ? "cross-unicorn" : null;
+        const existing = await prisma.leaderboardRewardDelivery.findUnique({
+          where: {
+            profileId_boardKey_snapshotDate: {
+              profileId: row.profileId,
+              boardKey: board.key,
+              snapshotDate: today
+            }
+          }
+        });
+        if (existing === null) {
+          await prisma.leaderboardRewardDelivery.create({
+            data: {
+              profileId: row.profileId,
+              serverId: center.group.id,
+              boardKey: board.key,
+              snapshotDate: today,
+              rank: row.rank,
+              rewardPlatformCoins,
+              rewardTitleId,
+              mailSubject: `${board.name} 第 ${row.rank} 名奖励`,
+              mailBody: "跨服奖励已通过邮件发放，本记录用于重试幂等。"
+            }
+          });
+          deliveredRewards += 1;
+          if (rewardTitleId !== null) {
+            await grantTitle(prisma, row.profileId, rewardTitleId, "cross_server", new Date(`${today}T00:00:00.000Z`));
+          }
+        }
+      }
+    }
+
+    return {
+      leaderboard: {
+        boards: center.boards,
+        activityBoards: []
+      },
       deliveredRewards
     };
   },
