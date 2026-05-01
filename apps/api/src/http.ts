@@ -216,6 +216,15 @@ const readServerId = (body: unknown): string | undefined => {
   return serverId === "" ? undefined : serverId;
 };
 
+const readOptionalString = (body: unknown, key: string): string | null => {
+  if (!isRecord(body)) {
+    return null;
+  }
+
+  const value = readString(body, key);
+  return value === "" ? null : value;
+};
+
 const readPositiveInteger = (body: unknown, key: string): number | undefined => {
   if (!isRecord(body)) {
     return undefined;
@@ -2974,7 +2983,9 @@ export const createApiServer = (
       }
 
       try {
-        const serverId = readServerId(await readBody(request));
+        const body = await readBody(request);
+        const serverId = readServerId(body);
+        const knowledgeId = readOptionalString(body, "knowledgeId");
         const taskId = taskProgressMatch[1];
         if (serverId === undefined) {
           sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
@@ -2985,13 +2996,21 @@ export const createApiServer = (
           return;
         }
 
-        const task = await repository.advanceTask(account.id, serverId, decodeURIComponent(taskId), readToday(request));
+        const task = await repository.advanceTask(account.id, serverId, decodeURIComponent(taskId), readToday(request), knowledgeId);
         if (task === "PLAYER_NOT_FOUND") {
           sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
           return;
         }
         if (task === "TASK_NOT_FOUND") {
           sendJson(response, 404, failure("TASK_NOT_FOUND", "Task not found.", traceId));
+          return;
+        }
+        if (task === "TASK_KNOWLEDGE_MISMATCH") {
+          sendJson(response, 409, failure("TASK_KNOWLEDGE_MISMATCH", "Knowledge card does not match this task.", traceId));
+          return;
+        }
+        if (task === "KNOWLEDGE_LOCKED") {
+          sendJson(response, 409, failure("KNOWLEDGE_LOCKED", "Knowledge card is not unlocked.", traceId));
           return;
         }
 

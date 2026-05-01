@@ -378,7 +378,8 @@ const createTestRepository = (): GameRepository => {
       rewardReputation: 300,
       rewardActionPower: 0,
       guideAction: "查看知识",
-      unlockKind: "knowledge" as const
+      unlockKind: "knowledge" as const,
+      knowledgeId: "labor-written-contract"
     },
     {
       id: "side-compliance-contract-review",
@@ -393,7 +394,8 @@ const createTestRepository = (): GameRepository => {
       rewardReputation: 0,
       rewardActionPower: 0,
       guideAction: "处理支线",
-      unlockKind: "compliance" as const
+      unlockKind: "compliance" as const,
+      knowledgeId: "contract-acceptance-payment"
     },
     {
       id: "side-founder-pressure",
@@ -1181,6 +1183,7 @@ const createTestRepository = (): GameRepository => {
     return {
       ...config,
       type: config.type,
+      knowledgeId: config.knowledgeId ?? null,
       progress: Math.min(currentProgress, config.target),
       isClaimed,
       isClaimable: currentProgress >= config.target && !isClaimed
@@ -2634,7 +2637,7 @@ const createTestRepository = (): GameRepository => {
 
       return taskConfigs.map((config) => toTaskRecord(profile.id, config, today));
     },
-    async advanceTask(accountId, serverId, taskId, today) {
+    async advanceTask(accountId, serverId, taskId, today, knowledgeId = null) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
@@ -2643,6 +2646,15 @@ const createTestRepository = (): GameRepository => {
       const config = taskConfigs.find((task) => task.id === taskId);
       if (config === undefined) {
         return "TASK_NOT_FOUND";
+      }
+
+      if (config.unlockKind !== "none" && (config.knowledgeId ?? null) !== null) {
+        if (knowledgeId !== config.knowledgeId) {
+          return "TASK_KNOWLEDGE_MISMATCH";
+        }
+        if (!knowledgeUnlocks.has(knowledgeKey(profile.id, config.knowledgeId))) {
+          return "KNOWLEDGE_LOCKED";
+        }
       }
 
       const key = `${profile.id}:${config.id}`;
@@ -5144,7 +5156,30 @@ test("completes knowledge and compliance side tasks through guided progress", as
       })
     });
 
-    for (const taskId of ["side-knowledge-labor-contract", "side-compliance-contract-review"]) {
+    const firstEvents = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", { headers: auth });
+    const firstEvent = firstEvents.body.data?.[0];
+    assert.ok(firstEvent);
+    const firstChoice = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(firstEvent.id)}/choose`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(firstChoice.status, 200);
+
+    const followupEvents = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", { headers: auth });
+    const followupEvent = followupEvents.body.data?.find((event) => event.configId === "customer-contract-review");
+    assert.ok(followupEvent);
+    const followupChoice = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(followupEvent.id)}/choose`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(followupChoice.status, 200);
+
+    for (const [taskId, knowledgeId] of [
+      ["side-knowledge-labor-contract", "labor-written-contract"],
+      ["side-compliance-contract-review", "contract-acceptance-payment"]
+    ] as const) {
       const earlyClaim = await requestJson<TaskRecord>(baseUrl, `/tasks/${taskId}/claim`, {
         method: "POST",
         headers: auth,
@@ -5156,7 +5191,7 @@ test("completes knowledge and compliance side tasks through guided progress", as
       const progressed = await requestJson<TaskRecord>(baseUrl, `/tasks/${taskId}/progress`, {
         method: "POST",
         headers: auth,
-        body: JSON.stringify({ serverId: "s1" })
+        body: JSON.stringify({ serverId: "s1", knowledgeId })
       });
       assert.equal(progressed.status, 200);
       assert.equal(progressed.body.data?.isClaimable, true);
@@ -5169,6 +5204,57 @@ test("completes knowledge and compliance side tasks through guided progress", as
       assert.equal(claimed.status, 200);
       assert.equal(claimed.body.data?.isClaimed, true);
     }
+  });
+});
+
+test("knowledge side tasks progress only after reading the configured unlocked card", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "taskknowledge");
+    const auth = { authorization: `Bearer ${token}` };
+
+    const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers: auth });
+    assert.equal(tasks.status, 200);
+    const knowledgeTask = tasks.body.data?.find((task) => task.id === "side-knowledge-labor-contract") as (TaskRecord & { knowledgeId?: string | null }) | undefined;
+    const complianceTask = tasks.body.data?.find((task) => task.id === "side-compliance-contract-review") as (TaskRecord & { knowledgeId?: string | null }) | undefined;
+    assert.equal(knowledgeTask?.knowledgeId, "labor-written-contract");
+    assert.equal(complianceTask?.knowledgeId, "contract-acceptance-payment");
+
+    const lockedRead = await requestJson<TaskRecord>(baseUrl, "/tasks/side-knowledge-labor-contract/progress", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", knowledgeId: "labor-written-contract" })
+    });
+    assert.equal(lockedRead.status, 409);
+    assert.equal(lockedRead.body.error?.code, "KNOWLEDGE_LOCKED");
+
+    const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", { headers: auth });
+    assert.equal(events.status, 200);
+    const event = events.body.data?.[0];
+    assert.ok(event);
+    const settled = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(event.id)}/choose`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.result.knowledge?.id, "labor-written-contract");
+
+    const mismatch = await requestJson<TaskRecord>(baseUrl, "/tasks/side-knowledge-labor-contract/progress", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", knowledgeId: "contract-acceptance-payment" })
+    });
+    assert.equal(mismatch.status, 409);
+    assert.equal(mismatch.body.error?.code, "TASK_KNOWLEDGE_MISMATCH");
+
+    const progressed = await requestJson<TaskRecord>(baseUrl, "/tasks/side-knowledge-labor-contract/progress", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", knowledgeId: "labor-written-contract" })
+    });
+    assert.equal(progressed.status, 200);
+    assert.equal(progressed.body.data?.progress, 1);
+    assert.equal(progressed.body.data?.isClaimable, true);
   });
 });
 
@@ -5464,8 +5550,8 @@ test("settles event choices once, applies impact, unlocks knowledge, and trigger
     assert.equal(tasks.status, 200);
     assert.equal(tasks.body.success, true);
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-handle-event")?.progress, 1);
-    assert.equal(tasks.body.data?.find((task) => task.id === "side-knowledge-labor-contract")?.progress, 1);
-    assert.equal(tasks.body.data?.find((task) => task.id === "side-compliance-contract-review")?.progress, 1);
+    assert.equal(tasks.body.data?.find((task) => task.id === "side-knowledge-labor-contract")?.progress, 0);
+    assert.equal(tasks.body.data?.find((task) => task.id === "side-compliance-contract-review")?.progress, 0);
   });
 });
 

@@ -87,6 +87,7 @@ export type TaskRecord = {
   rewardItem: ItemRewardRecord | null;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
+  knowledgeId: string | null;
   isClaimed: boolean;
   isClaimable: boolean;
 };
@@ -1067,7 +1068,7 @@ export type GameRepository = {
   getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
   claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
-  advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
+  advanceTask(accountId: string, serverId: string, taskId: string, today: string, knowledgeId?: string | null): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_KNOWLEDGE_MISMATCH" | "KNOWLEDGE_LOCKED">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
   listRandomTasks(accountId: string, serverId: string, today: string): Promise<RandomTaskCenterRecord | "PLAYER_NOT_FOUND">;
   resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string, modifierItemId?: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
@@ -2900,6 +2901,7 @@ const toTaskRecord = (
     rewardItem?: { id: string; name: string } | null;
     guideAction: string;
     unlockKind: string;
+    knowledgeId: string | null;
   },
   progress: { progress: number; dailyDate: string | null; claimedAt: Date | null } | undefined,
   today: string
@@ -2925,6 +2927,7 @@ const toTaskRecord = (
     rewardItem: toItemRewardRecord(config.rewardItem, config.rewardItemQuantity),
     guideAction: config.guideAction,
     unlockKind: readUnlockKind(config.unlockKind),
+    knowledgeId: config.knowledgeId,
     isClaimed,
     isClaimable: currentProgress >= config.target && !isClaimed
   };
@@ -3808,7 +3811,7 @@ export const createPrismaGameRepository = (
     return taskRecords.filter((task) => task.type !== "main" || task.isClaimed || task.id === firstOpenMainTask.id);
   },
 
-  async advanceTask(accountId, serverId, taskId, today) {
+  async advanceTask(accountId, serverId, taskId, today, knowledgeId = null) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -3824,6 +3827,24 @@ export const createPrismaGameRepository = (
     const config = await prisma.taskConfig.findUnique({ where: { id: taskId }, include: { rewardItem: true } });
     if (config === null) {
       return "TASK_NOT_FOUND";
+    }
+
+    const unlockKind = readUnlockKind(config.unlockKind);
+    if (unlockKind !== "none" && config.knowledgeId !== null) {
+      if (knowledgeId !== config.knowledgeId) {
+        return "TASK_KNOWLEDGE_MISMATCH";
+      }
+      const unlock = await prisma.playerKnowledgeUnlock.findUnique({
+        where: {
+          profileId_knowledgeId: {
+            profileId: profile.id,
+            knowledgeId: config.knowledgeId
+          }
+        }
+      });
+      if (unlock === null) {
+        return "KNOWLEDGE_LOCKED";
+      }
     }
 
     const existing = await prisma.playerTaskProgress.findUnique({

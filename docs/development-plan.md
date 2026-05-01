@@ -1880,6 +1880,21 @@ VIP 权益：
 - 验证命令：`node --test --test-reporter spec --test-name-pattern "linked knowledge" --import tsx apps/api/test/http.test.ts`、`npm run db:generate -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`，其余全量回归按本批收口执行。
 - 遗留风险：主线任务、支线任务和更细的事件结算解释仍可继续增强；本批先完成已实现事件/随机任务链路，不扩展新任务内容和后台配置页。
 
+### Phase 22 第三实施批次阶段总结：知识卡任务阅读闭环
+
+- 当前稳定点：`11840ab feat: link knowledge to tasks and events`。
+- 完成内容：任务配置新增可选 `knowledgeId`；任务列表返回绑定知识卡 ID；知识/合规支线从固定卡片改为读取任务配置，阅读正确卡片后推进任务进度。
+- 阅读规则：知识/合规任务调用进度接口时必须传入匹配的 `knowledgeId`；未解锁知识卡返回 `KNOWLEDGE_LOCKED`，不匹配任务配置返回 `TASK_KNOWLEDGE_MISMATCH`；普通任务和没有知识卡绑定的任务保持原行为。
+- 前台变化：任务页点击知识/合规支线会打开该任务绑定的知识卡；未解锁卡展示锁定提示并禁用“我已理解”；已解锁卡确认阅读后推进任务并刷新任务状态。
+- 规则边界：本批不新增知识卡内容，不做 Admin 知识配置页，不改变任务奖励、事件奖励、随机任务奖励、行动力和经营道具规则；事件/随机任务知识入口仍只做解释，不直接发任务奖励。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写知识支线任务绑定和阅读校验失败测试，再补 schema、repository、HTTP 和前台。
+  - Browser Use：需打开 `http://127.0.0.1:5173/` 验收任务页知识/合规支线、锁定提示、已解锁阅读推进和 HUD/导航遮挡。
+  - Build Web Apps：前台复用既有知识支线全覆盖页、深色玻璃面板和按钮层级，不新增营销页式 UI。
+  - Game Studio：知识卡阅读作为主动支线动作，不强制弹窗、不遮挡主页 HUD、底部导航和专属经理流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "knowledge side tasks progress|completes knowledge" --import tsx apps/api/test/http.test.ts`、`npm run db:generate -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`，其余全量回归按本批收口执行。
+- 下一阶段入口：Phase 22 可作为知识卡玩家侧稳定点收口；后续建议转入 Admin 知识配置/审核页，或进入 Phase 23 商会与跨服深度玩法。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

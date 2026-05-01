@@ -151,6 +151,7 @@ type TaskItem = {
   rewardItem: { id: string; name: string; quantity: number } | null;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
+  knowledgeId: string | null;
   isClaimed: boolean;
   isClaimable: boolean;
 };
@@ -1533,8 +1534,7 @@ function App() {
     if (activeKnowledgeTask === null) {
       return undefined;
     }
-    const knowledgeId = activeKnowledgeTask.unlockKind === "compliance" ? "contract-acceptance-payment" : "labor-written-contract";
-    return knowledgeEntries.find((entry) => entry.id === knowledgeId);
+    return knowledgeEntries.find((entry) => entry.id === activeKnowledgeTask.knowledgeId);
   }, [activeKnowledgeTask, knowledgeEntries]);
   const openKnowledgeLink = useCallback((knowledge: KnowledgeLink | null): void => {
     if (knowledge === null) {
@@ -3112,7 +3112,7 @@ function App() {
     setActiveNav("公司");
   };
 
-  const progressTask = async (taskId: string): Promise<void> => {
+  const progressTask = async (taskId: string, knowledgeId?: string | null): Promise<void> => {
     if (!account || !selectedServer) {
       setTaskError("账号或区服状态缺失，请重新登录。");
       return;
@@ -3122,7 +3122,7 @@ function App() {
       `/tasks/${encodeURIComponent(taskId)}/progress`,
       {
         method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
+        body: JSON.stringify({ serverId: selectedServer.id, knowledgeId })
       },
       account.token
     );
@@ -3766,7 +3766,8 @@ function App() {
     }
 
     if (task.unlockKind === "compliance") {
-      openEventScreen();
+      setActiveKnowledgeTask(task);
+      setActivePanel(null);
     }
   };
 
@@ -6019,6 +6020,11 @@ function App() {
                 <article className="glass-panel rounded-3xl p-5">
                   <h3 className="text-lg text-white font-black">{activeKnowledgeTask.title}</h3>
                   <p className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeTaskKnowledgeEntry?.summary || activeKnowledgeTask.description}</p>
+                  {activeTaskKnowledgeEntry && !activeTaskKnowledgeEntry.isUnlocked && (
+                    <p className="mt-3 rounded-2xl bg-slate-900/60 border border-white/5 p-3 text-[10px] text-slate-400 font-bold leading-5">
+                      这张知识卡尚未解锁，先通过对应经营事件或成就解锁后再推进支线。
+                    </p>
+                  )}
                   <dl className="mt-5 space-y-3">
                     <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
                       <dt className="text-[10px] text-business-gold font-black">经营场景</dt>
@@ -6046,14 +6052,15 @@ function App() {
                 </article>
                 <button
                   className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
+                  disabled={activeTaskKnowledgeEntry === undefined || !activeTaskKnowledgeEntry.isUnlocked}
                   type="button"
                   onClick={() => {
-                    void progressTask(activeKnowledgeTask.id);
+                    void progressTask(activeKnowledgeTask.id, activeKnowledgeTask.knowledgeId);
                     setActiveKnowledgeTask(null);
                     openTaskScreen();
                   }}
                 >
-                  我已理解
+                  {activeTaskKnowledgeEntry?.isUnlocked ? "我已理解" : "知识卡未解锁"}
                 </button>
               </div>
             </section>

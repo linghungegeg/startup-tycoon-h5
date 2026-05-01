@@ -1252,6 +1252,7 @@ model TaskConfig {
   rewardItemQuantity Int               @default(0)
   guideAction     String               @db.VarChar(32)
   unlockKind      String               @default("none") @db.VarChar(24)
+  knowledgeId     String?              @db.VarChar(48)
   sortOrder       Int                  @default(0)
   createdAt       DateTime             @default(now())
   rewardItem      ItemConfig?          @relation("TaskRewardItem", fields: [rewardItemId], references: [id], onDelete: SetNull)
@@ -1259,6 +1260,7 @@ model TaskConfig {
 
   @@index([type, sortOrder])
   @@index([rewardItemId])
+  @@index([knowledgeId])
 }
 
 model RandomTaskConfig {

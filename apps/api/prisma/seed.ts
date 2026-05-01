@@ -528,6 +528,7 @@ const taskConfigs = [
     rewardItemQuantity: 1,
     guideAction: "查看知识",
     unlockKind: "knowledge",
+    knowledgeId: "labor-written-contract",
     sortOrder: 20
   },
   {
@@ -546,6 +547,7 @@ const taskConfigs = [
     rewardItemQuantity: 1,
     guideAction: "处理支线",
     unlockKind: "compliance",
+    knowledgeId: "contract-acceptance-payment",
     sortOrder: 21
   },
   {
