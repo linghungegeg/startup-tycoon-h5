@@ -812,6 +812,7 @@ type GuildCenter = {
     target: number;
     contributionReward: number;
     isClaimed: boolean;
+    isClaimable: boolean;
   }>;
   techs: Array<{
     id: string;
@@ -819,6 +820,9 @@ type GuildCenter = {
     description: string;
     level: number;
     maxLevel: number;
+    upgradeCost: number | null;
+    isUpgradable: boolean;
+    bonusLabel: string;
   }>;
   helpRequests: Array<{
     id: string;
@@ -2551,6 +2555,54 @@ function App() {
       setPhase14Notice(response.data.result);
       setPhase14Error("");
       await loadPhase14Center(account.token, selectedServer.id);
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const claimGuildTask = async (taskId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/tasks/${encodeURIComponent(taskId)}/claim`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const upgradeGuildTech = async (techId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/techs/${encodeURIComponent(techId)}/upgrade`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
       return;
     }
 
@@ -4447,6 +4499,17 @@ function App() {
                               <span className="text-[9px] text-slate-500">{task.progress}/{task.target}</span>
                             </div>
                             <p className="mt-1 text-[9px] text-slate-400">{task.description}</p>
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-business-gold font-black">贡献 +{task.contributionReward}</span>
+                              <button
+                                className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${task.isClaimable ? "btn-gold text-business-dark" : "bg-slate-800 text-slate-500"}`}
+                                disabled={!task.isClaimable}
+                                type="button"
+                                onClick={() => void claimGuildTask(task.id)}
+                              >
+                                {task.isClaimed ? "已领取" : task.isClaimable ? "领取" : "未完成"}
+                              </button>
+                            </div>
                           </article>
                         ))}
                       </div>
@@ -4457,6 +4520,15 @@ function App() {
                           <div className="text-[10px] text-business-gold font-black">{tech.name}</div>
                           <strong className="mt-1 block text-sm text-white">Lv.{tech.level}/{tech.maxLevel}</strong>
                           <p className="mt-1 text-[9px] text-slate-500">{tech.description}</p>
+                          <p className="mt-2 text-[9px] text-emerald-200 font-bold">{tech.bonusLabel}</p>
+                          <button
+                            className={`mt-3 w-full rounded-xl py-2 text-[10px] font-black ${tech.isUpgradable ? "btn-gold text-business-dark" : "bg-slate-800 text-slate-500"}`}
+                            disabled={!tech.isUpgradable}
+                            type="button"
+                            onClick={() => void upgradeGuildTech(tech.id)}
+                          >
+                            {tech.upgradeCost === null ? "已满级" : `升级 ${tech.upgradeCost} 贡献`}
+                          </button>
                         </article>
                       ))}
                     </section>

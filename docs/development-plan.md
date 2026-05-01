@@ -1910,6 +1910,21 @@ VIP 权益：
 - 验证命令：`node --test --test-reporter spec --test-name-pattern "admin can filter and update knowledge" --import tsx apps/api/test/http.test.ts`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`，其余全量回归按本批收口执行。
 - 下一阶段入口：Phase 22 可作为知识系统“内容 + 玩家入口 + 任务阅读 + Admin 审核”稳定点收口；下一阶段建议进入 Phase 23 商会/跨服深度玩法，或单独做 Admin 知识批量导入/版本对比。
 
+### Phase 23 第一实施批次阶段总结：商会任务与商会科技闭环
+
+- 当前稳定点：`7fcc005 feat: add admin knowledge review`。
+- 完成内容：商会从“加入 + 发布互助”推进为“互助贡献 + 任务领取 + 科技升级”的首个长期玩法闭环；发布互助给成员和商会各 20 贡献，当天商会任务完成后可领取额外 20 贡献。
+- 数值规则：科技升级使用商会累计贡献门槛，不扣减排行榜贡献；`联合办公`、`资本人脉`、`风险复核`均为 5 级科技，门槛按 40、120、240、400、600 递进，避免首日卡死，也避免短时间满级。
+- 后端接口：新增 `POST /guild/tasks/:id/claim` 和 `POST /guild/techs/:id/upgrade`；未加入商会、任务未完成、当天重复领取、科技不存在、贡献不足和满级均返回明确错误码。
+- 前台表现：商会页展示任务进度、领取按钮、科技等级、加成文案和升级门槛；沿用深色商务手游页内布局，不新增弹窗层级，不遮挡 HUD、底部导航和商会主流程。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写商会任务领取和科技升级失败测试，再实现接口、仓储和前台。
+  - Browser Use：需打开 `http://127.0.0.1:5173/` 验收商会加入、互助、任务领取、科技升级和页面无禁用字样。
+  - Build Web Apps：商会页保持既有玻璃面板、金色按钮和紧凑信息密度，不改为后台式表格或营销页。
+  - Game Studio：商会作为全覆盖内页承载长文本和按钮，主页 HUD 与底部导航不被新增控件遮挡。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "guild tasks can be claimed|phase 14 achievements titles knowledge and guild" --import tsx apps/api/test/http.test.ts`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`，其余全量回归按本批收口执行。
+- 下一阶段入口：Phase 23 第二实施批次可继续做商会排行榜奖励和成员互助完成机制；跨服赛季化建议等商会单服闭环稳定后再进入。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

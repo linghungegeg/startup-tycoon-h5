@@ -1824,6 +1824,8 @@ const createTestRepository = (): GameRepository => {
   const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string }>();
+  const guildTaskClaims = new Map<string, { guildId: string; taskId: string; claimedAt: string }>();
+  const guildTechStates = new Map<string, { guildId: string; techId: string; level: number }>();
   const telemetryEvents = new Map<string, { id: string; accountId: string; serverId: string; eventName: string; targetId: string | null; metadata: Record<string, string | number | boolean | null> }>();
   const apiRequestLogs: Array<{ traceId: string; method: string; path: string; statusCode: number; durationMs: number }> = [];
   const seasonConfig = {
@@ -2201,13 +2203,19 @@ const createTestRepository = (): GameRepository => {
       ]
     };
   };
-  const toGuildCenter = (profile: PlayerProfileRecord): GuildCenterRecord => {
+  const guildTechUpgradeCost = (currentLevel: number): number | null =>
+    currentLevel >= 5 ? null : [40, 120, 240, 400, 600][currentLevel] ?? null;
+  const toGuildCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): GuildCenterRecord => {
     const member = guildMembers.get(profile.id);
     if (member === undefined) {
       return { guild: null, members: [], tasks: [], techs: [], helpRequests: [], leaderboard: [] };
     }
     const guild = guilds.get(member.guildId);
     const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
+    const todayHelpCount = [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId && request.createdAt.slice(0, 10) === today).length;
+    const isHelpClaimed = guildTaskClaims.get(`${member.guildId}:guild-daily-help`)?.claimedAt.slice(0, 10) === today;
+    const sharedOfficeLevel = guildTechStates.get(`${member.guildId}:shared-office`)?.level ?? 0;
+    const upgradeCost = guildTechUpgradeCost(sharedOfficeLevel);
     return {
       guild: guild === undefined ? null : { id: guild.id, name: guild.name, level: guild.level, contributionScore: guild.contributionScore },
       members: members.map((item) => {
@@ -2220,8 +2228,8 @@ const createTestRepository = (): GameRepository => {
           contributionScore: item.contributionScore
         };
       }),
-      tasks: [{ id: "guild-daily-help", title: "成员互助", description: "完成一次商会互助。", progress: Math.min(member.contributionScore / 20, 1), target: 1, contributionReward: 20, isClaimed: member.contributionScore > 0 }],
-      techs: [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: 0, maxLevel: 5 }],
+      tasks: [{ id: "guild-daily-help", title: "成员互助", description: "完成一次商会互助。", progress: Math.min(todayHelpCount, 1), target: 1, contributionReward: 20, isClaimed: isHelpClaimed, isClaimable: todayHelpCount >= 1 && !isHelpClaimed }],
+      techs: [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: sharedOfficeLevel, maxLevel: 5, upgradeCost, isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost, bonusLabel: sharedOfficeLevel <= 0 ? "待激活" : `协作效率 +${sharedOfficeLevel * 2}%` }],
       helpRequests: [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId),
       leaderboard: members
         .sort((left, right) => right.contributionScore - left.contributionScore)
@@ -4315,11 +4323,11 @@ const createTestRepository = (): GameRepository => {
         };
       }) satisfies KnowledgeEntryRecord[];
     },
-    async getGuildCenter(accountId, serverId) {
+    async getGuildCenter(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
-      return profile === undefined ? "PLAYER_NOT_FOUND" : toGuildCenter(profile);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toGuildCenter(profile, today);
     },
-    async joinOrCreateGuild(accountId, serverId, guildName) {
+    async joinOrCreateGuild(accountId, serverId, guildName, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
@@ -4328,9 +4336,9 @@ const createTestRepository = (): GameRepository => {
       const guild = guilds.get(guildKey) ?? { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0 };
       guilds.set(guildKey, guild);
       guildMembers.set(profile.id, { guildId: guild.id, profileId: profile.id, role: "leader", contributionScore: 0 });
-      return { guildCenter: toGuildCenter(profile), result: `${guildName} 已加入。` } satisfies GuildActionRecord;
+      return { guildCenter: toGuildCenter(profile, today), result: `${guildName} 已加入。` } satisfies GuildActionRecord;
     },
-    async requestGuildHelp(accountId, serverId, requestType) {
+    async requestGuildHelp(accountId, serverId, requestType, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
@@ -4339,14 +4347,72 @@ const createTestRepository = (): GameRepository => {
       if (member === undefined) {
         return "GUILD_NOT_JOINED";
       }
-      const request = { id: randomUUID(), guildId: member.guildId, profileId: profile.id, requestType, status: "open", createdAt: new Date().toISOString() };
+      const request = { id: randomUUID(), guildId: member.guildId, profileId: profile.id, requestType, status: "open", createdAt: `${today}T12:00:00.000Z` };
       guildHelpRequests.set(request.id, request);
       member.contributionScore += 20;
       const guild = [...guilds.values()].find((item) => item.id === member.guildId);
       if (guild !== undefined) {
         guild.contributionScore += 20;
       }
-      return { guildCenter: toGuildCenter(profile), result: "商会互助已发布。" } satisfies GuildActionRecord;
+      return { guildCenter: toGuildCenter(profile, today), result: "商会互助已发布。" } satisfies GuildActionRecord;
+    },
+    async claimGuildTask(accountId, serverId, taskId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const member = guildMembers.get(profile.id);
+      if (member === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (taskId !== "guild-daily-help") {
+        return "GUILD_TASK_NOT_FOUND";
+      }
+      const claimKey = `${member.guildId}:${taskId}`;
+      if (guildTaskClaims.get(claimKey)?.claimedAt.slice(0, 10) === today) {
+        return "GUILD_TASK_ALREADY_CLAIMED";
+      }
+      const todayHelpCount = [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId && request.createdAt.slice(0, 10) === today).length;
+      if (todayHelpCount < 1) {
+        return "GUILD_TASK_NOT_READY";
+      }
+      member.contributionScore += 20;
+      const guild = [...guilds.values()].find((item) => item.id === member.guildId);
+      if (guild !== undefined) {
+        guild.contributionScore += 20;
+      }
+      guildTaskClaims.set(claimKey, { guildId: member.guildId, taskId, claimedAt: `${today}T12:00:00.000Z` });
+      return { guildCenter: toGuildCenter(profile, today), result: "商会任务已领取，贡献 +20。" } satisfies GuildActionRecord;
+    },
+    async upgradeGuildTech(accountId, serverId, techId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const member = guildMembers.get(profile.id);
+      if (member === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (techId !== "shared-office") {
+        return "GUILD_TECH_NOT_FOUND";
+      }
+      const guild = [...guilds.values()].find((item) => item.id === member.guildId);
+      if (guild === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      const stateKey = `${member.guildId}:${techId}`;
+      const currentLevel = guildTechStates.get(stateKey)?.level ?? 0;
+      if (currentLevel >= 5) {
+        return "GUILD_TECH_MAXED";
+      }
+      const upgradeCost = guildTechUpgradeCost(currentLevel);
+      if (upgradeCost === null || guild.contributionScore < upgradeCost) {
+        return "GUILD_CONTRIBUTION_NOT_ENOUGH";
+      }
+      const nextLevel = currentLevel + 1;
+      guildTechStates.set(stateKey, { guildId: member.guildId, techId, level: nextLevel });
+      guild.level = Math.max(guild.level, 1 + nextLevel);
+      return { guildCenter: toGuildCenter(profile, today), result: `联合办公 已升级到 Lv.${nextLevel}。` } satisfies GuildActionRecord;
     },
     async disconnect() {}
   };
@@ -7564,6 +7630,53 @@ test("phase 14 achievements titles knowledge and guild basics work together", as
       headers: { authorization: `Bearer ${token}` }
     });
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-guild-contribution")?.isClaimable, true);
+  });
+});
+
+test("guild tasks can be claimed and guild tech upgrades use accumulated contribution", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "guilddeep");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" };
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", guildName: "深度创业会" })
+    });
+    const helped = await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    assert.equal(helped.status, 200);
+    assert.equal(helped.body.data?.guildCenter.tasks.find((task) => task.id === "guild-daily-help")?.progress, 1);
+
+    const claimed = await requestJson<GuildActionRecord>(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    assert.equal(claimed.body.data?.guildCenter.tasks.find((task) => task.id === "guild-daily-help")?.isClaimed, true);
+    assert.equal(claimed.body.data?.guildCenter.guild?.contributionScore, 40);
+
+    const duplicate = await requestJson(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "GUILD_TASK_ALREADY_CLAIMED");
+
+    const upgraded = await requestJson<GuildActionRecord>(baseUrl, "/guild/techs/shared-office/upgrade", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(upgraded.status, 200, JSON.stringify(upgraded.body));
+    assert.equal(upgraded.body.data?.guildCenter.techs.find((tech) => tech.id === "shared-office")?.level, 1);
+    assert.equal(upgraded.body.data?.guildCenter.techs.find((tech) => tech.id === "shared-office")?.upgradeCost, 120);
+    assert.equal(upgraded.body.data?.guildCenter.guild?.level, 2);
   });
 });
 

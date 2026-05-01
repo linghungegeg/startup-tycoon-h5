@@ -1057,6 +1057,7 @@ export type GuildCenterRecord = {
     target: number;
     contributionReward: number;
     isClaimed: boolean;
+    isClaimable: boolean;
   }>;
   techs: Array<{
     id: string;
@@ -1064,6 +1065,9 @@ export type GuildCenterRecord = {
     description: string;
     level: number;
     maxLevel: number;
+    upgradeCost: number | null;
+    isUpgradable: boolean;
+    bonusLabel: string;
   }>;
   helpRequests: Array<{
     id: string;
@@ -1178,9 +1182,11 @@ export type GameRepository = {
   listAchievements(accountId: string, serverId: string): Promise<AchievementRecord[] | "PLAYER_NOT_FOUND">;
   claimAchievement(accountId: string, serverId: string, achievementId: string): Promise<AchievementClaimRecord | "PLAYER_NOT_FOUND" | "ACHIEVEMENT_NOT_FOUND" | "ACHIEVEMENT_INCOMPLETE" | "ACHIEVEMENT_ALREADY_CLAIMED">;
   listKnowledge(accountId: string, serverId: string): Promise<KnowledgeEntryRecord[] | "PLAYER_NOT_FOUND">;
-  getGuildCenter(accountId: string, serverId: string): Promise<GuildCenterRecord | "PLAYER_NOT_FOUND">;
-  joinOrCreateGuild(accountId: string, serverId: string, guildName: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND">;
-  requestGuildHelp(accountId: string, serverId: string, requestType: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
+  getGuildCenter(accountId: string, serverId: string, today: string): Promise<GuildCenterRecord | "PLAYER_NOT_FOUND">;
+  joinOrCreateGuild(accountId: string, serverId: string, guildName: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND">;
+  requestGuildHelp(accountId: string, serverId: string, requestType: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
+  claimGuildTask(accountId: string, serverId: string, taskId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_TASK_NOT_FOUND" | "GUILD_TASK_NOT_READY" | "GUILD_TASK_ALREADY_CLAIMED">;
+  upgradeGuildTech(accountId: string, serverId: string, techId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_TECH_NOT_FOUND" | "GUILD_TECH_MAXED" | "GUILD_CONTRIBUTION_NOT_ENOUGH">;
   disconnect(): Promise<void>;
 };
 
@@ -2483,6 +2489,12 @@ const formatLeaderboardValue = (key: string, value: number): string => {
 
   return `估值 ${value.toLocaleString("zh-CN")}`;
 };
+
+const guildTechUpgradeCost = (currentLevel: number): number | null =>
+  currentLevel >= 5 ? null : [40, 120, 240, 400, 600][currentLevel] ?? null;
+
+const guildTechBonusLabel = (level: number): string =>
+  level <= 0 ? "待激活" : `协作效率 +${level * 2}%`;
 
 const rateBasisPoints = (part: number, total: number): number =>
   total <= 0 ? 0 : Math.min(10000, Math.round((part / total) * 10000));
@@ -7708,7 +7720,7 @@ export const createPrismaGameRepository = (
     return entries.map((entry) => toKnowledgeEntryRecord(entry, unlockedAtByKnowledgeId.get(entry.id) ?? null));
   },
 
-  async getGuildCenter(accountId, serverId) {
+  async getGuildCenter(accountId, serverId, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -7731,14 +7743,17 @@ export const createPrismaGameRepository = (
         leaderboard: []
       };
     }
-    const [guild, members, taskConfigs, progresses, techConfigs, techs, helpRequests] = await Promise.all([
+    const dayStart = new Date(`${today}T00:00:00.000Z`);
+    const dayEnd = new Date(`${today}T23:59:59.999Z`);
+    const [guild, members, taskConfigs, progresses, techConfigs, techs, helpRequests, todayHelpCount] = await Promise.all([
       prisma.guild.findUnique({ where: { id: member.guildId } }),
       prisma.guildMember.findMany({ where: { guildId: member.guildId }, include: { profile: true }, orderBy: { contributionScore: "desc" } }),
       prisma.guildTaskConfig.findMany({ orderBy: { sortOrder: "asc" } }),
       prisma.guildTaskProgress.findMany({ where: { guildId: member.guildId } }),
       prisma.guildTechConfig.findMany({ orderBy: { sortOrder: "asc" } }),
       prisma.guildTechState.findMany({ where: { guildId: member.guildId } }),
-      prisma.guildHelpRequest.findMany({ where: { guildId: member.guildId }, orderBy: { createdAt: "desc" }, take: 10 })
+      prisma.guildHelpRequest.findMany({ where: { guildId: member.guildId }, orderBy: { createdAt: "desc" }, take: 10 }),
+      prisma.guildHelpRequest.count({ where: { guildId: member.guildId, createdAt: { gte: dayStart, lte: dayEnd } } })
     ]);
 
     return {
@@ -7757,23 +7772,33 @@ export const createPrismaGameRepository = (
       })),
       tasks: taskConfigs.map((task) => {
         const progress = progresses.find((item) => item.taskId === task.id);
+        const currentProgress = task.id === "guild-daily-help" ? todayHelpCount : progress?.progress ?? 0;
+        const isClaimed = progress?.claimedAt?.toISOString().slice(0, 10) === today;
         return {
           id: task.id,
           title: task.title,
           description: task.description,
-          progress: Math.min(progress?.progress ?? 0, task.target),
+          progress: Math.min(currentProgress, task.target),
           target: task.target,
           contributionReward: task.contributionReward,
-          isClaimed: progress?.claimedAt !== null && progress?.claimedAt !== undefined
+          isClaimed,
+          isClaimable: currentProgress >= task.target && !isClaimed
         };
       }),
-      techs: techConfigs.map((tech) => ({
-        id: tech.id,
-        name: tech.name,
-        description: tech.description,
-        level: techs.find((item) => item.techId === tech.id)?.level ?? 0,
-        maxLevel: tech.maxLevel
-      })),
+      techs: techConfigs.map((tech) => {
+        const level = techs.find((item) => item.techId === tech.id)?.level ?? 0;
+        const upgradeCost = level >= tech.maxLevel ? null : guildTechUpgradeCost(level);
+        return {
+          id: tech.id,
+          name: tech.name,
+          description: tech.description,
+          level,
+          maxLevel: tech.maxLevel,
+          upgradeCost,
+          isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost,
+          bonusLabel: guildTechBonusLabel(level)
+        };
+      }),
       helpRequests: helpRequests.map((request) => ({
         id: request.id,
         requestType: request.requestType,
@@ -7792,7 +7817,7 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async joinOrCreateGuild(accountId, serverId, guildName) {
+  async joinOrCreateGuild(accountId, serverId, guildName, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -7826,7 +7851,7 @@ export const createPrismaGameRepository = (
         role: "leader"
       }
     });
-    const guildCenter = await this.getGuildCenter(accountId, serverId);
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
 
     return {
       guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
@@ -7841,7 +7866,7 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async requestGuildHelp(accountId, serverId, requestType) {
+  async requestGuildHelp(accountId, serverId, requestType, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -7861,7 +7886,8 @@ export const createPrismaGameRepository = (
       data: {
         guildId: member.guildId,
         profileId: profile.id,
-        requestType
+        requestType,
+        createdAt: new Date(`${today}T12:00:00.000Z`)
       }
     });
     await prisma.guildMember.update({
@@ -7886,7 +7912,7 @@ export const createPrismaGameRepository = (
         progress: 1
       }
     });
-    const guildCenter = await this.getGuildCenter(accountId, serverId);
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
 
     return {
       guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
@@ -7898,6 +7924,178 @@ export const createPrismaGameRepository = (
         leaderboard: []
       } : guildCenter,
       result: "商会互助已发布。"
+    };
+  },
+
+  async claimGuildTask(accountId, serverId, taskId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    const task = await prisma.guildTaskConfig.findUnique({ where: { id: taskId } });
+    if (task === null) {
+      return "GUILD_TASK_NOT_FOUND";
+    }
+    const progress = await prisma.guildTaskProgress.findUnique({
+      where: {
+        guildId_taskId: {
+          guildId: member.guildId,
+          taskId
+        }
+      }
+    });
+    if (progress?.claimedAt?.toISOString().slice(0, 10) === today) {
+      return "GUILD_TASK_ALREADY_CLAIMED";
+    }
+    const currentProgress = taskId === "guild-daily-help"
+      ? await prisma.guildHelpRequest.count({
+        where: {
+          guildId: member.guildId,
+          createdAt: {
+            gte: new Date(`${today}T00:00:00.000Z`),
+            lte: new Date(`${today}T23:59:59.999Z`)
+          }
+        }
+      })
+      : progress?.progress ?? 0;
+    if (currentProgress < task.target) {
+      return "GUILD_TASK_NOT_READY";
+    }
+
+    const claimedAt = new Date(`${today}T12:00:00.000Z`);
+    await prisma.$transaction([
+      prisma.guildMember.update({
+        where: { id: member.id },
+        data: { contributionScore: { increment: task.contributionReward } }
+      }),
+      prisma.guild.update({
+        where: { id: member.guildId },
+        data: { contributionScore: { increment: task.contributionReward } }
+      }),
+      prisma.guildTaskProgress.upsert({
+        where: {
+          guildId_taskId: {
+            guildId: member.guildId,
+            taskId
+          }
+        },
+        update: {
+          progress: Math.max(currentProgress, task.target),
+          claimedAt
+        },
+        create: {
+          guildId: member.guildId,
+          taskId,
+          progress: Math.max(currentProgress, task.target),
+          claimedAt
+        }
+      })
+    ]);
+
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: `商会任务已领取，贡献 +${task.contributionReward}。`
+    };
+  },
+
+  async upgradeGuildTech(accountId, serverId, techId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    const [guild, tech, state] = await Promise.all([
+      prisma.guild.findUnique({ where: { id: member.guildId } }),
+      prisma.guildTechConfig.findUnique({ where: { id: techId } }),
+      prisma.guildTechState.findUnique({
+        where: {
+          guildId_techId: {
+            guildId: member.guildId,
+            techId
+          }
+        }
+      })
+    ]);
+    if (guild === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    if (tech === null) {
+      return "GUILD_TECH_NOT_FOUND";
+    }
+    const currentLevel = state?.level ?? 0;
+    if (currentLevel >= tech.maxLevel) {
+      return "GUILD_TECH_MAXED";
+    }
+    const upgradeCost = guildTechUpgradeCost(currentLevel);
+    if (upgradeCost === null || guild.contributionScore < upgradeCost) {
+      return "GUILD_CONTRIBUTION_NOT_ENOUGH";
+    }
+    const nextLevel = currentLevel + 1;
+    const allTechStates = await prisma.guildTechState.findMany({ where: { guildId: member.guildId } });
+    const otherTechLevelTotal = allTechStates
+      .filter((item) => item.techId !== techId)
+      .reduce((total, item) => total + item.level, 0);
+    await prisma.$transaction([
+      prisma.guildTechState.upsert({
+        where: {
+          guildId_techId: {
+            guildId: member.guildId,
+            techId
+          }
+        },
+        update: { level: nextLevel },
+        create: {
+          guildId: member.guildId,
+          techId,
+          level: nextLevel
+        }
+      }),
+      prisma.guild.update({
+        where: { id: member.guildId },
+        data: { level: Math.max(guild.level, 1 + otherTechLevelTotal + nextLevel) }
+      })
+    ]);
+
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: `${tech.name} 已升级到 Lv.${nextLevel}。`
     };
   },
 

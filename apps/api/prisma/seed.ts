@@ -2540,6 +2540,20 @@ const guildTechConfigs = [
     description: "提升商会成员的协作效率展示。",
     maxLevel: 5,
     sortOrder: 1
+  },
+  {
+    id: "capital-network",
+    name: "资本人脉",
+    description: "强化融资路演、估值议价和商会资源背书。",
+    maxLevel: 5,
+    sortOrder: 2
+  },
+  {
+    id: "risk-review",
+    name: "风险复核",
+    description: "降低合同、财务和市场决策中的经营波动。",
+    maxLevel: 5,
+    sortOrder: 3
   }
 ];
 

@@ -1445,7 +1445,7 @@ export const createApiServer = (
         return;
       }
 
-      const result = await repository.getGuildCenter(account.id, serverId);
+      const result = await repository.getGuildCenter(account.id, serverId, readToday(request));
       if (result === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -1469,7 +1469,7 @@ export const createApiServer = (
         return;
       }
 
-      const result = await repository.joinOrCreateGuild(account.id, serverId, guildName);
+      const result = await repository.joinOrCreateGuild(account.id, serverId, guildName, readToday(request));
       if (result === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -1493,7 +1493,7 @@ export const createApiServer = (
         return;
       }
 
-      const result = await repository.requestGuildHelp(account.id, serverId, requestType);
+      const result = await repository.requestGuildHelp(account.id, serverId, requestType, readToday(request));
       if (result === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -1505,6 +1505,96 @@ export const createApiServer = (
 
       await repository.advanceTask(account.id, serverId, "daily-guild-contribution", readToday(request));
       await repository.advanceTask(account.id, serverId, "main-guild-help-plan", readToday(request));
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const guildTaskClaimMatch = url.pathname.match(/^\/guild\/tasks\/([^/]+)\/claim$/);
+    if (request.method === "POST" && guildTaskClaimMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const taskId = guildTaskClaimMatch[1];
+      if (taskId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "taskId is required.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.claimGuildTask(account.id, serverId, decodeURIComponent(taskId), readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before claiming guild tasks.", traceId));
+        return;
+      }
+      if (result === "GUILD_TASK_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_TASK_NOT_FOUND", "Guild task not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_TASK_NOT_READY") {
+        sendJson(response, 409, failure("GUILD_TASK_NOT_READY", "Guild task progress is not ready.", traceId));
+        return;
+      }
+      if (result === "GUILD_TASK_ALREADY_CLAIMED") {
+        sendJson(response, 409, failure("GUILD_TASK_ALREADY_CLAIMED", "Guild task already claimed today.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const guildTechUpgradeMatch = url.pathname.match(/^\/guild\/techs\/([^/]+)\/upgrade$/);
+    if (request.method === "POST" && guildTechUpgradeMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const techId = guildTechUpgradeMatch[1];
+      if (techId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "techId is required.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.upgradeGuildTech(account.id, serverId, decodeURIComponent(techId), readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before upgrading guild tech.", traceId));
+        return;
+      }
+      if (result === "GUILD_TECH_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_TECH_NOT_FOUND", "Guild tech not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_TECH_MAXED") {
+        sendJson(response, 409, failure("GUILD_TECH_MAXED", "Guild tech is already max level.", traceId));
+        return;
+      }
+      if (result === "GUILD_CONTRIBUTION_NOT_ENOUGH") {
+        sendJson(response, 409, failure("GUILD_CONTRIBUTION_NOT_ENOUGH", "Guild contribution is not enough.", traceId));
+        return;
+      }
+
       sendJson(response, 200, success(result, traceId));
       return;
     }
