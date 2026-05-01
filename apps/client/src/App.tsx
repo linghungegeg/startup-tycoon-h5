@@ -1396,6 +1396,10 @@ function App() {
   const [randomTaskError, setRandomTaskError] = useState("");
   const [randomTaskNotice, setRandomTaskNotice] = useState("");
   const [selectedRandomTaskId, setSelectedRandomTaskId] = useState("");
+  const [managerTab, setManagerTab] = useState<"events" | "random">("events");
+  const [randomTaskModalId, setRandomTaskModalId] = useState("");
+  const [snoozedRandomTaskIds, setSnoozedRandomTaskIds] = useState<string[]>([]);
+  const [randomTaskGameEnteredAt, setRandomTaskGameEnteredAt] = useState(() => Date.now());
   const [companyFinance, setCompanyFinance] = useState<CompanyFinance | null>(null);
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
@@ -1543,6 +1547,10 @@ function App() {
   const selectedRandomTask = useMemo(
     () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
     [pendingRandomTasks, selectedRandomTaskId]
+  );
+  const activeRandomTask = useMemo(
+    () => pendingRandomTasks.find((task) => task.id === randomTaskModalId) ?? null,
+    [pendingRandomTasks, randomTaskModalId]
   );
   const selectedEvent = useMemo(
     () => events.find((item) => item.id === selectedEventId) ?? events[0],
@@ -2509,6 +2517,51 @@ function App() {
     reportTelemetry(account.token, selectedServer.id, "tutorial_step", "home-entered", { step: "home_entered" });
   }, [step, account?.token, selectedServer?.id, reportTelemetry]);
 
+  useEffect(() => {
+    if (step !== "game" || !profile) {
+      setRandomTaskModalId("");
+      setSnoozedRandomTaskIds([]);
+      return;
+    }
+
+    setRandomTaskGameEnteredAt(Date.now());
+    setSnoozedRandomTaskIds([]);
+  }, [step, profile?.id, selectedServer?.id]);
+
+  useEffect(() => {
+    const isHomeIdle =
+      step === "game" &&
+      activeNav === "公司" &&
+      activePanel === null &&
+      nativeHomePage === null &&
+      activeKnowledgeTask === null &&
+      randomTaskModalId === "";
+    const nextTask = pendingRandomTasks.find((task) => !snoozedRandomTaskIds.includes(task.id));
+
+    if (!isHomeIdle || !nextTask) {
+      return;
+    }
+
+    const elapsed = Date.now() - randomTaskGameEnteredAt;
+    const delay = elapsed < 120_000 ? 120_000 - elapsed : 180_000 + Math.floor(Math.random() * 300_000);
+    const timer = window.setTimeout(() => {
+      setSelectedRandomTaskId(nextTask.id);
+      setRandomTaskModalId(nextTask.id);
+    }, delay);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeKnowledgeTask,
+    activeNav,
+    activePanel,
+    nativeHomePage,
+    pendingRandomTasks,
+    randomTaskGameEnteredAt,
+    randomTaskModalId,
+    snoozedRandomTaskIds,
+    step
+  ]);
+
   const runAuth = async (mode: AuthMode): Promise<void> => {
     const trimmedUsername = username.trim();
 
@@ -2778,9 +2831,12 @@ function App() {
     if (panelName === "专属经理") {
       if (account && selectedServer) {
         void loadRandomTasks(account.token, selectedServer.id);
+        void loadEvents(account.token, selectedServer.id);
       }
+      setManagerTab(pendingRandomTasks.length > 0 ? "random" : "events");
       setNativeHomePage(null);
-      setActivePanel(panelName);
+      setActivePanel(null);
+      setActiveNav("事件");
       return;
     }
 
@@ -2844,7 +2900,27 @@ function App() {
   const openEventScreen = (): void => {
     setActivePanel(null);
     setNativeHomePage(null);
+    setManagerTab("events");
     setActiveNav("事件");
+  };
+
+  const openRandomTaskModal = (taskId: string): void => {
+    setSelectedRandomTaskId(taskId);
+    setRandomTaskModalId(taskId);
+    setRandomTaskNotice("");
+    setRandomTaskError("");
+  };
+
+  const snoozeRandomTaskModal = (): void => {
+    if (activeRandomTask) {
+      setSnoozedRandomTaskIds((currentIds) => currentIds.includes(activeRandomTask.id) ? currentIds : [...currentIds, activeRandomTask.id]);
+      setSelectedRandomTaskId(activeRandomTask.id);
+      setManagerTab("random");
+      setRandomTaskNotice("已转入专属经理待办，本次不消耗行动力。");
+      setRandomTaskError("");
+    }
+
+    setRandomTaskModalId("");
   };
 
   const closeNativeHomePage = (): void => {
@@ -2938,34 +3014,9 @@ function App() {
       setProfile(response.data.profile);
       setRandomTaskNotice(response.data.result);
       setRandomTaskError("");
+      setRandomTaskModalId("");
       await loadCompanyGrowth(account.token, selectedServer.id);
       await loadTasks(account.token, selectedServer.id);
-      return;
-    }
-
-    setRandomTaskError(response.error.message);
-  };
-
-  const dismissRandomTask = async (taskId: string): Promise<void> => {
-    if (!account || !selectedServer) {
-      setRandomTaskError("账号或区服状态缺失，请重新登录。");
-      return;
-    }
-
-    const response = await apiRequest<RandomTaskActionResult>(
-      `/random-tasks/${encodeURIComponent(taskId)}/dismiss`,
-      {
-        method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
-      },
-      account.token
-    );
-
-    if (response.success) {
-      setRandomTaskCenter(response.data.center);
-      setProfile(response.data.profile);
-      setRandomTaskNotice(response.data.result);
-      setRandomTaskError("");
       return;
     }
 
@@ -5438,90 +5489,163 @@ function App() {
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>专属经理</strong>
-                  <span>经营提醒 / 合同复核 / 财报预警</span>
+                  <span>经营提醒 / 随机任务 / 成长规划</span>
                 </div>
-                <button type="button" onClick={() => account && selectedServer && void loadEvents(account.token, selectedServer.id)}>刷新</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (account && selectedServer) {
+                      void loadEvents(account.token, selectedServer.id);
+                      void loadRandomTasks(account.token, selectedServer.id);
+                    }
+                  }}
+                >
+                  刷新
+                </button>
               </header>
 
               <section className="event-summary" aria-label="经营提醒概览">
-                <span>待处理 {pendingEvents.length}</span>
-                <span>已处理 {events.length - pendingEvents.length}</span>
-                <span>知识 {events.filter((item) => item.knowledgeUnlocked).length}</span>
+                <span>提醒待办 {pendingEvents.length}</span>
+                <span>随机待办 {pendingRandomTasks.length}</span>
+                <span>今日处理 {randomTaskCenter?.handledToday ?? 0}/{randomTaskCenter?.dailyLimit ?? 6}</span>
               </section>
               {eventNotice && <p className="event-notice">{eventNotice}</p>}
               {eventError && <p className="event-error">{eventError}</p>}
+              {randomTaskNotice && <p className="event-notice">{randomTaskNotice}</p>}
+              {randomTaskError && <p className="event-error">{randomTaskError}</p>}
 
-              <section className="event-layout">
-                <div className="event-list" aria-label="提醒列表">
-                  {events.length === 0 ? (
-                    <div className="event-empty">暂无经营提醒，继续推进公司后会出现新的待办。</div>
-                  ) : events.map((item) => (
-                    <button
-                      className={item.id === selectedEvent?.id ? "selected" : undefined}
-                      key={item.id}
-                      type="button"
-                      onClick={() => setSelectedEventId(item.id)}
-                    >
-                      <span>{item.source}</span>
-                      <strong>{item.title}</strong>
-                      <em>{item.summary}</em>
-                      <small>{item.status === "pending" ? "待决策" : "已处理"}</small>
-                    </button>
-                  ))}
-                </div>
+              <nav className="business-tabs manager-tabs" aria-label="专属经理待办分类">
+                <button className={managerTab === "events" ? "active" : undefined} type="button" onClick={() => setManagerTab("events")}>经营提醒</button>
+                <button className={managerTab === "random" ? "active" : undefined} type="button" onClick={() => setManagerTab("random")}>随机任务</button>
+              </nav>
 
-                <article className="event-detail" aria-label="提醒详情">
-                  {selectedEvent ? (
-                    <>
-                      <div className="event-title">
-                        <span>{selectedEvent.source.slice(0, 2)}</span>
-                        <strong>{selectedEvent.title}</strong>
-                        <em>{selectedEvent.channel} · {selectedEvent.status === "pending" ? "待处理" : "已结算"}</em>
-                      </div>
+              {managerTab === "events" ? (
+                <section className="event-layout">
+                  <div className="event-list" aria-label="提醒列表">
+                    {events.length === 0 ? (
+                      <div className="event-empty">暂无经营提醒，继续推进公司后会出现新的待办。</div>
+                    ) : events.map((item) => (
+                      <button
+                        className={item.id === selectedEvent?.id ? "selected" : undefined}
+                        key={item.id}
+                        type="button"
+                        onClick={() => setSelectedEventId(item.id)}
+                      >
+                        <span>{item.source}</span>
+                        <strong>{item.title}</strong>
+                        <em>{item.summary}</em>
+                        <small>{item.status === "pending" ? "待决策" : "已处理"}</small>
+                      </button>
+                    ))}
+                  </div>
 
-                      <p>{selectedEvent.context}</p>
-
-                      <dl className="event-risk">
-                        <div>
-                          <dt>摘要</dt>
-                          <dd>{selectedEvent.summary}</dd>
+                  <article className="event-detail" aria-label="提醒详情">
+                    {selectedEvent ? (
+                      <>
+                        <div className="event-title">
+                          <span>{selectedEvent.source.slice(0, 2)}</span>
+                          <strong>{selectedEvent.title}</strong>
+                          <em>{selectedEvent.channel} · {selectedEvent.status === "pending" ? "待处理" : "已结算"}</em>
                         </div>
-                        <div>
-                          <dt>风险解释</dt>
-                          <dd>{selectedEvent.riskExplanation}</dd>
-                        </div>
-                        <div>
-                          <dt>知识点</dt>
-                          <dd>{selectedEvent.knowledgeUnlocked ? selectedEvent.knowledgeTitle : selectedEvent.knowledgeTitle ?? "待解锁"}</dd>
-                        </div>
-                      </dl>
 
-                      {selectedEvent.status === "pending" ? (
+                        <p>{selectedEvent.context}</p>
+
+                        <dl className="event-risk">
+                          <div>
+                            <dt>摘要</dt>
+                            <dd>{selectedEvent.summary}</dd>
+                          </div>
+                          <div>
+                            <dt>风险解释</dt>
+                            <dd>{selectedEvent.riskExplanation}</dd>
+                          </div>
+                          <div>
+                            <dt>知识点</dt>
+                            <dd>{selectedEvent.knowledgeUnlocked ? selectedEvent.knowledgeTitle : selectedEvent.knowledgeTitle ?? "待解锁"}</dd>
+                          </div>
+                        </dl>
+
+                        {selectedEvent.status === "pending" ? (
+                          <div className="event-options">
+                            {selectedEvent.options.map((option) => (
+                              <button
+                                key={option.key}
+                                type="button"
+                                onClick={() => void chooseEvent(selectedEvent.id, option.key)}
+                              >
+                                <strong>{option.label}</strong>
+                                <span>{option.impactPreview}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <section className="event-result">
+                            <strong>处理结果</strong>
+                            <p>{selectedEvent.resultSummary}</p>
+                            <span>选择：{selectedEvent.selectedOption}</span>
+                          </section>
+                        )}
+                      </>
+                    ) : (
+                      <div className="event-empty">经营提醒读取中，请稍候。</div>
+                    )}
+                  </article>
+                </section>
+              ) : (
+                <section className="event-layout">
+                  <div className="event-list" aria-label="随机任务列表">
+                    {pendingRandomTasks.length === 0 ? (
+                      <div className="event-empty">当前没有待处理随机任务，继续推进主线或稍后刷新。</div>
+                    ) : pendingRandomTasks.map((task) => (
+                      <button
+                        className={task.id === selectedRandomTask?.id ? "selected" : undefined}
+                        key={task.id}
+                        type="button"
+                        onClick={() => setSelectedRandomTaskId(task.id)}
+                      >
+                        <span>{task.source}</span>
+                        <strong>{task.title}</strong>
+                        <em>{task.description}</em>
+                        <small>{task.riskLabel}</small>
+                      </button>
+                    ))}
+                  </div>
+
+                  <article className="event-detail" aria-label="随机任务详情">
+                    {selectedRandomTask ? (
+                      <>
+                        <div className="event-title">
+                          <span>{selectedRandomTask.source.slice(0, 2)}</span>
+                          <strong>{selectedRandomTask.title}</strong>
+                          <em>{selectedRandomTask.source} · {selectedRandomTask.riskLabel}</em>
+                        </div>
+
+                        <p>{selectedRandomTask.description}</p>
+
+                        <dl className="event-risk">
+                          <div>
+                            <dt>行动力</dt>
+                            <dd>{profile.actionPower}/{profile.actionPowerLimit}</dd>
+                          </div>
+                          <div>
+                            <dt>待办说明</dt>
+                            <dd>随机任务第一触达使用独立短决策弹窗；在专属经理中可随时重新打开。</dd>
+                          </div>
+                        </dl>
+
                         <div className="event-options">
-                          {selectedEvent.options.map((option) => (
-                            <button
-                              key={option.key}
-                              type="button"
-                              onClick={() => void chooseEvent(selectedEvent.id, option.key)}
-                            >
-                              <strong>{option.label}</strong>
-                              <span>{option.impactPreview}</span>
-                            </button>
-                          ))}
+                          <button type="button" onClick={() => openRandomTaskModal(selectedRandomTask.id)}>
+                            <strong>打开决策弹窗</strong>
+                            <span>查看 2 个经营选择、行动力消耗和收益预览</span>
+                          </button>
                         </div>
-                      ) : (
-                        <section className="event-result">
-                          <strong>处理结果</strong>
-                          <p>{selectedEvent.resultSummary}</p>
-                          <span>选择：{selectedEvent.selectedOption}</span>
-                        </section>
-                      )}
-                    </>
-                  ) : (
-                    <div className="event-empty">经营提醒读取中，请稍候。</div>
-                  )}
-                </article>
-              </section>
+                      </>
+                    ) : (
+                      <div className="event-empty">随机任务会在主页空闲时弹出，也可稍后刷新后从这里处理。</div>
+                    )}
+                  </article>
+                </section>
+              )}
             </section>
           )}
 
@@ -5593,53 +5717,6 @@ function App() {
                     <p className="text-xs text-slate-300 font-bold leading-6" key={line}>{line}</p>
                   ))}
                 </section>
-                {activePanel === "专属经理" && (
-                  <section className="glass-panel rounded-3xl p-5 space-y-4" aria-label="随机经营任务">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <strong className="text-sm text-white font-black">随机经营任务</strong>
-                        <p className="mt-1 text-[10px] text-slate-500 font-bold">
-                          今日 {randomTaskCenter?.handledToday ?? 0}/{randomTaskCenter?.dailyLimit ?? 6} · 待办 {pendingRandomTasks.length}
-                        </p>
-                      </div>
-                      <button className="btn-gold px-3 py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => account && selectedServer && void loadRandomTasks(account.token, selectedServer.id)}>
-                        刷新
-                      </button>
-                    </div>
-                    {(randomTaskNotice || randomTaskError) && (
-                      <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${randomTaskError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                        {randomTaskError || randomTaskNotice}
-                      </p>
-                    )}
-                    {selectedRandomTask ? (
-                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <span className="text-[10px] text-business-gold font-black">{selectedRandomTask.source} · {selectedRandomTask.riskLabel}</span>
-                            <h3 className="mt-1 text-sm text-white font-black">{selectedRandomTask.title}</h3>
-                          </div>
-                          <span className="rounded-full bg-amber-500/15 px-2 py-1 text-[9px] text-amber-200 font-black">行动力 {profile.actionPower}/{profile.actionPowerLimit}</span>
-                        </div>
-                        <p className="mt-3 text-xs leading-5 text-slate-300 font-bold">{selectedRandomTask.description}</p>
-                        <div className="mt-4 space-y-2">
-                          {selectedRandomTask.options.map((option) => (
-                            <button className="w-full rounded-2xl bg-slate-950/70 border border-white/10 p-3 text-left disabled:opacity-50" disabled={profile.actionPower < option.actionPowerCost} key={option.key} type="button" onClick={() => void resolveRandomTask(selectedRandomTask.id, option.key)}>
-                              <strong className="block text-xs text-white font-black">{option.label}</strong>
-                              <span className="mt-1 block text-[10px] text-slate-400 font-bold">
-                                消耗行动力 {option.actionPowerCost} · 资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                        <button className="mt-3 w-full rounded-2xl bg-white/5 border border-white/10 py-3 text-xs text-slate-300 font-black" type="button" onClick={() => void dismissRandomTask(selectedRandomTask.id)}>
-                          稍后处理
-                        </button>
-                      </article>
-                    ) : (
-                      <p className="rounded-2xl bg-slate-900/60 p-4 text-xs text-slate-400 font-bold">当前没有待处理随机任务，继续推进主线或稍后刷新。</p>
-                    )}
-                  </section>
-                )}
                 <button
                   className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
                   type="button"
@@ -5648,6 +5725,54 @@ function App() {
                   {selectedPanel.action}
                 </button>
               </div>
+            </section>
+          )}
+
+          {activeRandomTask && (
+            <section className="random-task-overlay" aria-label="随机经营任务弹窗" data-testid="random-task-modal">
+              <article className="random-task-modal">
+                <header className="random-task-modal-hero">
+                  <button className="random-task-close" type="button" aria-label="稍后处理随机任务" onClick={snoozeRandomTaskModal}>
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                  <span className="random-task-badge">{activeRandomTask.riskLabel}</span>
+                  <h3>{activeRandomTask.title}</h3>
+                  <p>来源：{activeRandomTask.source}</p>
+                </header>
+
+                <div className="random-task-modal-body">
+                  <p>{activeRandomTask.description}</p>
+
+                  {(randomTaskNotice || randomTaskError) && (
+                    <span className={randomTaskError ? "random-task-error" : "random-task-notice"}>
+                      {randomTaskError || randomTaskNotice}
+                    </span>
+                  )}
+
+                  <div className="random-task-options">
+                    {activeRandomTask.options.map((option) => (
+                      <button
+                        disabled={profile.actionPower < option.actionPowerCost}
+                        key={option.key}
+                        type="button"
+                        onClick={() => void resolveRandomTask(activeRandomTask.id, option.key)}
+                      >
+                        <span>
+                          <strong>{option.label}</strong>
+                          <em>行动力 -{option.actionPowerCost}</em>
+                        </span>
+                        <small>
+                          资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
+                        </small>
+                      </button>
+                    ))}
+                  </div>
+
+                  <button className="random-task-snooze" type="button" onClick={snoozeRandomTaskModal}>
+                    稍后处理，转入专属经理待办
+                  </button>
+                </div>
+              </article>
             </section>
           )}
         </section>

@@ -3907,6 +3907,179 @@ input {
   box-shadow: 0 4px 0 rgba(116, 62, 10, 0.46);
 }
 
+.manager-tabs {
+  margin: 0;
+}
+
+.random-task-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 260;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.random-task-modal {
+  width: min(100%, 340px);
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 32px;
+  color: #e2e8f0;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 18, 0.98)),
+    rgba(2, 6, 18, 0.98);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.72);
+}
+
+.random-task-modal-hero {
+  position: relative;
+  min-height: 148px;
+  padding: 52px 24px 22px;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(239, 68, 68, 0.18), transparent 30%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(3, 7, 18, 0.98));
+}
+
+.random-task-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 999px;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.random-task-badge {
+  position: absolute;
+  top: 22px;
+  left: 22px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #ffffff;
+  background: rgba(220, 38, 38, 0.92);
+  box-shadow: 0 10px 24px rgba(220, 38, 38, 0.22);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.random-task-modal h3 {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: clamp(20px, 5.4vw, 25px);
+  font-weight: 900;
+  line-height: 1.12;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.random-task-modal-hero p {
+  margin-top: 8px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.random-task-modal-body {
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+}
+
+.random-task-modal-body > p {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.random-task-notice,
+.random-task-error {
+  border-radius: 16px;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.random-task-notice {
+  color: #dcfce7;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.random-task-error {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.random-task-options {
+  display: grid;
+  gap: 10px;
+}
+
+.random-task-options button {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  border-radius: 18px;
+  padding: 13px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.78);
+  text-align: left;
+}
+
+.random-task-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.random-task-options span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.random-task-options strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.random-task-options em,
+.random-task-options small {
+  color: #facc15;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.random-task-options small {
+  color: #94a3b8;
+}
+
+.random-task-snooze {
+  min-height: 42px;
+  border-radius: 16px;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .task-tip,
 .task-notice,
 .task-error,
