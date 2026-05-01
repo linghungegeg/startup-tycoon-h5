@@ -2303,16 +2303,16 @@ const KNOWLEDGE_DISCLAIMER = "仅作游戏科普，不构成法律建议";
 const KNOWLEDGE_COLLECTED_AT = "2026-05-02";
 const KNOWLEDGE_CONTENT_VERSION = "2026.05.phase22";
 const sources = {
-  companyLaw: { name: "中国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202312/t20231229_433967.html" },
+  companyLaw: { name: "全国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202312/t20231229_433967.html" },
   civilCode: { name: "全国人大法律法规库", url: "https://wb.flk.npc.gov.cn/flfg/PDF/bd53dd912c1048f2aecbaa229238334b.pdf" },
-  laborContract: { name: "中国人大网", url: "https://www.npc.gov.cn/zgrdw/npc/xinwen/lfgz/zxfl/2007-06/29/content_368169.htm" },
-  pipl: { name: "中国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313143.html" },
+  laborContract: { name: "全国人大网", url: "https://www.npc.gov.cn/zgrdw/npc/xinwen/lfgz/zxfl/2007-06/29/content_368169.htm" },
+  pipl: { name: "全国人大网", url: "https://www.npc.gov.cn/npc/c2/c30834/202108/t20210820_313143.html" },
   advertising: { name: "全国人大法律法规库", url: "https://wb.flk.npc.gov.cn/flfg/PDF/a8e849c56e4e4c00939dbf8dd6a16569.pdf" },
   trademark: { name: "国家知识产权局", url: "https://www.cnipa.gov.cn/art/2019/7/30/art_95_28179.html" },
-  copyright: { name: "中国人大网", url: "https://www.npc.gov.cn/c2/c30834/202011/t20201119_308796.html" },
+  copyright: { name: "全国人大网", url: "https://www.npc.gov.cn/c2/c30834/202011/t20201119_308796.html" },
   tax: { name: "国家税务总局", url: "https://www.chinatax.gov.cn/chinatax/n810214/c102374/c102377/c102378/c3575330/content.html" },
-  antiUnfair: { name: "中国人大网", url: "https://www.npc.gov.cn/c2/c30834/202506/t20250627_446247.html" },
-  ecommerce: { name: "中国人大网", url: "https://www.npc.gov.cn/WZWSREL3pncmR3L25wYy9sZnp0L3JseXcvMjAxOC0wOC8zMS9jb250ZW50XzIwNjA4MjcuaHRt" }
+  antiUnfair: { name: "全国人大网", url: "https://www.npc.gov.cn/c2/c30834/202506/t20250627_446247.html" },
+  ecommerce: { name: "全国人大网", url: "https://www.npc.gov.cn/WZWSREL3pncmR3L25wYy9sZnp0L3JseXcvMjAxOC0wOC8zMS9jb250ZW50XzIwNjA4MjcuaHRt" }
 };
 
 const createKnowledgeEntry = (

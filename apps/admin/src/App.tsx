@@ -132,6 +132,45 @@ type ConfigCenter = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string }>;
 };
 
+type KnowledgeEntry = {
+  id: string;
+  categoryId: string;
+  category: string;
+  title: string;
+  summary: string;
+  scenarioText: string;
+  riskText: string;
+  gameImpactText: string;
+  actionTipText: string;
+  sourceName: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  disclaimer: string;
+  reviewStatus: string;
+  sortOrder: number;
+};
+
+type KnowledgeList = {
+  rows: KnowledgeEntry[];
+  total: number;
+  categories: Array<{ id: string; name: string }>;
+};
+
+type KnowledgeForm = {
+  summary: string;
+  scenarioText: string;
+  riskText: string;
+  gameImpactText: string;
+  actionTipText: string;
+  sourceName: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  reviewStatus: string;
+  reason: string;
+};
+
 type AuditLog = {
   id: string;
   adminUsername: string;
@@ -189,7 +228,7 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "configs" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "analytics", label: "数据看板" },
@@ -198,11 +237,39 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "titles", label: "称号 / 补偿" },
   { id: "cross", label: "跨服分组" },
   { id: "configs", label: "配置清单" },
+  { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
 ];
 
 const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
 const formatRate = (basisPoints: number): string => `${(basisPoints / 100).toFixed(1)}%`;
+const emptyKnowledgeForm = (): KnowledgeForm => ({
+  summary: "",
+  scenarioText: "",
+  riskText: "",
+  gameImpactText: "",
+  actionTipText: "",
+  sourceName: "",
+  sourceUrl: "",
+  collectedAt: "",
+  contentVersion: "",
+  reviewStatus: "reviewing",
+  reason: "知识卡审核更新"
+});
+
+const knowledgeToForm = (knowledge: KnowledgeEntry): KnowledgeForm => ({
+  summary: knowledge.summary,
+  scenarioText: knowledge.scenarioText,
+  riskText: knowledge.riskText,
+  gameImpactText: knowledge.gameImpactText,
+  actionTipText: knowledge.actionTipText,
+  sourceName: knowledge.sourceName,
+  sourceUrl: knowledge.sourceUrl,
+  collectedAt: knowledge.collectedAt,
+  contentVersion: knowledge.contentVersion,
+  reviewStatus: knowledge.reviewStatus,
+  reason: "知识卡审核更新"
+});
 
 const isAdminSession = (value: unknown): value is AdminSession => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -286,6 +353,7 @@ export default function App() {
   const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
   const [vipConfigs, setVipConfigs] = useState<VipConfig[]>([]);
   const [crossGroups, setCrossGroups] = useState<CrossServerGroup[]>([]);
+  const [knowledgeList, setKnowledgeList] = useState<KnowledgeList>({ rows: [], total: 0, categories: [] });
   const [configCenter, setConfigCenter] = useState<ConfigCenter>({
     titles: [],
     achievements: [],
@@ -316,6 +384,11 @@ export default function App() {
   const [statusReason, setStatusReason] = useState("运营风控处理");
   const [settleServerId, setSettleServerId] = useState("s1");
   const [settleReason, setSettleReason] = useState("运营手动结算排行榜");
+  const [knowledgeKeyword, setKnowledgeKeyword] = useState("");
+  const [knowledgeCategory, setKnowledgeCategory] = useState("");
+  const [knowledgeReviewStatus, setKnowledgeReviewStatus] = useState("");
+  const [selectedKnowledgeId, setSelectedKnowledgeId] = useState("");
+  const [knowledgeForm, setKnowledgeForm] = useState<KnowledgeForm>(() => emptyKnowledgeForm());
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
@@ -325,6 +398,19 @@ export default function App() {
     () => players.find((player) => player.profileId === selectedProfileId) ?? players[0] ?? null,
     [players, selectedProfileId]
   );
+  const selectedKnowledge = useMemo(
+    () => knowledgeList.rows.find((knowledge) => knowledge.id === selectedKnowledgeId) ?? knowledgeList.rows[0] ?? null,
+    [knowledgeList.rows, selectedKnowledgeId]
+  );
+
+  const applyKnowledgeList = (data: KnowledgeList): void => {
+    setKnowledgeList(data);
+    const first = data.rows[0] ?? null;
+    setSelectedKnowledgeId((current) => data.rows.some((knowledge) => knowledge.id === current) ? current : first?.id ?? "");
+    if (first !== null) {
+      setKnowledgeForm((current) => current.summary === "" ? knowledgeToForm(first) : current);
+    }
+  };
 
   const loadAdminData = useCallback(async (token: string, searchKeyword = keyword): Promise<void> => {
     setIsLoading(true);
@@ -354,10 +440,11 @@ export default function App() {
       setCrossGroups(groupList.data.groups);
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, logs, analyticsResponse] = await Promise.all([
+      const [configs, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<AuditLog[]>("/admin/audit-logs", {}, token),
-        apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token)
+        apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
+        apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
       ]);
       if (!configs.success) {
         setError(configs.error.message);
@@ -371,9 +458,14 @@ export default function App() {
         setError(analyticsResponse.error.message);
         return;
       }
+      if (!knowledgeResponse.success) {
+        setError(knowledgeResponse.error.message);
+        return;
+      }
       setConfigCenter(configs.data);
       setAuditLogs(logs.data);
       setAnalytics(analyticsResponse.data);
+      applyKnowledgeList(knowledgeResponse.data);
       setSelectedTitleId((current) => current || (configs.data.titles[0]?.id ?? ""));
       if (playerList.data.rows.length > 0) {
         setSelectedProfileId((current) => current || (playerList.data.rows[0]?.profileId ?? ""));
@@ -480,9 +572,12 @@ export default function App() {
     setPlayers([]);
     setVipConfigs([]);
     setCrossGroups([]);
+    setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
     setAnalytics(null);
     setAuditLogs([]);
+    setSelectedKnowledgeId("");
+    setKnowledgeForm(emptyKnowledgeForm());
   };
 
   const submitSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -490,6 +585,80 @@ export default function App() {
     if (session !== null) {
       await loadAdminData(session.token, keyword);
       setActionMessage("已按当前条件刷新运营数据。");
+    }
+  };
+
+  const submitKnowledgeSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (knowledgeKeyword.trim() !== "") {
+      params.set("keyword", knowledgeKeyword.trim());
+    }
+    if (knowledgeCategory !== "") {
+      params.set("category", knowledgeCategory);
+    }
+    if (knowledgeReviewStatus !== "") {
+      params.set("reviewStatus", knowledgeReviewStatus);
+    }
+
+    const response = await apiRequest<KnowledgeList>(`/admin/knowledge?${params.toString()}`, {}, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+
+    setKnowledgeForm(emptyKnowledgeForm());
+    applyKnowledgeList(response.data);
+    setActionMessage(`已刷新知识卡：${response.data.total} 条`);
+  };
+
+  const selectKnowledge = (knowledge: KnowledgeEntry): void => {
+    setSelectedKnowledgeId(knowledge.id);
+    setKnowledgeForm(knowledgeToForm(knowledge));
+  };
+
+  const updateKnowledgeForm = (key: keyof KnowledgeForm, value: string): void => {
+    setKnowledgeForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const submitKnowledgeUpdate = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedKnowledge === null) {
+      return;
+    }
+    if (knowledgeForm.reason.trim().length < 2) {
+      setError("请填写知识卡审核原因。");
+      return;
+    }
+    if (!window.confirm(`确认更新知识卡「${selectedKnowledge.title}」？`)) {
+      return;
+    }
+
+    const response = await apiRequest<KnowledgeEntry & AuditResult>(`/admin/knowledge/${encodeURIComponent(selectedKnowledge.id)}`, {
+      method: "POST",
+      body: JSON.stringify({
+        ...knowledgeForm,
+        reason: knowledgeForm.reason.trim()
+      })
+    }, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+
+    setKnowledgeList((current) => ({
+      ...current,
+      rows: current.rows.map((knowledge) => knowledge.id === response.data.id ? response.data : knowledge)
+    }));
+    setKnowledgeForm(knowledgeToForm(response.data));
+    setActionMessage(`知识卡已更新，审计记录：${response.data.auditLogId}`);
+    const logs = await apiRequest<AuditLog[]>("/admin/audit-logs", {}, session.token);
+    if (logs.success) {
+      setAuditLogs(logs.data);
     }
   };
 
@@ -1265,6 +1434,131 @@ export default function App() {
                 </div>
               </div>
             </section>
+          </section>
+        )}
+
+        {activeSection === "knowledge" && (
+          <section className="operation-grid" aria-label="知识卡审核">
+            <section className="table-section compact-table" aria-label="知识卡列表">
+              <form className="filter-bar knowledge-filter" onSubmit={(event) => void submitKnowledgeSearch(event)}>
+                <label>
+                  标题 / ID / 摘要
+                  <input onChange={(event) => setKnowledgeKeyword(event.target.value)} value={knowledgeKeyword} />
+                </label>
+                <label>
+                  分类
+                  <select onChange={(event) => setKnowledgeCategory(event.target.value)} value={knowledgeCategory}>
+                    <option value="">全部分类</option>
+                    {knowledgeList.categories.map((category) => (
+                      <option key={category.id} value={category.name}>{category.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  审核状态
+                  <select onChange={(event) => setKnowledgeReviewStatus(event.target.value)} value={knowledgeReviewStatus}>
+                    <option value="">全部状态</option>
+                    <option value="draft">草稿</option>
+                    <option value="reviewing">复核中</option>
+                    <option value="published">已发布</option>
+                    <option value="archived">已归档</option>
+                  </select>
+                </label>
+                <button type="submit">查询</button>
+              </form>
+
+              <div className="table-toolbar">
+                <strong>知识卡配置</strong>
+                <span>{knowledgeList.total} 条</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>标题</th>
+                      <th>分类</th>
+                      <th>状态</th>
+                      <th>版本</th>
+                      <th>来源</th>
+                      <th>采集日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {knowledgeList.rows.map((knowledge) => (
+                      <tr
+                        className={knowledge.id === selectedKnowledge?.id ? "selected-row" : undefined}
+                        key={knowledge.id}
+                        onClick={() => selectKnowledge(knowledge)}
+                      >
+                        <td>{knowledge.title}</td>
+                        <td>{knowledge.category}</td>
+                        <td>{knowledge.reviewStatus}</td>
+                        <td>{knowledge.contentVersion}</td>
+                        <td>{knowledge.sourceName}</td>
+                        <td>{knowledge.collectedAt}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <form className="operation-panel knowledge-editor" onSubmit={(event) => void submitKnowledgeUpdate(event)}>
+              <h2>{selectedKnowledge?.title ?? "选择知识卡"}</h2>
+              <p className="panel-note">只调整知识内容、来源、版本和审核状态；解锁规则、任务奖励和事件奖励不在这里修改。</p>
+              <label>
+                摘要
+                <textarea onChange={(event) => updateKnowledgeForm("summary", event.target.value)} value={knowledgeForm.summary} />
+              </label>
+              <label>
+                经营场景
+                <textarea onChange={(event) => updateKnowledgeForm("scenarioText", event.target.value)} value={knowledgeForm.scenarioText} />
+              </label>
+              <label>
+                风险提示
+                <textarea onChange={(event) => updateKnowledgeForm("riskText", event.target.value)} value={knowledgeForm.riskText} />
+              </label>
+              <label>
+                游戏影响
+                <textarea onChange={(event) => updateKnowledgeForm("gameImpactText", event.target.value)} value={knowledgeForm.gameImpactText} />
+              </label>
+              <label>
+                行动建议
+                <textarea onChange={(event) => updateKnowledgeForm("actionTipText", event.target.value)} value={knowledgeForm.actionTipText} />
+              </label>
+              <div className="knowledge-meta-grid">
+                <label>
+                  来源名称
+                  <input onChange={(event) => updateKnowledgeForm("sourceName", event.target.value)} value={knowledgeForm.sourceName} />
+                </label>
+                <label>
+                  采集日期
+                  <input onChange={(event) => updateKnowledgeForm("collectedAt", event.target.value)} value={knowledgeForm.collectedAt} />
+                </label>
+                <label>
+                  内容版本
+                  <input onChange={(event) => updateKnowledgeForm("contentVersion", event.target.value)} value={knowledgeForm.contentVersion} />
+                </label>
+                <label>
+                  审核状态
+                  <select onChange={(event) => updateKnowledgeForm("reviewStatus", event.target.value)} value={knowledgeForm.reviewStatus}>
+                    <option value="draft">草稿</option>
+                    <option value="reviewing">复核中</option>
+                    <option value="published">已发布</option>
+                    <option value="archived">已归档</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                来源链接
+                <input onChange={(event) => updateKnowledgeForm("sourceUrl", event.target.value)} value={knowledgeForm.sourceUrl} />
+              </label>
+              <label>
+                审核原因
+                <input onChange={(event) => updateKnowledgeForm("reason", event.target.value)} value={knowledgeForm.reason} />
+              </label>
+              <button disabled={selectedKnowledge === null} type="submit">保存并记录审计</button>
+            </form>
           </section>
         )}
 

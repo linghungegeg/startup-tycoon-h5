@@ -1739,7 +1739,7 @@ const createTestRepository = (): GameRepository => {
     id: string,
     category: string,
     title: string,
-    sourceName = "中国人大网",
+    sourceName = "全国人大网",
     sourceUrl = "https://www.npc.gov.cn/npc/c2/c30834/202312/t20231229_433967.html"
   ) => ({
     id,
@@ -1800,6 +1800,26 @@ const createTestRepository = (): GameRepository => {
   const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
   const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
   const leaderboardRewards = new Set<string>();
+  const adminAuditLogs: Array<{ id: string; adminUsername: string; action: string; targetType: string; targetId: string | null; detail: string | null; createdAt: string }> = [
+    {
+      id: "audit-player-ban",
+      adminUsername: "admin",
+      action: "admin_player_ban",
+      targetType: "player_profile",
+      targetId: null,
+      detail: null,
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "audit-cross-server-group",
+      adminUsername: "admin",
+      action: "admin_cross_server_group_assign",
+      targetType: "cross_server_group",
+      targetId: null,
+      detail: null,
+      createdAt: new Date().toISOString()
+    }
+  ];
   const crossServerSignups = new Set<string>();
   const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
@@ -2423,26 +2443,72 @@ const createTestRepository = (): GameRepository => {
       };
     },
     async listAdminAuditLogs() {
-      return [
-        {
-          id: "audit-player-ban",
-          adminUsername: "admin",
-          action: "admin_player_ban",
-          targetType: "player_profile",
-          targetId: null,
-          detail: null,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: "audit-cross-server-group",
-          adminUsername: "admin",
-          action: "admin_cross_server_group_assign",
-          targetType: "cross_server_group",
-          targetId: null,
-          detail: null,
-          createdAt: new Date().toISOString()
-        }
-      ];
+      return adminAuditLogs;
+    },
+    async listAdminKnowledgeEntries(filters) {
+      const filtered = knowledgeEntries.filter((knowledge) => {
+        const keywordMatched =
+          filters.keyword === "" ||
+          knowledge.id.includes(filters.keyword) ||
+          knowledge.title.includes(filters.keyword) ||
+          knowledge.summary.includes(filters.keyword);
+        const categoryMatched = filters.category === "" || knowledge.category === filters.category;
+        const statusMatched = filters.reviewStatus === "" || knowledge.reviewStatus === filters.reviewStatus;
+        return keywordMatched && categoryMatched && statusMatched;
+      });
+
+      return {
+        rows: filtered.map((knowledge, index) => ({
+          ...knowledge,
+          categoryId: knowledge.category,
+          sortOrder: index,
+          isUnlocked: true,
+          unlockedAt: null
+        })),
+        total: filtered.length,
+        categories: [...new Set(knowledgeEntries.map((knowledge) => knowledge.category))].map((category) => ({
+          id: category,
+          name: category
+        }))
+      };
+    },
+    async updateAdminKnowledgeEntry(_adminUserId, knowledgeId, input) {
+      const knowledge = knowledgeEntries.find((entry) => entry.id === knowledgeId);
+      if (knowledge === undefined) {
+        return "KNOWLEDGE_NOT_FOUND";
+      }
+
+      Object.assign(knowledge, {
+        summary: input.summary,
+        scenarioText: input.scenarioText,
+        riskText: input.riskText,
+        gameImpactText: input.gameImpactText,
+        actionTipText: input.actionTipText,
+        sourceName: input.sourceName,
+        sourceUrl: input.sourceUrl,
+        collectedAt: input.collectedAt,
+        contentVersion: input.contentVersion,
+        reviewStatus: input.reviewStatus
+      });
+      const auditLogId = `audit-knowledge-${knowledge.id}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_knowledge_update",
+        targetType: "knowledge_entry",
+        targetId: knowledge.id,
+        detail: input.reason,
+        createdAt: new Date().toISOString()
+      });
+
+      return {
+        ...knowledge,
+        categoryId: knowledge.category,
+        sortOrder: knowledgeEntries.indexOf(knowledge),
+        isUnlocked: true,
+        unlockedAt: null,
+        auditLogId
+      };
     },
     async grantAdminTitle(adminUserId, profileId, titleId, reason) {
       const profile = [...profiles.values()].find((item) => item.id === profileId);
@@ -5576,7 +5642,7 @@ test("event settlement returns and unlocks linked knowledge card", async () => {
     assert.equal(settled.status, 200);
     assert.equal(settled.body.data?.result.knowledge?.id, "labor-written-contract");
     assert.equal(settled.body.data?.result.knowledge?.isUnlocked, true);
-    assert.equal(settled.body.data?.event.knowledge?.sourceName, "中国人大网");
+    assert.equal(settled.body.data?.event.knowledge?.sourceName, "全国人大网");
 
     const knowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
       headers: { authorization: `Bearer ${token}` }
@@ -7332,6 +7398,72 @@ test("admin can query and configure VIP level benefits", async () => {
   });
 });
 
+test("admin can filter and update knowledge entries with audit", async () => {
+  await withServer(async (baseUrl) => {
+    const blocked = await requestJson(baseUrl, "/admin/knowledge");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+    const auth = { authorization: `Bearer ${adminLogin.body.data.token}` };
+
+    const listed = await requestJson<{
+      rows: Array<KnowledgeEntryRecord & { categoryId: string; sortOrder: number }>;
+      total: number;
+      categories: Array<{ id: string; name: string }>;
+    }>(baseUrl, "/admin/knowledge?category=劳动用工&reviewStatus=published&keyword=劳动", {
+      headers: auth
+    });
+    assert.equal(listed.status, 200, JSON.stringify(listed.body));
+    assert.ok(listed.body.data);
+    assert.ok(listed.body.data.total >= 1);
+    assert.ok(listed.body.data.categories.some((category) => category.name === "劳动用工"));
+    assert.ok(listed.body.data.rows.every((entry) => entry.category === "劳动用工"));
+    const laborCard = listed.body.data.rows.find((entry) => entry.id === "labor-written-contract");
+    assert.ok(laborCard);
+    assert.equal(laborCard.scenarioText.includes("经营决策场景"), true);
+
+    const updated = await requestJson<KnowledgeEntryRecord & { auditLogId: string }>(baseUrl, "/admin/knowledge/labor-written-contract", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        summary: "后台审核后的劳动合同经营解释。",
+        scenarioText: laborCard.scenarioText,
+        riskText: laborCard.riskText,
+        gameImpactText: laborCard.gameImpactText,
+        actionTipText: "入职前先确认岗位、薪酬、试用期和签署记录。",
+        sourceName: "全国人大网",
+        sourceUrl: laborCard.sourceUrl,
+        collectedAt: laborCard.collectedAt,
+        contentVersion: "2026.05.admin-review",
+        reviewStatus: "reviewing",
+        reason: "阶段22知识审核验证"
+      })
+    });
+    assert.equal(updated.status, 200, JSON.stringify(updated.body));
+    assert.equal(updated.body.data?.summary, "后台审核后的劳动合同经营解释。");
+    assert.equal(updated.body.data?.reviewStatus, "reviewing");
+    assert.ok(updated.body.data?.auditLogId);
+
+    const relisted = await requestJson<{ rows: KnowledgeEntryRecord[] }>(baseUrl, "/admin/knowledge?reviewStatus=reviewing&keyword=劳动合同", {
+      headers: auth
+    });
+    assert.equal(relisted.status, 200, JSON.stringify(relisted.body));
+    assert.equal(relisted.body.data?.rows.some((entry) => entry.id === "labor-written-contract"), true);
+
+    const logs = await requestJson<Array<{ action: string; targetType: string; targetId: string | null }>>(baseUrl, "/admin/audit-logs", {
+      headers: auth
+    });
+    assert.equal(logs.status, 200);
+    assert.ok(logs.body.data?.some((log) => log.action === "admin_knowledge_update" && log.targetType === "knowledge_entry" && log.targetId === "labor-written-contract"));
+  });
+});
+
 test("phase 14 leaderboards snapshot rewards and title expiry are idempotent", async () => {
   await withServer(async (baseUrl) => {
     const { token } = await createPlayerSession(baseUrl, "ranker");
@@ -7466,7 +7598,7 @@ test("phase 22 knowledge catalog lists full v1 cards without leaking locked deta
     assert.equal(locked?.riskText, "");
     assert.equal(locked?.gameImpactText, "");
     assert.equal(locked?.actionTipText, "");
-    assert.equal(locked?.sourceName, "中国人大网");
+    assert.equal(locked?.sourceName, "全国人大网");
     assert.equal(locked?.reviewStatus, "published");
   });
 });
@@ -7491,7 +7623,7 @@ test("phase 22 achievement unlock returns complete knowledge card fields for leg
     assert.equal(unlocked?.isUnlocked, true);
     assert.ok(unlocked?.unlockedAt);
     assert.equal(unlocked?.category, "公司设立与股权");
-    assert.equal(unlocked?.sourceName, "中国人大网");
+    assert.equal(unlocked?.sourceName, "全国人大网");
     assert.equal(unlocked?.reviewStatus, "published");
     assert.match(unlocked?.sourceUrl ?? "", /^https:\/\/www\.npc\.gov\.cn\//);
     assert.notEqual(unlocked?.scenarioText, "");

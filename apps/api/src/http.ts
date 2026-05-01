@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { ApiConfig } from "./config.js";
 import { createPasswordRecord, verifyPassword } from "./password.js";
-import { createPrismaGameRepository, type AccountRecord, type GameRepository, type VipLevelRecord } from "./repository.js";
+import { createPrismaGameRepository, type AccountRecord, type AdminKnowledgeUpdateInput, type GameRepository, type VipLevelRecord } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -225,6 +225,15 @@ const readOptionalString = (body: unknown, key: string): string | null => {
   return value === "" ? null : value;
 };
 
+const readLimitedString = (
+  body: Record<string, unknown>,
+  key: string,
+  maxLength: number
+): string | undefined => {
+  const value = readString(body, key);
+  return value !== "" && value.length <= maxLength ? value : undefined;
+};
+
 const readPositiveInteger = (body: unknown, key: string): number | undefined => {
   if (!isRecord(body)) {
     return undefined;
@@ -394,6 +403,44 @@ const validateVipLevelConfig = (body: unknown): { config: VipLevelRecord; reason
   }
 
   return { config, reason };
+};
+
+const validateAdminKnowledgeUpdate = (body: unknown): AdminKnowledgeUpdateInput | string => {
+  if (!isRecord(body)) {
+    return "Request body must be a JSON object.";
+  }
+
+  const input: AdminKnowledgeUpdateInput = {
+    summary: readLimitedString(body, "summary", 220) ?? "",
+    scenarioText: readLimitedString(body, "scenarioText", 320) ?? "",
+    riskText: readLimitedString(body, "riskText", 320) ?? "",
+    gameImpactText: readLimitedString(body, "gameImpactText", 320) ?? "",
+    actionTipText: readLimitedString(body, "actionTipText", 320) ?? "",
+    sourceName: readLimitedString(body, "sourceName", 32) ?? "",
+    sourceUrl: readLimitedString(body, "sourceUrl", 220) ?? "",
+    collectedAt: readLimitedString(body, "collectedAt", 10) ?? "",
+    contentVersion: readLimitedString(body, "contentVersion", 24) ?? "",
+    reviewStatus: readLimitedString(body, "reviewStatus", 16) ?? "",
+    reason: readLimitedString(body, "reason", 160) ?? ""
+  };
+
+  if (
+    input.summary.length < 4 ||
+    input.scenarioText.length < 4 ||
+    input.riskText.length < 4 ||
+    input.gameImpactText.length < 4 ||
+    input.actionTipText.length < 4 ||
+    input.sourceName.length < 2 ||
+    !/^https?:\/\/\S+$/.test(input.sourceUrl) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.collectedAt) ||
+    input.contentVersion.length < 2 ||
+    !["draft", "reviewing", "published", "archived"].includes(input.reviewStatus) ||
+    input.reason.length < 2
+  ) {
+    return "Valid knowledge fields and reason are required.";
+  }
+
+  return input;
 };
 
 const readBearerToken = (request: IncomingMessage): string | undefined => {
@@ -684,6 +731,58 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(await repository.listAdminAuditLogs(), traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/knowledge") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminKnowledgeEntries({
+        keyword: url.searchParams.get("keyword")?.trim() ?? "",
+        category: url.searchParams.get("category")?.trim() ?? "",
+        reviewStatus: url.searchParams.get("reviewStatus")?.trim() ?? ""
+      }), traceId));
+      return;
+    }
+
+    const adminKnowledgeUpdateMatch = url.pathname.match(/^\/admin\/knowledge\/([^/]+)$/);
+    if (request.method === "POST" && adminKnowledgeUpdateMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const input = validateAdminKnowledgeUpdate(await readBody(request));
+        if (typeof input === "string") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", input, traceId));
+          return;
+        }
+
+        const knowledgeId = adminKnowledgeUpdateMatch[1];
+        if (knowledgeId === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Knowledge id is required.", traceId));
+          return;
+        }
+
+        const result = await repository.updateAdminKnowledgeEntry(admin.id, decodeURIComponent(knowledgeId), input);
+        if (result === "KNOWLEDGE_NOT_FOUND") {
+          sendJson(response, 404, failure("KNOWLEDGE_NOT_FOUND", "Knowledge entry not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
       return;
     }
 

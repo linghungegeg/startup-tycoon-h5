@@ -22,7 +22,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -46,7 +47,8 @@ button:disabled {
 button:hover,
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.28);
   outline-offset: 2px;
 }
@@ -120,7 +122,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 38px;
   border: 1px solid #cbd5e1;
@@ -128,6 +131,13 @@ select {
   padding: 0 10px;
   color: #111827;
   background: #fff;
+}
+
+textarea {
+  min-height: 74px;
+  padding: 9px 10px;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .admin-error {
@@ -318,6 +328,14 @@ td {
   color: #1f2937;
 }
 
+tbody tr {
+  cursor: default;
+}
+
+.selected-row td {
+  background: #eff6ff;
+}
+
 .status-tag {
   display: inline-flex;
   align-items: center;
@@ -474,6 +492,24 @@ td {
   min-width: 720px;
 }
 
+.knowledge-filter {
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 180px) minmax(150px, 170px) auto;
+  margin-bottom: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.knowledge-editor {
+  max-height: calc(100vh - 138px);
+  overflow-y: auto;
+}
+
+.knowledge-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .text-button {
   min-height: 28px;
   padding: 0;
@@ -524,6 +560,11 @@ td {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .knowledge-filter,
+  .knowledge-meta-grid {
     grid-template-columns: 1fr;
   }
 

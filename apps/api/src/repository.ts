@@ -781,6 +781,35 @@ export type AdminConfigCenterRecord = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+export type AdminKnowledgeEntryRecord = KnowledgeEntryRecord & {
+  categoryId: string;
+  sortOrder: number;
+};
+
+export type AdminKnowledgeListRecord = {
+  rows: AdminKnowledgeEntryRecord[];
+  total: number;
+  categories: Array<{ id: string; name: string }>;
+};
+
+export type AdminKnowledgeUpdateInput = {
+  summary: string;
+  scenarioText: string;
+  riskText: string;
+  gameImpactText: string;
+  actionTipText: string;
+  sourceName: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  reviewStatus: string;
+  reason: string;
+};
+
+export type AdminKnowledgeUpdateRecord = AdminKnowledgeEntryRecord & {
+  auditLogId: string;
+};
+
 export type AdminTitleActionRecord = {
   title: TitleRecord;
   auditLogId: string;
@@ -1121,6 +1150,8 @@ export type GameRepository = {
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(): Promise<AdminConfigCenterRecord>;
   listAdminAuditLogs(): Promise<AdminAuditLogRecord[]>;
+  listAdminKnowledgeEntries(filters: { keyword: string; category: string; reviewStatus: string }): Promise<AdminKnowledgeListRecord>;
+  updateAdminKnowledgeEntry(adminUserId: string, knowledgeId: string, input: AdminKnowledgeUpdateInput): Promise<AdminKnowledgeUpdateRecord | "KNOWLEDGE_NOT_FOUND">;
   grantAdminTitle(adminUserId: string, profileId: string, titleId: string, reason: string): Promise<AdminTitleActionRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND">;
   revokeAdminTitle(adminUserId: string, profileId: string, titleId: string, reason: string): Promise<{ auditLogId: string } | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND">;
   sendAdminMailCompensation(adminUserId: string, profileId: string, subject: string, body: string, platformCoins: number, reason: string): Promise<AdminMailCompensationRecord | "PLAYER_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS">;
@@ -2812,6 +2843,46 @@ const toKnowledgeEntryRecord = (
     unlockedAt: unlockedAt?.toISOString() ?? null
   };
 };
+
+const toAdminKnowledgeEntryRecord = (
+  knowledge: {
+    id: string;
+    categoryId: string;
+    category: { name: string };
+    title: string;
+    summary: string;
+    scenarioText: string;
+    riskText: string;
+    gameImpactText: string;
+    actionTipText: string;
+    sourceName: string;
+    sourceUrl: string;
+    collectedAt: string;
+    contentVersion: string;
+    disclaimer: string;
+    reviewStatus: string;
+    sortOrder: number;
+  }
+): AdminKnowledgeEntryRecord => ({
+  id: knowledge.id,
+  categoryId: knowledge.categoryId,
+  category: knowledge.category.name,
+  title: knowledge.title,
+  summary: knowledge.summary,
+  scenarioText: knowledge.scenarioText,
+  riskText: knowledge.riskText,
+  gameImpactText: knowledge.gameImpactText,
+  actionTipText: knowledge.actionTipText,
+  sourceName: knowledge.sourceName,
+  sourceUrl: knowledge.sourceUrl,
+  collectedAt: knowledge.collectedAt,
+  contentVersion: knowledge.contentVersion,
+  disclaimer: knowledge.disclaimer,
+  reviewStatus: knowledge.reviewStatus,
+  sortOrder: knowledge.sortOrder,
+  isUnlocked: true,
+  unlockedAt: null
+});
 
 const toLoanCenterRecord = async (
   prisma: PrismaClient,
@@ -6511,6 +6582,83 @@ export const createPrismaGameRepository = (
       detail: log.detail,
       createdAt: log.createdAt.toISOString()
     }));
+  },
+
+  async listAdminKnowledgeEntries(filters) {
+    const where: Prisma.KnowledgeEntryWhereInput = {};
+    if (filters.keyword !== "") {
+      where.OR = [
+        { id: { contains: filters.keyword } },
+        { title: { contains: filters.keyword } },
+        { summary: { contains: filters.keyword } }
+      ];
+    }
+    if (filters.category !== "") {
+      where.category = { name: filters.category };
+    }
+    if (filters.reviewStatus !== "") {
+      where.reviewStatus = filters.reviewStatus;
+    }
+
+    const [rows, total, categories] = await Promise.all([
+      prisma.knowledgeEntry.findMany({
+        where,
+        include: { category: true },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+        take: 100
+      }),
+      prisma.knowledgeEntry.count({ where }),
+      prisma.knowledgeCategory.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] })
+    ]);
+
+    return {
+      rows: rows.map(toAdminKnowledgeEntryRecord),
+      total,
+      categories: categories.map((category) => ({ id: category.id, name: category.name }))
+    };
+  },
+
+  async updateAdminKnowledgeEntry(adminUserId, knowledgeId, input) {
+    const existing = await prisma.knowledgeEntry.findUnique({
+      where: { id: knowledgeId }
+    });
+    if (existing === null) {
+      return "KNOWLEDGE_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.knowledgeEntry.update({
+        where: { id: knowledgeId },
+        data: {
+          summary: input.summary,
+          scenarioText: input.scenarioText,
+          riskText: input.riskText,
+          gameImpactText: input.gameImpactText,
+          actionTipText: input.actionTipText,
+          sourceName: input.sourceName,
+          sourceUrl: input.sourceUrl,
+          collectedAt: input.collectedAt,
+          contentVersion: input.contentVersion,
+          reviewStatus: input.reviewStatus
+        },
+        include: { category: true }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_knowledge_update",
+          targetType: "knowledge_entry",
+          targetId: knowledgeId,
+          detail: input.reason
+        }
+      });
+      return { updated, audit };
+    });
+
+    return {
+      ...toAdminKnowledgeEntryRecord(result.updated),
+      auditLogId: result.audit.id
+    };
   },
 
   async grantAdminTitle(adminUserId, profileId, titleId, reason) {
