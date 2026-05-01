@@ -543,6 +543,130 @@ export type AdminVipConfigRecord = {
   auditLogId: string;
 };
 
+export type AdminPlayerRowRecord = {
+  profileId: string;
+  accountId: string;
+  username: string;
+  serverId: string;
+  serverName: string;
+  founderName: string;
+  companyName: string;
+  cash: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  netCashFlow: number;
+  valuation: number;
+  totalDebt: number;
+  riskStatus: string;
+  profileStatus: string;
+  walletBalance: number;
+  vipExperience: number;
+  vipLevel: number;
+  purchaseCount: number;
+  paymentOrderCount: number;
+  titleCount: number;
+  achievementCompletedCount: number;
+  knowledgeUnlockCount: number;
+  guildName: string | null;
+  createdAt: string;
+};
+
+export type AdminPlayerListRecord = {
+  rows: AdminPlayerRowRecord[];
+};
+
+export type AdminCrossServerGroupRecord = CrossServerGroupRecord & {
+  isActive: boolean;
+};
+
+export type AdminCrossServerGroupListRecord = {
+  groups: AdminCrossServerGroupRecord[];
+};
+
+export type AdminCrossServerGroupAssignmentRecord = {
+  group: AdminCrossServerGroupRecord;
+  auditLogId: string;
+};
+
+export type AdminAuditLogRecord = {
+  id: string;
+  adminUsername: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  detail: string | null;
+  createdAt: string;
+};
+
+export type AdminConfigCenterRecord = {
+  titles: Array<{
+    id: string;
+    name: string;
+    category: string;
+    source: string;
+    bonusLabel: string;
+    durationDays: number;
+  }>;
+  achievements: Array<{
+    id: string;
+    name: string;
+    category: string;
+    conditionKind: string;
+    conditionValue: number;
+    rewardPlatformCoins: number;
+    rewardCash: number;
+  }>;
+  knowledgeEntries: Array<{
+    id: string;
+    title: string;
+    sourceUrl: string;
+    collectedAt: string;
+    contentVersion: string;
+    auditStatus: string;
+  }>;
+  shopProducts: Array<{
+    id: string;
+    name: string;
+    category: string;
+    pricePlatformCoins: number;
+    purchaseLimit: number;
+    isActive: boolean;
+  }>;
+  leaderboardSnapshots: Array<{
+    id: string;
+    serverId: string;
+    boardName: string;
+    snapshotDate: string;
+    createdAt: string;
+  }>;
+  mailCompensations: Array<{
+    id: string;
+    profileId: string;
+    subject: string;
+    platformCoins: number;
+    reason: string;
+    createdAt: string;
+  }>;
+};
+
+export type AdminTitleActionRecord = {
+  title: TitleRecord;
+  auditLogId: string;
+};
+
+export type AdminMailCompensationRecord = {
+  profile: PlayerProfileRecord;
+  wallet: PlatformWalletRecord;
+  auditLogId: string;
+  mailId: string;
+};
+
+export type AdminProfileStatusRecord = {
+  profileId: string;
+  status: string;
+  auditLogId: string;
+};
+
 export type LeaderboardRowRecord = {
   rank: number;
   profileId: string;
@@ -736,6 +860,16 @@ export type GameRepository = {
   getAdminVipRecord(profileId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
   listVipLevelConfigs(): Promise<VipLevelRecord[]>;
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
+  listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
+  getAdminConfigCenter(): Promise<AdminConfigCenterRecord>;
+  listAdminAuditLogs(): Promise<AdminAuditLogRecord[]>;
+  grantAdminTitle(adminUserId: string, profileId: string, titleId: string, reason: string): Promise<AdminTitleActionRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND">;
+  revokeAdminTitle(adminUserId: string, profileId: string, titleId: string, reason: string): Promise<{ auditLogId: string } | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND">;
+  sendAdminMailCompensation(adminUserId: string, profileId: string, subject: string, body: string, platformCoins: number, reason: string): Promise<AdminMailCompensationRecord | "PLAYER_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS">;
+  updateAdminProfileStatus(adminUserId: string, profileId: string, status: "active" | "banned", reason: string): Promise<AdminProfileStatusRecord | "PLAYER_NOT_FOUND">;
+  settleAdminLeaderboards(adminUserId: string, serverId: string, today: string, reason: string): Promise<(LeaderboardSettlementRecord & { auditLogId: string }) | "PLAYER_NOT_FOUND">;
+  listAdminCrossServerGroups(): Promise<AdminCrossServerGroupListRecord>;
+  assignAdminCrossServerGroup(adminUserId: string, serverId: string, groupId: string, reason: string): Promise<AdminCrossServerGroupAssignmentRecord | "SERVER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
   settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
   getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
@@ -4472,6 +4606,440 @@ export const createPrismaGameRepository = (
 
     return {
       config: toVipLevelRecord(result.saved),
+      auditLogId: result.auditLogId
+    };
+  },
+
+  async listAdminPlayers(keyword, _today) {
+    const trimmedKeyword = keyword.trim();
+    const where = trimmedKeyword === "" ? {} : {
+      OR: [
+        { founderName: { contains: trimmedKeyword } },
+        { companyName: { contains: trimmedKeyword } },
+        { account: { username: { contains: trimmedKeyword } } },
+        { server: { name: { contains: trimmedKeyword } } }
+      ]
+    };
+    const [profiles, vipLevels] = await Promise.all([
+      prisma.playerProfile.findMany({
+        where,
+        include: {
+          account: true,
+          server: true,
+          platformWallet: true,
+          shopPurchases: true,
+          paymentOrders: true,
+          playerTitles: true,
+          achievements: {
+            where: { completedAt: { not: null } }
+          },
+          knowledgeUnlocks: true,
+          guildMembership: {
+            include: { guild: true }
+          }
+        },
+        orderBy: [{ createdAt: "desc" }],
+        take: 50
+      }),
+      prisma.vipLevelConfig.findMany({
+        orderBy: [{ requiredExperience: "asc" }, { sortOrder: "asc" }]
+      })
+    ]);
+    const levelRecords = vipLevels.map(toVipLevelRecord);
+
+    return {
+      rows: profiles.map((profile) => {
+        const walletBalance = profile.platformWallet?.balance ?? profile.platformCoins;
+        const vipExperience = profile.platformWallet?.vipExperience ?? 0;
+        const { currentLevel } = resolveVipLevels(levelRecords, vipExperience);
+        return {
+          profileId: profile.id,
+          accountId: profile.accountId,
+          username: profile.account.username,
+          serverId: profile.serverId,
+          serverName: profile.server.name,
+          founderName: profile.founderName,
+          companyName: profile.companyName,
+          cash: profile.cash,
+          monthlyIncome: profile.monthlyIncome,
+          monthlyExpense: profile.monthlyExpense,
+          netCashFlow: profile.monthlyIncome - profile.monthlyExpense,
+          valuation: profile.valuation,
+          totalDebt: profile.totalDebt,
+          riskStatus: profile.riskStatus,
+          profileStatus: profile.status,
+          walletBalance,
+          vipExperience,
+          vipLevel: currentLevel.level,
+          purchaseCount: profile.shopPurchases.length,
+          paymentOrderCount: profile.paymentOrders.length,
+          titleCount: profile.playerTitles.length,
+          achievementCompletedCount: profile.achievements.length,
+          knowledgeUnlockCount: profile.knowledgeUnlocks.length,
+          guildName: profile.guildMembership?.guild.name ?? null,
+          createdAt: profile.createdAt.toISOString()
+        };
+      })
+    };
+  },
+
+  async getAdminConfigCenter() {
+    const [titles, achievements, knowledgeEntries, shopProducts, leaderboardSnapshots, mailCompensations] = await Promise.all([
+      prisma.titleConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.achievementConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.knowledgeEntry.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }], take: 100 }),
+      prisma.shopProductConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.leaderboardSnapshot.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 }),
+      prisma.adminMailCompensation.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 })
+    ]);
+
+    return {
+      titles: titles.map((title) => ({
+        id: title.id,
+        name: title.name,
+        category: title.category,
+        source: title.source,
+        bonusLabel: title.bonusLabel,
+        durationDays: title.durationDays
+      })),
+      achievements: achievements.map((achievement) => ({
+        id: achievement.id,
+        name: achievement.name,
+        category: achievement.category,
+        conditionKind: achievement.conditionKind,
+        conditionValue: achievement.conditionValue,
+        rewardPlatformCoins: achievement.rewardPlatformCoins,
+        rewardCash: achievement.rewardCash
+      })),
+      knowledgeEntries: knowledgeEntries.map((knowledge) => ({
+        id: knowledge.id,
+        title: knowledge.title,
+        sourceUrl: knowledge.sourceUrl,
+        collectedAt: knowledge.collectedAt,
+        contentVersion: knowledge.contentVersion,
+        auditStatus: "已发布"
+      })),
+      shopProducts: shopProducts.map((product) => ({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        pricePlatformCoins: product.pricePlatformCoins,
+        purchaseLimit: product.purchaseLimit,
+        isActive: product.isActive
+      })),
+      leaderboardSnapshots: leaderboardSnapshots.map((snapshot) => ({
+        id: snapshot.id,
+        serverId: snapshot.serverId,
+        boardName: snapshot.boardName,
+        snapshotDate: snapshot.snapshotDate,
+        createdAt: snapshot.createdAt.toISOString()
+      })),
+      mailCompensations: mailCompensations.map((mail) => ({
+        id: mail.id,
+        profileId: mail.profileId,
+        subject: mail.subject,
+        platformCoins: mail.platformCoins,
+        reason: mail.reason,
+        createdAt: mail.createdAt.toISOString()
+      }))
+    };
+  },
+
+  async listAdminAuditLogs() {
+    const logs = await prisma.adminAuditLog.findMany({
+      include: { adminUser: true },
+      orderBy: [{ createdAt: "desc" }],
+      take: 50
+    });
+
+    return logs.map((log) => ({
+      id: log.id,
+      adminUsername: log.adminUser.username,
+      action: log.action,
+      targetType: log.targetType,
+      targetId: log.targetId,
+      detail: log.detail,
+      createdAt: log.createdAt.toISOString()
+    }));
+  },
+
+  async grantAdminTitle(adminUserId, profileId, titleId, reason) {
+    const [profile, config] = await Promise.all([
+      prisma.playerProfile.findUnique({ where: { id: profileId } }),
+      prisma.titleConfig.findUnique({ where: { id: titleId } })
+    ]);
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    if (config === null) {
+      return "TITLE_NOT_FOUND";
+    }
+
+    const now = new Date();
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.playerTitle.upsert({
+        where: { profileId_titleId: { profileId, titleId } },
+        update: {},
+        create: {
+          profileId,
+          titleId,
+          source: "admin",
+          expiresAt: config.durationDays > 0 ? addDays(now, config.durationDays) : null
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_title_grant",
+          targetType: "player_title",
+          targetId: profileId,
+          detail: JSON.stringify({ titleId, reason })
+        }
+      });
+
+      return { auditLogId: audit.id };
+    });
+    const center = await toTitleCenterRecord(prisma, profileId, now.toISOString().slice(0, 10));
+    const title = center.titles.find((item) => item.id === titleId);
+    if (title === undefined) {
+      return "TITLE_NOT_FOUND";
+    }
+
+    return { title, auditLogId: result.auditLogId };
+  },
+
+  async revokeAdminTitle(adminUserId, profileId, titleId, reason) {
+    const [profile, title] = await Promise.all([
+      prisma.playerProfile.findUnique({ where: { id: profileId } }),
+      prisma.playerTitle.findUnique({ where: { profileId_titleId: { profileId, titleId } } })
+    ]);
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    if (title === null) {
+      return "TITLE_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.playerTitleEquipment.deleteMany({ where: { profileId, titleId } });
+      await tx.playerTitle.delete({ where: { profileId_titleId: { profileId, titleId } } });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_title_revoke",
+          targetType: "player_title",
+          targetId: profileId,
+          detail: JSON.stringify({ titleId, reason })
+        }
+      });
+
+      return { auditLogId: audit.id };
+    });
+
+    return result;
+  },
+
+  async sendAdminMailCompensation(adminUserId, profileId, subject, body, platformCoins, reason) {
+    const profile = await prisma.playerProfile.findUnique({ where: { id: profileId } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId },
+        update: {},
+        create: {
+          profileId,
+          balance: profile.platformCoins,
+          totalSpent: 0,
+          vipExperience: 0
+        }
+      });
+      const nextBalance = wallet.balance + platformCoins;
+      if (nextBalance < 0) {
+        return "INSUFFICIENT_PLATFORM_COINS" as const;
+      }
+      const mail = await tx.adminMailCompensation.create({
+        data: {
+          profileId,
+          adminUserId,
+          subject,
+          body,
+          platformCoins,
+          reason
+        }
+      });
+      const updatedWallet = await tx.playerPlatformWallet.update({
+        where: { id: wallet.id },
+        data: { balance: nextBalance }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profileId },
+        data: { platformCoins: nextBalance, unreadMailCount: { increment: 1 } }
+      });
+      if (platformCoins !== 0) {
+        await tx.platformCoinLedger.create({
+          data: {
+            profileId,
+            walletId: wallet.id,
+            changeAmount: platformCoins,
+            balanceAfter: nextBalance,
+            source: "system_compensation",
+            referenceId: mail.id,
+            reason: subject,
+            operatorAdminUserId: adminUserId
+          }
+        });
+      }
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_mail_compensation",
+          targetType: "admin_mail_compensation",
+          targetId: mail.id,
+          detail: JSON.stringify({ profileId, subject, platformCoins, reason })
+        }
+      });
+
+      return { mail, wallet: updatedWallet, profile: updatedProfile, auditLogId: audit.id };
+    });
+    if (result === "INSUFFICIENT_PLATFORM_COINS") {
+      return result;
+    }
+    const ledgers = await prisma.platformCoinLedger.findMany({
+      where: { profileId },
+      orderBy: [{ createdAt: "desc" }],
+      take: 20
+    });
+
+    return {
+      profile: toProfileRecord(result.profile),
+      wallet: toWalletRecord(result.wallet, ledgers),
+      auditLogId: result.auditLogId,
+      mailId: result.mail.id
+    };
+  },
+
+  async updateAdminProfileStatus(adminUserId, profileId, status, reason) {
+    const profile = await prisma.playerProfile.findUnique({ where: { id: profileId } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.playerProfile.update({
+        where: { id: profileId },
+        data: { status }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: status === "banned" ? "admin_player_ban" : "admin_player_unban",
+          targetType: "player_profile",
+          targetId: profileId,
+          detail: JSON.stringify({ status, reason })
+        }
+      });
+
+      return { updated, auditLogId: audit.id };
+    });
+
+    return {
+      profileId: result.updated.id,
+      status: result.updated.status,
+      auditLogId: result.auditLogId
+    };
+  },
+
+  async settleAdminLeaderboards(adminUserId, serverId, today, reason) {
+    const profile = await prisma.playerProfile.findFirst({ where: { serverId }, orderBy: { createdAt: "asc" } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const settlement = await this.settleLeaderboardRewards(profile.accountId, serverId, today);
+    if (settlement === "PLAYER_NOT_FOUND") {
+      return settlement;
+    }
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "admin_leaderboard_settle",
+        targetType: "leaderboard",
+        targetId: serverId,
+        detail: JSON.stringify({ serverId, today, reason, deliveredRewards: settlement.deliveredRewards })
+      }
+    });
+
+    return { ...settlement, auditLogId: audit.id };
+  },
+
+  async listAdminCrossServerGroups() {
+    const groups = await prisma.crossServerGroup.findMany({
+      include: {
+        servers: { orderBy: { sortOrder: "asc" } }
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+    });
+
+    return {
+      groups: groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        ruleLabel: group.ruleLabel,
+        serverIds: group.servers.map((server) => server.serverId),
+        isActive: group.isActive
+      }))
+    };
+  },
+
+  async assignAdminCrossServerGroup(adminUserId, serverId, groupId, reason) {
+    const [server, group] = await Promise.all([
+      prisma.gameServer.findUnique({ where: { id: serverId } }),
+      prisma.crossServerGroup.findUnique({ where: { id: groupId } })
+    ]);
+    if (server === null) {
+      return "SERVER_NOT_FOUND";
+    }
+    if (group === null) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.crossServerGroupServer.upsert({
+        where: { serverId },
+        update: { groupId },
+        create: { groupId, serverId }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_cross_server_group_assign",
+          targetType: "cross_server_group",
+          targetId: groupId,
+          detail: JSON.stringify({ serverId, groupId, reason })
+        }
+      });
+      const savedGroup = await tx.crossServerGroup.findUnique({
+        where: { id: groupId },
+        include: { servers: { orderBy: { sortOrder: "asc" } } }
+      });
+
+      return { savedGroup, auditLogId: audit.id };
+    });
+    if (result.savedGroup === null) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+
+    return {
+      group: {
+        id: result.savedGroup.id,
+        name: result.savedGroup.name,
+        ruleLabel: result.savedGroup.ruleLabel,
+        serverIds: result.savedGroup.servers.map((item) => item.serverId),
+        isActive: result.savedGroup.isActive
+      },
       auditLogId: result.auditLogId
     };
   },

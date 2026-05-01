@@ -1393,6 +1393,238 @@ const createTestRepository = (): GameRepository => {
       const adminUserId = adminSessions.get(token);
       return [...admins.values()].find((admin) => admin.id === adminUserId);
     },
+    async listAdminPlayers(keyword, today) {
+      const trimmedKeyword = keyword.trim();
+      const rows = [...profiles.values()]
+        .filter((profile) => {
+          if (trimmedKeyword === "") {
+            return true;
+          }
+          const account = [...accounts.values()].find((item) => item.id === profile.accountId);
+          const server = servers.find((item) => item.id === profile.serverId);
+          return (
+            profile.founderName.includes(trimmedKeyword) ||
+            profile.companyName.includes(trimmedKeyword) ||
+            (account?.username.includes(trimmedKeyword) ?? false) ||
+            (server?.name.includes(trimmedKeyword) ?? false)
+          );
+        })
+        .map((profile) => {
+          const wallet = ensureWallet(profile);
+          const vipCenter = toVipCenter(profile, today);
+          const purchases = [...shopPurchases.values()].filter((purchase) => purchase.profileId === profile.id);
+          return {
+            profileId: profile.id,
+            accountId: profile.accountId,
+            username: [...accounts.values()].find((item) => item.id === profile.accountId)?.username ?? "",
+            serverId: profile.serverId,
+            serverName: servers.find((item) => item.id === profile.serverId)?.name ?? profile.serverId,
+            founderName: profile.founderName,
+            companyName: profile.companyName,
+            cash: profile.cash,
+            monthlyIncome: profile.monthlyIncome,
+            monthlyExpense: profile.monthlyExpense,
+            netCashFlow: profile.monthlyIncome - profile.monthlyExpense,
+            valuation: profile.valuation,
+            totalDebt: profile.totalDebt,
+            riskStatus: profile.riskStatus,
+            profileStatus: "active",
+            walletBalance: wallet.balance,
+            vipExperience: wallet.vipExperience,
+            vipLevel: vipCenter.currentLevel.level,
+            purchaseCount: purchases.length,
+            paymentOrderCount: 0,
+            titleCount: [...playerTitles.values()].filter((title) => title.profileId === profile.id).length,
+            achievementCompletedCount: [...achievements.values()].filter((achievement) => achievement.profileId === profile.id && achievement.completedAt !== null).length,
+            knowledgeUnlockCount: [...knowledgeUnlocks.values()].filter((knowledge) => knowledge.profileId === profile.id).length,
+            guildName: null,
+            createdAt: profile.createdAt
+          };
+        });
+
+      return { rows };
+    },
+    async getAdminConfigCenter() {
+      return {
+        titles: titleConfigs.map((title) => ({
+          id: title.id,
+          name: title.name,
+          category: title.category,
+          source: title.source,
+          bonusLabel: title.bonusLabel,
+          durationDays: title.durationDays
+        })),
+        achievements: achievementConfigs.map((achievement) => ({
+          id: achievement.id,
+          name: achievement.name,
+          category: achievement.category,
+          conditionKind: achievement.conditionKind,
+          conditionValue: achievement.conditionValue,
+          rewardPlatformCoins: achievement.rewardPlatformCoins,
+          rewardCash: achievement.rewardCash
+        })),
+        knowledgeEntries: knowledgeEntries.map((knowledge) => ({
+          id: knowledge.id,
+          title: knowledge.title,
+          sourceUrl: knowledge.sourceUrl,
+          collectedAt: knowledge.collectedAt,
+          contentVersion: knowledge.contentVersion,
+          auditStatus: "已发布"
+        })),
+        shopProducts: shopProducts.map((product) => ({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          pricePlatformCoins: product.pricePlatformCoins,
+          purchaseLimit: product.purchaseLimit,
+          isActive: product.isActive
+        })),
+        leaderboardSnapshots: [],
+        mailCompensations: []
+      };
+    },
+    async listAdminAuditLogs() {
+      return [
+        {
+          id: "audit-player-ban",
+          adminUsername: "admin",
+          action: "admin_player_ban",
+          targetType: "player_profile",
+          targetId: null,
+          detail: null,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: "audit-cross-server-group",
+          adminUsername: "admin",
+          action: "admin_cross_server_group_assign",
+          targetType: "cross_server_group",
+          targetId: null,
+          detail: null,
+          createdAt: new Date().toISOString()
+        }
+      ];
+    },
+    async grantAdminTitle(adminUserId, profileId, titleId, reason) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      const config = titleConfigs.find((item) => item.id === titleId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      if (config === undefined) {
+        return "TITLE_NOT_FOUND";
+      }
+      const key = titleKey(profileId, titleId);
+      playerTitles.set(key, {
+        profileId,
+        titleId,
+        source: "admin",
+        obtainedAt: new Date().toISOString(),
+        expiresAt: null
+      });
+
+      return {
+        title: {
+          id: config.id,
+          name: config.name,
+          category: config.category,
+          source: "admin",
+          bonusLabel: config.bonusLabel,
+          obtainedAt: new Date().toISOString(),
+          expiresAt: null,
+          isEquipped: false,
+          isExpired: false
+        },
+        auditLogId: `${adminUserId}:${profileId}:${titleId}:${reason}`
+      };
+    },
+    async revokeAdminTitle(adminUserId, profileId, titleId, reason) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const key = titleKey(profileId, titleId);
+      if (!playerTitles.has(key)) {
+        return "TITLE_NOT_FOUND";
+      }
+      playerTitles.delete(key);
+      return { auditLogId: `${adminUserId}:${profileId}:${titleId}:${reason}` };
+    },
+    async sendAdminMailCompensation(adminUserId, profileId, subject, body, platformCoins, reason) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const wallet = ensureWallet(profile);
+      wallet.balance += platformCoins;
+      profile.platformCoins = wallet.balance;
+      void body;
+      void reason;
+
+      return {
+        profile,
+        wallet: {
+          balance: wallet.balance,
+          vipExperience: wallet.vipExperience,
+          totalSpent: wallet.totalSpent,
+          ledgers: []
+        },
+        auditLogId: `${adminUserId}:${profileId}:${subject}`,
+        mailId: randomUUID()
+      };
+    },
+    async updateAdminProfileStatus(adminUserId, profileId, status, reason) {
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      void reason;
+      return {
+        profileId,
+        status,
+        auditLogId: `${adminUserId}:${profileId}:${status}`
+      };
+    },
+    async settleAdminLeaderboards(adminUserId, serverId, today, reason) {
+      const profile = [...profiles.values()].find((item) => item.serverId === serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return {
+        leaderboard: buildLeaderboards(serverId, today),
+        deliveredRewards: 0,
+        auditLogId: `${adminUserId}:${serverId}:${reason}`
+      };
+    },
+    async listAdminCrossServerGroups() {
+      return {
+        groups: crossServerGroups.map((group) => ({
+          ...group,
+          isActive: true
+        }))
+      };
+    },
+    async assignAdminCrossServerGroup(adminUserId, serverId, groupId, reason) {
+      const group = crossServerGroups.find((item) => item.id === groupId);
+      if (!servers.some((server) => server.id === serverId)) {
+        return "SERVER_NOT_FOUND";
+      }
+      if (group === undefined) {
+        return "CROSS_SERVER_GROUP_NOT_FOUND";
+      }
+      for (const item of crossServerGroups) {
+        item.serverIds = item.serverIds.filter((id) => id !== serverId);
+      }
+      group.serverIds.push(serverId);
+
+      return {
+        group: {
+          ...group,
+          isActive: true
+        },
+        auditLogId: `${adminUserId}:${groupId}:${serverId}:${reason}`
+      };
+    },
     async listServers() {
       return servers;
     },
@@ -4279,6 +4511,160 @@ test("logs in admin users and returns admin sessions", async () => {
     assert.equal(session.status, 200);
     assert.equal(session.body.success, true);
     assert.equal(session.body.data?.username, "admin");
+  });
+});
+
+test("phase 16 admin can query operations data and adjust cross server groups with audit", async () => {
+  await withServer(async (baseUrl) => {
+    const { profile } = await createPlayerSession(baseUrl, "adminphase16");
+
+    const blocked = await requestJson(baseUrl, "/admin/players");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const players = await requestJson<{
+      rows: Array<{
+        profileId: string;
+        serverName: string;
+        founderName: string;
+        companyName: string;
+        cash: number;
+        netCashFlow: number;
+        walletBalance: number;
+        vipLevel: number;
+        profileStatus: string;
+        purchaseCount: number;
+        paymentOrderCount: number;
+        titleCount: number;
+        achievementCompletedCount: number;
+        knowledgeUnlockCount: number;
+      }>;
+    }>(baseUrl, "/admin/players?keyword=测试", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(players.status, 200);
+    assert.equal(players.body.data?.rows.length, 1);
+    assert.equal(players.body.data?.rows[0]?.profileId, profile.id);
+    assert.equal(players.body.data?.rows[0]?.serverName, "长宁一服");
+    assert.equal(players.body.data?.rows[0]?.walletBalance, profile.platformCoins);
+    assert.equal(players.body.data?.rows[0]?.netCashFlow, profile.monthlyIncome - profile.monthlyExpense);
+    assert.equal(players.body.data?.rows[0]?.profileStatus, "active");
+
+    const configCenter = await requestJson<{
+      titles: Array<{ id: string }>;
+      achievements: Array<{ id: string }>;
+      knowledgeEntries: Array<{ id: string; auditStatus: string }>;
+      shopProducts: Array<{ id: string }>;
+    }>(baseUrl, "/admin/config-center", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(configCenter.status, 200);
+    assert.ok(configCenter.body.data?.titles.some((title) => title.id === "server-richest"));
+    assert.ok(configCenter.body.data?.achievements.some((achievement) => achievement.id === "positive-cashflow"));
+    assert.ok(configCenter.body.data?.knowledgeEntries.every((knowledge) => knowledge.auditStatus === "已发布"));
+    assert.ok(configCenter.body.data?.shopProducts.some((product) => product.id === "monthly-card-basic"));
+
+    const titleGrant = await requestJson<{ auditLogId: string }>(baseUrl, "/admin/titles/grant", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        titleId: "server-richest",
+        reason: "阶段16验证称号发放"
+      })
+    });
+    assert.equal(titleGrant.status, 200);
+    assert.ok(titleGrant.body.data?.auditLogId);
+
+    const titleRevoke = await requestJson<{ auditLogId: string }>(baseUrl, "/admin/titles/revoke", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        titleId: "server-richest",
+        reason: "阶段16验证称号回收"
+      })
+    });
+    assert.equal(titleRevoke.status, 200);
+    assert.ok(titleRevoke.body.data?.auditLogId);
+
+    const mail = await requestJson<{ mailId: string; auditLogId: string; wallet: { balance: number } }>(baseUrl, "/admin/mail/compensate", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        subject: "阶段16补偿",
+        body: "运营邮件补偿验证",
+        platformCoins: 88,
+        reason: "阶段16验证邮件补偿"
+      })
+    });
+    assert.equal(mail.status, 200);
+    assert.ok(mail.body.data?.mailId);
+    assert.equal(mail.body.data?.wallet.balance, profile.platformCoins + 88);
+
+    const banned = await requestJson<{ status: string; auditLogId: string }>(baseUrl, "/admin/players/status", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        status: "banned",
+        reason: "阶段16验证封禁"
+      })
+    });
+    assert.equal(banned.status, 200);
+    assert.equal(banned.body.data?.status, "banned");
+    assert.ok(banned.body.data?.auditLogId);
+
+    const settled = await requestJson<{ deliveredRewards: number; auditLogId: string }>(baseUrl, "/admin/leaderboards/settle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        serverId: "s1",
+        reason: "阶段16验证排行榜手动结算"
+      })
+    });
+    assert.equal(settled.status, 200);
+    assert.ok(settled.body.data?.auditLogId);
+
+    const groupsBefore = await requestJson<{
+      groups: Array<{ id: string; serverIds: string[] }>;
+    }>(baseUrl, "/admin/cross-server/groups", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(groupsBefore.status, 200);
+    assert.ok(groupsBefore.body.data?.groups.some((group) => group.id === "new-growth-pool" && group.serverIds.includes("s1")));
+
+    const assigned = await requestJson<{
+      group: { id: string; serverIds: string[] };
+      auditLogId: string;
+    }>(baseUrl, "/admin/cross-server/groups/assign", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        serverId: "s2",
+        groupId: "new-growth-pool",
+        reason: "阶段16验证跨服分组调整"
+      })
+    });
+    assert.equal(assigned.status, 200);
+    assert.equal(assigned.body.data?.group.id, "new-growth-pool");
+    assert.ok(assigned.body.data?.group.serverIds.includes("s2"));
+    assert.ok(assigned.body.data?.auditLogId);
+
+    const auditLogs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(auditLogs.status, 200);
+    assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_player_ban"));
+    assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_cross_server_group_assign"));
   });
 });
 

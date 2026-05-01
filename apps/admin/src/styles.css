@@ -38,6 +38,11 @@ button {
   font-weight: 700;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 button:hover,
 button:focus-visible,
 input:focus-visible,
@@ -244,7 +249,7 @@ select {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) 160px auto auto;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
   align-items: end;
   gap: 12px;
   margin-bottom: 14px;
@@ -318,6 +323,7 @@ td {
   align-items: center;
   min-height: 24px;
   border-radius: 4px;
+  margin-right: 6px;
   padding: 0 8px;
   font-size: 12px;
   font-weight: 800;
@@ -328,7 +334,28 @@ td {
   background: #dcfce7;
 }
 
+.status-active {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.status-banned {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.status-稳健 {
+  color: #166534;
+  background: #dcfce7;
+}
+
 .status-待关注 {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.status-预警,
+.status-资金紧张 {
   color: #92400e;
   background: #fef3c7;
 }
@@ -336,6 +363,88 @@ td {
 .status-已限制 {
   color: #991b1b;
   background: #fee2e2;
+}
+
+.operation-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.operation-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid #d8e0ea;
+  border-radius: 4px;
+  padding: 14px;
+  background: #fff;
+}
+
+.operation-panel h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.panel-note {
+  border-radius: 4px;
+  padding: 9px 10px;
+  color: #475569;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.button-row button {
+  flex: 1 1 150px;
+}
+
+.stacked-sections {
+  display: grid;
+  gap: 14px;
+}
+
+.narrow-panel {
+  max-width: 520px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px;
+}
+
+.config-grid div {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.config-grid h3 {
+  margin: 0 0 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.config-grid p {
+  margin: 6px 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.compact-table table {
+  min-width: 720px;
 }
 
 .text-button {
@@ -388,6 +497,14 @@ td {
   }
 
   .filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .operation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .config-grid {
     grid-template-columns: 1fr;
   }
 }

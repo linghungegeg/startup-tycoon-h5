@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const ADMIN_SESSION_KEY = "wenziyouxi.admin.session";
@@ -38,61 +38,135 @@ type AdminSessionResponse = {
   username: string;
 };
 
-type PlayerRow = {
-  id: string;
-  server: string;
-  founder: string;
-  company: string;
-  status: "正常" | "待关注" | "已限制";
-  coinBalance: number;
+type AdminPlayerRow = {
+  profileId: string;
+  username: string;
+  serverId: string;
+  serverName: string;
+  founderName: string;
+  companyName: string;
+  cash: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  netCashFlow: number;
+  valuation: number;
+  totalDebt: number;
+  riskStatus: string;
+  profileStatus: string;
+  walletBalance: number;
+  vipExperience: number;
   vipLevel: number;
-  lastLogin: string;
+  purchaseCount: number;
+  paymentOrderCount: number;
+  titleCount: number;
+  achievementCompletedCount: number;
+  knowledgeUnlockCount: number;
+  guildName: string | null;
+  createdAt: string;
 };
 
-const menuItems = ["玩家管理", "区服管理", "平台币流水", "VIP 管理", "活动配置", "审计日志"];
+type AdminPlayerList = {
+  rows: AdminPlayerRow[];
+};
 
-const playerRows: PlayerRow[] = [
-  {
-    id: "P10001",
-    server: "长宁一服",
-    founder: "林舟",
-    company: "星火互动",
-    status: "正常",
-    coinBalance: 1280,
-    vipLevel: 1,
-    lastLogin: "2026-04-30 09:18"
-  },
-  {
-    id: "P10002",
-    server: "滨江新区",
-    founder: "陈澈",
-    company: "云帆科技",
-    status: "待关注",
-    coinBalance: 320,
-    vipLevel: 0,
-    lastLogin: "2026-04-30 08:42"
-  },
-  {
-    id: "P10003",
-    server: "长宁一服",
-    founder: "许安",
-    company: "青禾数据",
-    status: "正常",
-    coinBalance: 2460,
-    vipLevel: 2,
-    lastLogin: "2026-04-29 22:06"
-  },
-  {
-    id: "P10004",
-    server: "中关村路演场",
-    founder: "周砚",
-    company: "启明智能",
-    status: "已限制",
-    coinBalance: 0,
-    vipLevel: 0,
-    lastLogin: "2026-04-28 19:35"
-  }
+type VipConfig = {
+  level: number;
+  name: string;
+  requiredExperience: number;
+  dailyGiftPlatformCoins: number;
+  dailyGiftActionPower: number;
+  actionPowerLimitBonus: number;
+  quickSettleTimes: number;
+  trainingQueueBonus: number;
+  recruitRefreshTimes: number;
+  shopDiscountBasisPoints: number;
+  title: string;
+  avatarFrame: string;
+  summary: string;
+};
+
+type CrossServerGroup = {
+  id: string;
+  name: string;
+  ruleLabel: string;
+  serverIds: string[];
+  isActive: boolean;
+};
+
+type CrossServerGroupList = {
+  groups: CrossServerGroup[];
+};
+
+type WalletAdjustment = {
+  wallet: {
+    balance: number;
+    vipExperience: number;
+  };
+  auditLogId: string;
+};
+
+type VipAdjustment = {
+  vipCenter: {
+    currentLevel: VipConfig;
+    wallet: {
+      vipExperience: number;
+    };
+  };
+  auditLogId: string;
+};
+
+type GroupAssignment = {
+  group: CrossServerGroup;
+  auditLogId: string;
+};
+
+type ConfigCenter = {
+  titles: Array<{ id: string; name: string; category: string; source: string; bonusLabel: string; durationDays: number }>;
+  achievements: Array<{ id: string; name: string; category: string; conditionKind: string; conditionValue: number; rewardPlatformCoins: number; rewardCash: number }>;
+  knowledgeEntries: Array<{ id: string; title: string; sourceUrl: string; collectedAt: string; contentVersion: string; auditStatus: string }>;
+  shopProducts: Array<{ id: string; name: string; category: string; pricePlatformCoins: number; purchaseLimit: number; isActive: boolean }>;
+  leaderboardSnapshots: Array<{ id: string; serverId: string; boardName: string; snapshotDate: string; createdAt: string }>;
+  mailCompensations: Array<{ id: string; profileId: string; subject: string; platformCoins: number; reason: string; createdAt: string }>;
+};
+
+type AuditLog = {
+  id: string;
+  adminUsername: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  detail: string | null;
+  createdAt: string;
+};
+
+type AuditResult = {
+  auditLogId: string;
+};
+
+type MailCompensation = AuditResult & {
+  mailId: string;
+  wallet: {
+    balance: number;
+  };
+};
+
+type ProfileStatus = AuditResult & {
+  profileId: string;
+  status: string;
+};
+
+type ActiveSection = "players" | "wallet" | "titles" | "cross" | "configs" | "audit";
+
+const menuItems: Array<{ id: ActiveSection; label: string }> = [
+  { id: "players", label: "玩家查询" },
+  { id: "wallet", label: "平台币 / VIP" },
+  { id: "titles", label: "称号 / 补偿" },
+  { id: "cross", label: "跨服分组" },
+  { id: "configs", label: "配置清单" },
+  { id: "audit", label: "审计日志" }
 ];
+
+const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
 
 const isAdminSession = (value: unknown): value is AdminSession => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -172,23 +246,99 @@ export default function App() {
   const [account, setAccount] = useState(initialSession?.account ?? "");
   const [password, setPassword] = useState("");
   const [keyword, setKeyword] = useState("");
-  const [status, setStatus] = useState<"全部" | PlayerRow["status"]>("全部");
+  const [activeSection, setActiveSection] = useState<ActiveSection>("players");
+  const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
+  const [vipConfigs, setVipConfigs] = useState<VipConfig[]>([]);
+  const [crossGroups, setCrossGroups] = useState<CrossServerGroup[]>([]);
+  const [configCenter, setConfigCenter] = useState<ConfigCenter>({
+    titles: [],
+    achievements: [],
+    knowledgeEntries: [],
+    shopProducts: [],
+    leaderboardSnapshots: [],
+    mailCompensations: []
+  });
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [coinAmount, setCoinAmount] = useState("100");
+  const [coinSource, setCoinSource] = useState("admin_grant");
+  const [coinReason, setCoinReason] = useState("运营补偿");
+  const [vipExperience, setVipExperience] = useState("0");
+  const [vipReason, setVipReason] = useState("客服修正 VIP 经验");
+  const [assignServerId, setAssignServerId] = useState("s1");
+  const [assignGroupId, setAssignGroupId] = useState("");
+  const [assignReason, setAssignReason] = useState("运营调整跨服分组");
+  const [selectedTitleId, setSelectedTitleId] = useState("");
+  const [titleReason, setTitleReason] = useState("运营发放称号");
+  const [mailSubject, setMailSubject] = useState("运营补偿");
+  const [mailBody, setMailBody] = useState("补偿已即时到账，请继续关注活动。");
+  const [mailCoins, setMailCoins] = useState("100");
+  const [statusReason, setStatusReason] = useState("运营风控处理");
+  const [settleServerId, setSettleServerId] = useState("s1");
+  const [settleReason, setSettleReason] = useState("运营手动结算排行榜");
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const filteredRows = useMemo(() => {
-    const trimmedKeyword = keyword.trim();
-    return playerRows.filter((row) => {
-      const matchesStatus = status === "全部" || row.status === status;
-      const matchesKeyword =
-        trimmedKeyword === "" ||
-        row.id.includes(trimmedKeyword) ||
-        row.founder.includes(trimmedKeyword) ||
-        row.company.includes(trimmedKeyword);
-      return matchesStatus && matchesKeyword;
-    });
-  }, [keyword, status]);
+  const selectedPlayer = useMemo(
+    () => players.find((player) => player.profileId === selectedProfileId) ?? players[0] ?? null,
+    [players, selectedProfileId]
+  );
+
+  const loadAdminData = useCallback(async (token: string, searchKeyword = keyword): Promise<void> => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const [playerList, vipList, groupList] = await Promise.all([
+        apiRequest<AdminPlayerList>(`/admin/players?keyword=${encodeURIComponent(searchKeyword.trim())}`, {}, token),
+        apiRequest<VipConfig[]>("/admin/vip/configs", {}, token),
+        apiRequest<CrossServerGroupList>("/admin/cross-server/groups", {}, token)
+      ]);
+
+      if (!playerList.success) {
+        setError(playerList.error.message);
+        return;
+      }
+      if (!vipList.success) {
+        setError(vipList.error.message);
+        return;
+      }
+      if (!groupList.success) {
+        setError(groupList.error.message);
+        return;
+      }
+
+      setPlayers(playerList.data.rows);
+      setVipConfigs(vipList.data);
+      setCrossGroups(groupList.data.groups);
+      setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
+      setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
+      const [configs, logs] = await Promise.all([
+        apiRequest<ConfigCenter>("/admin/config-center", {}, token),
+        apiRequest<AuditLog[]>("/admin/audit-logs", {}, token)
+      ]);
+      if (!configs.success) {
+        setError(configs.error.message);
+        return;
+      }
+      if (!logs.success) {
+        setError(logs.error.message);
+        return;
+      }
+      setConfigCenter(configs.data);
+      setAuditLogs(logs.data);
+      setSelectedTitleId((current) => current || (configs.data.titles[0]?.id ?? ""));
+      if (playerList.data.rows.length > 0) {
+        setSelectedProfileId((current) => current || (playerList.data.rows[0]?.profileId ?? ""));
+        setAssignServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
+      }
+    } catch {
+      setError("无法连接后台服务，请确认 API 服务和数据库已启动。");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [keyword]);
 
   useEffect(() => {
     if (initialSession === null) {
@@ -220,6 +370,7 @@ export default function App() {
         saveAdminSession(nextSession);
         setSession(nextSession);
         setAccount(response.data.username);
+        await loadAdminData(nextSession.token, "");
       } catch {
         if (isMounted) {
           clearAdminSession();
@@ -270,6 +421,7 @@ export default function App() {
       setAccount(login.data.username);
       setPassword("");
       setError("");
+      await loadAdminData(nextSession.token, "");
     } catch {
       setError("无法连接后台服务，请确认 API 服务和数据库已启动。");
     }
@@ -279,10 +431,228 @@ export default function App() {
     clearAdminSession();
     setSession(null);
     setPassword("");
+    setPlayers([]);
+    setVipConfigs([]);
+    setCrossGroups([]);
+    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [] });
+    setAuditLogs([]);
   };
 
-  const showActionMessage = (message: string): void => {
-    setActionMessage(message);
+  const submitSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session !== null) {
+      await loadAdminData(session.token, keyword);
+      setActionMessage("已按当前条件刷新运营数据。");
+    }
+  };
+
+  const submitCoinAdjustment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedPlayer === null) {
+      return;
+    }
+    const changeAmount = Number.parseInt(coinAmount, 10);
+    if (!Number.isInteger(changeAmount) || changeAmount === 0 || coinReason.trim().length < 2) {
+      setError("请输入非零平台币调整数量和正式原因。");
+      return;
+    }
+    if (!window.confirm(`确认对 ${selectedPlayer.companyName} 调整平台币 ${changeAmount}？`)) {
+      return;
+    }
+
+    const adjusted = await apiRequest<WalletAdjustment>("/admin/wallet/adjust", {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: selectedPlayer.profileId,
+        source: coinSource,
+        changeAmount,
+        reason: coinReason.trim()
+      })
+    }, session.token);
+    if (!adjusted.success) {
+      setError(adjusted.error.message);
+      return;
+    }
+    setActionMessage(`平台币操作已记录审计：${adjusted.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitVipAdjustment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedPlayer === null) {
+      return;
+    }
+    const nextVipExperience = Number.parseInt(vipExperience, 10);
+    if (!Number.isInteger(nextVipExperience) || nextVipExperience < 0 || vipReason.trim().length < 2) {
+      setError("请输入非负 VIP 经验和正式原因。");
+      return;
+    }
+    if (!window.confirm(`确认修正 ${selectedPlayer.companyName} 的 VIP 经验为 ${nextVipExperience}？`)) {
+      return;
+    }
+
+    const adjusted = await apiRequest<VipAdjustment>("/admin/vip/adjust", {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: selectedPlayer.profileId,
+        vipExperience: nextVipExperience,
+        reason: vipReason.trim()
+      })
+    }, session.token);
+    if (!adjusted.success) {
+      setError(adjusted.error.message);
+      return;
+    }
+    setActionMessage(`VIP 已调整为 ${adjusted.data.vipCenter.currentLevel.name}，审计记录：${adjusted.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitGroupAssignment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+    if (assignServerId.trim() === "" || assignGroupId.trim() === "" || assignReason.trim().length < 2) {
+      setError("请选择区服、跨服分组并填写调整原因。");
+      return;
+    }
+    if (!window.confirm(`确认将 ${assignServerId} 调整到 ${assignGroupId}？`)) {
+      return;
+    }
+
+    const assigned = await apiRequest<GroupAssignment>("/admin/cross-server/groups/assign", {
+      method: "POST",
+      body: JSON.stringify({
+        serverId: assignServerId.trim(),
+        groupId: assignGroupId.trim(),
+        reason: assignReason.trim()
+      })
+    }, session.token);
+    if (!assigned.success) {
+      setError(assigned.error.message);
+      return;
+    }
+    setActionMessage(`跨服分组已调整：${assigned.data.group.name}，审计记录：${assigned.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitTitleAction = async (event: { preventDefault(): void }, action: "grant" | "revoke"): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedPlayer === null) {
+      return;
+    }
+    if (selectedTitleId === "" || titleReason.trim().length < 2) {
+      setError("请选择称号并填写正式原因。");
+      return;
+    }
+    const label = action === "grant" ? "发放" : "回收";
+    if (!window.confirm(`确认对 ${selectedPlayer.companyName} ${label}称号 ${selectedTitleId}？`)) {
+      return;
+    }
+
+    const result = await apiRequest<AuditResult>(`/admin/titles/${action}`, {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: selectedPlayer.profileId,
+        titleId: selectedTitleId,
+        reason: titleReason.trim()
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`称号${label}已记录审计：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitMailCompensation = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedPlayer === null) {
+      return;
+    }
+    const platformCoins = Number.parseInt(mailCoins, 10);
+    if (!Number.isInteger(platformCoins) || platformCoins < 0 || mailSubject.trim().length < 2 || mailBody.trim().length < 2) {
+      setError("请输入邮件标题、正文和非负平台币数量。");
+      return;
+    }
+    if (!window.confirm(`确认向 ${selectedPlayer.companyName} 发送补偿邮件并发放 ${platformCoins} 平台币？`)) {
+      return;
+    }
+
+    const result = await apiRequest<MailCompensation>("/admin/mail/compensate", {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: selectedPlayer.profileId,
+        subject: mailSubject.trim(),
+        body: mailBody.trim(),
+        platformCoins,
+        reason: mailSubject.trim()
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`邮件补偿已发放，余额 ${formatNumber(result.data.wallet.balance)}，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitProfileStatus = async (status: "active" | "banned"): Promise<void> => {
+    if (session === null || selectedPlayer === null) {
+      return;
+    }
+    const label = status === "banned" ? "封禁" : "解封";
+    if (statusReason.trim().length < 2) {
+      setError("请输入封禁或解封原因。");
+      return;
+    }
+    if (!window.confirm(`确认${label} ${selectedPlayer.companyName}？`)) {
+      return;
+    }
+
+    const result = await apiRequest<ProfileStatus>("/admin/players/status", {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: selectedPlayer.profileId,
+        status,
+        reason: statusReason.trim()
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`玩家状态已更新为 ${result.data.status}，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitLeaderboardSettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+    if (settleServerId.trim() === "" || settleReason.trim().length < 2) {
+      setError("请输入区服 ID 和结算原因。");
+      return;
+    }
+    if (!window.confirm(`确认手动结算 ${settleServerId} 排行榜奖励？`)) {
+      return;
+    }
+
+    const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/leaderboards/settle", {
+      method: "POST",
+      body: JSON.stringify({
+        serverId: settleServerId.trim(),
+        reason: settleReason.trim()
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`排行榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
   };
 
   if (session === null) {
@@ -353,9 +723,14 @@ export default function App() {
         </div>
 
         <nav className="nav-list">
-          {menuItems.map((item, index) => (
-            <button className={index === 0 ? "active" : undefined} type="button" key={item}>
-              {item}
+          {menuItems.map((item) => (
+            <button
+              className={item.id === activeSection ? "active" : undefined}
+              key={item.id}
+              onClick={() => setActiveSection(item.id)}
+              type="button"
+            >
+              {item.label}
             </button>
           ))}
         </nav>
@@ -364,8 +739,8 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p>玩家管理</p>
-            <h1>玩家账号与公司档案</h1>
+            <p>Phase 16 运营后台</p>
+            <h1>{menuItems.find((item) => item.id === activeSection)?.label}</h1>
           </div>
           <div className="operator-bar">
             <span>{session.account}</span>
@@ -375,94 +750,377 @@ export default function App() {
           </div>
         </header>
 
-        <section className="filter-bar" aria-label="玩家筛选">
+        <form className="filter-bar" aria-label="玩家筛选" onSubmit={(event) => void submitSearch(event)}>
           <label>
             关键词
             <input
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="玩家编号 / 创始人 / 公司名"
+              placeholder="账号 / 创始人 / 公司名 / 区服"
               value={keyword}
             />
           </label>
-          <label>
-            状态
-            <select onChange={(event) => setStatus(event.target.value as "全部" | PlayerRow["status"])} value={status}>
-              <option value="全部">全部</option>
-              <option value="正常">正常</option>
-              <option value="待关注">待关注</option>
-              <option value="已限制">已限制</option>
-            </select>
-          </label>
-          <button type="button" onClick={() => showActionMessage("已按当前条件刷新玩家列表。")}>
+          <button disabled={isLoading} type="submit">
             查询
           </button>
-          <button className="secondary-button" type="button" onClick={() => { setKeyword(""); setStatus("全部"); showActionMessage("已重置筛选条件。"); }}>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              setKeyword("");
+              if (session !== null) {
+                void loadAdminData(session.token, "");
+              }
+            }}
+          >
             重置
           </button>
-        </section>
+        </form>
 
-        <section className="table-section" aria-label="玩家列表">
-          <div className="table-toolbar">
-            <strong>玩家列表</strong>
-            <div>
-              <button type="button" onClick={() => showActionMessage("请选择玩家后再发放补偿。")}>
-                发放补偿
-              </button>
-              <button className="secondary-button" type="button" onClick={() => showActionMessage("当前筛选结果已准备导出。")}>
-                导出记录
-              </button>
+        {error && <p className="admin-error">{error}</p>}
+        {actionMessage && <p className="action-message">{actionMessage}</p>}
+
+        {activeSection === "players" && (
+          <section className="table-section" aria-label="玩家列表">
+            <div className="table-toolbar">
+              <strong>玩家账号与公司档案</strong>
+              <span>共 {players.length} 条记录</span>
             </div>
-          </div>
-
-          {actionMessage && <p className="action-message">{actionMessage}</p>}
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>玩家编号</th>
-                  <th>区服</th>
-                  <th>创始人</th>
-                  <th>公司</th>
-                  <th>状态</th>
-                  <th>平台币</th>
-                  <th>VIP</th>
-                  <th>最近登录</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.id}</td>
-                    <td>{row.server}</td>
-                    <td>{row.founder}</td>
-                    <td>{row.company}</td>
-                    <td>
-                      <span className={`status-tag status-${row.status}`}>{row.status}</span>
-                    </td>
-                    <td>{row.coinBalance}</td>
-                    <td>VIP {row.vipLevel}</td>
-                    <td>{row.lastLogin}</td>
-                    <td>
-                      <button className="text-button" type="button" onClick={() => showActionMessage(`正在查看 ${row.company} 的玩家档案。`)}>
-                        查看
-                      </button>
-                    </td>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>账号</th>
+                    <th>区服</th>
+                    <th>创始人</th>
+                    <th>公司</th>
+                    <th>现金</th>
+                    <th>净现金流</th>
+                    <th>平台币</th>
+                    <th>VIP</th>
+                    <th>购买/支付</th>
+                    <th>称号/成就/知识</th>
+                    <th>状态</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <footer className="pagination">
-            <span>共 {filteredRows.length} 条记录</span>
-            <div>
-              <button className="secondary-button" type="button">上一页</button>
-              <button className="secondary-button" type="button">下一页</button>
+                </thead>
+                <tbody>
+                  {players.map((row) => (
+                    <tr key={row.profileId}>
+                      <td>{row.username}</td>
+                      <td>{row.serverName}</td>
+                      <td>{row.founderName}</td>
+                      <td>{row.companyName}</td>
+                      <td>{formatNumber(row.cash)}</td>
+                      <td>{formatNumber(row.netCashFlow)}</td>
+                      <td>{formatNumber(row.walletBalance)}</td>
+                      <td>VIP {row.vipLevel}</td>
+                      <td>{row.purchaseCount} / {row.paymentOrderCount}</td>
+                      <td>{row.titleCount} / {row.achievementCompletedCount} / {row.knowledgeUnlockCount}</td>
+                      <td>
+                        <span className={`status-tag status-${row.riskStatus}`}>{row.riskStatus}</span>
+                        <span className={`status-tag status-${row.profileStatus}`}>{row.profileStatus === "banned" ? "已封禁" : "正常"}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </footer>
-        </section>
+          </section>
+        )}
+
+        {activeSection === "wallet" && (
+          <section className="operation-grid" aria-label="平台币与 VIP 操作">
+            <form className="operation-panel" onSubmit={(event) => void submitCoinAdjustment(event)}>
+              <h2>平台币发放、扣减、修正</h2>
+              <label>
+                玩家
+                <select onChange={(event) => setSelectedProfileId(event.target.value)} value={selectedPlayer?.profileId ?? ""}>
+                  {players.map((player) => (
+                    <option key={player.profileId} value={player.profileId}>
+                      {player.companyName} / {player.founderName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                操作类型
+                <select onChange={(event) => setCoinSource(event.target.value)} value={coinSource}>
+                  <option value="admin_grant">后台发放</option>
+                  <option value="admin_deduct">后台扣减</option>
+                  <option value="admin_correction">余额修正</option>
+                </select>
+              </label>
+              <label>
+                变动数量
+                <input onChange={(event) => setCoinAmount(event.target.value)} value={coinAmount} />
+              </label>
+              <label>
+                操作原因
+                <input onChange={(event) => setCoinReason(event.target.value)} value={coinReason} />
+              </label>
+              <button type="submit">二次确认后提交</button>
+            </form>
+
+            <form className="operation-panel" onSubmit={(event) => void submitVipAdjustment(event)}>
+              <h2>VIP 查询和经验调整</h2>
+              <p className="panel-note">
+                当前玩家：{selectedPlayer === null ? "暂无玩家" : `${selectedPlayer.companyName}，VIP ${selectedPlayer.vipLevel}，经验 ${selectedPlayer.vipExperience}`}
+              </p>
+              <label>
+                VIP 经验
+                <input onChange={(event) => setVipExperience(event.target.value)} value={vipExperience} />
+              </label>
+              <label>
+                调整原因
+                <input onChange={(event) => setVipReason(event.target.value)} value={vipReason} />
+              </label>
+              <button type="submit">二次确认后调整</button>
+            </form>
+          </section>
+        )}
+
+        {activeSection === "titles" && (
+          <section className="operation-grid" aria-label="称号与补偿操作">
+            <form className="operation-panel" onSubmit={(event) => void submitTitleAction(event, "grant")}>
+              <h2>称号发放与回收</h2>
+              <label>
+                玩家
+                <select onChange={(event) => setSelectedProfileId(event.target.value)} value={selectedPlayer?.profileId ?? ""}>
+                  {players.map((player) => (
+                    <option key={player.profileId} value={player.profileId}>
+                      {player.companyName} / {player.founderName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                称号
+                <select onChange={(event) => setSelectedTitleId(event.target.value)} value={selectedTitleId}>
+                  {configCenter.titles.map((title) => (
+                    <option key={title.id} value={title.id}>
+                      {title.name} / {title.source}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                操作原因
+                <input onChange={(event) => setTitleReason(event.target.value)} value={titleReason} />
+              </label>
+              <div className="button-row">
+                <button type="submit">二次确认后发放</button>
+                <button className="secondary-button" type="button" onClick={(event) => void submitTitleAction(event, "revoke")}>
+                  二次确认后回收
+                </button>
+              </div>
+            </form>
+
+            <form className="operation-panel" onSubmit={(event) => void submitMailCompensation(event)}>
+              <h2>邮件补偿</h2>
+              <p className="panel-note">
+                当前玩家：{selectedPlayer === null ? "暂无玩家" : `${selectedPlayer.companyName}，平台币 ${formatNumber(selectedPlayer.walletBalance)}`}
+              </p>
+              <label>
+                邮件标题
+                <input onChange={(event) => setMailSubject(event.target.value)} value={mailSubject} />
+              </label>
+              <label>
+                邮件正文
+                <input onChange={(event) => setMailBody(event.target.value)} value={mailBody} />
+              </label>
+              <label>
+                补偿平台币
+                <input onChange={(event) => setMailCoins(event.target.value)} value={mailCoins} />
+              </label>
+              <button type="submit">二次确认后发送</button>
+            </form>
+
+            <section className="operation-panel">
+              <h2>封禁 / 解封</h2>
+              <label>
+                处理原因
+                <input onChange={(event) => setStatusReason(event.target.value)} value={statusReason} />
+              </label>
+              <div className="button-row">
+                <button type="button" onClick={() => void submitProfileStatus("banned")}>封禁玩家</button>
+                <button className="secondary-button" type="button" onClick={() => void submitProfileStatus("active")}>解封玩家</button>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeSection === "cross" && (
+          <section className="operation-grid" aria-label="跨服分组管理">
+            <form className="operation-panel" onSubmit={(event) => void submitGroupAssignment(event)}>
+              <h2>区服入池调整</h2>
+              <label>
+                区服 ID
+                <input onChange={(event) => setAssignServerId(event.target.value)} value={assignServerId} />
+              </label>
+              <label>
+                目标跨服池
+                <select onChange={(event) => setAssignGroupId(event.target.value)} value={assignGroupId}>
+                  {crossGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                调整原因
+                <input onChange={(event) => setAssignReason(event.target.value)} value={assignReason} />
+              </label>
+              <button type="submit">二次确认后调整</button>
+            </form>
+
+            <section className="table-section compact-table" aria-label="跨服分组列表">
+              <div className="table-toolbar">
+                <strong>跨服分组</strong>
+                <span>{crossGroups.length} 个池</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>分组</th>
+                      <th>规则</th>
+                      <th>区服</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crossGroups.map((group) => (
+                      <tr key={group.id}>
+                        <td>{group.name}</td>
+                        <td>{group.ruleLabel}</td>
+                        <td>{group.serverIds.join("、")}</td>
+                        <td>{group.isActive ? "启用" : "停用"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeSection === "configs" && (
+          <section className="stacked-sections" aria-label="配置与排行榜">
+            <form className="operation-panel narrow-panel" onSubmit={(event) => void submitLeaderboardSettlement(event)}>
+              <h2>排行榜手动结算</h2>
+              <label>
+                区服 ID
+                <input onChange={(event) => setSettleServerId(event.target.value)} value={settleServerId} />
+              </label>
+              <label>
+                结算原因
+                <input onChange={(event) => setSettleReason(event.target.value)} value={settleReason} />
+              </label>
+              <button type="submit">二次确认后结算</button>
+            </form>
+
+            <section className="table-section" aria-label="VIP 配置列表">
+              <div className="table-toolbar">
+                <strong>VIP 配置清单</strong>
+                <span>配置错误会在提交接口被拦截</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>等级</th>
+                      <th>所需经验</th>
+                      <th>每日礼包</th>
+                      <th>行动力上限</th>
+                      <th>商店折扣</th>
+                      <th>称号</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vipConfigs.map((config) => (
+                      <tr key={config.level}>
+                        <td>{config.name}</td>
+                        <td>{formatNumber(config.requiredExperience)}</td>
+                        <td>{config.dailyGiftPlatformCoins} 平台币 / {config.dailyGiftActionPower} 行动力</td>
+                        <td>+{config.actionPowerLimitBonus}</td>
+                        <td>{config.shopDiscountBasisPoints / 100}%</td>
+                        <td>{config.title}</td>
+                        <td>{config.summary}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="称号成就知识商品配置">
+              <div className="table-toolbar">
+                <strong>称号 / 成就 / 知识 / 商品</strong>
+                <span>{configCenter.titles.length} 个称号，{configCenter.knowledgeEntries.length} 条知识</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>称号配置</h3>
+                  {configCenter.titles.slice(0, 6).map((title) => (
+                    <p key={title.id}>{title.name}：{title.bonusLabel}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>成就配置</h3>
+                  {configCenter.achievements.slice(0, 6).map((achievement) => (
+                    <p key={achievement.id}>{achievement.name}：{achievement.conditionKind} ≥ {achievement.conditionValue}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>知识审核字段</h3>
+                  {configCenter.knowledgeEntries.slice(0, 6).map((knowledge) => (
+                    <p key={knowledge.id}>{knowledge.title}：{knowledge.collectedAt} / {knowledge.contentVersion} / {knowledge.auditStatus}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>商品配置</h3>
+                  {configCenter.shopProducts.slice(0, 6).map((product) => (
+                    <p key={product.id}>{product.name}：{formatNumber(product.pricePlatformCoins)} 平台币 / {product.isActive ? "启用" : "停用"}</p>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeSection === "audit" && (
+          <section className="table-section" aria-label="操作审计日志">
+            <div className="table-toolbar">
+              <strong>操作审计日志</strong>
+              <span>最近 {auditLogs.length} 条</span>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>管理员</th>
+                    <th>动作</th>
+                    <th>对象</th>
+                    <th>详情</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td>{new Date(log.createdAt).toLocaleString("zh-CN")}</td>
+                      <td>{log.adminUsername}</td>
+                      <td>{log.action}</td>
+                      <td>{log.targetType} / {log.targetId ?? "-"}</td>
+                      <td>{log.detail ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
       </section>
     </main>
   );

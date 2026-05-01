@@ -444,6 +444,287 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/players") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminPlayers(url.searchParams.get("keyword") ?? "", readToday(request)), traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/config-center") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.getAdminConfigCenter(), traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/audit-logs") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminAuditLogs(), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/titles/grant") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const titleId = readString(body, "titleId");
+        const reason = readString(body, "reason");
+        if (profileId === "" || titleId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, titleId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.grantAdminTitle(admin.id, profileId, titleId, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "TITLE_NOT_FOUND") {
+          sendJson(response, 404, failure("TITLE_NOT_FOUND", "Title config not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/titles/revoke") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const titleId = readString(body, "titleId");
+        const reason = readString(body, "reason");
+        if (profileId === "" || titleId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, titleId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.revokeAdminTitle(admin.id, profileId, titleId, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "TITLE_NOT_FOUND") {
+          sendJson(response, 404, failure("TITLE_NOT_FOUND", "Player title not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/mail/compensate") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const subject = readString(body, "subject");
+        const mailBody = readString(body, "body");
+        const reason = readString(body, "reason");
+        const platformCoins = readInteger(body, "platformCoins");
+        if (profileId === "" || subject.length < 2 || mailBody.length < 2 || reason.length < 2 || platformCoins === undefined || platformCoins < 0) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, subject, body, non-negative platformCoins and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.sendAdminMailCompensation(admin.id, profileId, subject, mailBody, platformCoins, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "INSUFFICIENT_PLATFORM_COINS") {
+          sendJson(response, 409, failure("INSUFFICIENT_PLATFORM_COINS", "Platform coin balance cannot become negative.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/players/status") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const status = body.status === "active" || body.status === "banned" ? body.status : undefined;
+        const reason = readString(body, "reason");
+        if (profileId === "" || status === undefined || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, status and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.updateAdminProfileStatus(admin.id, profileId, status, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/leaderboards/settle") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readString(body, "serverId");
+        const reason = readString(body, "reason");
+        if (serverId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.settleAdminLeaderboards(admin.id, serverId, readToday(request), reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "No player profile found in this server.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/cross-server/groups") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminCrossServerGroups(), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/cross-server/groups/assign") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readString(body, "serverId");
+        const groupId = readString(body, "groupId");
+        const reason = readString(body, "reason");
+        if (serverId === "" || groupId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, groupId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.assignAdminCrossServerGroup(admin.id, serverId, groupId, reason);
+        if (result === "SERVER_NOT_FOUND") {
+          sendJson(response, 404, failure("SERVER_NOT_FOUND", "Server not found.", traceId));
+          return;
+        }
+        if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+          sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross server group not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/wallet/adjust") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);

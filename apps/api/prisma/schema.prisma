@@ -36,6 +36,7 @@ model AdminUser {
   sessions     AdminSession[]
   auditLogs    AdminAuditLog[]
   platformCoinLedgers PlatformCoinLedger[]
+  mailCompensations AdminMailCompensation[]
 }
 
 model AdminSession {
@@ -58,6 +59,22 @@ model AdminAuditLog {
   createdAt   DateTime  @default(now())
   adminUser   AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
 
+  @@index([adminUserId, createdAt])
+}
+
+model AdminMailCompensation {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  adminUserId String        @db.VarChar(36)
+  subject     String        @db.VarChar(80)
+  body        String        @db.VarChar(220)
+  platformCoins Int        @default(0)
+  reason      String        @db.VarChar(160)
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  adminUser   AdminUser     @relation(fields: [adminUserId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, createdAt])
   @@index([adminUserId, createdAt])
 }
 
@@ -152,6 +169,7 @@ model PlayerProfile {
   pendingEventCount Int    @default(2)
   unreadMailCount Int      @default(1)
   debtWarning String       @default("低") @db.VarChar(8)
+  status      String       @default("active") @db.VarChar(16)
   createdAt   DateTime     @default(now())
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
   server      GameServer   @relation(fields: [serverId], references: [id], onDelete: Restrict)
@@ -179,6 +197,7 @@ model PlayerProfile {
   guildMembership GuildMember?
   guildHelpRequests GuildHelpRequest[]
   crossServerSignups CrossServerSignup[]
+  mailCompensations AdminMailCompensation[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
