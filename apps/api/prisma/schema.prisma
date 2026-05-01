@@ -962,6 +962,7 @@ model EventConfig {
   optionBCustomerSatisfaction Int @default(0)
   optionBRiskDelta Int    @default(0)
   followupEventId String? @db.VarChar(48)
+  knowledgeId String?     @db.VarChar(48)
   knowledgeTitle String?  @db.VarChar(64)
   riskExplanation String  @db.VarChar(220)
   sortOrder Int           @default(0)
@@ -969,6 +970,7 @@ model EventConfig {
   events    PlayerEvent[]
 
   @@index([channel, sortOrder])
+  @@index([knowledgeId])
 }
 
 model PlayerEvent {
@@ -1278,12 +1280,14 @@ model RandomTaskConfig {
   optionBReputation Int              @default(0)
   optionBCompanyExperience Int       @default(0)
   riskLabel       String             @db.VarChar(32)
+  knowledgeId     String?            @db.VarChar(48)
   sortOrder       Int                @default(0)
   isActive        Boolean            @default(true)
   createdAt       DateTime           @default(now())
   playerTasks     PlayerRandomTask[]
 
   @@index([category, sortOrder])
+  @@index([knowledgeId])
 }
 
 model PlayerRandomTask {

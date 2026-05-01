@@ -113,6 +113,18 @@ export type CompanyGrowthRecord = {
   };
 };
 
+export type KnowledgeLinkRecord = {
+  id: string;
+  title: string;
+  summary: string;
+  sourceName: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  disclaimer: string;
+  isUnlocked: boolean;
+};
+
 export type RandomTaskRecord = {
   id: string;
   configId: string;
@@ -126,6 +138,7 @@ export type RandomTaskRecord = {
   expiresAt: string;
   selectedOption: "A" | "B" | null;
   resultSummary: string | null;
+  knowledge: KnowledgeLinkRecord | null;
   options: Array<{
     key: "A" | "B";
     label: string;
@@ -294,6 +307,7 @@ export type EventRecord = {
   knowledgeTitle: string | null;
   knowledgeUnlocked: boolean;
   riskExplanation: string;
+  knowledge: KnowledgeLinkRecord | null;
   createdAt: string;
   resolvedAt: string | null;
 };
@@ -306,6 +320,7 @@ export type EventChoiceRecord = {
     summary: string;
     riskExplanation: string;
     knowledgeUnlocked: boolean;
+    knowledge: KnowledgeLinkRecord | null;
     followupEventId: string | null;
   };
 };
@@ -1338,10 +1353,11 @@ const toEventRecord = (event: {
     optionBReputation: number;
     optionBCustomerSatisfaction: number;
     optionBRiskDelta: number;
+    knowledgeId: string | null;
     knowledgeTitle: string | null;
     riskExplanation: string;
   };
-}): EventRecord => ({
+}, knowledge?: KnowledgeLinkRecord | null): EventRecord => ({
   id: event.id,
   configId: event.configId,
   title: event.config.title,
@@ -1377,6 +1393,7 @@ const toEventRecord = (event: {
   knowledgeTitle: event.config.knowledgeTitle,
   knowledgeUnlocked: event.knowledgeUnlocked,
   riskExplanation: event.config.riskExplanation,
+  knowledge: knowledge ?? null,
   createdAt: event.createdAt.toISOString(),
   resolvedAt: event.resolvedAt?.toISOString() ?? null
 });
@@ -2730,6 +2747,30 @@ const toAchievementRecord = (achievement: {
 
 const LOCKED_KNOWLEDGE_SUMMARY = "完成对应经营履历后解锁完整知识卡。";
 
+const toKnowledgeLinkRecord = (
+  knowledge: {
+    id: string;
+    title: string;
+    summary: string;
+    sourceName: string;
+    sourceUrl: string;
+    collectedAt: string;
+    contentVersion: string;
+    disclaimer: string;
+  } | null | undefined,
+  isUnlocked: boolean
+): KnowledgeLinkRecord | null => knowledge === null || knowledge === undefined ? null : {
+  id: knowledge.id,
+  title: knowledge.title,
+  summary: isUnlocked ? knowledge.summary : LOCKED_KNOWLEDGE_SUMMARY,
+  sourceName: knowledge.sourceName,
+  sourceUrl: knowledge.sourceUrl,
+  collectedAt: knowledge.collectedAt,
+  contentVersion: knowledge.contentVersion,
+  disclaimer: knowledge.disclaimer,
+  isUnlocked
+};
+
 const toKnowledgeEntryRecord = (
   knowledge: {
     id: string;
@@ -2970,8 +3011,9 @@ const toRandomTaskRecord = (task: {
     optionBReputation: number;
     optionBCompanyExperience: number;
     riskLabel: string;
+    knowledgeId: string | null;
   };
-}): RandomTaskRecord => ({
+}, knowledge?: KnowledgeLinkRecord | null): RandomTaskRecord => ({
   id: task.id,
   configId: task.config.id,
   category: task.config.category,
@@ -2984,6 +3026,7 @@ const toRandomTaskRecord = (task: {
   expiresAt: task.expiresAt.toISOString(),
   selectedOption: task.selectedOption === "A" || task.selectedOption === "B" ? task.selectedOption : null,
   resultSummary: task.resultSummary,
+  knowledge: knowledge ?? null,
   options: [
     {
       key: "A",
@@ -3525,10 +3568,23 @@ export const createPrismaGameRepository = (
       include: { config: true },
       orderBy: [{ status: "asc" }, { createdAt: "asc" }]
     });
+    const knowledgeIds = [...new Set(tasks.map((task) => task.config.knowledgeId).filter((id): id is string => id !== null))];
+    const [knowledgeEntries, knowledgeUnlocks] = await Promise.all([
+      knowledgeIds.length === 0 ? [] : prisma.knowledgeEntry.findMany({ where: { id: { in: knowledgeIds } } }),
+      knowledgeIds.length === 0 ? [] : prisma.playerKnowledgeUnlock.findMany({ where: { profileId: profile.id, knowledgeId: { in: knowledgeIds } } })
+    ]);
+    const knowledgeById = new Map(knowledgeEntries.map((knowledge) => [knowledge.id, knowledge]));
+    const unlockedKnowledgeIds = new Set(knowledgeUnlocks.map((unlock) => unlock.knowledgeId));
 
     return {
       profile: toProfileRecord(currentProfile),
-      tasks: tasks.map(toRandomTaskRecord),
+      tasks: tasks.map((task) => toRandomTaskRecord(
+        task,
+        toKnowledgeLinkRecord(
+          task.config.knowledgeId === null ? null : knowledgeById.get(task.config.knowledgeId),
+          task.config.knowledgeId !== null && unlockedKnowledgeIds.has(task.config.knowledgeId)
+        )
+      )),
       dailyLimit,
       pendingCount: tasks.filter((task) => task.status === "pending").length,
       handledToday: tasks.filter((task) => task.status !== "pending").length
@@ -4531,6 +4587,13 @@ export const createPrismaGameRepository = (
       include: { config: true },
       orderBy: [{ status: "asc" }, { createdAt: "asc" }]
     });
+    const knowledgeIds = [...new Set(events.map((event) => event.config.knowledgeId).filter((id): id is string => id !== null))];
+    const [knowledgeEntries, knowledgeUnlocks] = await Promise.all([
+      knowledgeIds.length === 0 ? [] : prisma.knowledgeEntry.findMany({ where: { id: { in: knowledgeIds } } }),
+      knowledgeIds.length === 0 ? [] : prisma.playerKnowledgeUnlock.findMany({ where: { profileId: profile.id, knowledgeId: { in: knowledgeIds } } })
+    ]);
+    const knowledgeById = new Map(knowledgeEntries.map((knowledge) => [knowledge.id, knowledge]));
+    const unlockedKnowledgeIds = new Set(knowledgeUnlocks.map((unlock) => unlock.knowledgeId));
     const pendingCount = events.filter((event) => event.status !== "resolved").length;
     if (pendingCount !== profile.pendingEventCount) {
       await prisma.playerProfile.update({
@@ -4539,7 +4602,13 @@ export const createPrismaGameRepository = (
       });
     }
 
-    return events.map(toEventRecord);
+    return events.map((event) => toEventRecord(
+      event,
+      toKnowledgeLinkRecord(
+        event.config.knowledgeId === null ? null : knowledgeById.get(event.config.knowledgeId),
+        event.config.knowledgeId !== null && unlockedKnowledgeIds.has(event.config.knowledgeId)
+      )
+    ));
   },
 
   async chooseEvent(accountId, serverId, eventId, option) {
@@ -4587,11 +4656,12 @@ export const createPrismaGameRepository = (
           status: "resolved",
           selectedOption: option,
           resultSummary,
-          knowledgeUnlocked: event.config.knowledgeTitle !== null,
+          knowledgeUnlocked: event.config.knowledgeId !== null,
           resolvedAt: new Date()
         },
         include: { config: true }
       });
+      await unlockKnowledge(tx as PrismaClient, profile.id, event.config.knowledgeId, "event");
 
       let followupEvent: typeof updatedEvent | null = null;
       if (event.config.followupEventId !== null) {
@@ -4644,7 +4714,11 @@ export const createPrismaGameRepository = (
       return { event: updatedEvent, profile: updatedProfile, followupEvent };
     });
 
-    const eventRecord = toEventRecord(settled.event);
+    const knowledgeEntry = event.config.knowledgeId === null
+      ? null
+      : await prisma.knowledgeEntry.findUnique({ where: { id: event.config.knowledgeId } });
+    const knowledge = toKnowledgeLinkRecord(knowledgeEntry, event.config.knowledgeId !== null);
+    const eventRecord = toEventRecord(settled.event, knowledge);
     return {
       event: eventRecord,
       finance: toCompanyFinanceRecord(toProfileRecord(settled.profile)),
@@ -4652,7 +4726,8 @@ export const createPrismaGameRepository = (
       result: {
         summary: resultSummary,
         riskExplanation: event.config.riskExplanation,
-        knowledgeUnlocked: event.config.knowledgeTitle !== null,
+        knowledgeUnlocked: event.config.knowledgeId !== null,
+        knowledge,
         followupEventId: settled.followupEvent?.id ?? null
       }
     };

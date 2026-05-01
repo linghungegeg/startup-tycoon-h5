@@ -686,6 +686,7 @@ const randomTaskConfigs = [
     optionBReputation: 80,
     optionBCompanyExperience: 40,
     riskLabel: "项目节奏",
+    knowledgeId: "contract-acceptance-payment",
     sortOrder: 1,
     isActive: true
   },
@@ -708,6 +709,7 @@ const randomTaskConfigs = [
     optionBReputation: 120,
     optionBCompanyExperience: 45,
     riskLabel: "员工压力",
+    knowledgeId: "labor-overtime-pay",
     sortOrder: 2,
     isActive: true
   },
@@ -730,6 +732,7 @@ const randomTaskConfigs = [
     optionBReputation: 160,
     optionBCompanyExperience: 35,
     riskLabel: "品牌口碑",
+    knowledgeId: "ad-false-promotion",
     sortOrder: 3,
     isActive: true
   },
@@ -752,6 +755,7 @@ const randomTaskConfigs = [
     optionBReputation: -80,
     optionBCompanyExperience: 25,
     riskLabel: "现金流",
+    knowledgeId: "cashflow-safety-line",
     sortOrder: 4,
     isActive: true
   },
@@ -774,6 +778,7 @@ const randomTaskConfigs = [
     optionBReputation: -120,
     optionBCompanyExperience: 35,
     riskLabel: "市场竞争",
+    knowledgeId: "platform-unfair-competition",
     sortOrder: 5,
     isActive: true
   },
@@ -796,6 +801,7 @@ const randomTaskConfigs = [
     optionBReputation: 90,
     optionBCompanyExperience: 45,
     riskLabel: "赛季机会",
+    knowledgeId: "ai-agent-season-playbook",
     sortOrder: 6,
     isActive: true
   },
@@ -818,6 +824,7 @@ const randomTaskConfigs = [
     optionBReputation: -120,
     optionBCompanyExperience: 30,
     riskLabel: "融资条款",
+    knowledgeId: "capital-term-sheet",
     sortOrder: 7,
     isActive: true
   },
@@ -840,6 +847,7 @@ const randomTaskConfigs = [
     optionBReputation: -60,
     optionBCompanyExperience: 25,
     riskLabel: "贷款利率",
+    knowledgeId: "capital-loan-contract",
     sortOrder: 8,
     isActive: true
   }
@@ -866,6 +874,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: 0,
     optionBRiskDelta: 1,
     followupEventId: "customer-contract-review",
+    knowledgeId: "labor-written-contract",
     knowledgeTitle: "劳动合同签署风险",
     riskExplanation: "入职资料缺口会放大劳动争议和客户现场管理风险，越早补齐越能降低后续赔偿压力。",
     sortOrder: 1
@@ -890,6 +899,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: -4,
     optionBRiskDelta: 1,
     followupEventId: null,
+    knowledgeId: "contract-acceptance-payment",
     knowledgeTitle: "项目验收条款",
     riskExplanation: "验收周期压缩会提高短期签约速度，但也会压缩纠错时间，回款条款不清时容易形成争议。",
     sortOrder: 2
@@ -914,6 +924,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: 0,
     optionBRiskDelta: 1,
     followupEventId: null,
+    knowledgeId: "cashflow-safety-line",
     knowledgeTitle: "现金流安全垫",
     riskExplanation: "固定支出持续上升时，现金安全垫不足会限制招聘、交付和应急谈判能力。",
     sortOrder: 3
@@ -938,6 +949,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: -1,
     optionBRiskDelta: 1,
     followupEventId: null,
+    knowledgeId: "ad-false-promotion",
     knowledgeTitle: "客户舆情响应",
     riskExplanation: "舆情事件拖延处理会扩大客户不确定感，透明说明通常能降低后续信任成本。",
     sortOrder: 4
@@ -962,6 +974,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: 0,
     optionBRiskDelta: 1,
     followupEventId: null,
+    knowledgeId: "capital-debt-restructure",
     knowledgeTitle: "融资失败后的现金流替代路线",
     riskExplanation: "融资失败不会直接补充现金，越接近资金紧张区间，越需要用回款、降本或短期授信维持经营安全垫。",
     sortOrder: 5
@@ -986,6 +999,7 @@ const eventConfigs = [
     optionBCustomerSatisfaction: -5,
     optionBRiskDelta: 1,
     followupEventId: null,
+    knowledgeId: "ip-software-copyright",
     knowledgeTitle: "技术债和产品稳定性",
     riskExplanation: "产品用户增长会放大历史技术债，服务器成本、客服压力和口碑风险会一起出现。",
     sortOrder: 6

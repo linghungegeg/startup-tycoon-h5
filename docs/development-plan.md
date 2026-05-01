@@ -1865,6 +1865,21 @@ VIP 权益：
 - 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 22 knowledge|phase 14 achievements" --import tsx apps/api/test/http.test.ts`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`，其余全量回归按本阶段收口执行。
 - 遗留风险：事件结算页目前仍以知识标题和风险解释为主，尚未把每个事件结算结果直接展开完整知识卡；随机任务结果页也尚未展示完整知识卡入口。后续若继续 Phase 22，应单独做“事件/随机任务结算知识卡入口”批次。
 
+### Phase 22 第二实施批次阶段总结：事件/随机任务知识卡入口
+
+- 当前稳定点：`584d89f feat: expand knowledge cards`。
+- 完成内容：经营事件配置和随机任务配置新增可选知识卡关联；事件列表、事件结算、随机任务列表和随机任务结算返回关联知识卡摘要、来源、版本、采集日期、免责声明和解锁状态。
+- 玩法接入：事件结算会幂等解锁关联知识卡，并在结算结果中返回已解锁知识入口；随机任务结算返回关联知识摘要，帮助解释经营选择的风险/收益，但不直接解锁完整正文，避免变成刷知识奖励入口。
+- 前台变化：专属经理事件详情展示相关知识卡、来源和知识库入口；已处理事件展示结算后的知识卡结果块；随机任务详情和短决策弹窗展示相关知识卡摘要，结算提示追加知识卡标题。
+- 规则边界：本批不新增知识卡内容池、不改变随机任务生成、公平轮换、行动力消耗、奖励公式、经营道具修正、事件选项和知识支线奖励；只接知识卡解释入口。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写事件/随机任务关联知识卡失败测试，再补 schema、seed、repository 和前台入口。
+  - Browser Use：需打开 `http://127.0.0.1:5173/` 验收专属经理事件详情、随机任务弹窗和知识库入口。
+  - Build Web Apps：前台复用既有专属经理详情、结果块和荣誉中心知识库，不新增营销页式 UI。
+  - Game Studio：知识入口作为经营解释层嵌入现有短决策流，不强制弹窗、不遮挡 HUD、底部导航和专属经理主流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "linked knowledge" --import tsx apps/api/test/http.test.ts`、`npm run db:generate -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`，其余全量回归按本批收口执行。
+- 遗留风险：主线任务、支线任务和更细的事件结算解释仍可继续增强；本批先完成已实现事件/随机任务链路，不扩展新任务内容和后台配置页。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

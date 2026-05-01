@@ -190,6 +190,7 @@ type RandomTask = {
   expiresAt: string;
   selectedOption: "A" | "B" | null;
   resultSummary: string | null;
+  knowledge: KnowledgeLink | null;
   options: Array<{
     key: "A" | "B";
     label: string;
@@ -269,6 +270,7 @@ type BusinessEvent = {
   knowledgeTitle: string | null;
   knowledgeUnlocked: boolean;
   riskExplanation: string;
+  knowledge: KnowledgeLink | null;
   createdAt: string;
   resolvedAt: string | null;
 };
@@ -281,6 +283,7 @@ type EventChoiceResult = {
     summary: string;
     riskExplanation: string;
     knowledgeUnlocked: boolean;
+    knowledge: KnowledgeLink | null;
     followupEventId: string | null;
   };
 };
@@ -780,6 +783,11 @@ type KnowledgeEntry = {
   isUnlocked: boolean;
   unlockedAt: string | null;
 };
+
+type KnowledgeLink = Pick<
+  KnowledgeEntry,
+  "id" | "title" | "summary" | "sourceName" | "sourceUrl" | "collectedAt" | "contentVersion" | "disclaimer" | "isUnlocked"
+>;
 
 type GuildCenter = {
   guild: {
@@ -1528,6 +1536,13 @@ function App() {
     const knowledgeId = activeKnowledgeTask.unlockKind === "compliance" ? "contract-acceptance-payment" : "labor-written-contract";
     return knowledgeEntries.find((entry) => entry.id === knowledgeId);
   }, [activeKnowledgeTask, knowledgeEntries]);
+  const openKnowledgeLink = useCallback((knowledge: KnowledgeLink | null): void => {
+    if (knowledge === null) {
+      return;
+    }
+    setSelectedKnowledgeEntryId(knowledge.id);
+    setNativeHomePage("leaderboard");
+  }, []);
   const reportTelemetry = useCallback((
     token: string,
     nextServerId: string,
@@ -3182,7 +3197,7 @@ function App() {
     if (response.success) {
       setRandomTaskCenter(response.data.center);
       setProfile(response.data.profile);
-      setRandomTaskNotice(response.data.result);
+      setRandomTaskNotice(response.data.task.knowledge === null ? response.data.result : `${response.data.result} · 相关知识卡：${response.data.task.knowledge.title}`);
       setRandomTaskError("");
       setRandomTaskModalId("");
       setRandomTaskModifierItemId("");
@@ -3436,7 +3451,7 @@ function App() {
 
     if (response.success) {
       setCompanyFinance(response.data.finance);
-      setEventNotice(response.data.result.summary);
+      setEventNotice(response.data.result.knowledge === null ? response.data.result.summary : `${response.data.result.summary} · 已解锁知识卡：${response.data.result.knowledge.title}`);
       setEventError("");
       await loadEvents(account.token, selectedServer.id);
       await loadTasks(account.token, selectedServer.id);
@@ -5866,9 +5881,33 @@ function App() {
                           </div>
                           <div>
                             <dt>知识点</dt>
-                            <dd>{selectedEvent.knowledgeUnlocked ? selectedEvent.knowledgeTitle : selectedEvent.knowledgeTitle ?? "待解锁"}</dd>
+                            <dd>{selectedEvent.knowledge?.title ?? selectedEvent.knowledgeTitle ?? "待解锁"} · {selectedEvent.knowledge?.isUnlocked ? "已解锁" : "待解锁"}</dd>
                           </div>
+                          {selectedEvent.knowledge && (
+                            <div>
+                              <dt>相关知识卡</dt>
+                              <dd>
+                                {selectedEvent.knowledge.summary}
+                                <button type="button" onClick={() => openKnowledgeLink(selectedEvent.knowledge)}>查看知识库</button>
+                              </dd>
+                            </div>
+                          )}
+                          {selectedEvent.knowledge && (
+                            <div>
+                              <dt>来源</dt>
+                              <dd>{selectedEvent.knowledge.sourceName} · {selectedEvent.knowledge.collectedAt}</dd>
+                            </div>
+                          )}
                         </dl>
+
+                        {selectedEvent.status === "resolved" && selectedEvent.knowledge && (
+                          <section className="event-result">
+                            <strong>相关知识卡</strong>
+                            <p>{selectedEvent.knowledge.title}：{selectedEvent.knowledge.summary}</p>
+                            <span>{selectedEvent.knowledge.sourceName} · {selectedEvent.knowledge.contentVersion}</span>
+                            <button type="button" onClick={() => openKnowledgeLink(selectedEvent.knowledge)}>查看完整卡片</button>
+                          </section>
+                        )}
 
                         {selectedEvent.status === "pending" ? (
                           <div className="event-options">
@@ -5936,6 +5975,12 @@ function App() {
                             <dt>待办说明</dt>
                             <dd>随机任务第一触达使用独立短决策弹窗；在专属经理中可随时重新打开。</dd>
                           </div>
+                          {selectedRandomTask.knowledge && (
+                            <div>
+                              <dt>相关知识卡</dt>
+                              <dd>{selectedRandomTask.knowledge.title} · {selectedRandomTask.knowledge.isUnlocked ? "已解锁" : "结算后查看提示"}</dd>
+                            </div>
+                          )}
                         </dl>
 
                         <div className="event-options">
@@ -6056,6 +6101,15 @@ function App() {
 
                 <div className="random-task-modal-body">
                   <p>{activeRandomTask.description}</p>
+
+                  {activeRandomTask.knowledge && (
+                    <section className="event-result">
+                      <strong>相关知识卡</strong>
+                      <p>{activeRandomTask.knowledge.title}：{activeRandomTask.knowledge.summary}</p>
+                      <span>{activeRandomTask.knowledge.sourceName} · {activeRandomTask.knowledge.contentVersion}</span>
+                      <button type="button" onClick={() => openKnowledgeLink(activeRandomTask.knowledge)}>查看知识库</button>
+                    </section>
+                  )}
 
                   {(randomTaskNotice || randomTaskError) && (
                     <span className={randomTaskError ? "random-task-error" : "random-task-notice"}>

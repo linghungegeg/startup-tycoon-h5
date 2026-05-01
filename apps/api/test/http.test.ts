@@ -649,7 +649,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 0,
       optionBReputation: -80,
-      optionBCompanyExperience: 25
+      optionBCompanyExperience: 25,
+      knowledgeId: "cashflow-safety-line"
     },
     {
       id: "random-market-counter",
@@ -669,7 +670,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 0,
       optionBReputation: -120,
-      optionBCompanyExperience: 35
+      optionBCompanyExperience: 35,
+      knowledgeId: "platform-unfair-competition"
     },
     {
       id: "random-media-interview",
@@ -689,7 +691,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 0,
       optionBReputation: 160,
-      optionBCompanyExperience: 35
+      optionBCompanyExperience: 35,
+      knowledgeId: "ad-false-promotion"
     },
     {
       id: "random-funding-term-sheet",
@@ -709,7 +712,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 30000,
       optionBReputation: -120,
-      optionBCompanyExperience: 30
+      optionBCompanyExperience: 30,
+      knowledgeId: "capital-term-sheet"
     },
     {
       id: "random-loan-rate-review",
@@ -729,7 +733,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 20000,
       optionBReputation: -60,
-      optionBCompanyExperience: 25
+      optionBCompanyExperience: 25,
+      knowledgeId: "capital-loan-contract"
     },
     {
       id: "random-season-opportunity",
@@ -749,7 +754,8 @@ const createTestRepository = (): GameRepository => {
       optionBActionPower: 0,
       optionBCash: 20000,
       optionBReputation: 90,
-      optionBCompanyExperience: 45
+      optionBCompanyExperience: 45,
+      knowledgeId: "ai-agent-season-playbook"
     }
   ];
   const playerRandomTasks = new Map<string, RandomTaskCenterRecord["tasks"][number]>();
@@ -774,6 +780,7 @@ const createTestRepository = (): GameRepository => {
       optionBCustomerSatisfaction: 0,
       optionBRiskDelta: 1,
       followupEventId: "customer-contract-review",
+      knowledgeId: "labor-written-contract",
       knowledgeTitle: "劳动合同签署风险",
       riskExplanation: "入职资料缺口会放大劳动争议和客户现场管理风险。"
     },
@@ -797,6 +804,7 @@ const createTestRepository = (): GameRepository => {
       optionBCustomerSatisfaction: -4,
       optionBRiskDelta: 1,
       followupEventId: null,
+      knowledgeId: "contract-acceptance-payment",
       knowledgeTitle: "项目验收条款",
       riskExplanation: "验收周期压缩会提高短期签约速度，但也会压缩纠错时间。"
     },
@@ -820,6 +828,7 @@ const createTestRepository = (): GameRepository => {
       optionBCustomerSatisfaction: 0,
       optionBRiskDelta: 1,
       followupEventId: null,
+      knowledgeId: "capital-debt-restructure",
       knowledgeTitle: "融资失败后的现金流替代路线",
       riskExplanation: "融资失败不会直接补充现金，需要用回款、降本或授信维持安全垫。"
     },
@@ -843,6 +852,7 @@ const createTestRepository = (): GameRepository => {
       optionBCustomerSatisfaction: -5,
       optionBRiskDelta: 2,
       followupEventId: null,
+      knowledgeId: "ip-software-copyright",
       knowledgeTitle: "技术债和产品稳定性",
       riskExplanation: "技术债过高会把增长收益转化为事故、客服和留存压力。"
     }
@@ -1219,6 +1229,25 @@ const createTestRepository = (): GameRepository => {
       riskDelta === 0 ? undefined : `风险${riskDelta > 0 ? "+" : ""}${riskDelta}`
     ].filter(Boolean).join(" / ") || "经营影响稳定";
 
+  const toKnowledgeLinkRecord = (profileId: string, knowledgeId: string | null) => {
+    const knowledge = knowledgeEntries.find((entry) => entry.id === knowledgeId);
+    if (knowledge === undefined) {
+      return null;
+    }
+    const isUnlocked = knowledgeUnlocks.has(`${profileId}:${knowledge.id}`);
+    return {
+      id: knowledge.id,
+      title: knowledge.title,
+      summary: isUnlocked ? knowledge.summary : "完成对应经营履历后解锁完整知识卡。",
+      sourceName: knowledge.sourceName,
+      sourceUrl: knowledge.sourceUrl,
+      collectedAt: knowledge.collectedAt,
+      contentVersion: knowledge.contentVersion,
+      disclaimer: knowledge.disclaimer,
+      isUnlocked
+    };
+  };
+
   const toEventRecord = (
     profileId: string,
     config: (typeof eventConfigs)[number],
@@ -1249,6 +1278,7 @@ const createTestRepository = (): GameRepository => {
     knowledgeTitle: config.knowledgeTitle,
     knowledgeUnlocked: existing?.knowledgeUnlocked ?? false,
     riskExplanation: config.riskExplanation,
+    knowledge: toKnowledgeLinkRecord(profileId, config.knowledgeId),
     createdAt: existing?.createdAt ?? new Date().toISOString(),
     resolvedAt: existing?.resolvedAt ?? null
   });
@@ -1820,6 +1850,7 @@ const createTestRepository = (): GameRepository => {
     expiresAt: `${today}T23:59:59.000Z`,
     selectedOption: null,
     resultSummary: null,
+    knowledge: toKnowledgeLinkRecord(profileId, config.knowledgeId),
     options: [
       {
         key: "A",
@@ -3126,7 +3157,9 @@ const createTestRepository = (): GameRepository => {
       event.status = "resolved";
       event.selectedOption = option;
       event.resultSummary = resultSummary;
-      event.knowledgeUnlocked = config.knowledgeTitle !== null;
+      unlockKnowledgeEntry(profile.id, config.knowledgeId, "event");
+      event.knowledgeUnlocked = config.knowledgeId !== null;
+      event.knowledge = toKnowledgeLinkRecord(profile.id, config.knowledgeId);
       event.resolvedAt = new Date().toISOString();
       profile.cash += cash;
       profile.reputation += reputation;
@@ -3156,7 +3189,8 @@ const createTestRepository = (): GameRepository => {
         result: {
           summary: resultSummary,
           riskExplanation: config.riskExplanation,
-          knowledgeUnlocked: config.knowledgeTitle !== null,
+          knowledgeUnlocked: config.knowledgeId !== null,
+          knowledge: event.knowledge,
           followupEventId: followupEvent?.id ?? null
         }
       } satisfies EventChoiceRecord;
@@ -5432,6 +5466,63 @@ test("settles event choices once, applies impact, unlocks knowledge, and trigger
     assert.equal(tasks.body.data?.find((task) => task.id === "daily-handle-event")?.progress, 1);
     assert.equal(tasks.body.data?.find((task) => task.id === "side-knowledge-labor-contract")?.progress, 1);
     assert.equal(tasks.body.data?.find((task) => task.id === "side-compliance-contract-review")?.progress, 1);
+  });
+});
+
+test("event settlement returns and unlocks linked knowledge card", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "eventknowledge");
+
+    const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(events.status, 200);
+    const event = events.body.data?.[0];
+    assert.ok(event);
+    assert.equal(event.knowledge?.id, "labor-written-contract");
+    assert.equal(event.knowledge?.isUnlocked, false);
+
+    const settled = await requestJson<EventChoiceRecord>(baseUrl, `/events/${encodeURIComponent(event.id)}/choose`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.result.knowledge?.id, "labor-written-contract");
+    assert.equal(settled.body.data?.result.knowledge?.isUnlocked, true);
+    assert.equal(settled.body.data?.event.knowledge?.sourceName, "中国人大网");
+
+    const knowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const unlocked = knowledge.body.data?.find((entry) => entry.id === "labor-written-contract");
+    assert.equal(unlocked?.isUnlocked, true);
+    assert.notEqual(unlocked?.scenarioText, "");
+  });
+});
+
+test("random task settlement returns linked knowledge summary", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "randomknowledge");
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(center.status, 200);
+    const task = center.body.data?.tasks.find((item) => item.configId === "random-cashflow-warning");
+    assert.ok(task);
+    assert.equal(task.knowledge?.id, "cashflow-safety-line");
+    assert.equal(task.knowledge?.isUnlocked, false);
+
+    const settled = await requestJson<RandomTaskActionRecord>(baseUrl, `/random-tasks/${encodeURIComponent(task.id)}/resolve`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.task.knowledge?.id, "cashflow-safety-line");
+    assert.equal(settled.body.data?.task.knowledge?.sourceName, "国家税务总局");
+    assert.equal(settled.body.data?.task.knowledge?.isUnlocked, false);
   });
 });
 
