@@ -2240,6 +2240,39 @@ export const readRandomTaskConfigWhere = (
   ...(hasSeasonPass ? {} : { category: { not: "season" as const } })
 });
 
+export const selectFairRandomTaskConfigs = <TConfig extends { category: string }>(
+  configs: TConfig[],
+  usedCategories: string[],
+  limit: number
+): TConfig[] => {
+  const selected: TConfig[] = [];
+  const selectedConfigs = new Set<TConfig>();
+  const seenCategories = new Set(usedCategories);
+  for (const config of configs) {
+    if (selected.length >= limit) {
+      return selected;
+    }
+    if (seenCategories.has(config.category)) {
+      continue;
+    }
+    selected.push(config);
+    selectedConfigs.add(config);
+    seenCategories.add(config.category);
+  }
+
+  for (const config of configs) {
+    if (selected.length >= limit) {
+      return selected;
+    }
+    if (selectedConfigs.has(config)) {
+      continue;
+    }
+    selected.push(config);
+  }
+
+  return selected;
+};
+
 const readFullLevelChest = (fullLevelOverflowExperience: number, claimedCount: number): CompanyGrowthRecord["fullLevelChest"] => {
   const earnedCount = Math.floor(fullLevelOverflowExperience / FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE);
   return {
@@ -3428,6 +3461,7 @@ export const createPrismaGameRepository = (
     const createCount = Math.max(0, Math.min(visibleCount - pendingCount, dailyLimit - existingToday.length));
     if (createCount > 0) {
       const usedConfigIds = new Set(existingToday.map((task) => task.configId));
+      const usedCategories = new Set(existingToday.map((task) => task.config.category));
       const selectedConfigs = [];
       if (hasSeasonPass && !existingToday.some((task) => task.config.category === "season")) {
         const seasonConfig = await prisma.randomTaskConfig.findFirst({
@@ -3437,14 +3471,17 @@ export const createPrismaGameRepository = (
         if (seasonConfig !== null) {
           selectedConfigs.push(seasonConfig);
           usedConfigIds.add(seasonConfig.id);
+          usedCategories.add(seasonConfig.category);
         }
       }
-      const configs = await prisma.randomTaskConfig.findMany({
-        where: readRandomTaskConfigWhere(hasSeasonPass, [...usedConfigIds]),
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-        take: createCount - selectedConfigs.length
-      });
-      selectedConfigs.push(...configs);
+      const remainingCreateCount = createCount - selectedConfigs.length;
+      if (remainingCreateCount > 0) {
+        const configs = await prisma.randomTaskConfig.findMany({
+          where: readRandomTaskConfigWhere(hasSeasonPass, [...usedConfigIds]),
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+        });
+        selectedConfigs.push(...selectFairRandomTaskConfigs(configs, [...usedCategories], remainingCreateCount));
+      }
       const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
       await prisma.playerRandomTask.createMany({
         data: selectedConfigs.map((config) => ({

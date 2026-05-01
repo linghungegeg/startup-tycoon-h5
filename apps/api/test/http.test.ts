@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { readRandomTaskConfigWhere, syncPlayerAchievementProgress } from "../src/repository.js";
+import { readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminUserRecord,
@@ -86,6 +86,24 @@ test("random task config query excludes season tasks without pass", () => {
     isActive: true,
     id: { notIn: ["used-config"] }
   });
+});
+
+test("fair random task selection prioritizes unseen categories", () => {
+  const configs = [
+    { id: "finance-1", category: "finance" },
+    { id: "finance-2", category: "finance" },
+    { id: "market-1", category: "market" },
+    { id: "loan-1", category: "loan" }
+  ];
+
+  assert.deepEqual(
+    selectFairRandomTaskConfigs(configs, [], 3).map((config) => config.id),
+    ["finance-1", "market-1", "loan-1"]
+  );
+  assert.deepEqual(
+    selectFairRandomTaskConfigs(configs, ["finance", "market", "loan"], 2).map((config) => config.id),
+    ["finance-1", "finance-2"]
+  );
 });
 
 test("achievement sync recovers from concurrent unique creation", async () => {

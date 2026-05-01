@@ -1833,6 +1833,21 @@ VIP 权益：
 - 遗留风险：随机任务生成仍是按配置顺序补齐，可继续单独评估公平轮换或任务权重；本批只修普通账号赛季任务越界和成就同步崩溃。
 - 下一阶段入口：Phase 21 第十四实施批次：可继续做随机任务生成公平轮换/权重规则，或进入下一条明确系统主线。
 
+### Phase 21 第十四实施批次阶段总结：随机任务公平轮换收口
+
+- 当前稳定点：`9e57c89 fix: guard random tasks and achievement sync`。
+- 完成内容：随机任务普通补齐逻辑从单纯按配置顺序取前几项，调整为优先选择当天尚未出现过的类别；未出现类别不足时，再按既有 `sortOrder + createdAt` 稳定顺序兜底。
+- 规则边界：普通账号继续排除 `season`；通行证账号仍优先额外生成 1 个赛季随机任务；每日处理上限、可见任务数量、任务过期时间、行动力、奖励和三类经营道具修正公式均不改变。
+- 前台表现：专属经理仍沿用既有随机任务列表、详情和短决策弹窗；首屏随机任务类别更分散，不新增权重展示、后台配置页或前台入口。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写公平选择失败测试，确认缺少类别优先选择函数，再补最小实现并接入生成链路。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用普通 QA 账号验收，确认专属经理首屏随机任务没有“赛季风口机会”，且展示项目、员工、品牌等不同类别任务。
+  - Build Web Apps：本批无前台组件改动，不新增页面、不改变深色商务手游视觉基线。
+  - Game Studio：随机任务仍从专属经理主动进入，列表、详情和短决策弹窗不遮挡主页 HUD 与底部导航。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "fair random task selection" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "random task" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：本批只做轻量公平轮换，不做概率权重、后台权重配置、任务冷却字段和新随机任务内容池；若后续需要长期运营精细化，可单独开新阶段处理。
+- 下一阶段入口：Phase 21 建议作为阶段稳定点收口；下一阶段可转入创业知识内容、活动榜/运营配置、商会/跨服深度或新的明确系统主线。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。
