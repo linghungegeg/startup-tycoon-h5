@@ -3725,6 +3725,291 @@ input {
   color: #efe2c6;
 }
 
+/* Active system pages should cover the whole game viewport, matching native pages. */
+.employee-screen,
+.project-screen,
+.funding-screen,
+.loan-screen,
+.task-screen,
+.event-screen {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 120 !important;
+  padding: 24px 24px 40px;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(246, 204, 116, 0.12), transparent 32%),
+    linear-gradient(180deg, #050b1a, #020612);
+  box-shadow: none;
+}
+
+.employee-header,
+.project-header,
+.funding-header,
+.loan-header,
+.task-header,
+.event-header {
+  grid-template-columns: 48px 1fr 48px;
+  min-height: 48px;
+  margin-bottom: 4px;
+}
+
+.employee-header button,
+.project-header button,
+.funding-header button,
+.loan-header button,
+.task-header button,
+.event-header button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #e2e8f0;
+  background: rgba(30, 41, 59, 0.92);
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.employee-header div,
+.project-header div,
+.funding-header div,
+.loan-header div,
+.task-header div,
+.event-header div {
+  justify-items: center;
+}
+
+.employee-header strong,
+.project-header strong,
+.funding-header strong,
+.loan-header strong,
+.task-header strong,
+.event-header strong {
+  color: #ffffff;
+  font-size: clamp(22px, 6vw, 30px);
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.employee-header span,
+.project-header span,
+.funding-header span,
+.loan-header span,
+.task-header span,
+.event-header span {
+  color: #94a3b8;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 800;
+}
+
+.employee-summary span,
+.project-summary span,
+.funding-summary span,
+.loan-summary span,
+.event-summary span {
+  min-height: 42px;
+  border: 1px solid rgba(246, 204, 116, 0.34);
+  border-radius: 14px;
+  color: #facc15;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-size: clamp(10px, 2.8vw, 13px);
+}
+
+.employee-list button,
+.project-list button,
+.funding-list button,
+.loan-list button,
+.task-list article,
+.event-list button,
+.employee-detail,
+.project-detail,
+.funding-detail,
+.loan-detail,
+.event-detail,
+.task-empty,
+.event-empty,
+.loan-empty,
+.employee-empty,
+.project-empty,
+.funding-empty {
+  border: 1px solid rgba(246, 204, 116, 0.28);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.74);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.employee-list button.selected,
+.project-list button.selected,
+.funding-list button.selected,
+.loan-list button.selected,
+.event-list button.selected {
+  border-color: rgba(250, 204, 21, 0.82);
+  background: rgba(250, 204, 21, 0.1);
+}
+
+.employee-actions button,
+.project-actions button,
+.funding-actions button,
+.loan-actions button,
+.loan-crisis button,
+.task-tabs button,
+.task-list button,
+.event-options button,
+.employee-empty button,
+.project-empty button {
+  border: 0;
+  border-radius: 14px;
+  color: #1b1306;
+  background: linear-gradient(180deg, #ffe58f, #d99a32);
+  box-shadow: 0 4px 0 rgba(116, 62, 10, 0.46);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+}
+
+.task-tabs button {
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.72);
+  box-shadow: none;
+}
+
+.task-tabs button.active {
+  color: #1b1306;
+  background: linear-gradient(180deg, #ffe58f, #d99a32);
+  box-shadow: 0 4px 0 rgba(116, 62, 10, 0.46);
+}
+
+.business-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.business-tabs button {
+  min-height: 38px;
+  border: 1px solid rgba(246, 204, 116, 0.28);
+  border-radius: 14px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.72);
+  font-size: clamp(11px, 3vw, 13px);
+  font-weight: 900;
+}
+
+.business-tabs button.active {
+  color: #1b1306;
+  border-color: rgba(250, 204, 21, 0.86);
+  background: linear-gradient(180deg, #ffe58f, #d99a32);
+  box-shadow: 0 4px 0 rgba(116, 62, 10, 0.46);
+}
+
+.task-tip,
+.task-notice,
+.task-error,
+.loan-notice,
+.loan-error,
+.funding-notice,
+.funding-error,
+.event-notice,
+.event-error,
+.employee-error,
+.project-error {
+  border-radius: 14px;
+  padding: 8px 12px;
+  font-size: clamp(10px, 2.8vw, 13px);
+}
+
+.employee-layout {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+.project-layout,
+.funding-layout,
+.loan-layout,
+.event-layout {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+.employee-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 4px;
+}
+
+.project-list,
+.funding-list,
+.loan-list,
+.event-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 4px;
+}
+
+.employee-list:empty {
+  display: none;
+}
+
+.employee-list button {
+  flex: 0 0 min(58vw, 220px);
+}
+
+.project-list button,
+.funding-list button,
+.loan-list button,
+.event-list button {
+  flex: 0 0 min(64vw, 240px);
+}
+
+.employee-detail {
+  overflow: auto;
+  min-height: 0;
+}
+
+.project-detail,
+.funding-detail,
+.loan-detail,
+.event-detail {
+  overflow: auto;
+  min-height: 0;
+}
+
+.employee-list,
+.project-list,
+.funding-list,
+.loan-list,
+.event-list,
+.employee-detail,
+.project-detail,
+.funding-detail,
+.loan-detail,
+.event-detail,
+.task-list {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.employee-list::-webkit-scrollbar,
+.project-list::-webkit-scrollbar,
+.funding-list::-webkit-scrollbar,
+.loan-list::-webkit-scrollbar,
+.event-list::-webkit-scrollbar,
+.employee-detail::-webkit-scrollbar,
+.project-detail::-webkit-scrollbar,
+.funding-detail::-webkit-scrollbar,
+.loan-detail::-webkit-scrollbar,
+.event-detail::-webkit-scrollbar,
+.task-list::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 420px) {
   .onboarding-shell {
     align-items: stretch;

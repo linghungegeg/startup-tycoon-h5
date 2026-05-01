@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "season" | "shop" | "bag" | "negotiation" | "vip";
+type NativeHomePage = "leaderboard" | "season" | "shop" | "bag" | "negotiation" | "vip" | "guild" | "finance";
 
 type ApiSuccess<T> = {
   success: true;
@@ -749,9 +749,9 @@ const shopCategoryLabels: Record<string, string> = {
   activity_shop: "活动"
 };
 
-const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
-const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
-const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
+const sideActions = ["财务", "融资", "贷款"];
+const rightActions = ["活动", "排行", "商业", "专属经理"];
+const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
   "融资": "handshake",
@@ -764,6 +764,7 @@ const homeActionIcons: Record<string, string> = {
   "礼包": "package-open",
   "活动": "calendar",
   "排行": "trophy",
+  "商业": "shopping-bag",
   "VIP": "award",
   "福利中心": "gift",
   "七日目标": "calendar",
@@ -793,6 +794,7 @@ const homeActionIconClasses: Record<string, string> = {
   "礼包": "text-pink-400",
   "活动": "text-blue-400",
   "排行": "text-amber-400",
+  "商业": "text-business-gold",
   "VIP": "text-business-gold",
   "福利中心": "text-business-gold",
   "七日目标": "text-business-gold",
@@ -813,8 +815,10 @@ const navIcons: Record<string, string> = {
   "员工": "users",
   "项目": "layout-dashboard",
   "产品": "box",
+  "业务": "layout-dashboard",
   "市场": "megaphone",
-  "商会": "building-2"
+  "商会": "building-2",
+  "背包": "package"
 };
 const iconPaths: Record<string, string[]> = {
   "award": ["M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "m8 14-2 7 6-3 6 3-2-7"],
@@ -862,7 +866,7 @@ const Icon = ({ name, className }: { name: string; className: string }) => {
     </svg>
   );
 };
-const eventEntryNames = new Set(["风险", "合同", "邮件"]);
+const eventEntryNames = new Set(["专属经理"]);
 const initialEmployees: Employee[] = [];
 const initialProjects: BusinessProject[] = [];
 const defaultServers: ServerOption[] = [
@@ -925,6 +929,11 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
     title: "排行",
     lines: ["查看本服公司估值、项目收益和商会贡献排名。", "排行榜每日按服务器时间刷新。"],
     action: "查看排行"
+  },
+  "商业": {
+    title: "商业",
+    lines: ["首充、月卡、基金、礼包和赛季通行证集中展示。", "平台币消费会计入 VIP 经验。"],
+    action: "进入商业"
   },
   "VIP": {
     title: "VIP",
@@ -1268,6 +1277,7 @@ function App() {
   const [isServerPickerOpen, setIsServerPickerOpen] = useState(false);
   const [activeServerCategory, setActiveServerCategory] = useState<"recent" | "all">("all");
   const [activeNav, setActiveNav] = useState("公司");
+  const [businessTab, setBusinessTab] = useState<"项目" | "产品">("项目");
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [nativeHomePage, setNativeHomePage] = useState<NativeHomePage | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
@@ -2505,6 +2515,15 @@ function App() {
   };
 
   const openHomePanel = (panelName: string): void => {
+    if (panelName === "财务") {
+      setActivePanel(null);
+      setNativeHomePage("finance");
+      if (account && selectedServer) {
+        void loadCompanyFinance(account.token, selectedServer.id);
+      }
+      return;
+    }
+
     if (panelName === "活动" || panelName === "限时活动") {
       setActivePanel(null);
       setNativeHomePage("season");
@@ -2523,11 +2542,12 @@ function App() {
       return;
     }
 
-    if (panelName === "商城" || panelName === "特惠商城") {
+    if (panelName === "商业" || panelName === "商城" || panelName === "特惠商城") {
       setActivePanel(null);
       setNativeHomePage("shop");
       if (account && selectedServer) {
         void loadShopCenter(account.token, selectedServer.id);
+        void loadSeasonCenter(account.token, selectedServer.id);
       }
       return;
     }
@@ -2563,14 +2583,22 @@ function App() {
 
     if (panelName === "商会") {
       setActivePanel(null);
-      setNativeHomePage("leaderboard");
+      setNativeHomePage("guild");
       if (account && selectedServer) {
         void loadPhase14Center(account.token, selectedServer.id);
       }
       return;
     }
 
-    if (panelName === "贷款" || panelName === "融资" || panelName === "产品" || panelName === "市场") {
+    if (panelName === "项目" || panelName === "产品") {
+      setActivePanel(null);
+      setNativeHomePage(null);
+      setBusinessTab(panelName);
+      setActiveNav("业务");
+      return;
+    }
+
+    if (panelName === "贷款" || panelName === "融资" || panelName === "市场") {
       setActivePanel(null);
       setNativeHomePage(null);
       setActiveNav(panelName);
@@ -3134,7 +3162,14 @@ function App() {
     }
 
     if (task.guideAction.includes("项目")) {
-      setActiveNav("项目");
+      setActiveNav("业务");
+      setBusinessTab("项目");
+      return;
+    }
+
+    if (task.guideAction.includes("产品")) {
+      setActiveNav("业务");
+      setBusinessTab("产品");
       return;
     }
 
@@ -3150,6 +3185,18 @@ function App() {
   };
 
   const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
+  const hasVipAttention = vipCenter ? !vipCenter.dailyGift.isClaimed : false;
+  const isNavActive = (item: string): boolean => {
+    if (item === "业务") {
+      return activeNav === "业务" || activeNav === "项目" || activeNav === "产品";
+    }
+
+    if (item === "背包") {
+      return activeNav === "背包" || nativeHomePage === "bag";
+    }
+
+    return activeNav === item;
+  };
 
   if (isRestoring) {
     return (
@@ -3174,8 +3221,9 @@ function App() {
         <section className="app-viewport shadow-2xl" aria-label="公司经营主页">
           <header className="absolute top-0 left-0 right-0 z-[60] p-4 space-y-3 pointer-events-none">
             <div className="flex items-center justify-between pointer-events-auto">
-              <button className="flex items-center gap-2 text-left" type="button" onClick={leaveGame}>
+              <button className="flex items-center gap-2 text-left" type="button" onClick={() => openHomePanel("VIP")}>
                 <span className="relative group">
+                  {hasVipAttention && <span className="red-dot" />}
                   <span className="block w-12 h-12 rounded-full border-2 border-business-gold p-0.5 overflow-hidden shadow-lg shadow-business-gold/10">
                     <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full object-cover rounded-full" />
                   </span>
@@ -3196,28 +3244,23 @@ function App() {
                   </span>
                 </span>
               </button>
-              <button className="flex flex-col items-end" type="button" onClick={() => openHomePanel("财务")}>
+              <div className="flex flex-col items-end">
                 <span className="text-[10px] text-slate-400 font-medium">公司估值</span>
                 <strong className="text-xs text-business-gold font-black">{compactNumber(profile.valuation)}</strong>
-              </button>
+              </div>
             </div>
 
             <div className="flex gap-2 overflow-x-auto scroll-hide pb-1 pointer-events-auto" aria-label="资源">
               {[
-                { icon: "circle-dollar-sign", iconClass: "text-emerald-400", label: compactNumber(profile.cash), panel: "财务", add: true },
-                { icon: "gem", iconClass: "text-business-gold", label: profile.platformCoins.toLocaleString("zh-CN"), panel: "商城", add: true },
-                { icon: "award", iconClass: "text-blue-400", label: compactNumber(profile.reputation), panel: "排行榜", add: false },
-                { icon: "zap", iconClass: "text-amber-500", label: `${profile.actionPower}/${profile.actionPowerLimit}`, panel: "出门谈判", add: false }
+                { icon: "circle-dollar-sign", iconClass: "text-emerald-400", label: compactNumber(profile.cash), key: "cash" },
+                { icon: "gem", iconClass: "text-business-gold", label: profile.platformCoins.toLocaleString("zh-CN"), key: "platform-coins" },
+                { icon: "award", iconClass: "text-blue-400", label: compactNumber(profile.reputation), key: "reputation" },
+                { icon: "zap", iconClass: "text-amber-500", label: `${profile.actionPower}/${profile.actionPowerLimit}`, key: "action-power" }
               ].map((resource) => (
-                <button className="resource-tag min-w-[86px]" type="button" key={resource.panel} onClick={() => openHomePanel(resource.panel)}>
+                <span className="resource-tag min-w-[86px]" key={resource.key}>
                   <Icon name={resource.icon} className={`w-3 h-3 ${resource.iconClass}`} />
                   <span className="text-[10px] font-bold truncate">{resource.label}</span>
-                  {resource.add && (
-                    <span className="ml-auto w-3.5 h-3.5 bg-white/10 rounded flex items-center justify-center">
-                      <Icon name="plus" className="w-2.5 h-2.5 text-slate-400" />
-                    </span>
-                  )}
-                </button>
+                </span>
               ))}
             </div>
           </header>
@@ -3244,7 +3287,7 @@ function App() {
             <div className="absolute right-4 top-32 space-y-1.5">
               {rightActions.map((item, index) => (
                 <button className="flex flex-col items-center gap-1 group relative" type="button" key={item} onClick={() => openHomePanel(item)}>
-                  {[0, 3, 5, 6].includes(index) && <span className="red-dot" />}
+                  {[0, 2].includes(index) && <span className="red-dot" />}
                   <span className="w-11 h-11 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Icon name={homeActionIcons[item] ?? "box"} className={`w-5 h-5 ${homeActionIconClasses[item] ?? ""}`} />
                   </span>
@@ -3278,15 +3321,21 @@ function App() {
           <nav className="h-24 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 px-2 flex items-center justify-between z-[100] pb-6" aria-label="底部导航">
             {navItems.map((item, index) => (
               <button
-                className={`flex flex-col items-center gap-1.5 flex-1 transition-colors ${activeNav === item ? "text-business-gold" : "text-slate-500"}`}
+                className={`flex flex-col items-center gap-1.5 flex-1 transition-colors ${isNavActive(item) ? "text-business-gold" : "text-slate-500"}`}
                 type="button"
                 key={item}
                 onClick={() => {
-                  setActiveNav(item);
                   if (item === "公司") {
+                    setActiveNav(item);
                     setActivePanel(null);
                     setNativeHomePage(null);
-                  } else if (item === "员工" || item === "项目" || item === "产品" || item === "市场") {
+                  } else if (item === "业务") {
+                    setActiveNav(item);
+                    setBusinessTab("项目");
+                    setActivePanel(null);
+                    setNativeHomePage(null);
+                  } else if (item === "员工" || item === "市场") {
+                    setActiveNav(item);
                     setActivePanel(null);
                     setNativeHomePage(null);
                   } else {
@@ -3302,6 +3351,95 @@ function App() {
               </button>
             ))}
           </nav>
+
+          {nativeHomePage === "finance" && (
+            <section className="page-container page-active" aria-label="财务" data-testid="native-finance">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="pie-chart" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Finance 财务</h2>
+                    <span className="text-[10px] text-slate-500">现金流、估值、负债与月度经营报告</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭财务" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                {companyFinance ? (
+                  <>
+                    <section className="grid grid-cols-2 gap-3">
+                      {[
+                        ["现金", compactNumber(companyFinance.cash)],
+                        ["月收入", compactNumber(companyFinance.monthlyIncome)],
+                        ["月支出", compactNumber(companyFinance.monthlyExpense)],
+                        ["净现金流", compactNumber(companyFinance.netCashFlow)],
+                        ["估值", compactNumber(companyFinance.valuation)],
+                        ["股权", `${(companyFinance.founderEquityBasisPoints / 100).toFixed(1)}%`],
+                        ["负债率", `${(companyFinance.debtRatioBasisPoints / 100).toFixed(1)}%`],
+                        ["信用", companyFinance.creditRating]
+                      ].map(([label, value]) => (
+                        <div className="glass-panel rounded-2xl p-4" key={label}>
+                          <div className="text-[10px] text-slate-400 font-bold">{label}</div>
+                          <div className="mt-2 text-xl text-business-gold font-black">{value}</div>
+                        </div>
+                      ))}
+                    </section>
+
+                    <section className={`glass-panel rounded-3xl p-4 border ${companyFinance.riskStatus === "稳健" ? "border-emerald-400/40" : "border-amber-400/40"}`}>
+                      <strong className={companyFinance.riskStatus === "稳健" ? "text-emerald-200 font-black" : "text-amber-200 font-black"}>
+                        {companyFinance.riskStatus}
+                      </strong>
+                      <div className="mt-2 space-y-1">
+                        {companyFinance.riskTips.map((tip) => (
+                          <p className="text-xs text-slate-300 font-bold leading-5" key={tip}>{tip}</p>
+                        ))}
+                      </div>
+                    </section>
+
+                    {companyFinance.reportMonth !== undefined && (
+                      <section className="glass-panel rounded-3xl p-4" aria-label="月度经营报告">
+                        <div className="flex items-center justify-between mb-3">
+                          <strong className="text-sm text-white font-black">第 {companyFinance.reportMonth} 月经营报告</strong>
+                          <span className="text-[10px] text-slate-500">已生成</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            ["收入", compactNumber(companyFinance.income ?? companyFinance.monthlyIncome)],
+                            ["支出", compactNumber(companyFinance.expense ?? companyFinance.monthlyExpense)],
+                            ["净现金流", compactNumber(companyFinance.netCashFlow)],
+                            ["期末现金", compactNumber(companyFinance.endingCash ?? companyFinance.cash)]
+                          ].map(([label, value]) => (
+                            <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={label}>
+                              <div className="text-[10px] text-slate-500 font-bold">{label}</div>
+                              <div className="mt-1 text-sm text-white font-black">{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {financeError && <p className="rounded-2xl px-4 py-3 text-xs font-bold bg-red-500/15 text-red-200">{financeError}</p>}
+                    <button className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={() => void settleFinanceMonth()}>
+                      生成第 {companyFinance.financeMonth} 月经营报告
+                    </button>
+                  </>
+                ) : (
+                  <section className="glass-panel rounded-3xl p-5">
+                    <p className="text-xs text-slate-300 font-bold leading-5">{financeError || "财务数据读取中，请确认 API 服务已启动。"}</p>
+                    <button
+                      className="mt-4 btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
+                      type="button"
+                      onClick={() => account && selectedServer && void loadCompanyFinance(account.token, selectedServer.id)}
+                    >
+                      刷新财务
+                    </button>
+                  </section>
+                )}
+              </div>
+            </section>
+          )}
 
           {nativeHomePage === "season" && (
             <section className="page-container page-active" aria-label="赛季活动" data-testid="native-season">
@@ -3327,7 +3465,7 @@ function App() {
                   <span className="text-[9px] text-slate-500">赛季状态</span>
                 </div>
                 <div className="glass-panel rounded-2xl p-2 text-center">
-                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.pass.isPurchased ? "已开通" : `${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}</strong>
+                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}</strong>
                   <span className="text-[9px] text-slate-500">通行证</span>
                 </div>
               </div>
@@ -3352,23 +3490,6 @@ function App() {
                     onClick={() => primarySeasonTask && void progressSeasonTask(primarySeasonTask.id)}
                   >
                     {primarySeasonTask?.isClaimed ? "任务已完成" : "推进赛季任务"}
-                  </button>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">赛季通行证</strong>
-                      <span className="text-[9px] text-slate-500">消耗平台币，计入 VIP 经验。</span>
-                    </div>
-                    <span className="text-[10px] text-business-gold">{seasonCenter?.wallet.balance ?? profile.platformCoins} 平台币</span>
-                  </div>
-                  <button
-                    className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45"
-                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
-                    type="button"
-                    onClick={() => void purchaseSeasonPass()}
-                  >
-                    {seasonCenter?.season.pass.isPurchased ? "已开通" : `开通 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
                   </button>
                 </section>
                 <section className="glass-panel rounded-3xl p-4">
@@ -3633,21 +3754,126 @@ function App() {
             </section>
           )}
 
+          {nativeHomePage === "guild" && (
+            <section className="page-container page-active" aria-label="商会" data-testid="native-guild">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="building-2" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Guild 商会</h2>
+                    <span className="text-[10px] text-slate-500">{guildCenter?.guild?.name ?? "加入后解锁成员互助"}</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭商会" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                {guildCenter?.guild ? (
+                  <>
+                    <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] text-business-gold font-black uppercase">本服商会</div>
+                          <h3 className="mt-1 text-2xl font-black text-white">{guildCenter.guild.name}</h3>
+                          <p className="mt-1 text-xs text-slate-400 font-bold">成员互助 · 任务贡献 · 科技加成</p>
+                        </div>
+                        <button className="btn-gold px-4 py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void requestGuildHelp()}>
+                          发布互助
+                        </button>
+                      </div>
+                      <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.level}</strong><span className="text-[9px] text-slate-500">等级</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.members.length}</strong><span className="text-[9px] text-slate-500">成员</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.contributionScore}</strong><span className="text-[9px] text-slate-500">贡献</span></div>
+                      </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">商会任务</strong>
+                        <span className="text-[10px] text-business-gold">{guildCenter.tasks.length} 项</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.tasks.slice(0, 3).map((task) => (
+                          <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={task.id}>
+                            <div className="flex items-center justify-between">
+                              <strong className="text-xs text-white font-black">{task.title}</strong>
+                              <span className="text-[9px] text-slate-500">{task.progress}/{task.target}</span>
+                            </div>
+                            <p className="mt-1 text-[9px] text-slate-400">{task.description}</p>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                    <section className="grid grid-cols-2 gap-3">
+                      {guildCenter.techs.slice(0, 4).map((tech) => (
+                        <article className="glass-panel rounded-2xl p-3" key={tech.id}>
+                          <div className="text-[10px] text-business-gold font-black">{tech.name}</div>
+                          <strong className="mt-1 block text-sm text-white">Lv.{tech.level}/{tech.maxLevel}</strong>
+                          <p className="mt-1 text-[9px] text-slate-500">{tech.description}</p>
+                        </article>
+                      ))}
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">成员贡献</strong>
+                        <span className="text-[10px] text-slate-500">{guildCenter.members.length} 人</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.members.slice(0, 5).map((member) => (
+                          <div className="flex items-center justify-between rounded-2xl bg-slate-900/60 px-3 py-2" key={member.profileId}>
+                            <div>
+                              <strong className="block text-xs text-white">{member.founderName}</strong>
+                              <span className="text-[9px] text-slate-500">{member.companyName} · {member.role}</span>
+                            </div>
+                            <span className="text-xs text-business-gold font-black">{member.contributionScore}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
+                    <div className="flex items-center gap-3">
+                      <span className="w-14 h-14 bg-business-gold/15 rounded-2xl flex items-center justify-center border border-business-gold/20">
+                        <Icon name="building-2" className="w-8 h-8 text-business-gold" />
+                      </span>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-black text-white">加入本服商会</h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-400 font-medium">加入后可参与集体投资、商会任务和成员互助。</p>
+                      </div>
+                    </div>
+                    <button className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={() => void joinGuild()}>
+                      加入本服商会
+                    </button>
+                  </section>
+                )}
+                {(phase14Notice || phase14Error) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {phase14Error || phase14Notice}
+                  </p>
+                )}
+                {!guildCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商会配置读取中，请确认 API 服务已启动。</p>}
+              </div>
+            </section>
+          )}
+
           {nativeHomePage === "shop" && (
-            <section className="page-container page-active" aria-label="特惠商城" data-testid="native-shop">
+            <section className="page-container page-active" aria-label="钱包商城" data-testid="native-shop">
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="shopping-bag" className="w-7 h-7 text-pink-400" />
-                  <h2 className="text-xl font-black text-white italic uppercase">Shop 商业特权</h2>
+                  <h2 className="text-xl font-black text-white italic uppercase">Wallet 钱包商城</h2>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭特惠商城" onClick={closeNativeHomePage}>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭钱包商城" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
               <div className="px-6 flex gap-6 overflow-x-auto scroll-hide mb-4">
-                <button className="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap" type="button">限时礼包</button>
+                <button className="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap" type="button">商城商品</button>
                 <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">平台币</button>
                 <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">月卡/基金</button>
+                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">赛季通行证</button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
                 <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="商城余额">
@@ -3664,6 +3890,23 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">{seasonCenter?.season.name ?? "赛季通行证"}</strong>
+                      <span className="text-[9px] text-slate-500">消耗平台币，计入 VIP 经验。</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile.platformCoins} 平台币</span>
+                  </div>
+                  <button
+                    className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45"
+                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
+                    type="button"
+                    onClick={() => void purchaseSeasonPass()}
+                  >
+                    {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : `开通 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
+                  </button>
+                </section>
                 <div className="grid grid-cols-2 gap-4">
                   {(shopCenter?.products ?? []).map((product) => (
                     <article
@@ -3805,6 +4048,13 @@ function App() {
                 <p className="text-[10px] leading-5 text-slate-500 font-bold px-1">
                   VIP 权益只提供便利、身份和轻量效率，不直接清空负债、免除经营风险或改变排行榜名次。
                 </p>
+                <button
+                  className="w-full rounded-2xl border border-white/10 py-3 text-sm font-black text-slate-200"
+                  type="button"
+                  onClick={leaveGame}
+                >
+                  切换账号
+                </button>
               </div>
             </section>
           )}
@@ -4010,16 +4260,23 @@ function App() {
             </section>
           )}
 
-          {activeNav === "项目" && (
+          {(activeNav === "项目" || (activeNav === "业务" && businessTab === "项目")) && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
-                  <strong>项目</strong>
-                  <span>预计回款 {compactNumber(totalProjectRevenue)}</span>
+                  <strong>{activeNav === "业务" ? "业务" : "项目"}</strong>
+                  <span>项目交付 · 预计回款 {compactNumber(totalProjectRevenue)}</span>
                 </div>
                 <button type="button" onClick={() => openHomePanel("项目")}>规则</button>
               </header>
+
+              {activeNav === "业务" && (
+                <nav className="business-tabs" aria-label="业务分类">
+                  <button className={businessTab === "项目" ? "active" : undefined} type="button" onClick={() => setBusinessTab("项目")}>项目交付</button>
+                  <button className={businessTab === "产品" ? "active" : undefined} type="button" onClick={() => setBusinessTab("产品")}>产品研发</button>
+                </nav>
+              )}
 
               <section className="project-summary" aria-label="项目概览">
                 <span>在研 {activeProjects.length}</span>
@@ -4127,16 +4384,23 @@ function App() {
             </section>
           )}
 
-          {activeNav === "产品" && (
+          {(activeNav === "产品" || (activeNav === "业务" && businessTab === "产品")) && (
             <section className="funding-screen product-screen" aria-label="产品生命周期">
               <header className="funding-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
-                  <strong>产品</strong>
-                  <span>用户 {compactNumber(totalProductUsers)} · 月收入 {compactNumber(productCenter?.products.reduce((total, item) => total + item.monthlyRevenue, 0) ?? 0)}</span>
+                  <strong>{activeNav === "业务" ? "业务" : "产品"}</strong>
+                  <span>产品研发 · 用户 {compactNumber(totalProductUsers)} · 月收入 {compactNumber(productCenter?.products.reduce((total, item) => total + item.monthlyRevenue, 0) ?? 0)}</span>
                 </div>
                 <button type="button" onClick={() => account && selectedServer && void loadProductCenter(account.token, selectedServer.id)}>刷新</button>
               </header>
+
+              {activeNav === "业务" && (
+                <nav className="business-tabs" aria-label="业务分类">
+                  <button className={businessTab === "项目" ? "active" : undefined} type="button" onClick={() => setBusinessTab("项目")}>项目交付</button>
+                  <button className={businessTab === "产品" ? "active" : undefined} type="button" onClick={() => setBusinessTab("产品")}>产品研发</button>
+                </nav>
+              )}
 
               <section className="funding-summary" aria-label="产品概览">
                 <span>在营 {activeProducts.length}</span>
@@ -4659,17 +4923,17 @@ function App() {
           )}
 
           {activeNav === "事件" && (
-            <section className="event-screen" aria-label="事件中心">
+            <section className="event-screen" aria-label="专属经理提醒">
               <header className="event-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
-                  <strong>事件</strong>
-                  <span>消息 / 邮件 / 合同 / 财报</span>
+                  <strong>专属经理</strong>
+                  <span>经营提醒 / 合同复核 / 财报预警</span>
                 </div>
                 <button type="button" onClick={() => account && selectedServer && void loadEvents(account.token, selectedServer.id)}>刷新</button>
               </header>
 
-              <section className="event-summary" aria-label="事件概览">
+              <section className="event-summary" aria-label="经营提醒概览">
                 <span>待处理 {pendingEvents.length}</span>
                 <span>已处理 {events.length - pendingEvents.length}</span>
                 <span>知识 {events.filter((item) => item.knowledgeUnlocked).length}</span>
@@ -4678,9 +4942,9 @@ function App() {
               {eventError && <p className="event-error">{eventError}</p>}
 
               <section className="event-layout">
-                <div className="event-list" aria-label="事件列表">
+                <div className="event-list" aria-label="提醒列表">
                   {events.length === 0 ? (
-                    <div className="event-empty">暂无经营事件，继续推进公司后会出现新的待办。</div>
+                    <div className="event-empty">暂无经营提醒，继续推进公司后会出现新的待办。</div>
                   ) : events.map((item) => (
                     <button
                       className={item.id === selectedEvent?.id ? "selected" : undefined}
@@ -4696,7 +4960,7 @@ function App() {
                   ))}
                 </div>
 
-                <article className="event-detail" aria-label="事件详情">
+                <article className="event-detail" aria-label="提醒详情">
                   {selectedEvent ? (
                     <>
                       <div className="event-title">
@@ -4744,7 +5008,7 @@ function App() {
                       )}
                     </>
                   ) : (
-                    <div className="event-empty">事件配置读取中，请稍候。</div>
+                    <div className="event-empty">经营提醒读取中，请稍候。</div>
                   )}
                 </article>
               </section>
@@ -4752,33 +5016,43 @@ function App() {
           )}
 
           {activeKnowledgeTask && (
-            <section className="home-modal" aria-label={activeKnowledgeTask.unlockKind === "compliance" ? "合规支线" : "创业知识"}>
-              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActiveKnowledgeTask(null)} />
-              <div className="modal-sheet knowledge-sheet">
-                <header>
-                  <strong>{activeKnowledgeTask.unlockKind === "compliance" ? "合同复核支线" : "创业知识卡"}</strong>
-                  <button type="button" aria-label="关闭" onClick={() => setActiveKnowledgeTask(null)}>×</button>
-                </header>
-                <article>
-                  <h3>{activeKnowledgeTask.title}</h3>
-                  <p>{activeKnowledgeTask.description}</p>
-                  <dl>
-                    <div>
-                      <dt>经营场景</dt>
-                      <dd>{activeKnowledgeTask.unlockKind === "compliance" ? "客户合同进入交付前复核，确认回款、验收和违约条款。" : "员工入职后需要规范签署劳动合同，避免用工争议扩大。"}</dd>
+            <section className="page-container page-active" aria-label={activeKnowledgeTask.unlockKind === "compliance" ? "合规支线" : "创业知识"} data-testid="native-knowledge-task">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name={activeKnowledgeTask.unlockKind === "compliance" ? "shield-check" : "file-search"} className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">
+                      {activeKnowledgeTask.unlockKind === "compliance" ? "合同复核支线" : "创业知识卡"}
+                    </h2>
+                    <span className="text-[10px] text-slate-500">阅读后推进支线进度</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭知识页" onClick={() => setActiveKnowledgeTask(null)}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <article className="glass-panel rounded-3xl p-5">
+                  <h3 className="text-lg text-white font-black">{activeKnowledgeTask.title}</h3>
+                  <p className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.description}</p>
+                  <dl className="mt-5 space-y-3">
+                    <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
+                      <dt className="text-[10px] text-business-gold font-black">经营场景</dt>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.unlockKind === "compliance" ? "客户合同进入交付前复核，确认回款、验收和违约条款。" : "员工入职后需要规范签署劳动合同，避免用工争议扩大。"}</dd>
                     </div>
-                    <div>
-                      <dt>风险提示</dt>
-                      <dd>{activeKnowledgeTask.unlockKind === "compliance" ? "合同条款不清会影响项目结算、客户满意度和现金回收。" : "用工资料不完整会增加劳动争议、赔偿和声誉风险。"}</dd>
+                    <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
+                      <dt className="text-[10px] text-business-gold font-black">风险提示</dt>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">{activeKnowledgeTask.unlockKind === "compliance" ? "合同条款不清会影响项目结算、客户满意度和现金回收。" : "用工资料不完整会增加劳动争议、赔偿和声誉风险。"}</dd>
                     </div>
-                    <div>
-                      <dt>游戏影响</dt>
-                      <dd>阅读并确认后推进支线进度，奖励领取仍以后端任务状态为准。</dd>
+                    <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-4">
+                      <dt className="text-[10px] text-business-gold font-black">游戏影响</dt>
+                      <dd className="mt-2 text-xs text-slate-300 font-bold leading-5">阅读并确认后推进支线进度，奖励领取仍以后端任务状态为准。</dd>
                     </div>
                   </dl>
-                  <small>本内容用于游戏内经营知识提示，不构成法律、财务或投资建议。</small>
+                  <p className="mt-4 text-[10px] text-slate-500 font-bold leading-5">本内容用于游戏内经营知识提示，不构成法律、财务或投资建议。</p>
                 </article>
                 <button
+                  className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
                   type="button"
                   onClick={() => {
                     void progressTask(activeKnowledgeTask.id);
@@ -4792,117 +5066,25 @@ function App() {
             </section>
           )}
 
-          {activePanel === "财务" && (
-            <section className="home-modal" aria-label="财务">
-              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActivePanel(null)} />
-              <div className="modal-sheet finance-sheet">
-                <header>
-                  <strong>财务</strong>
-                  <button type="button" aria-label="关闭" onClick={() => setActivePanel(null)}>×</button>
-                </header>
-                {companyFinance ? (
-                  <>
-                    <dl className="finance-grid">
-                      <div>
-                        <dt>现金</dt>
-                        <dd>{compactNumber(companyFinance.cash)}</dd>
-                      </div>
-                      <div>
-                        <dt>月收入</dt>
-                        <dd>{compactNumber(companyFinance.monthlyIncome)}</dd>
-                      </div>
-                      <div>
-                        <dt>月支出</dt>
-                        <dd>{compactNumber(companyFinance.monthlyExpense)}</dd>
-                      </div>
-                      <div>
-                        <dt>净现金流</dt>
-                        <dd>{compactNumber(companyFinance.netCashFlow)}</dd>
-                      </div>
-                      <div>
-                        <dt>估值</dt>
-                        <dd>{compactNumber(companyFinance.valuation)}</dd>
-                      </div>
-                      <div>
-                        <dt>股权</dt>
-                        <dd>{(companyFinance.founderEquityBasisPoints / 100).toFixed(1)}%</dd>
-                      </div>
-                      <div>
-                        <dt>负债率</dt>
-                        <dd>{(companyFinance.debtRatioBasisPoints / 100).toFixed(1)}%</dd>
-                      </div>
-                      <div>
-                        <dt>信用</dt>
-                        <dd>{companyFinance.creditRating}</dd>
-                      </div>
-                    </dl>
-                    <section className={`finance-risk ${companyFinance.riskStatus === "稳健" ? "stable" : "warning"}`}>
-                      <strong>{companyFinance.riskStatus}</strong>
-                      {companyFinance.riskTips.map((tip) => (
-                        <p key={tip}>{tip}</p>
-                      ))}
-                    </section>
-                    {companyFinance.reportMonth !== undefined && (
-                      <section className="finance-report" aria-label="月度经营报告">
-                        <strong>第 {companyFinance.reportMonth} 月经营报告</strong>
-                        <dl>
-                          <div>
-                            <dt>收入</dt>
-                            <dd>{compactNumber(companyFinance.income ?? companyFinance.monthlyIncome)}</dd>
-                          </div>
-                          <div>
-                            <dt>支出</dt>
-                            <dd>{compactNumber(companyFinance.expense ?? companyFinance.monthlyExpense)}</dd>
-                          </div>
-                          <div>
-                            <dt>净现金流</dt>
-                            <dd>{compactNumber(companyFinance.netCashFlow)}</dd>
-                          </div>
-                          <div>
-                            <dt>期末现金</dt>
-                            <dd>{compactNumber(companyFinance.endingCash ?? companyFinance.cash)}</dd>
-                          </div>
-                        </dl>
-                      </section>
-                    )}
-                    {financeError && <p className="task-error">{financeError}</p>}
-                    <button className="modal-action" type="button" onClick={() => void settleFinanceMonth()}>
-                      生成第 {companyFinance.financeMonth} 月经营报告
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <p>{financeError || "财务数据读取中，请稍候。"}</p>
-                    </div>
-                    <button
-                      className="modal-action"
-                      type="button"
-                      onClick={() => account && selectedServer && void loadCompanyFinance(account.token, selectedServer.id)}
-                    >
-                      刷新财务
-                    </button>
-                  </>
-                )}
-              </div>
-            </section>
-          )}
-
-          {selectedPanel && activePanel !== "财务" && (
-            <section className="home-modal" aria-label={selectedPanel.title}>
-              <button className="modal-backdrop" type="button" aria-label="关闭面板" onClick={() => setActivePanel(null)} />
-              <div className="modal-sheet">
-                <header>
-                  <strong>{selectedPanel.title}</strong>
-                  <button type="button" aria-label="关闭" onClick={() => setActivePanel(null)}>×</button>
-                </header>
-                <div>
-                  {selectedPanel.lines.map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
+          {selectedPanel && (
+            <section className="page-container page-active" aria-label={selectedPanel.title} data-testid="native-info-panel">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="file-text" className="w-7 h-7 text-business-gold" />
+                  <h2 className="text-xl font-black text-white italic uppercase">{selectedPanel.title}</h2>
                 </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭说明页" onClick={() => setActivePanel(null)}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <section className="glass-panel rounded-3xl p-5 space-y-3">
+                  {selectedPanel.lines.map((line) => (
+                    <p className="text-xs text-slate-300 font-bold leading-6" key={line}>{line}</p>
+                  ))}
+                </section>
                 <button
-                  className="modal-action"
+                  className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
                   type="button"
                   onClick={activePanel === "设置" ? leaveGame : () => setActivePanel(null)}
                 >
