@@ -172,6 +172,13 @@ export type InventoryCenterRecord = {
   }>;
 };
 
+export type InventoryUseRecord = {
+  item: InventoryItemRecord;
+  inventory: InventoryCenterRecord;
+  profile: PlayerProfileRecord;
+  result: string;
+};
+
 export type CompanyFinanceRecord = {
   profileId: string;
   companyName: string;
@@ -1058,8 +1065,9 @@ export type GameRepository = {
   respondCompetitorAction(accountId: string, serverId: string, actionId: string, response: "defend" | "counter"): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND" | "COMPETITOR_ACTION_SETTLED" | "INSUFFICIENT_CASH">;
   getWallet(accountId: string, serverId: string): Promise<PlatformWalletRecord | "PLAYER_NOT_FOUND">;
   listInventory(accountId: string, serverId: string): Promise<InventoryCenterRecord | "PLAYER_NOT_FOUND">;
+  useInventoryItem(accountId: string, serverId: string, itemId: string): Promise<InventoryUseRecord | "PLAYER_NOT_FOUND" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
   listShop(accountId: string, serverId: string): Promise<ShopCenterRecord | "PLAYER_NOT_FOUND">;
-  purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
+  purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string, today: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
   adjustPlatformCoins(adminUserId: string, profileId: string, changeAmount: number, source: PlatformCoinLedgerSource, reason: string): Promise<AdminWalletAdjustmentRecord | "PLAYER_NOT_FOUND" | "INVALID_PLATFORM_COIN_SOURCE" | "INSUFFICIENT_PLATFORM_COINS">;
   reserveExternalPayment(accountId: string, serverId: string, productId: string | null, amountCents: number, platformCoins: number): Promise<ExternalPaymentReservationRecord | "PLAYER_NOT_FOUND">;
   getVipCenter(accountId: string, serverId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
@@ -5299,6 +5307,73 @@ export const createPrismaGameRepository = (
     return toInventoryCenterRecord(prisma, profile.id);
   },
 
+  async useInventoryItem(accountId, serverId, itemId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    if (itemId !== "action-drink") {
+      return "ITEM_NOT_USABLE";
+    }
+
+    const inventoryItem = await prisma.playerInventoryItem.findUnique({
+      where: { profileId_itemId: { profileId: profile.id, itemId } },
+      include: { item: true }
+    });
+    if (inventoryItem === null || inventoryItem.quantity <= 0) {
+      return "ITEM_NOT_FOUND";
+    }
+
+    const updatedProfile = await prisma.$transaction(async (tx) => {
+      const nextQuantity = inventoryItem.quantity - 1;
+      await tx.playerInventoryItem.update({
+        where: { id: inventoryItem.id },
+        data: { quantity: nextQuantity }
+      });
+      await tx.playerItemLedger.create({
+        data: {
+          profileId: profile.id,
+          itemId,
+          changeQuantity: -1,
+          balanceAfter: nextQuantity,
+          source: "item_use",
+          referenceId: inventoryItem.id,
+          reason: "使用行动力饮料"
+        }
+      });
+      return tx.playerProfile.update({
+        where: { id: profile.id },
+        data: { actionPower: { increment: 40 } }
+      });
+    });
+
+    const inventory = await toInventoryCenterRecord(prisma, profile.id);
+    return {
+      item: {
+        id: inventoryItem.id,
+        itemId: inventoryItem.itemId,
+        name: inventoryItem.item.name,
+        category: inventoryItem.item.category,
+        rarity: inventoryItem.item.rarity,
+        icon: inventoryItem.item.icon,
+        summary: inventoryItem.item.summary,
+        usageHint: inventoryItem.item.usageHint,
+        quantity: inventoryItem.quantity - 1,
+        updatedAt: new Date().toISOString()
+      },
+      inventory,
+      profile: toProfileRecord(updatedProfile),
+      result: "行动力饮料已使用，行动力 +40。"
+    };
+  },
+
   async listShop(accountId, serverId) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
@@ -5315,7 +5390,7 @@ export const createPrismaGameRepository = (
     return toShopCenterRecord(prisma, toProfileRecord(profile));
   },
 
-  async purchaseShopProduct(accountId, serverId, productId, requestId) {
+  async purchaseShopProduct(accountId, serverId, productId, requestId, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -5360,10 +5435,18 @@ export const createPrismaGameRepository = (
     if (product === null || !product.isActive) {
       return "SHOP_PRODUCT_NOT_FOUND";
     }
+    const purchaseLimitWindow =
+      product.category === "daily_pack"
+        ? {
+            gte: new Date(`${today}T00:00:00.000Z`),
+            lt: new Date(`${today}T23:59:59.999Z`)
+          }
+        : undefined;
     const purchaseCount = await prisma.playerShopPurchase.count({
       where: {
         profileId: profile.id,
-        productId
+        productId,
+        createdAt: purchaseLimitWindow
       }
     });
     if (product.purchaseLimit > 0 && purchaseCount >= product.purchaseLimit) {
@@ -5402,7 +5485,8 @@ export const createPrismaGameRepository = (
           pricePlatformCoins: product.pricePlatformCoins,
           rewardCash: product.rewardCash,
           rewardActionPower: product.rewardActionPower,
-          rewardReputation: product.rewardReputation
+          rewardReputation: product.rewardReputation,
+          createdAt: product.category === "daily_pack" ? new Date(`${today}T00:00:00.000Z`) : undefined
         }
       });
       await grantInventoryItem(

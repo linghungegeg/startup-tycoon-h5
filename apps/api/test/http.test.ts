@@ -538,6 +538,8 @@ const createTestRepository = (): GameRepository => {
     createMainTaskConfig("main-full-level-plan", "了解满级去向", "前往通行证")
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
+  const inventoryItems = new Map<string, { id: string; profileId: string; itemId: string; quantity: number; updatedAt: string }>();
+  const itemLedgers: Array<{ id: string; profileId: string; itemId: string; changeQuantity: number; balanceAfter: number; source: string; reason: string; createdAt: string }> = [];
   const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
   const eventConfigs = [
     {
@@ -1143,6 +1145,20 @@ const createTestRepository = (): GameRepository => {
       summary: "提供 30 天经营补贴入口，第一版先发放即时启动补贴。"
     },
     {
+      id: "daily-founder-pack",
+      name: "每日经营礼包",
+      category: "daily_pack",
+      pricePlatformCoins: 180,
+      rewardCash: 60000,
+      rewardActionPower: 30,
+      rewardReputation: 120,
+      rewardItemId: "action-drink",
+      rewardItemQuantity: 1,
+      durationDays: 0,
+      purchaseLimit: 1,
+      summary: "轻量补足当天项目推进和经营事件节奏。"
+    },
+    {
       id: "weekly-operation-card",
       name: "经营周卡",
       category: "weekly_card",
@@ -1179,6 +1195,60 @@ const createTestRepository = (): GameRepository => {
       summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。"
     }
   ];
+  const itemConfigs = [
+    {
+      id: "action-drink",
+      name: "行动力饮料",
+      category: "operation",
+      rarity: "普通",
+      icon: "zap",
+      summary: "用于补充行动力，支撑首日和每日经营循环。",
+      usageHint: "项目推进、产品研发、每日任务"
+    },
+    {
+      id: "training-manual",
+      name: "培养手册",
+      category: "employee",
+      rarity: "普通",
+      icon: "file-text",
+      summary: "用于员工培养和岗位成长。",
+      usageHint: "员工培养、每日任务、通行证奖励"
+    },
+    {
+      id: "targeted-headhunt-letter",
+      name: "定向猎头函",
+      category: "employee",
+      rarity: "稀缺",
+      icon: "send",
+      summary: "用于选择岗位方向的高级猎头。",
+      usageHint: "员工页定向猎头"
+    }
+  ];
+  const grantInventoryItem = (profileId: string, itemId: string | null, quantity: number, source: string, reason: string) => {
+    if (itemId === null || quantity <= 0) {
+      return;
+    }
+    const key = `${profileId}:${itemId}`;
+    const existing = inventoryItems.get(key);
+    const nextQuantity = (existing?.quantity ?? 0) + quantity;
+    inventoryItems.set(key, {
+      id: existing?.id ?? randomUUID(),
+      profileId,
+      itemId,
+      quantity: nextQuantity,
+      updatedAt: new Date().toISOString()
+    });
+    itemLedgers.unshift({
+      id: randomUUID(),
+      profileId,
+      itemId,
+      changeQuantity: quantity,
+      balanceAfter: nextQuantity,
+      source,
+      reason,
+      createdAt: new Date().toISOString()
+    });
+  };
   const vipLevels = [
     {
       level: 0,
@@ -3079,9 +3149,68 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      return { items: [], recentLedgers: [] };
+      return {
+        items: [...inventoryItems.values()]
+          .filter((entry) => entry.profileId === profile.id && entry.quantity > 0)
+          .map((entry) => {
+            const config = itemConfigs.find((item) => item.id === entry.itemId);
+            assert.ok(config);
+            return { ...config, id: entry.id, itemId: entry.itemId, quantity: entry.quantity, updatedAt: entry.updatedAt };
+          }),
+        recentLedgers: itemLedgers
+          .filter((entry) => entry.profileId === profile.id)
+          .slice(0, 20)
+          .map((entry) => ({
+            id: entry.id,
+            itemId: entry.itemId,
+            itemName: itemConfigs.find((item) => item.id === entry.itemId)?.name ?? entry.itemId,
+            changeQuantity: entry.changeQuantity,
+            balanceAfter: entry.balanceAfter,
+            source: entry.source,
+            reason: entry.reason,
+            createdAt: entry.createdAt
+          }))
+      };
     },
-    async purchaseShopProduct(accountId, serverId, productId, requestId) {
+    async useInventoryItem(accountId, serverId, itemId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      if (itemId !== "action-drink") {
+        return "ITEM_NOT_USABLE";
+      }
+      const key = `${profile.id}:${itemId}`;
+      const existing = inventoryItems.get(key);
+      if (existing === undefined || existing.quantity <= 0) {
+        return "ITEM_NOT_FOUND";
+      }
+      const nextQuantity = existing.quantity - 1;
+      const updatedAt = new Date().toISOString();
+      inventoryItems.set(key, { ...existing, quantity: nextQuantity, updatedAt });
+      itemLedgers.unshift({
+        id: randomUUID(),
+        profileId: profile.id,
+        itemId,
+        changeQuantity: -1,
+        balanceAfter: nextQuantity,
+        source: "item_use",
+        reason: "使用行动力饮料",
+        createdAt: updatedAt
+      });
+      profile.actionPower += 40;
+      const inventory = await this.listInventory(accountId, serverId);
+      assert.notEqual(inventory, "PLAYER_NOT_FOUND");
+      const config = itemConfigs.find((item) => item.id === itemId);
+      assert.ok(config);
+      return {
+        item: { ...config, id: existing.id, itemId, quantity: nextQuantity, updatedAt },
+        inventory,
+        profile,
+        result: "行动力饮料已使用，行动力 +40。"
+      };
+    },
+    async purchaseShopProduct(accountId, serverId, productId, requestId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
@@ -3109,7 +3238,11 @@ const createTestRepository = (): GameRepository => {
       if (product === undefined) {
         return "SHOP_PRODUCT_NOT_FOUND";
       }
-      if (product.purchaseLimit > 0 && productPurchaseCount(profile.id, product.id) >= product.purchaseLimit) {
+      const purchaseCount =
+        product.category === "daily_pack"
+          ? [...shopPurchases.values()].filter((purchase) => purchase.profileId === profile.id && purchase.productId === product.id && purchase.createdAt.startsWith(today)).length
+          : productPurchaseCount(profile.id, product.id);
+      if (product.purchaseLimit > 0 && purchaseCount >= product.purchaseLimit) {
         return "PURCHASE_LIMIT_REACHED";
       }
       const wallet = ensureWallet(profile);
@@ -3124,13 +3257,14 @@ const createTestRepository = (): GameRepository => {
       profile.cash += product.rewardCash;
       profile.actionPower += product.rewardActionPower;
       profile.reputation += product.rewardReputation;
+      grantInventoryItem(profile.id, product.rewardItemId ?? null, product.rewardItemQuantity ?? 0, "shop_purchase", `购买商品：${product.name}`);
       const purchase = {
         id: randomUUID(),
         profileId: profile.id,
         productId: product.id,
         requestId,
         pricePlatformCoins: product.pricePlatformCoins,
-        createdAt: new Date().toISOString()
+        createdAt: product.category === "daily_pack" ? `${today}T00:00:00.000Z` : new Date().toISOString()
       };
       shopPurchases.set(purchase.id, purchase);
       addLedger(profile.id, -product.pricePlatformCoins, wallet.balance, "shop_purchase", purchase.id, `购买商品：${product.name}`);
@@ -5827,6 +5961,42 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
       "main-action-power-plan"
     ].filter((taskId) => !claimableTasks.has(taskId));
     assert.deepEqual(missingPrivilegeTasks, []);
+  });
+});
+
+test("uses action drink and resets daily pack purchase limit by server day", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "actionloop");
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", productId: "daily-founder-pack", requestId: "daily-pack-20260501" })
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+
+    const used = await requestJson<{ profile: PlayerProfileRecord; inventory: InventoryCenterRecord }>(baseUrl, "/inventory/use", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", itemId: "action-drink" })
+    });
+    assert.equal(used.status, 200, JSON.stringify(used.body));
+    assert.equal(used.body.data?.profile.actionPower, profile.actionPower + 30 + 40);
+    assert.equal(used.body.data?.inventory.items.some((item) => item.itemId === "action-drink"), false);
+
+    const duplicateSameDay = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", productId: "daily-founder-pack", requestId: "daily-pack-20260501-repeat" })
+    });
+    assert.equal(duplicateSameDay.status, 409);
+    assert.equal(duplicateSameDay.body.error?.code, "PURCHASE_LIMIT_REACHED");
+
+    const nextDay = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" },
+      body: JSON.stringify({ serverId: "s1", productId: "daily-founder-pack", requestId: "daily-pack-20260502" })
+    });
+    assert.equal(nextDay.status, 201, JSON.stringify(nextDay.body));
   });
 });
 

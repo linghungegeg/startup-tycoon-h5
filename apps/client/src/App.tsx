@@ -560,6 +560,13 @@ type InventoryCenter = {
   }>;
 };
 
+type InventoryUseResult = {
+  item: InventoryCenter["items"][number];
+  inventory: InventoryCenter;
+  profile: PlayerProfile;
+  result: string;
+};
+
 type VipLevel = {
   level: number;
   name: string;
@@ -1642,7 +1649,7 @@ function App() {
     [shopCenter]
   );
   const selectedInventoryItem = useMemo(
-    () => inventoryCenter?.items[0] ?? null,
+    () => inventoryCenter?.items.find((item) => item.itemId === "action-drink") ?? inventoryCenter?.items[0] ?? null,
     [inventoryCenter?.items]
   );
   const visibleTasks = useMemo(
@@ -2009,6 +2016,31 @@ function App() {
     if (response.success) {
       setInventoryCenter(response.data);
       setInventoryError("");
+      return;
+    }
+
+    setInventoryError(response.error.message);
+  };
+
+  const useInventoryItem = async (itemId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      setInventoryError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<InventoryUseResult>(
+      "/inventory/use",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, itemId })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setProfile(response.data.profile);
+      setInventoryCenter(response.data.inventory);
+      setInventoryError(response.data.result);
       return;
     }
 
@@ -4678,8 +4710,13 @@ function App() {
                   <h3 className="font-black text-white">{selectedInventoryItem?.name ?? "暂无道具"}</h3>
                   <p className="text-xs text-slate-400 mt-2 font-medium">{selectedInventoryItem?.summary ?? "背包用于承载任务、商城、特权和通行证奖励。"}</p>
                   <p className="mt-2 text-[10px] font-black text-business-gold">{selectedInventoryItem?.usageHint ?? "完成经营循环后获得"}</p>
-                  <button className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark" type="button" disabled={!selectedInventoryItem}>
-                    {selectedInventoryItem ? "查看用途" : "待获得"}
+                  <button
+                    className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark"
+                    type="button"
+                    disabled={selectedInventoryItem?.itemId !== "action-drink"}
+                    onClick={() => selectedInventoryItem?.itemId === "action-drink" && void useInventoryItem(selectedInventoryItem.itemId)}
+                  >
+                    {selectedInventoryItem?.itemId === "action-drink" ? "使用" : selectedInventoryItem ? "查看用途" : "待获得"}
                   </button>
                 </div>
               </footer>

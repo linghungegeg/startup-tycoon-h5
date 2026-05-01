@@ -1606,6 +1606,47 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/inventory/use") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const itemId = readString(body, "itemId");
+        if (serverId === undefined || itemId === "") {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and itemId are required.", traceId));
+          return;
+        }
+
+        const result = await repository.useInventoryItem(account.id, serverId, itemId);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "ITEM_NOT_FOUND") {
+          sendJson(response, 404, failure("ITEM_NOT_FOUND", "Inventory item not found.", traceId));
+          return;
+        }
+        if (result === "ITEM_NOT_USABLE") {
+          sendJson(response, 409, failure("ITEM_NOT_USABLE", "Inventory item cannot be used here.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/shop/purchase") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -1626,7 +1667,7 @@ export const createApiServer = (
           return;
         }
 
-        const result = await repository.purchaseShopProduct(account.id, serverId, productId, requestId);
+        const result = await repository.purchaseShopProduct(account.id, serverId, productId, requestId, readToday(request));
         if (result === "PLAYER_NOT_FOUND") {
           sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
           return;
