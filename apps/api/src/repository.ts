@@ -98,6 +98,19 @@ export type CompanyGrowthRecord = {
   nextLevelExperience: number | null;
   progressToNextBasisPoints: number;
   fullLevelOverflowExperience: number;
+  fullLevelChest: {
+    requiredExperience: number;
+    progressExperience: number;
+    earnedCount: number;
+    claimedCount: number;
+    claimableCount: number;
+    rewards: {
+      cash: number;
+      reputation: number;
+      actionPower: number;
+      item: ItemRewardRecord | null;
+    };
+  };
 };
 
 export type RandomTaskRecord = {
@@ -1030,6 +1043,7 @@ export type GameRepository = {
   getProfile(accountId: string, serverId: string): Promise<PlayerProfileRecord | undefined>;
   createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
   getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
+  claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND">;
   claimTask(accountId: string, serverId: string, taskId: string, today: string): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_INCOMPLETE" | "TASK_ALREADY_CLAIMED">;
@@ -2203,14 +2217,41 @@ const RANDOM_TASK_PASS_DAILY_LIMIT_BONUS = 1;
 const RISK_INSURANCE_ITEM_ID = "risk-insurance";
 const MARKET_INTEL_ITEM_ID = "market-intel";
 const FINANCE_ADVISOR_ITEM_ID = "finance-advisor-card";
+const FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE = 500;
+const FULL_LEVEL_CHEST_REWARD_REPUTATION = 300;
+const FULL_LEVEL_CHEST_REWARD_ACTION_POWER = 40;
+const FULL_LEVEL_CHEST_REWARD_ITEM_ID = "season-exp-ticket";
+const FULL_LEVEL_CHEST_REWARD_ITEM_QUANTITY = 1;
 const VIP3_START_EXPERIENCE = 3000;
 
 const readCompanyLevel = (experience: number): number =>
   Math.max(1, Math.min(COMPANY_MAX_LEVEL, Math.floor(Math.max(0, experience) / COMPANY_EXPERIENCE_PER_LEVEL) + 1));
 
-const readCompanyGrowthRecord = (profile: PlayerProfileRecord): CompanyGrowthRecord => {
+const readFullLevelChest = (fullLevelOverflowExperience: number, claimedCount: number): CompanyGrowthRecord["fullLevelChest"] => {
+  const earnedCount = Math.floor(fullLevelOverflowExperience / FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE);
+  return {
+    requiredExperience: FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE,
+    progressExperience: fullLevelOverflowExperience % FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE,
+    earnedCount,
+    claimedCount,
+    claimableCount: Math.max(0, earnedCount - claimedCount),
+    rewards: {
+      cash: 0,
+      reputation: FULL_LEVEL_CHEST_REWARD_REPUTATION,
+      actionPower: FULL_LEVEL_CHEST_REWARD_ACTION_POWER,
+      item: {
+        id: FULL_LEVEL_CHEST_REWARD_ITEM_ID,
+        name: "赛季经验券",
+        quantity: FULL_LEVEL_CHEST_REWARD_ITEM_QUANTITY
+      }
+    }
+  };
+};
+
+const readCompanyGrowthRecord = (profile: PlayerProfileRecord, fullLevelChestClaimedCount = 0): CompanyGrowthRecord => {
   const levelStartExperience = (profile.companyLevel - 1) * COMPANY_EXPERIENCE_PER_LEVEL;
   const nextLevelExperience = profile.companyLevel >= COMPANY_MAX_LEVEL ? null : profile.companyLevel * COMPANY_EXPERIENCE_PER_LEVEL;
+  const fullLevelOverflowExperience = profile.companyLevel >= COMPANY_MAX_LEVEL ? Math.max(0, profile.companyExperience - (COMPANY_MAX_LEVEL - 1) * COMPANY_EXPERIENCE_PER_LEVEL) : 0;
   return {
     profile,
     maxLevel: COMPANY_MAX_LEVEL,
@@ -2220,7 +2261,8 @@ const readCompanyGrowthRecord = (profile: PlayerProfileRecord): CompanyGrowthRec
       nextLevelExperience === null
         ? 10000
         : Math.max(0, Math.min(10000, Math.floor(((profile.companyExperience - levelStartExperience) * 10000) / COMPANY_EXPERIENCE_PER_LEVEL))),
-    fullLevelOverflowExperience: profile.companyLevel >= COMPANY_MAX_LEVEL ? Math.max(0, profile.companyExperience - (COMPANY_MAX_LEVEL - 1) * COMPANY_EXPERIENCE_PER_LEVEL) : 0
+    fullLevelOverflowExperience,
+    fullLevelChest: readFullLevelChest(fullLevelOverflowExperience, fullLevelChestClaimedCount)
   };
 };
 
@@ -3199,7 +3241,65 @@ export const createPrismaGameRepository = (
 
   async getCompanyGrowth(accountId, serverId) {
     const profile = await this.getProfile(accountId, serverId);
-    return profile === undefined ? "PLAYER_NOT_FOUND" : readCompanyGrowthRecord(profile);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const claimedCount = await prisma.playerItemLedger.count({
+      where: {
+        profileId: profile.id,
+        source: "full_level_chest"
+      }
+    });
+    return readCompanyGrowthRecord(profile, claimedCount);
+  },
+
+  async claimFullLevelChest(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const claimedCount = await tx.playerItemLedger.count({
+        where: {
+          profileId: profile.id,
+          source: "full_level_chest"
+        }
+      });
+      const growth = readCompanyGrowthRecord(toProfileRecord(profile), claimedCount);
+      if (growth.fullLevelChest.claimableCount <= 0) {
+        return "FULL_LEVEL_CHEST_NOT_READY" as const;
+      }
+
+      const updated = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          reputation: { increment: FULL_LEVEL_CHEST_REWARD_REPUTATION },
+          actionPower: { increment: FULL_LEVEL_CHEST_REWARD_ACTION_POWER }
+        }
+      });
+      await grantInventoryItem(
+        tx,
+        profile.id,
+        FULL_LEVEL_CHEST_REWARD_ITEM_ID,
+        FULL_LEVEL_CHEST_REWARD_ITEM_QUANTITY,
+        "full_level_chest",
+        `${profile.id}:${claimedCount + 1}`,
+        "领取满级宝箱奖励"
+      );
+
+      return readCompanyGrowthRecord(toProfileRecord(updated), claimedCount + 1);
+    });
+
+    return result;
   },
 
   async listRandomTasks(accountId, serverId, today) {

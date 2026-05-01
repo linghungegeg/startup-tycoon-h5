@@ -1994,6 +1994,33 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/company/growth/full-level-chest/claim") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.claimFullLevelChest(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "FULL_LEVEL_CHEST_NOT_READY") {
+        sendJson(response, 409, failure("FULL_LEVEL_CHEST_NOT_READY", "Full level chest is not ready.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/random-tasks") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

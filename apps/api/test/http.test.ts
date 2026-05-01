@@ -15,6 +15,7 @@ import type {
   AccountRecord,
   AdminUserRecord,
   AvatarRecord,
+  CompanyGrowthRecord,
   CompanyFinanceRecord,
   CompanyFinanceSettlementRecord,
   EmployeeRecord,
@@ -75,6 +76,11 @@ type ApiBody<T> = {
 };
 
 const createTestRepository = (): GameRepository => {
+  const companyMaxLevel = 80;
+  const companyExperiencePerLevel = 100;
+  const fullLevelChestRequiredExperience = 500;
+  const readCompanyLevel = (experience: number): number =>
+    Math.max(1, Math.min(companyMaxLevel, Math.floor(Math.max(0, experience) / companyExperiencePerLevel) + 1));
   const accounts = new Map<string, AccountRecord>();
   const accountSessions = new Map<string, string>();
   const adminPassword = createPasswordRecord("admin123");
@@ -537,7 +543,23 @@ const createTestRepository = (): GameRepository => {
     createMainTaskConfig("main-growth-fund-check", "查看成长基金", "前往特权"),
     createMainTaskConfig("main-fund-node", "查看基金节点", "前往特权"),
     createMainTaskConfig("main-action-power-plan", "制定行动力计划", "前往背包"),
-    createMainTaskConfig("main-full-level-plan", "了解满级去向", "前往通行证")
+    createMainTaskConfig("main-full-level-plan", "了解满级去向", "前往通行证"),
+    {
+      id: "test-full-level-seed",
+      type: "main" as const,
+      title: "测试满级宝箱经验",
+      description: "测试满级宝箱经验。",
+      target: 1,
+      initialProgress: 1,
+      rewardLabel: "公司经验 8400",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 0,
+      rewardActionPower: 0,
+      rewardCompanyExperience: 8400,
+      guideAction: "前往通行证",
+      unlockKind: "none" as const
+    }
   ];
   const taskProgress = new Map<string, { progress: number; dailyDate?: string; claimedAt?: string }>();
   const inventoryItems = new Map<string, { id: string; profileId: string; itemId: string; quantity: number; updatedAt: string }>();
@@ -1049,6 +1071,40 @@ const createTestRepository = (): GameRepository => {
       isClaimable: currentProgress >= config.target && !isClaimed
     };
   };
+  const readCompanyGrowthRecord = (profile: PlayerProfileRecord): CompanyGrowthRecord => {
+    const levelStartExperience = (profile.companyLevel - 1) * companyExperiencePerLevel;
+    const nextLevelExperience = profile.companyLevel >= companyMaxLevel ? null : profile.companyLevel * companyExperiencePerLevel;
+    const fullLevelOverflowExperience = profile.companyLevel >= companyMaxLevel
+      ? Math.max(0, profile.companyExperience - (companyMaxLevel - 1) * companyExperiencePerLevel)
+      : 0;
+    const claimedCount = itemLedgers.filter((ledger) => ledger.profileId === profile.id && ledger.source === "full_level_chest").length;
+    const earnedCount = Math.floor(fullLevelOverflowExperience / fullLevelChestRequiredExperience);
+
+    return {
+      profile,
+      maxLevel: companyMaxLevel,
+      currentLevelExperience: Math.max(0, profile.companyExperience - levelStartExperience),
+      nextLevelExperience,
+      progressToNextBasisPoints:
+        nextLevelExperience === null
+          ? 10000
+          : Math.max(0, Math.min(10000, Math.floor(((profile.companyExperience - levelStartExperience) * 10000) / companyExperiencePerLevel))),
+      fullLevelOverflowExperience,
+      fullLevelChest: {
+        requiredExperience: fullLevelChestRequiredExperience,
+        progressExperience: fullLevelOverflowExperience % fullLevelChestRequiredExperience,
+        earnedCount,
+        claimedCount,
+        claimableCount: Math.max(0, earnedCount - claimedCount),
+        rewards: {
+          cash: 0,
+          reputation: 300,
+          actionPower: 40,
+          item: { id: "season-exp-ticket", name: "赛季经验券", quantity: 1 }
+        }
+      }
+    };
+  };
 
   const formatEventImpact = (cash: number, reputation: number, customerSatisfaction: number, riskDelta: number): string =>
     [
@@ -1358,6 +1414,15 @@ const createTestRepository = (): GameRepository => {
       icon: "briefcase",
       summary: "用于现金流预警、融资和贷款选择，是中期经营缓冲道具。",
       usageHint: "财务、融资、贷款"
+    },
+    {
+      id: "season-exp-ticket",
+      name: "赛季经验券",
+      category: "season",
+      rarity: "优秀",
+      icon: "ticket",
+      summary: "用于提升赛季通行证进度，补足轻度玩家的赛季缺口。",
+      usageHint: "赛季通行证、活动奖励"
     },
     {
       id: "training-manual",
@@ -2351,6 +2416,26 @@ const createTestRepository = (): GameRepository => {
     async getProfile(accountId, serverId) {
       return profiles.get(`${accountId}:${serverId}`);
     },
+    async getCompanyGrowth(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : readCompanyGrowthRecord(profile);
+    },
+    async claimFullLevelChest(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const growth = readCompanyGrowthRecord(profile);
+      if (growth.fullLevelChest.claimableCount <= 0) {
+        return "FULL_LEVEL_CHEST_NOT_READY";
+      }
+
+      profile.reputation += 300;
+      profile.actionPower += 40;
+      grantInventoryItem(profile.id, "season-exp-ticket", 1, "full_level_chest", "领取满级宝箱奖励");
+      return readCompanyGrowthRecord(profile);
+    },
     async createProfile(profile) {
       const key = `${profile.accountId}:${profile.serverId}`;
       if (profiles.has(key)) {
@@ -2452,6 +2537,12 @@ const createTestRepository = (): GameRepository => {
       profile.platformCoins += config.rewardPlatformCoins;
       profile.reputation += config.rewardReputation;
       profile.actionPower += config.rewardActionPower;
+      const rewardExperience = "rewardCompanyExperience" in config && typeof config.rewardCompanyExperience === "number" ? config.rewardCompanyExperience : 0;
+      if (rewardExperience > 0) {
+        const nextExperience = profile.companyExperience + rewardExperience;
+        profile.companyExperience = nextExperience;
+        profile.companyLevel = readCompanyLevel(nextExperience);
+      }
       return toTaskRecord(profile.id, config, today);
     },
     async listRandomTasks(accountId, serverId, today) {
@@ -6504,6 +6595,52 @@ test("uses finance advisor card to improve finance random task results", async (
     assert.equal(afterInventory.status, 200);
     assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "finance-advisor-card"), false);
     assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
+  });
+});
+
+test("claims full level chest rewards from overflow experience", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "fulllevelchest");
+
+    const claimedSeed = await requestJson<TaskRecord>(baseUrl, "/tasks/test-full-level-seed/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimedSeed.status, 200, JSON.stringify(claimedSeed.body));
+
+    const beforeGrowth = await requestJson<CompanyGrowthRecord>(baseUrl, "/company/growth?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(beforeGrowth.status, 200, JSON.stringify(beforeGrowth.body));
+    assert.equal(beforeGrowth.body.data?.profile.companyLevel, 80);
+    assert.equal(beforeGrowth.body.data?.fullLevelChest.claimableCount, 1);
+
+    const claimedChest = await requestJson<CompanyGrowthRecord>(baseUrl, "/company/growth/full-level-chest/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimedChest.status, 200, JSON.stringify(claimedChest.body));
+    assert.equal(claimedChest.body.data?.fullLevelChest.claimedCount, 1);
+    assert.equal(claimedChest.body.data?.fullLevelChest.claimableCount, 0);
+    assert.equal(claimedChest.body.data?.profile.reputation, (beforeGrowth.body.data?.profile.reputation ?? 0) + 300);
+    assert.equal(claimedChest.body.data?.profile.actionPower, (beforeGrowth.body.data?.profile.actionPower ?? 0) + 40);
+
+    const inventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(inventory.status, 200);
+    assert.equal(inventory.body.data?.items.find((item) => item.itemId === "season-exp-ticket")?.quantity, 1);
+    assert.equal(inventory.body.data?.recentLedgers[0]?.source, "full_level_chest");
+
+    const duplicate = await requestJson(baseUrl, "/company/growth/full-level-chest/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "FULL_LEVEL_CHEST_NOT_READY");
   });
 });
 

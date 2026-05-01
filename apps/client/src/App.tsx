@@ -162,6 +162,19 @@ type CompanyGrowth = {
   nextLevelExperience: number | null;
   progressToNextBasisPoints: number;
   fullLevelOverflowExperience: number;
+  fullLevelChest: {
+    requiredExperience: number;
+    progressExperience: number;
+    earnedCount: number;
+    claimedCount: number;
+    claimableCount: number;
+    rewards: {
+      cash: number;
+      reputation: number;
+      actionPower: number;
+      item: { id: string; name: string; quantity: number } | null;
+    };
+  };
 };
 
 type RandomTask = {
@@ -1764,6 +1777,33 @@ function App() {
       setCompanyGrowth(response.data);
       setProfile(response.data.profile);
     }
+  };
+
+  const claimFullLevelChest = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      setSeasonError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<CompanyGrowth>(
+      "/company/growth/full-level-chest/claim",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCompanyGrowth(response.data);
+      setProfile(response.data.profile);
+      setSeasonNotice("满级宝箱奖励已领取。");
+      setSeasonError("");
+      await loadInventoryCenter(account.token, selectedServer.id);
+      return;
+    }
+
+    setSeasonError(response.error.message);
   };
 
   const loadRandomTasks = async (token: string, nextServerId: string): Promise<void> => {
@@ -3743,7 +3783,8 @@ function App() {
                   </span>
                   {companyGrowth?.nextLevelExperience === null && (
                     <span className="mt-1 text-[9px] text-business-gold font-bold">
-                      满级经验转声望 · 溢出 {companyGrowth.fullLevelOverflowExperience}
+                      满级宝箱 {companyGrowth.fullLevelChest.progressExperience}/{companyGrowth.fullLevelChest.requiredExperience}
+                      {companyGrowth.fullLevelChest.claimableCount > 0 ? ` · 可领 ${companyGrowth.fullLevelChest.claimableCount}` : ""}
                     </span>
                   )}
                 </span>
@@ -4595,10 +4636,37 @@ function App() {
                   </div>
                   {companyGrowth && companyGrowth.nextLevelExperience === null && (
                     <div className="mt-3 rounded-2xl bg-slate-900/60 border border-business-gold/20 p-3">
-                      <strong className="block text-xs text-business-gold font-black">满级后经验去向</strong>
-                      <span className="mt-1 block text-[10px] leading-4 text-slate-400 font-bold">
-                        已满 {companyGrowth.maxLevel} 级，后续公司经验进入声望转换；当前溢出经验 {companyGrowth.fullLevelOverflowExperience}。
-                      </span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-xs text-business-gold font-black">满级宝箱</strong>
+                          <span className="mt-1 block text-[10px] leading-4 text-slate-400 font-bold">
+                            已满 {companyGrowth.maxLevel} 级，溢出经验进入宝箱进度；当前溢出经验 {companyGrowth.fullLevelOverflowExperience}。
+                          </span>
+                        </div>
+                        <span className="shrink-0 rounded-xl bg-business-gold/15 border border-business-gold/30 px-2 py-1 text-[10px] text-business-gold font-black">
+                          {companyGrowth.fullLevelChest.claimedCount}/{companyGrowth.fullLevelChest.earnedCount}
+                        </span>
+                      </div>
+                      <div className="mt-3 h-2 rounded-full bg-slate-950 overflow-hidden border border-business-gold/20">
+                        <span
+                          className="block h-full bg-business-gold"
+                          style={{ width: `${Math.max(0, Math.min(100, (companyGrowth.fullLevelChest.progressExperience * 100) / companyGrowth.fullLevelChest.requiredExperience))}%` }}
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <span className="text-[10px] text-slate-500 font-bold">
+                          奖励：声望 {companyGrowth.fullLevelChest.rewards.reputation} · 行动力 {companyGrowth.fullLevelChest.rewards.actionPower}
+                          {companyGrowth.fullLevelChest.rewards.item ? ` · ${companyGrowth.fullLevelChest.rewards.item.name} ${companyGrowth.fullLevelChest.rewards.item.quantity}` : ""}
+                        </span>
+                        <button
+                          className="rounded-xl bg-business-gold px-3 py-1.5 text-[10px] font-black text-business-dark disabled:opacity-45"
+                          disabled={companyGrowth.fullLevelChest.claimableCount <= 0}
+                          type="button"
+                          onClick={() => void claimFullLevelChest()}
+                        >
+                          {companyGrowth.fullLevelChest.claimableCount > 0 ? "领取宝箱" : "积累中"}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <button

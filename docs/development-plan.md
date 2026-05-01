@@ -1786,6 +1786,22 @@ VIP 权益：
 - 遗留风险：满级宝箱仍只是展示方向，尚未实现进度和领奖；融资/贷款类随机任务配置尚未扩容，本批只完成财务顾问卡对对应类别的通用规则接入。
 - 下一阶段入口：Phase 21 第十一实施批次：满级宝箱/满级经验去向进度和领奖闭环，或先补融资/贷款类随机任务配置扩容，二者需择一单独实施。
 
+### Phase 21 第十一实施批次阶段总结：满级宝箱进度与领奖闭环
+
+- 当前稳定点：`d599bea feat: apply finance advisor to random tasks`。
+- 完成内容：公司成长接口返回满级宝箱进度；新增 `POST /company/growth/full-level-chest/claim` 领奖接口；满级后每 500 点溢出经验生成 1 个宝箱，可领取数量按已获得和已领取差值计算。
+- 奖励规则：每个满级宝箱奖励声望 300、行动力 40、赛季经验券 1；赛季经验券写入背包，流水来源为 `full_level_chest`；重复领取会返回 `FULL_LEVEL_CHEST_NOT_READY`。
+- 前台变化：主页等级区域在满级后显示“满级宝箱 进度/500”和可领取数量；通行证页满级区展示当前溢出经验、已领/已获得、奖励内容和领奖按钮；领取成功后刷新 profile、背包和成长信息，按钮变为“积累中”。
+- 规则边界：不新增数据库表和迁移；不改变既有满级经验转声望规则；不发放平台币；已领取数量复用现有道具流水统计，避免为单一奖励新增状态表。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认满级宝箱领奖接口缺失，再补后端、前台和回归验证。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认页眉显示“满级宝箱 0/500 · 可领 1”；通行证页显示“领取宝箱”；点击后提示“满级宝箱奖励已领取。”，按钮变为“积累中”；背包出现“赛季经验券 1”。
+  - Build Web Apps：前台只扩展既有主页等级区域和通行证满级区，不新增页面、不改变深色商务手游基线。
+  - Game Studio：满级宝箱从通行证页主动领取，不强制弹窗、不遮挡主页 HUD、右侧入口、背包和主流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "claims full level chest" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：融资/贷款类随机任务配置尚未扩容；浏览器回归中再次触发既有成就同步并发唯一键崩溃，重启 API 后满级宝箱链路可完成，本批不混入该无关修复。
+- 下一阶段入口：Phase 21 第十二实施批次：融资/贷款类随机任务配置扩容，补足财务顾问卡适用内容池。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。
