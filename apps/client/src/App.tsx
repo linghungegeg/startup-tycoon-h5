@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "season" | "shop" | "bag" | "negotiation" | "vip" | "guild" | "finance";
+type NativeHomePage = "leaderboard" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance";
 
 type ApiSuccess<T> = {
   success: true;
@@ -145,6 +145,7 @@ type TaskItem = {
   rewardPlatformCoins: number;
   rewardReputation: number;
   rewardActionPower: number;
+  rewardItem: { id: string; name: string; quantity: number } | null;
   guideAction: string;
   unlockKind: "none" | "knowledge" | "compliance";
   isClaimed: boolean;
@@ -454,6 +455,7 @@ type ShopProduct = {
   rewardCash: number;
   rewardActionPower: number;
   rewardReputation: number;
+  rewardItem: { id: string; name: string; quantity: number } | null;
   durationDays: number;
   purchaseLimit: number;
   summary: string;
@@ -480,6 +482,31 @@ type ShopPurchaseResult = {
   profile: PlayerProfile;
   isDuplicate: boolean;
   result: string;
+};
+
+type InventoryCenter = {
+  items: Array<{
+    id: string;
+    itemId: string;
+    name: string;
+    category: string;
+    rarity: string;
+    icon: string;
+    summary: string;
+    usageHint: string;
+    quantity: number;
+    updatedAt: string;
+  }>;
+  recentLedgers: Array<{
+    id: string;
+    itemId: string;
+    itemName: string;
+    changeQuantity: number;
+    balanceAfter: number;
+    source: string;
+    reason: string;
+    createdAt: string;
+  }>;
 };
 
 type VipLevel = {
@@ -568,10 +595,10 @@ type SeasonCenter = {
     points: number;
     pass: { isPurchased: boolean; pricePlatformCoins: number };
   };
-  tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; isClaimed: boolean }>;
+  tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: { id: string; name: string; quantity: number } | null; isClaimed: boolean }>;
   activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
   activityBoards: LeaderboardCenter["activityBoards"];
-  shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; isAvailable: boolean; lockedReason: string | null }>;
+  shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; rewardItem: { id: string; name: string; quantity: number } | null; isAvailable: boolean; lockedReason: string | null }>;
   scenarios: Array<{ id: string; name: string; summary: string; bestScore: number | null }>;
   wallet: PlatformWallet;
 };
@@ -742,15 +769,19 @@ const competitorActionLabels: Record<CompetitorActionType, string> = {
 
 const shopCategoryLabels: Record<string, string> = {
   first_charge: "首充",
+  daily_pack: "每日",
+  weekly_card: "周卡",
   monthly_card: "月卡",
   growth_fund: "基金",
   recruit_ticket: "猎头",
+  employee_pack: "员工",
+  operation_pack: "经营",
   risk_insurance: "保险",
   activity_shop: "活动"
 };
 
 const sideActions = ["财务", "融资", "贷款"];
-const rightActions = ["活动", "排行", "商业", "专属经理"];
+const rightActions = ["活动", "排行", "商业", "特权", "通行证", "专属经理"];
 const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
@@ -765,6 +796,8 @@ const homeActionIcons: Record<string, string> = {
   "活动": "calendar",
   "排行": "trophy",
   "商业": "shopping-bag",
+  "特权": "award",
+  "通行证": "ticket",
   "VIP": "award",
   "福利中心": "gift",
   "七日目标": "calendar",
@@ -795,6 +828,8 @@ const homeActionIconClasses: Record<string, string> = {
   "活动": "text-blue-400",
   "排行": "text-amber-400",
   "商业": "text-business-gold",
+  "特权": "text-business-gold",
+  "通行证": "text-emerald-400",
   "VIP": "text-business-gold",
   "福利中心": "text-business-gold",
   "七日目标": "text-business-gold",
@@ -844,13 +879,18 @@ const iconPaths: Record<string, string[]> = {
   "package": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
   "package-open": ["M3 9 12 4l9 5-9 5Z", "M3 9v8l9 5 9-5V9", "M12 14v8"],
   "plus": ["M12 5v14", "M5 12h14"],
+  "radar": ["M12 20a8 8 0 1 0-8-8", "M12 12l6-6", "M12 12h8", "M12 4v4", "M4 12h4"],
+  "rocket": ["M4 14c4-8 8-10 16-10-1 8-2 12-10 16l-2-4-4-2Z", "M14 6l4 4", "M5 19l-2 2"],
+  "send": ["M22 2 11 13", "M22 2 15 22l-4-9-9-4Z"],
   "shield-check": ["M12 3 5 6v6c0 5 3 8 7 10 4-2 7-5 7-10V6Z", "m9 12 2 2 4-5"],
   "shopping-bag": ["M6 8h12l1 13H5Z", "M9 8a3 3 0 0 1 6 0"],
   "shopping-cart": ["M3 4h2l2 12h11l3-8H7", "M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM18 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"],
   "star": ["m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z"],
   "swords": ["M14 4 20 10", "M20 4 4 20", "M4 14l6 6", "M14 20l6-6"],
+  "ticket": ["M4 5h16v5a2 2 0 0 0 0 4v5H4v-5a2 2 0 0 0 0-4Z", "M9 5v14", "M13 9h3M13 15h3"],
   "trending-up": ["M3 17 9 11l4 4 7-8", "M14 7h6v6"],
   "trophy": ["M8 4h8v5a4 4 0 0 1-8 0Z", "M6 6H3v2a4 4 0 0 0 4 4", "M18 6h3v2a4 4 0 0 1-4 4", "M12 13v5", "M8 21h8"],
+  "user-plus": ["M15 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M8.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M19 8v6", "M16 11h6"],
   "users": ["M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2", "M9.5 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M22 21v-2a4 4 0 0 0-3-3.8", "M17 3.2a4 4 0 0 1 0 7.6"],
   "x": ["M6 6l12 12", "M18 6 6 18"],
   "zap": ["M13 2 4 14h7l-1 8 9-12h-7Z"]
@@ -932,8 +972,18 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
   },
   "商业": {
     title: "商业",
-    lines: ["首充、月卡、基金、礼包和赛季通行证集中展示。", "平台币消费会计入 VIP 经验。"],
+    lines: ["首充、礼包、猎头和保险等普通商品集中展示。", "月卡基金归特权，赛季付费归通行证。"],
     action: "进入商业"
+  },
+  "特权": {
+    title: "特权",
+    lines: ["月卡和成长基金集中展示。", "平台币消费会计入 VIP 经验。"],
+    action: "查看特权"
+  },
+  "通行证": {
+    title: "通行证",
+    lines: ["赛季通行证购买、状态和奖励线索集中展示。", "活动页只展示状态，不直接购买。"],
+    action: "查看通行证"
   },
   "VIP": {
     title: "VIP",
@@ -1323,6 +1373,8 @@ function App() {
   const [selectedShopProductId, setSelectedShopProductId] = useState("");
   const [shopError, setShopError] = useState("");
   const [shopNotice, setShopNotice] = useState("");
+  const [inventoryCenter, setInventoryCenter] = useState<InventoryCenter | null>(null);
+  const [inventoryError, setInventoryError] = useState("");
   const [vipCenter, setVipCenter] = useState<VipCenter | null>(null);
   const [vipError, setVipError] = useState("");
   const [vipNotice, setVipNotice] = useState("");
@@ -1492,6 +1544,34 @@ function App() {
   const selectedShopProduct = useMemo(
     () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? shopCenter?.products[0],
     [selectedShopProductId, shopCenter?.products]
+  );
+  const privilegeProducts = useMemo(
+    () => shopCenter?.products.filter((item) => item.category === "monthly_card" || item.category === "weekly_card" || item.category === "growth_fund") ?? [],
+    [shopCenter?.products]
+  );
+  const commerceProducts = useMemo(
+    () => shopCenter?.products.filter((item) => item.category !== "monthly_card" && item.category !== "weekly_card" && item.category !== "growth_fund") ?? [],
+    [shopCenter?.products]
+  );
+  const commercePurchases = useMemo(
+    () =>
+      shopCenter?.purchases.filter((purchase) => {
+        const product = shopCenter.products.find((item) => item.id === purchase.productId);
+        return product !== undefined && product.category !== "monthly_card" && product.category !== "weekly_card" && product.category !== "growth_fund";
+      }) ?? [],
+    [shopCenter]
+  );
+  const privilegePurchases = useMemo(
+    () =>
+      shopCenter?.purchases.filter((purchase) => {
+        const product = shopCenter.products.find((item) => item.id === purchase.productId);
+        return product?.category === "monthly_card" || product?.category === "weekly_card" || product?.category === "growth_fund";
+      }) ?? [],
+    [shopCenter]
+  );
+  const selectedInventoryItem = useMemo(
+    () => inventoryCenter?.items[0] ?? null,
+    [inventoryCenter?.items]
   );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
@@ -1816,6 +1896,22 @@ function App() {
     setShopError(response.error.message);
   };
 
+  const loadInventoryCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<InventoryCenter>(
+      `/inventory?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setInventoryCenter(response.data);
+      setInventoryError("");
+      return;
+    }
+
+    setInventoryError(response.error.message);
+  };
+
   const loadVipCenter = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<VipCenter>(
       `/vip?serverId=${encodeURIComponent(nextServerId)}`,
@@ -1870,6 +1966,7 @@ function App() {
     if (response.success) {
       onSuccess(response.data);
       await loadSeasonCenter(account.token, selectedServer.id);
+      await loadInventoryCenter(account.token, selectedServer.id);
       setSeasonNotice(notice);
       setSeasonError("");
       return;
@@ -2307,6 +2404,7 @@ function App() {
     void loadProductCenter(account.token, selectedServer.id);
     void loadMarketCenter(account.token, selectedServer.id);
     void loadShopCenter(account.token, selectedServer.id);
+    void loadInventoryCenter(account.token, selectedServer.id);
     void loadVipCenter(account.token, selectedServer.id);
     void loadPhase14Center(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
@@ -2547,7 +2645,26 @@ function App() {
       setNativeHomePage("shop");
       if (account && selectedServer) {
         void loadShopCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
+    if (panelName === "特权" || panelName === "月卡" || panelName === "创业基金") {
+      setActivePanel(null);
+      setNativeHomePage("privilege");
+      if (account && selectedServer) {
+        void loadShopCenter(account.token, selectedServer.id);
+        void loadVipCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
+    if (panelName === "通行证" || panelName === "赛季通行证") {
+      setActivePanel(null);
+      setNativeHomePage("pass");
+      if (account && selectedServer) {
         void loadSeasonCenter(account.token, selectedServer.id);
+        void loadShopCenter(account.token, selectedServer.id);
       }
       return;
     }
@@ -2565,6 +2682,9 @@ function App() {
       setActivePanel(null);
       setActiveNav("背包");
       setNativeHomePage("bag");
+      if (account && selectedServer) {
+        void loadInventoryCenter(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -2682,6 +2802,7 @@ function App() {
       setTaskNotice(`奖励已发放：${response.data.rewardLabel}`);
       setTaskError("");
       setClaimingTaskId("");
+      await loadInventoryCenter(account.token, selectedServer.id);
       return;
     }
 
@@ -3091,6 +3212,7 @@ function App() {
       setShopNotice(response.data.result);
       setShopError("");
       await loadShopCenter(account.token, selectedServer.id);
+      await loadInventoryCenter(account.token, selectedServer.id);
       await loadVipCenter(account.token, selectedServer.id);
       return;
     }
@@ -3170,6 +3292,36 @@ function App() {
     if (task.guideAction.includes("产品")) {
       setActiveNav("业务");
       setBusinessTab("产品");
+      return;
+    }
+
+    if (task.guideAction.includes("财务")) {
+      openHomePanel("财务");
+      return;
+    }
+
+    if (task.guideAction.includes("融资")) {
+      setActiveNav("融资");
+      return;
+    }
+
+    if (task.guideAction.includes("贷款")) {
+      setActiveNav("贷款");
+      return;
+    }
+
+    if (task.guideAction.includes("市场")) {
+      setActiveNav("市场");
+      return;
+    }
+
+    if (task.guideAction.includes("通行证")) {
+      openHomePanel("通行证");
+      return;
+    }
+
+    if (task.guideAction.includes("商会")) {
+      openHomePanel("商会");
       return;
     }
 
@@ -3284,14 +3436,14 @@ function App() {
               ))}
             </div>
 
-            <div className="absolute right-4 top-32 space-y-1.5">
+            <div className="absolute right-4 top-28 space-y-4">
               {rightActions.map((item, index) => (
                 <button className="flex flex-col items-center gap-1 group relative" type="button" key={item} onClick={() => openHomePanel(item)}>
-                  {[0, 2].includes(index) && <span className="red-dot" />}
-                  <span className="w-11 h-11 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
-                    <Icon name={homeActionIcons[item] ?? "box"} className={`w-5 h-5 ${homeActionIconClasses[item] ?? ""}`} />
+                  {[0, 3, 4].includes(index) && <span className="red-dot" />}
+                  <span className="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <Icon name={homeActionIcons[item] ?? "box"} className={`w-6 h-6 ${homeActionIconClasses[item] ?? ""}`} />
                   </span>
-                  <span className="text-[9px] text-white/90 font-bold drop-shadow-md">{item}</span>
+                  <span className="text-[10px] text-white/90 font-bold drop-shadow-md">{item}</span>
                 </button>
               ))}
             </div>
@@ -3869,19 +4021,13 @@ function App() {
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
-              <div className="px-6 flex gap-6 overflow-x-auto scroll-hide mb-4">
-                <button className="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap" type="button">商城商品</button>
-                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">平台币</button>
-                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">月卡/基金</button>
-                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">赛季通行证</button>
-              </div>
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
                 <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="商城余额">
                   <img src="/game-ui/html-design/main-bg.jpg" alt="" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
                     <h3 className="text-lg font-black italic text-white">平台币余额 {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}</h3>
                     <p className="text-[10px] text-business-gold font-bold">
-                      已消费 {compactNumber(shopCenter?.wallet.totalSpent ?? 0)} · VIP经验 {compactNumber(shopCenter?.wallet.vipExperience ?? 0)}
+                      普通商品商城 · 首充、礼包、猎头与保险
                     </p>
                   </div>
                 </section>
@@ -3890,25 +4036,8 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">{seasonCenter?.season.name ?? "赛季通行证"}</strong>
-                      <span className="text-[9px] text-slate-500">消耗平台币，计入 VIP 经验。</span>
-                    </div>
-                    <span className="text-[10px] text-business-gold">{seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile.platformCoins} 平台币</span>
-                  </div>
-                  <button
-                    className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45"
-                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
-                    type="button"
-                    onClick={() => void purchaseSeasonPass()}
-                  >
-                    {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : `开通 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
-                  </button>
-                </section>
                 <div className="grid grid-cols-2 gap-4">
-                  {(shopCenter?.products ?? []).map((product) => (
+                  {commerceProducts.map((product) => (
                     <article
                       className={`glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative ${selectedShopProduct?.id === product.id ? "border-business-gold/60" : ""}`}
                       key={product.id}
@@ -3930,6 +4059,11 @@ function App() {
                       </div>
                       <div className="text-xs font-black text-white text-center">{product.name}</div>
                       <p className="h-8 overflow-hidden text-[9px] text-slate-400 font-bold text-center leading-4">{product.summary}</p>
+                      {product.rewardItem && (
+                        <span className="rounded-full bg-business-gold/10 px-2 py-1 text-[9px] font-black text-business-gold">
+                          {product.rewardItem.name} x{product.rewardItem.quantity}
+                        </span>
+                      )}
                       <div className="flex items-center gap-1">
                         <Icon name="gem" className="w-3 h-3 text-business-gold" />
                         <span className="text-sm font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
@@ -3951,14 +4085,17 @@ function App() {
                     </article>
                   ))}
                 </div>
-                {shopCenter && shopCenter.purchases.length > 0 && (
+                {shopCenter && commerceProducts.length === 0 && (
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">普通商城商品暂未配置。</p>
+                )}
+                {shopCenter && commercePurchases.length > 0 && (
                   <section className="glass-panel rounded-3xl p-4">
                     <div className="flex items-center justify-between mb-3">
                       <strong className="text-sm text-white font-black">最近购买</strong>
-                      <span className="text-[10px] text-business-gold font-bold">{shopCenter.purchases.length} 笔</span>
+                      <span className="text-[10px] text-business-gold font-bold">{commercePurchases.length} 笔</span>
                     </div>
                     <div className="space-y-2">
-                      {shopCenter.purchases.slice(0, 3).map((purchase) => (
+                      {commercePurchases.slice(0, 3).map((purchase) => (
                         <div className="flex items-center justify-between text-[10px] font-bold text-slate-300" key={purchase.id}>
                           <span>{shopCenter.products.find((product) => product.id === purchase.productId)?.name ?? purchase.productId}</span>
                           <span className="text-business-gold">-{purchase.pricePlatformCoins}</span>
@@ -3969,6 +4106,187 @@ function App() {
                 )}
                 {!shopCenter && (
                   <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城配置读取中，请确认 API 服务已启动。</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {nativeHomePage === "privilege" && (
+            <section className="page-container page-active" aria-label="特权" data-testid="native-privilege">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="award" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Privilege 特权</h2>
+                    <span className="text-[10px] text-slate-500">月卡、成长基金与 VIP 经验</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭特权" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-business-gold font-black uppercase">特权余额</div>
+                      <h3 className="mt-1 text-2xl font-black italic text-white">{compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)} 平台币</h3>
+                      <p className="mt-1 text-xs text-slate-300 font-bold">已消费 {compactNumber(shopCenter?.wallet.totalSpent ?? 0)} · VIP经验 {compactNumber(shopCenter?.wallet.vipExperience ?? vipCenter?.wallet.vipExperience ?? 0)}</p>
+                    </div>
+                    <span className="w-14 h-14 rounded-2xl bg-business-gold/15 border border-business-gold/30 flex items-center justify-center">
+                      <Icon name="landmark" className="w-8 h-8 text-business-gold" />
+                    </span>
+                  </div>
+                </section>
+                {(shopNotice || shopError) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${shopError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {shopError || shopNotice}
+                  </p>
+                )}
+                <div className="grid grid-cols-1 gap-3">
+                  {privilegeProducts.map((product) => (
+                    <article className="glass-panel rounded-3xl p-4 border-business-gold/20" key={product.id}>
+                      <div className="flex items-start gap-3">
+                        <span className="w-12 h-12 rounded-2xl bg-business-gold/10 border border-business-gold/20 flex items-center justify-center">
+                          <Icon name={product.category === "monthly_card" ? "calendar" : "landmark"} className="w-7 h-7 text-business-gold" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <strong className="text-sm text-white font-black">{product.name}</strong>
+                            <span className="text-sm text-business-gold font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
+                          </div>
+                          <p className="mt-1 text-[10px] leading-4 text-slate-400 font-bold">{product.summary}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <span className="rounded-full bg-slate-900/70 px-2 py-1 text-[9px] font-black text-slate-300">
+                              {product.durationDays > 0 ? `${product.durationDays}天权益` : "阶段领取"}
+                            </span>
+                            {product.rewardItem && (
+                              <span className="rounded-full bg-business-gold/10 px-2 py-1 text-[9px] font-black text-business-gold">
+                                {product.rewardItem.name} x{product.rewardItem.quantity}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                            type="button"
+                            disabled={!product.isAvailable}
+                            onClick={() => void purchaseShopProduct(product.id)}
+                          >
+                            {product.lockedReason ?? "开通特权"}
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+                {shopCenter && privilegeProducts.length === 0 && (
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">月卡和成长基金暂未配置。</p>
+                )}
+                {shopCenter && privilegePurchases.length > 0 && (
+                  <section className="glass-panel rounded-3xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <strong className="text-sm text-white font-black">特权购买记录</strong>
+                      <span className="text-[10px] text-business-gold font-bold">{privilegePurchases.length} 笔</span>
+                    </div>
+                    <div className="space-y-2">
+                      {privilegePurchases.slice(0, 3).map((purchase) => (
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-300" key={purchase.id}>
+                          <span>{shopCenter.products.find((product) => product.id === purchase.productId)?.name ?? purchase.productId}</span>
+                          <span className="text-business-gold">-{purchase.pricePlatformCoins}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {!shopCenter && (
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">特权配置读取中，请确认 API 服务已启动。</p>
+                )}
+              </div>
+            </section>
+          )}
+
+          {nativeHomePage === "pass" && (
+            <section className="page-container page-active" aria-label="赛季通行证" data-testid="native-pass">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="ticket" className="w-7 h-7 text-emerald-400" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Pass 通行证</h2>
+                    <span className="text-[10px] text-slate-500">{seasonCenter ? `${seasonCenter.season.startDate} 至 ${seasonCenter.season.endDate}` : "赛季配置读取中"}</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭赛季通行证" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                {(seasonNotice || seasonError) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {seasonError || seasonNotice}
+                  </p>
+                )}
+                <section className="glass-panel rounded-3xl p-5 border-emerald-400/30 bg-gradient-to-br from-emerald-400/15 to-slate-950">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[10px] text-emerald-300 font-black uppercase">赛季通行证</div>
+                      <h3 className="mt-1 text-2xl font-black italic text-white">{seasonCenter?.season.name ?? "赛季通行证"}</h3>
+                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验，活动页仅展示状态和积分。</p>
+                    </div>
+                    <span className="rounded-2xl bg-slate-900/70 border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200 font-black">
+                      {seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}
+                    </span>
+                  </div>
+                  <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonCenter?.season.points ?? 0}</strong><span className="text-[9px] text-slate-500">赛季积分</span></div>
+                    <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-business-gold">{seasonCenter?.season.pass.pricePlatformCoins ?? 0}</strong><span className="text-[9px] text-slate-500">开通价格</span></div>
+                    <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile.platformCoins}</strong><span className="text-[9px] text-slate-500">平台币</span></div>
+                  </div>
+                  <button
+                    className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark disabled:opacity-45"
+                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
+                    type="button"
+                    onClick={() => void purchaseSeasonPass()}
+                  >
+                    {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : `开通通行证 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
+                  </button>
+                </section>
+                <section className="grid grid-cols-2 gap-3">
+                  <article className="glass-panel rounded-3xl p-4">
+                    <strong className="block text-sm text-white font-black">免费线</strong>
+                    <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">
+                      完成赛季任务获得积分、经验券、培养手册和活动资源。
+                    </p>
+                  </article>
+                  <article className="glass-panel rounded-3xl p-4 border-business-gold/30">
+                    <strong className="block text-sm text-business-gold font-black">付费线</strong>
+                    <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">
+                      开通即得赛季经验券、限定称号碎片和办公室皮肤券，后续奖励线继续承接员工与外观深度。
+                    </p>
+                  </article>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">赛季任务线</strong>
+                    <span className="text-[10px] text-business-gold">{seasonCenter?.tasks.length ?? 0} 项</span>
+                  </div>
+                  <div className="space-y-2">
+                    {(seasonCenter?.tasks ?? []).map((task) => (
+                      <div className="rounded-2xl bg-slate-900/60 p-3" key={task.id}>
+                        <div className="flex items-center justify-between gap-2">
+                          <strong className="text-xs text-white">{task.title}</strong>
+                          <span className="text-[10px] text-business-gold">{task.progress}/{task.target}</span>
+                        </div>
+                        <p className="mt-1 text-[9px] leading-4 text-slate-500">{task.description}</p>
+                        <div className="mt-2 flex items-center justify-between text-[9px] font-black">
+                          <span className="text-emerald-300">积分 +{task.rewardPoints}</span>
+                          <span className="text-business-gold">{task.rewardItem ? `${task.rewardItem.name} x${task.rewardItem.quantity}` : "基础奖励"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                {!seasonCenter && (
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">赛季通行证读取中，请确认 API 服务已启动。</p>
                 )}
               </div>
             </section>
@@ -4071,28 +4389,50 @@ function App() {
                 </button>
               </header>
               <div className="flex-1 overflow-y-auto px-6 pb-10 scroll-hide">
+                <section className="glass-panel rounded-3xl p-4 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] text-business-gold font-black uppercase">资产中心</p>
+                      <h3 className="mt-1 text-lg font-black text-white">道具、招募券、赛季材料</h3>
+                    </div>
+                    <span className="rounded-full bg-business-gold/15 px-3 py-1 text-[10px] font-black text-business-gold">
+                      {inventoryCenter?.items.length ?? 0} 类
+                    </span>
+                  </div>
+                  {inventoryError && <p className="mt-3 text-xs font-bold text-red-300">{inventoryError}</p>}
+                </section>
                 <div className="grid grid-cols-4 gap-3">
-                  <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 active:border-business-gold transition-colors relative">
-                    <Icon name="file-text" className="w-8 h-8 text-slate-500" />
-                    <span className="absolute bottom-1 right-2 text-[10px] font-black text-white">12</span>
-                  </div>
-                  <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-business-gold/40 bg-business-gold/5 relative">
-                    <Icon name="star" className="w-8 h-8 text-business-gold" />
-                    <span className="absolute bottom-1 right-2 text-[10px] font-black text-white">1</span>
-                  </div>
-                  {Array.from({ length: 18 }, (_, index) => (
-                    <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-40" key={index} />
+                  {(inventoryCenter?.items ?? []).map((item) => (
+                    <div
+                      className={`aspect-square glass-panel rounded-2xl flex flex-col items-center justify-center border-white/5 transition-colors relative ${selectedInventoryItem?.id === item.id ? "border-business-gold/50 bg-business-gold/5" : ""}`}
+                      key={item.id}
+                    >
+                      <Icon name={item.icon} className="w-7 h-7 text-business-gold" />
+                      <span className="mt-1 max-w-full px-1 text-center text-[9px] font-black text-slate-300 truncate">{item.name}</span>
+                      <span className="absolute bottom-1 right-2 text-[10px] font-black text-white">{item.quantity}</span>
+                    </div>
+                  ))}
+                  {Array.from({ length: Math.max(0, 16 - (inventoryCenter?.items.length ?? 0)) }, (_, index) => (
+                    <div className="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-30" key={index} />
                   ))}
                 </div>
+                {inventoryCenter && inventoryCenter.items.length === 0 && (
+                  <p className="mt-4 rounded-3xl border border-dashed border-white/10 p-5 text-center text-xs font-bold text-slate-400">
+                    完成主线、每日任务、特权购买或通行证任务后，道具会进入背包。
+                  </p>
+                )}
               </div>
               <footer className="p-6 bg-slate-900 border-t border-white/5 h-48 flex gap-6">
                 <div className="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center border border-business-gold/30 shrink-0">
-                  <Icon name="star" className="w-10 h-10 text-business-gold" />
+                  <Icon name={selectedInventoryItem?.icon ?? "package"} className="w-10 h-10 text-business-gold" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-black text-white">精英员工直聘券 (SSR)</h3>
-                  <p className="text-xs text-slate-400 mt-2 font-medium">使用后可从当前卡池中自选一名 SSR 级员工入职。</p>
-                  <button className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark" type="button">使用</button>
+                  <h3 className="font-black text-white">{selectedInventoryItem?.name ?? "暂无道具"}</h3>
+                  <p className="text-xs text-slate-400 mt-2 font-medium">{selectedInventoryItem?.summary ?? "背包用于承载任务、商城、特权和通行证奖励。"}</p>
+                  <p className="mt-2 text-[10px] font-black text-business-gold">{selectedInventoryItem?.usageHint ?? "完成经营循环后获得"}</p>
+                  <button className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark" type="button" disabled={!selectedInventoryItem}>
+                    {selectedInventoryItem ? "查看用途" : "待获得"}
+                  </button>
                 </div>
               </footer>
             </section>
@@ -4176,6 +4516,11 @@ function App() {
                 <span>平均忠诚 {averageEmployeeLoyalty}</span>
                 <span>月薪合计 {formatWan(totalEmployeeSalary)}</span>
               </section>
+              <section className="employee-summary" aria-label="员工付费深度">
+                <span>普通招募 免费补位</span>
+                <span>猎头招募 稀缺提升</span>
+                <span>定向猎头 岗位选择</span>
+              </section>
               {employeeError && <p className="employee-error">{employeeError}</p>}
 
               <section className="employee-layout">
@@ -4240,6 +4585,9 @@ function App() {
                       </dl>
 
                       <p>{selectedEmployee.specialty} 成长潜力 {selectedEmployee.growthPotential}。</p>
+                      <p>
+                        员工池已扩展为岗位收集和养成主线：项目看执行，产品看产品/工程/运营组合，融资看财务和投资关系，风险事件看法务、HR 与顾问道具。
+                      </p>
 
                       <div className="employee-actions">
                         <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
@@ -4911,7 +5259,7 @@ function App() {
                       </span>
                     </div>
                     <footer>
-                      <small>奖励：{task.rewardLabel}</small>
+                      <small>奖励：{task.rewardLabel}{task.rewardItem ? ` · ${task.rewardItem.name} x${task.rewardItem.quantity}` : ""}</small>
                       <button disabled={task.isClaimed || claimingTaskId === task.id} type="button" onClick={() => guideTask(task)}>
                         {claimingTaskId === task.id ? "领取中" : task.isClaimed ? "已领取" : task.isClaimable ? "领取" : task.guideAction}
                       </button>

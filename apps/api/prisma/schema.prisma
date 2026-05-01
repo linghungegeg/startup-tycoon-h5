@@ -233,6 +233,8 @@ model PlayerProfile {
   activityStates PlayerActivityState[]
   activityShopPurchases PlayerActivityShopPurchase[]
   scenarioRuns PlayerScenarioRun[]
+  inventoryItems PlayerInventoryItem[]
+  itemLedgers PlayerItemLedger[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -315,11 +317,15 @@ model SeasonTaskConfig {
   description String   @db.VarChar(180)
   target      Int
   rewardPoints Int
+  rewardItemId String? @db.VarChar(40)
+  rewardItemQuantity Int @default(0)
   sortOrder   Int      @default(0)
   season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  rewardItem  ItemConfig? @relation("SeasonTaskRewardItem", fields: [rewardItemId], references: [id], onDelete: SetNull)
   progresses  PlayerSeasonTaskProgress[]
 
   @@index([seasonId, sortOrder])
+  @@index([rewardItemId])
 }
 
 model PlayerSeasonProgress {
@@ -404,14 +410,18 @@ model ActivityShopItemConfig {
   costPoints  Int
   rewardActionPower Int @default(0)
   rewardReputation Int @default(0)
+  rewardItemId String? @db.VarChar(40)
+  rewardItemQuantity Int @default(0)
   purchaseLimit Int    @default(0)
   summary     String   @db.VarChar(180)
   isActive    Boolean  @default(true)
   sortOrder   Int      @default(0)
   season      SeasonConfig @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  rewardItem  ItemConfig? @relation("ActivityShopRewardItem", fields: [rewardItemId], references: [id], onDelete: SetNull)
   purchases   PlayerActivityShopPurchase[]
 
   @@index([seasonId, sortOrder])
+  @@index([rewardItemId])
 }
 
 model PlayerActivityShopPurchase {
@@ -426,6 +436,59 @@ model PlayerActivityShopPurchase {
 
   @@unique([profileId, requestId])
   @@index([profileId, itemId])
+}
+
+model ItemConfig {
+  id          String   @id @db.VarChar(40)
+  name        String   @db.VarChar(48)
+  category    String   @db.VarChar(24)
+  rarity      String   @db.VarChar(16)
+  icon        String   @db.VarChar(32)
+  summary     String   @db.VarChar(180)
+  usageHint   String   @db.VarChar(120)
+  isConsumable Boolean @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  inventoryItems PlayerInventoryItem[]
+  ledgers     PlayerItemLedger[]
+  shopRewards ShopProductConfig[] @relation("ShopRewardItem")
+  taskRewards TaskConfig[] @relation("TaskRewardItem")
+  seasonTaskRewards SeasonTaskConfig[] @relation("SeasonTaskRewardItem")
+  activityShopRewards ActivityShopItemConfig[] @relation("ActivityShopRewardItem")
+
+  @@index([category, sortOrder])
+}
+
+model PlayerInventoryItem {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  itemId      String        @db.VarChar(40)
+  quantity    Int           @default(0)
+  updatedAt   DateTime      @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  item        ItemConfig    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, itemId])
+  @@index([profileId])
+  @@index([itemId])
+}
+
+model PlayerItemLedger {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  itemId      String        @db.VarChar(40)
+  changeQuantity Int
+  balanceAfter Int
+  source      String        @db.VarChar(32)
+  referenceId String?       @db.VarChar(64)
+  reason      String        @db.VarChar(160)
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  item        ItemConfig    @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, createdAt])
+  @@index([itemId])
+  @@index([source])
 }
 
 model ScenarioConfig {
@@ -712,15 +775,19 @@ model ShopProductConfig {
   rewardCash  Int          @default(0)
   rewardActionPower Int    @default(0)
   rewardReputation Int     @default(0)
+  rewardItemId String?     @db.VarChar(40)
+  rewardItemQuantity Int   @default(0)
   durationDays Int         @default(0)
   purchaseLimit Int        @default(0)
   summary     String       @db.VarChar(180)
   isActive    Boolean      @default(true)
   sortOrder   Int          @default(0)
   createdAt   DateTime     @default(now())
+  rewardItem  ItemConfig?  @relation("ShopRewardItem", fields: [rewardItemId], references: [id], onDelete: SetNull)
   purchases   PlayerShopPurchase[]
 
   @@index([category, sortOrder])
+  @@index([rewardItemId])
 }
 
 model PlayerShopPurchase {
@@ -1169,13 +1236,17 @@ model TaskConfig {
   rewardPlatformCoins Int              @default(0)
   rewardReputation Int                 @default(0)
   rewardActionPower Int                @default(0)
+  rewardItemId      String?            @db.VarChar(40)
+  rewardItemQuantity Int               @default(0)
   guideAction     String               @db.VarChar(32)
   unlockKind      String               @default("none") @db.VarChar(24)
   sortOrder       Int                  @default(0)
   createdAt       DateTime             @default(now())
+  rewardItem      ItemConfig?          @relation("TaskRewardItem", fields: [rewardItemId], references: [id], onDelete: SetNull)
   progresses      PlayerTaskProgress[]
 
   @@index([type, sortOrder])
+  @@index([rewardItemId])
 }
 
 model PlayerTaskProgress {

@@ -1577,6 +1577,28 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/inventory") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const inventory = await repository.listInventory(account.id, serverId);
+      if (inventory === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(inventory, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/shop/purchase") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -1704,6 +1726,8 @@ export const createApiServer = (
           sendJson(response, result === "PLAYER_NOT_FOUND" || result.endsWith("NOT_FOUND") ? 404 : 409, failure(result, "Season task cannot be progressed.", traceId));
           return;
         }
+        await repository.advanceTask(account.id, serverId, "main-season-start", readToday(request));
+        await repository.advanceTask(account.id, serverId, "daily-season-progress", readToday(request));
         sendJson(response, 200, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
@@ -1735,6 +1759,7 @@ export const createApiServer = (
           sendJson(response, result === "INSUFFICIENT_PLATFORM_COINS" ? 409 : 404, failure(result, "Season pass cannot be purchased.", traceId));
           return;
         }
+        await repository.advanceTask(account.id, serverId, "main-season-start", readToday(request));
         sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
@@ -1977,6 +2002,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-finance-report", readToday(request));
+      await repository.advanceTask(account.id, serverId, "daily-finance-review", readToday(request));
       sendJson(response, 200, success(finance, traceId));
       return;
     }
@@ -2143,6 +2170,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-market-entry", readToday(request));
+      await repository.advanceTask(account.id, serverId, "side-competitor-response", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
     }
@@ -2253,6 +2282,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-product-launch", readToday(request));
+      await repository.advanceTask(account.id, serverId, "side-product-incident", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
     }
@@ -2333,6 +2364,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-capital-choice", readToday(request));
+      await repository.advanceTask(account.id, serverId, "side-investor-relation", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
     }
@@ -2402,6 +2435,8 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-capital-choice", readToday(request));
+      await repository.advanceTask(account.id, serverId, "side-bank-credit", readToday(request));
       sendJson(response, 201, success(result, traceId));
       return;
     }
@@ -2541,6 +2576,7 @@ export const createApiServer = (
         return;
       }
 
+      await repository.advanceTask(account.id, serverId, "main-first-employee", readToday(request));
       sendJson(response, 201, success(employee, traceId));
       return;
     }
