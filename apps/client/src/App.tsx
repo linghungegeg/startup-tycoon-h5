@@ -430,6 +430,58 @@ type MarketActionResult = {
   result: string;
 };
 
+type PlatformWallet = {
+  profileId: string;
+  balance: number;
+  totalSpent: number;
+  vipExperience: number;
+  ledgers: Array<{
+    id: string;
+    changeAmount: number;
+    balanceAfter: number;
+    source: string;
+    referenceId: string | null;
+    reason: string;
+    createdAt: string;
+  }>;
+};
+
+type ShopProduct = {
+  id: string;
+  name: string;
+  category: string;
+  pricePlatformCoins: number;
+  rewardCash: number;
+  rewardActionPower: number;
+  rewardReputation: number;
+  durationDays: number;
+  purchaseLimit: number;
+  summary: string;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+type ShopCenter = {
+  wallet: PlatformWallet;
+  products: ShopProduct[];
+  purchases: Array<{
+    id: string;
+    productId: string;
+    requestId: string;
+    pricePlatformCoins: number;
+    createdAt: string;
+  }>;
+};
+
+type ShopPurchaseResult = {
+  wallet: PlatformWallet;
+  product: ShopProduct;
+  purchase: ShopCenter["purchases"][number];
+  profile: PlayerProfile;
+  isDuplicate: boolean;
+  result: string;
+};
+
 const productStageLabels: Record<ProductStage, string> = {
   idea: "立项",
   mvp: "MVP",
@@ -446,6 +498,15 @@ const competitorActionLabels: Record<CompetitorActionType, string> = {
   poach: "挖员工",
   public_opinion: "舆论战",
   patent: "专利诉讼"
+};
+
+const shopCategoryLabels: Record<string, string> = {
+  first_charge: "首充",
+  monthly_card: "月卡",
+  growth_fund: "基金",
+  recruit_ticket: "猎头",
+  risk_insurance: "保险",
+  activity_shop: "活动"
 };
 
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
@@ -1008,6 +1069,10 @@ function App() {
   const [selectedCompetitorActionId, setSelectedCompetitorActionId] = useState("");
   const [marketError, setMarketError] = useState("");
   const [marketNotice, setMarketNotice] = useState("");
+  const [shopCenter, setShopCenter] = useState<ShopCenter | null>(null);
+  const [selectedShopProductId, setSelectedShopProductId] = useState("");
+  const [shopError, setShopError] = useState("");
+  const [shopNotice, setShopNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -1137,6 +1202,10 @@ function App() {
   const selectedCompetitorAction = useMemo(
     () => pendingCompetitorActions.find((item) => item.id === selectedCompetitorActionId) ?? pendingCompetitorActions[0],
     [pendingCompetitorActions, selectedCompetitorActionId]
+  );
+  const selectedShopProduct = useMemo(
+    () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? shopCenter?.products[0],
+    [selectedShopProductId, shopCenter?.products]
   );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
@@ -1348,6 +1417,19 @@ function App() {
     );
   };
 
+  const applyShopCenter = (nextShopCenter: ShopCenter): void => {
+    setShopCenter(nextShopCenter);
+    setSelectedShopProductId((currentId) => nextShopCenter.products.find((item) => item.id === currentId)?.id ?? nextShopCenter.products[0]?.id ?? "");
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            platformCoins: nextShopCenter.wallet.balance
+          }
+    );
+  };
+
   const loadLoanCenter = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<LoanCenter>(
       `/finance/loans?serverId=${encodeURIComponent(nextServerId)}`,
@@ -1410,6 +1492,22 @@ function App() {
     }
 
     setMarketError(response.error.message);
+  };
+
+  const loadShopCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<ShopCenter>(
+      `/shop?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyShopCenter(response.data);
+      setShopError("");
+      return;
+    }
+
+    setShopError(response.error.message);
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -1543,6 +1641,7 @@ function App() {
     void loadFundingCenter(account.token, selectedServer.id);
     void loadProductCenter(account.token, selectedServer.id);
     void loadMarketCenter(account.token, selectedServer.id);
+    void loadShopCenter(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -1756,6 +1855,9 @@ function App() {
     if (panelName === "商城" || panelName === "特惠商城") {
       setActivePanel(null);
       setNativeHomePage("shop");
+      if (account && selectedServer) {
+        void loadShopCenter(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -2248,6 +2350,36 @@ function App() {
     setMarketError(response.error.message);
   };
 
+  const purchaseShopProduct = async (productId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      setShopError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<ShopPurchaseResult>(
+      "/shop/purchase",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          serverId: selectedServer.id,
+          productId,
+          requestId: `${productId}-${Date.now()}`
+        })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setProfile(response.data.profile);
+      setShopNotice(response.data.result);
+      setShopError("");
+      await loadShopCenter(account.token, selectedServer.id);
+      return;
+    }
+
+    setShopError(response.error.message);
+  };
+
   const resolveCrisis = async (route: "financing" | "cost_cut" | "restructure"): Promise<void> => {
     if (!account || !selectedServer) {
       setLoanError("账号或区服状态缺失，请重新登录。");
@@ -2520,36 +2652,79 @@ function App() {
               </header>
               <div className="px-6 flex gap-6 overflow-x-auto scroll-hide mb-4">
                 <button className="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap" type="button">限时礼包</button>
-                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">钻石充值</button>
+                <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">平台币</button>
                 <button className="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap" type="button">月卡/基金</button>
               </div>
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="限时活动广告">
+                <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="商城余额">
                   <img src="/game-ui/html-design/main-bg.jpg" alt="" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
-                    <h3 className="text-lg font-black italic text-white">C轮融资专项礼包</h3>
-                    <p className="text-[10px] text-business-gold font-bold">限时 2.5 折 | 仅剩 14:23:45</p>
+                    <h3 className="text-lg font-black italic text-white">平台币余额 {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}</h3>
+                    <p className="text-[10px] text-business-gold font-bold">
+                      已消费 {compactNumber(shopCenter?.wallet.totalSpent ?? 0)} · VIP经验 {compactNumber(shopCenter?.wallet.vipExperience ?? 0)}
+                    </p>
                   </div>
                 </section>
+                {(shopNotice || shopError) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${shopError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {shopError || shopNotice}
+                  </p>
+                )}
                 <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { title: "高级猎头契约 x10", icon: "file-search", iconClass: "text-business-gold", price: "1280", discount: "-60%" },
-                    { title: "经营保险 (7天)", icon: "shield-check", iconClass: "text-emerald-400", price: "680" }
-                  ].map((product) => (
-                    <article className="glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative" key={product.title}>
-                      {product.discount && <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">{product.discount}</div>}
-                      <div className="w-16 h-16 flex items-center justify-center">
-                        <Icon name={product.icon} className={`w-10 h-10 ${product.iconClass}`} />
+                  {(shopCenter?.products ?? []).map((product) => (
+                    <article
+                      className={`glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative ${selectedShopProduct?.id === product.id ? "border-business-gold/60" : ""}`}
+                      key={product.id}
+                      onClick={() => setSelectedShopProductId(product.id)}
+                    >
+                      <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">
+                        {shopCategoryLabels[product.category] ?? "商城"}
                       </div>
-                      <div className="text-xs font-black text-white text-center">{product.title}</div>
+                      <div className="w-16 h-16 flex items-center justify-center">
+                        <Icon
+                          name={product.category === "risk_insurance" ? "shield-check" : product.category === "recruit_ticket" ? "file-search" : "gift"}
+                          className={`w-10 h-10 ${product.category === "risk_insurance" ? "text-emerald-400" : "text-business-gold"}`}
+                        />
+                      </div>
+                      <div className="text-xs font-black text-white text-center">{product.name}</div>
+                      <p className="h-8 overflow-hidden text-[9px] text-slate-400 font-bold text-center leading-4">{product.summary}</p>
                       <div className="flex items-center gap-1">
                         <Icon name="gem" className="w-3 h-3 text-business-gold" />
-                        <span className="text-sm font-black">{product.price}</span>
+                        <span className="text-sm font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
                       </div>
-                      <button className="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark" type="button">购买</button>
+                      <button
+                        className="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
+                        type="button"
+                        disabled={!product.isAvailable}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void purchaseShopProduct(product.id);
+                        }}
+                      >
+                        {product.lockedReason ?? "购买"}
+                      </button>
                     </article>
                   ))}
                 </div>
+                {shopCenter && shopCenter.purchases.length > 0 && (
+                  <section className="glass-panel rounded-3xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <strong className="text-sm text-white font-black">最近购买</strong>
+                      <span className="text-[10px] text-business-gold font-bold">{shopCenter.purchases.length} 笔</span>
+                    </div>
+                    <div className="space-y-2">
+                      {shopCenter.purchases.slice(0, 3).map((purchase) => (
+                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-300" key={purchase.id}>
+                          <span>{shopCenter.products.find((product) => product.id === purchase.productId)?.name ?? purchase.productId}</span>
+                          <span className="text-business-gold">-{purchase.pricePlatformCoins}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {!shopCenter && (
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城配置读取中，请确认 API 服务已启动。</p>
+                )}
               </div>
             </section>
           )}

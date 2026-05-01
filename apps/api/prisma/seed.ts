@@ -694,6 +694,79 @@ const competitorActionConfigs = [
   }
 ];
 
+const shopProductConfigs = [
+  {
+    id: "first-charge-starter",
+    name: "首充创业启动包",
+    category: "first_charge",
+    pricePlatformCoins: 680,
+    rewardCash: 180000,
+    rewardActionPower: 30,
+    rewardReputation: 300,
+    durationDays: 0,
+    purchaseLimit: 1,
+    summary: "首日启动资源，补充少量现金、行动力和公司声望。",
+    isActive: true,
+    sortOrder: 1
+  },
+  {
+    id: "monthly-card-basic",
+    name: "基础月卡",
+    category: "monthly_card",
+    pricePlatformCoins: 1280,
+    rewardCash: 260000,
+    rewardActionPower: 80,
+    rewardReputation: 500,
+    durationDays: 30,
+    purchaseLimit: 1,
+    summary: "提供 30 天经营补贴入口，第一版先发放即时启动补贴。",
+    isActive: true,
+    sortOrder: 2
+  },
+  {
+    id: "growth-fund-seed",
+    name: "种子期成长基金",
+    category: "growth_fund",
+    pricePlatformCoins: 1980,
+    rewardCash: 520000,
+    rewardActionPower: 120,
+    rewardReputation: 900,
+    durationDays: 0,
+    purchaseLimit: 1,
+    summary: "绑定公司早期成长节点，缓解研发和销售投入压力。",
+    isActive: true,
+    sortOrder: 3
+  },
+  {
+    id: "headhunter-ticket",
+    name: "猎头招募券",
+    category: "recruit_ticket",
+    pricePlatformCoins: 360,
+    rewardCash: 0,
+    rewardActionPower: 20,
+    rewardReputation: 120,
+    durationDays: 0,
+    purchaseLimit: 0,
+    summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。",
+    isActive: true,
+    sortOrder: 4
+  },
+  {
+    id: "risk-insurance-trial",
+    name: "风险保险体验",
+    category: "risk_insurance",
+    pricePlatformCoins: 520,
+    rewardCash: 120000,
+    rewardActionPower: 20,
+    rewardReputation: 260,
+    durationDays: 7,
+    purchaseLimit: 1,
+    summary: "降低早期经营波动的体验型保障，不直接清空负债或失败风险。",
+    isActive: true,
+    sortOrder: 5
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -762,6 +835,14 @@ const seed = async (): Promise<void> => {
       where: { id: competitorActionConfig.id },
       update: competitorActionConfig,
       create: competitorActionConfig
+    });
+  }
+
+  for (const shopProductConfig of shopProductConfigs) {
+    await prisma.shopProductConfig.upsert({
+      where: { id: shopProductConfig.id },
+      update: shopProductConfig,
+      create: shopProductConfig
     });
   }
 

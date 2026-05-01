@@ -35,6 +35,7 @@ model AdminUser {
   createdAt    DateTime        @default(now())
   sessions     AdminSession[]
   auditLogs    AdminAuditLog[]
+  platformCoinLedgers PlatformCoinLedger[]
 }
 
 model AdminSession {
@@ -123,10 +124,105 @@ model PlayerProfile {
   products    PlayerProduct[]
   markets     PlayerMarketState[]
   competitorActions PlayerCompetitorAction[]
+  platformWallet PlayerPlatformWallet?
+  platformCoinLedgers PlatformCoinLedger[]
+  shopPurchases PlayerShopPurchase[]
+  paymentOrders ExternalPaymentOrder[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
   @@index([avatarId])
+}
+
+model PlayerPlatformWallet {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @unique @db.VarChar(36)
+  balance     Int
+  totalSpent  Int           @default(0)
+  vipExperience Int         @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  ledgers     PlatformCoinLedger[]
+}
+
+model PlatformCoinLedger {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  walletId    String        @db.VarChar(36)
+  changeAmount Int
+  balanceAfter Int
+  source      String        @db.VarChar(32)
+  referenceId String?       @db.VarChar(64)
+  reason      String        @db.VarChar(160)
+  operatorAdminUserId String? @db.VarChar(36)
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  wallet      PlayerPlatformWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  operatorAdminUser AdminUser? @relation(fields: [operatorAdminUserId], references: [id], onDelete: SetNull)
+
+  @@index([profileId, createdAt])
+  @@index([walletId, createdAt])
+  @@index([source])
+  @@index([operatorAdminUserId])
+}
+
+model ShopProductConfig {
+  id          String        @id @db.VarChar(40)
+  name        String        @db.VarChar(48)
+  category    String        @db.VarChar(24)
+  pricePlatformCoins Int
+  rewardCash  Int          @default(0)
+  rewardActionPower Int    @default(0)
+  rewardReputation Int     @default(0)
+  durationDays Int         @default(0)
+  purchaseLimit Int        @default(0)
+  summary     String       @db.VarChar(180)
+  isActive    Boolean      @default(true)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime     @default(now())
+  purchases   PlayerShopPurchase[]
+
+  @@index([category, sortOrder])
+}
+
+model PlayerShopPurchase {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  productId   String        @db.VarChar(40)
+  requestId   String        @db.VarChar(64)
+  pricePlatformCoins Int
+  rewardCash  Int
+  rewardActionPower Int
+  rewardReputation Int
+  status      String        @default("delivered") @db.VarChar(16)
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  product     ShopProductConfig @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, requestId])
+  @@index([profileId, productId])
+  @@index([productId])
+}
+
+model ExternalPaymentOrder {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  productId   String?       @db.VarChar(40)
+  provider    String        @default("reserved") @db.VarChar(24)
+  externalOrderNo String?   @db.VarChar(64)
+  amountCents Int
+  platformCoins Int
+  status      String        @default("reserved") @db.VarChar(16)
+  signaturePayload String?  @db.Text
+  callbackTraceId String?   @db.VarChar(64)
+  deliveredAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status])
+  @@index([externalOrderNo])
 }
 
 model EmployeeConfig {

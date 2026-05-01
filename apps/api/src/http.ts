@@ -195,6 +195,15 @@ const readPositiveInteger = (body: unknown, key: string): number | undefined => 
   return value;
 };
 
+const readInteger = (body: unknown, key: string): number | undefined => {
+  if (!isRecord(body)) {
+    return undefined;
+  }
+
+  const value = body[key];
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+};
+
 const readToday = (request: IncomingMessage): string => {
   const header = request.headers["x-server-date"];
   const candidate = Array.isArray(header) ? header[0] : header;
@@ -381,6 +390,54 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/admin/wallet/adjust") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const profileId = readString(body, "profileId");
+        const reason = readString(body, "reason");
+        const changeAmount = readInteger(body, "changeAmount");
+        const source =
+          body.source === "admin_grant" || body.source === "admin_deduct" || body.source === "admin_correction"
+            ? body.source
+            : undefined;
+        if (profileId === "" || reason.length < 2 || changeAmount === undefined || changeAmount === 0 || source === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "profileId, source, non-zero changeAmount and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.adjustPlatformCoins(admin.id, profileId, changeAmount, source, reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "INVALID_PLATFORM_COIN_SOURCE") {
+          sendJson(response, 400, failure("INVALID_PLATFORM_COIN_SOURCE", "Invalid admin wallet source.", traceId));
+          return;
+        }
+        if (result === "INSUFFICIENT_PLATFORM_COINS") {
+          sendJson(response, 409, failure("INSUFFICIENT_PLATFORM_COINS", "Platform coin balance cannot become negative.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/servers") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -457,6 +514,131 @@ export const createApiServer = (
           return;
         }
         sendJson(response, 201, success(profile, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/wallet") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const wallet = await repository.getWallet(account.id, serverId);
+      if (wallet === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(wallet, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/shop") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const shop = await repository.listShop(account.id, serverId);
+      if (shop === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(shop, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/shop/purchase") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const productId = readString(body, "productId");
+        const requestId = readString(body, "requestId");
+        if (serverId === undefined || productId === "" || requestId.length < 8 || requestId.length > 64) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, productId and requestId are required.", traceId));
+          return;
+        }
+
+        const result = await repository.purchaseShopProduct(account.id, serverId, productId, requestId);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "SHOP_PRODUCT_NOT_FOUND") {
+          sendJson(response, 404, failure("SHOP_PRODUCT_NOT_FOUND", "Shop product not found.", traceId));
+          return;
+        }
+        if (result === "INSUFFICIENT_PLATFORM_COINS") {
+          sendJson(response, 409, failure("INSUFFICIENT_PLATFORM_COINS", "Not enough platform coins.", traceId));
+          return;
+        }
+        if (result === "PURCHASE_LIMIT_REACHED") {
+          sendJson(response, 409, failure("PURCHASE_LIMIT_REACHED", "Purchase limit reached.", traceId));
+          return;
+        }
+
+        sendJson(response, result.isDuplicate ? 200 : 201, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/payments/reserve") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const productId = readString(body, "productId") || null;
+        const amountCents = readPositiveInteger(body, "amountCents");
+        const platformCoins = readPositiveInteger(body, "platformCoins");
+        if (serverId === undefined || amountCents === undefined || platformCoins === undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, amountCents and platformCoins are required.", traceId));
+          return;
+        }
+
+        const result = await repository.reserveExternalPayment(account.id, serverId, productId, amountCents, platformCoins);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 201, success(result, traceId));
       } catch (error) {
         const code = error instanceof Error ? error.message : "BAD_REQUEST";
         sendJson(response, 400, failure(code, "Invalid request body.", traceId));

@@ -411,6 +411,84 @@ export type MarketActionRecord = {
   result: string;
 };
 
+export type PlatformCoinLedgerSource =
+  | "admin_grant"
+  | "admin_deduct"
+  | "admin_correction"
+  | "shop_purchase"
+  | "activity_reward"
+  | "reserved_payment"
+  | "system_compensation";
+
+export type PlatformWalletRecord = {
+  profileId: string;
+  balance: number;
+  totalSpent: number;
+  vipExperience: number;
+  ledgers: Array<{
+    id: string;
+    changeAmount: number;
+    balanceAfter: number;
+    source: PlatformCoinLedgerSource;
+    referenceId: string | null;
+    reason: string;
+    createdAt: string;
+  }>;
+};
+
+export type ShopProductRecord = {
+  id: string;
+  name: string;
+  category: string;
+  pricePlatformCoins: number;
+  rewardCash: number;
+  rewardActionPower: number;
+  rewardReputation: number;
+  durationDays: number;
+  purchaseLimit: number;
+  summary: string;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+export type ShopCenterRecord = {
+  wallet: PlatformWalletRecord;
+  products: ShopProductRecord[];
+  purchases: Array<{
+    id: string;
+    productId: string;
+    requestId: string;
+    pricePlatformCoins: number;
+    createdAt: string;
+  }>;
+};
+
+export type ShopPurchaseRecord = {
+  wallet: PlatformWalletRecord;
+  product: ShopProductRecord;
+  purchase: ShopCenterRecord["purchases"][number];
+  profile: PlayerProfileRecord;
+  isDuplicate: boolean;
+  result: string;
+};
+
+export type AdminWalletAdjustmentRecord = {
+  wallet: PlatformWalletRecord;
+  profile: PlayerProfileRecord;
+  auditLogId: string;
+};
+
+export type ExternalPaymentReservationRecord = {
+  id: string;
+  profileId: string;
+  productId: string | null;
+  provider: string;
+  amountCents: number;
+  platformCoins: number;
+  status: string;
+  createdAt: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -458,6 +536,11 @@ export type GameRepository = {
   enterMarket(accountId: string, serverId: string, trackId: string): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "MARKET_ALREADY_ACTIVE">;
   triggerCompetitorAction(accountId: string, serverId: string, trackId: string): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND">;
   respondCompetitorAction(accountId: string, serverId: string, actionId: string, response: "defend" | "counter"): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND" | "COMPETITOR_ACTION_SETTLED" | "INSUFFICIENT_CASH">;
+  getWallet(accountId: string, serverId: string): Promise<PlatformWalletRecord | "PLAYER_NOT_FOUND">;
+  listShop(accountId: string, serverId: string): Promise<ShopCenterRecord | "PLAYER_NOT_FOUND">;
+  purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
+  adjustPlatformCoins(adminUserId: string, profileId: string, changeAmount: number, source: PlatformCoinLedgerSource, reason: string): Promise<AdminWalletAdjustmentRecord | "PLAYER_NOT_FOUND" | "INVALID_PLATFORM_COIN_SOURCE" | "INSUFFICIENT_PLATFORM_COINS">;
+  reserveExternalPayment(accountId: string, serverId: string, productId: string | null, amountCents: number, platformCoins: number): Promise<ExternalPaymentReservationRecord | "PLAYER_NOT_FOUND">;
   disconnect(): Promise<void>;
 };
 
@@ -1069,6 +1152,156 @@ const toMarketCenterRecord = async (
     markets: markets.map(toPlayerMarketRecord),
     actions: actions.map(toCompetitorActionRecord),
     finance: toCompanyFinanceRecord(profile)
+  };
+};
+
+const readPlatformCoinLedgerSource = (source: string): PlatformCoinLedgerSource =>
+  source === "admin_grant" ||
+  source === "admin_deduct" ||
+  source === "admin_correction" ||
+  source === "shop_purchase" ||
+  source === "activity_reward" ||
+  source === "reserved_payment" ||
+  source === "system_compensation"
+    ? source
+    : "system_compensation";
+
+const isAdminPlatformCoinSource = (source: PlatformCoinLedgerSource): boolean =>
+  source === "admin_grant" || source === "admin_deduct" || source === "admin_correction";
+
+const toWalletRecord = (
+  wallet: {
+    profileId: string;
+    balance: number;
+    totalSpent: number;
+    vipExperience: number;
+  },
+  ledgers: Array<{
+    id: string;
+    changeAmount: number;
+    balanceAfter: number;
+    source: string;
+    referenceId: string | null;
+    reason: string;
+    createdAt: Date;
+  }>
+): PlatformWalletRecord => ({
+  profileId: wallet.profileId,
+  balance: wallet.balance,
+  totalSpent: wallet.totalSpent,
+  vipExperience: wallet.vipExperience,
+  ledgers: ledgers.map((ledger) => ({
+    id: ledger.id,
+    changeAmount: ledger.changeAmount,
+    balanceAfter: ledger.balanceAfter,
+    source: readPlatformCoinLedgerSource(ledger.source),
+    referenceId: ledger.referenceId,
+    reason: ledger.reason,
+    createdAt: ledger.createdAt.toISOString()
+  }))
+});
+
+const ensureWallet = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+) =>
+  prisma.playerPlatformWallet.upsert({
+    where: { profileId: profile.id },
+    update: {},
+    create: {
+      profileId: profile.id,
+      balance: profile.platformCoins,
+      totalSpent: 0,
+      vipExperience: 0
+    }
+  });
+
+const toPlatformWalletRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<PlatformWalletRecord> => {
+  const wallet = await ensureWallet(prisma, profile);
+  const ledgers = await prisma.platformCoinLedger.findMany({
+    where: { profileId: profile.id },
+    orderBy: [{ createdAt: "desc" }],
+    take: 20
+  });
+
+  return toWalletRecord(wallet, ledgers);
+};
+
+const toShopProductRecord = (
+  product: {
+    id: string;
+    name: string;
+    category: string;
+    pricePlatformCoins: number;
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    durationDays: number;
+    purchaseLimit: number;
+    summary: string;
+    isActive: boolean;
+  },
+  walletBalance: number,
+  purchaseCount: number
+): ShopProductRecord => {
+  const limitReached = product.purchaseLimit > 0 && purchaseCount >= product.purchaseLimit;
+  const hasEnoughCoins = walletBalance >= product.pricePlatformCoins;
+
+  return {
+    id: product.id,
+    name: product.name,
+    category: product.category,
+    pricePlatformCoins: product.pricePlatformCoins,
+    rewardCash: product.rewardCash,
+    rewardActionPower: product.rewardActionPower,
+    rewardReputation: product.rewardReputation,
+    durationDays: product.durationDays,
+    purchaseLimit: product.purchaseLimit,
+    summary: product.summary,
+    isAvailable: product.isActive && !limitReached && hasEnoughCoins,
+    lockedReason: !product.isActive
+      ? "商品暂未开放"
+      : limitReached
+        ? "购买次数已达上限"
+        : !hasEnoughCoins
+          ? "平台币不足"
+          : null
+  };
+};
+
+const toShopCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<ShopCenterRecord> => {
+  const wallet = await toPlatformWalletRecord(prisma, profile);
+  const [products, purchases] = await Promise.all([
+    prisma.shopProductConfig.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+    }),
+    prisma.playerShopPurchase.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ createdAt: "desc" }]
+    })
+  ]);
+  const purchaseCounts = purchases.reduce<Map<string, number>>((counts, purchase) => {
+    counts.set(purchase.productId, (counts.get(purchase.productId) ?? 0) + 1);
+    return counts;
+  }, new Map());
+
+  return {
+    wallet,
+    products: products.map((product) => toShopProductRecord(product, wallet.balance, purchaseCounts.get(product.id) ?? 0)),
+    purchases: purchases.map((purchase) => ({
+      id: purchase.id,
+      productId: purchase.productId,
+      requestId: purchase.requestId,
+      pricePlatformCoins: purchase.pricePlatformCoins,
+      createdAt: purchase.createdAt.toISOString()
+    }))
   };
 };
 
@@ -3222,6 +3455,292 @@ export const createPrismaGameRepository = (
       action: toCompetitorActionRecord(result.action),
       marketCenter: await toMarketCenterRecord(prisma, toProfileRecord(result.profile)),
       result: shareResult.resultSummary
+    };
+  },
+
+  async getWallet(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toPlatformWalletRecord(prisma, toProfileRecord(profile));
+  },
+
+  async listShop(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toShopCenterRecord(prisma, toProfileRecord(profile));
+  },
+
+  async purchaseShopProduct(accountId, serverId, productId, requestId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const existingPurchase = await prisma.playerShopPurchase.findUnique({
+      where: {
+        profileId_requestId: {
+          profileId: profile.id,
+          requestId
+        }
+      },
+      include: { product: true }
+    });
+    if (existingPurchase !== null) {
+      const currentProfile = await prisma.playerProfile.findUniqueOrThrow({ where: { id: profile.id } });
+      const wallet = await toPlatformWalletRecord(prisma, toProfileRecord(currentProfile));
+      return {
+        wallet,
+        product: toShopProductRecord(existingPurchase.product, wallet.balance, 1),
+        purchase: {
+          id: existingPurchase.id,
+          productId: existingPurchase.productId,
+          requestId: existingPurchase.requestId,
+          pricePlatformCoins: existingPurchase.pricePlatformCoins,
+          createdAt: existingPurchase.createdAt.toISOString()
+        },
+        profile: toProfileRecord(currentProfile),
+        isDuplicate: true,
+        result: "重复请求已识别，未重复扣除平台币。"
+      };
+    }
+
+    const product = await prisma.shopProductConfig.findUnique({ where: { id: productId } });
+    if (product === null || !product.isActive) {
+      return "SHOP_PRODUCT_NOT_FOUND";
+    }
+    const purchaseCount = await prisma.playerShopPurchase.count({
+      where: {
+        profileId: profile.id,
+        productId
+      }
+    });
+    if (product.purchaseLimit > 0 && purchaseCount >= product.purchaseLimit) {
+      return "PURCHASE_LIMIT_REACHED";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId: profile.id },
+        update: {},
+        create: {
+          profileId: profile.id,
+          balance: profile.platformCoins,
+          totalSpent: 0,
+          vipExperience: 0
+        }
+      });
+      if (wallet.balance < product.pricePlatformCoins) {
+        return "INSUFFICIENT_PLATFORM_COINS" as const;
+      }
+
+      const nextBalance = wallet.balance - product.pricePlatformCoins;
+      const updatedWallet = await tx.playerPlatformWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: nextBalance,
+          totalSpent: { increment: product.pricePlatformCoins },
+          vipExperience: { increment: product.pricePlatformCoins }
+        }
+      });
+      const purchase = await tx.playerShopPurchase.create({
+        data: {
+          profileId: profile.id,
+          productId: product.id,
+          requestId,
+          pricePlatformCoins: product.pricePlatformCoins,
+          rewardCash: product.rewardCash,
+          rewardActionPower: product.rewardActionPower,
+          rewardReputation: product.rewardReputation
+        }
+      });
+      await tx.platformCoinLedger.create({
+        data: {
+          profileId: profile.id,
+          walletId: updatedWallet.id,
+          changeAmount: -product.pricePlatformCoins,
+          balanceAfter: nextBalance,
+          source: "shop_purchase",
+          referenceId: purchase.id,
+          reason: `购买商品：${product.name}`
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          platformCoins: nextBalance,
+          cash: { increment: product.rewardCash },
+          actionPower: { increment: product.rewardActionPower },
+          reputation: { increment: product.rewardReputation }
+        }
+      });
+
+      return { wallet: updatedWallet, purchase, profile: updatedProfile };
+    });
+    if (result === "INSUFFICIENT_PLATFORM_COINS") {
+      return result;
+    }
+
+    const ledgers = await prisma.platformCoinLedger.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ createdAt: "desc" }],
+      take: 20
+    });
+    const nextPurchaseCount = purchaseCount + 1;
+
+    return {
+      wallet: toWalletRecord(result.wallet, ledgers),
+      product: toShopProductRecord(product, result.wallet.balance, nextPurchaseCount),
+      purchase: {
+        id: result.purchase.id,
+        productId: result.purchase.productId,
+        requestId: result.purchase.requestId,
+        pricePlatformCoins: result.purchase.pricePlatformCoins,
+        createdAt: result.purchase.createdAt.toISOString()
+      },
+      profile: toProfileRecord(result.profile),
+      isDuplicate: false,
+      result: `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+    };
+  },
+
+  async adjustPlatformCoins(adminUserId, profileId, changeAmount, source, reason) {
+    if (!isAdminPlatformCoinSource(source)) {
+      return "INVALID_PLATFORM_COIN_SOURCE";
+    }
+
+    const profile = await prisma.playerProfile.findUnique({ where: { id: profileId } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const wallet = await tx.playerPlatformWallet.upsert({
+        where: { profileId },
+        update: {},
+        create: {
+          profileId,
+          balance: profile.platformCoins,
+          totalSpent: 0,
+          vipExperience: 0
+        }
+      });
+      const nextBalance = wallet.balance + changeAmount;
+      if (nextBalance < 0) {
+        return "INSUFFICIENT_PLATFORM_COINS" as const;
+      }
+
+      const updatedWallet = await tx.playerPlatformWallet.update({
+        where: { id: wallet.id },
+        data: {
+          balance: nextBalance
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profileId },
+        data: {
+          platformCoins: nextBalance
+        }
+      });
+      await tx.platformCoinLedger.create({
+        data: {
+          profileId,
+          walletId: wallet.id,
+          changeAmount,
+          balanceAfter: nextBalance,
+          source,
+          reason,
+          operatorAdminUserId: adminUserId
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: source,
+          targetType: "player_platform_wallet",
+          targetId: profileId,
+          detail: JSON.stringify({ changeAmount, balanceAfter: nextBalance, reason })
+        }
+      });
+
+      return { wallet: updatedWallet, profile: updatedProfile, auditLogId: audit.id };
+    });
+    if (result === "INSUFFICIENT_PLATFORM_COINS") {
+      return result;
+    }
+
+    const ledgers = await prisma.platformCoinLedger.findMany({
+      where: { profileId },
+      orderBy: [{ createdAt: "desc" }],
+      take: 20
+    });
+
+    return {
+      wallet: toWalletRecord(result.wallet, ledgers),
+      profile: toProfileRecord(result.profile),
+      auditLogId: result.auditLogId
+    };
+  },
+
+  async reserveExternalPayment(accountId, serverId, productId, amountCents, platformCoins) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const order = await prisma.externalPaymentOrder.create({
+      data: {
+        profileId: profile.id,
+        productId,
+        provider: "reserved",
+        amountCents,
+        platformCoins,
+        status: "reserved"
+      }
+    });
+
+    return {
+      id: order.id,
+      profileId: order.profileId,
+      productId: order.productId,
+      provider: order.provider,
+      amountCents: order.amountCents,
+      platformCoins: order.platformCoins,
+      status: order.status,
+      createdAt: order.createdAt.toISOString()
     };
   },
 

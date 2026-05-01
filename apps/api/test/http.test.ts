@@ -31,12 +31,15 @@ import type {
   MarketCenterRecord,
   PlayerMarketRecord,
   PlayerProfileRecord,
+  PlatformCoinLedgerSource,
+  PlatformWalletRecord,
   ProductActionRecord,
   ProductCenterRecord,
   ProductRecord,
   ProjectRecord,
   ProjectSettlementRecord,
   ServerRecord,
+  ShopCenterRecord,
   TaskRecord
 } from "../src/repository.js";
 
@@ -850,6 +853,110 @@ const createTestRepository = (): GameRepository => {
       finance: toCompanyFinanceRecord(profile)
     };
   };
+  const walletLedgers = new Map<string, PlatformWalletRecord["ledgers"][number][]>();
+  const wallets = new Map<string, PlatformWalletRecord>();
+  const shopProducts = [
+    {
+      id: "first-charge-starter",
+      name: "首充创业启动包",
+      category: "first_charge",
+      pricePlatformCoins: 680,
+      rewardCash: 180000,
+      rewardActionPower: 30,
+      rewardReputation: 300,
+      durationDays: 0,
+      purchaseLimit: 1,
+      summary: "首日启动资源，补充少量现金、行动力和公司声望。"
+    },
+    {
+      id: "monthly-card-basic",
+      name: "基础月卡",
+      category: "monthly_card",
+      pricePlatformCoins: 1280,
+      rewardCash: 260000,
+      rewardActionPower: 80,
+      rewardReputation: 500,
+      durationDays: 30,
+      purchaseLimit: 1,
+      summary: "提供 30 天经营补贴入口，第一版先发放即时启动补贴。"
+    },
+    {
+      id: "headhunter-ticket",
+      name: "猎头招募券",
+      category: "recruit_ticket",
+      pricePlatformCoins: 360,
+      rewardCash: 0,
+      rewardActionPower: 20,
+      rewardReputation: 120,
+      durationDays: 0,
+      purchaseLimit: 0,
+      summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。"
+    }
+  ];
+  const shopPurchases = new Map<string, ShopCenterRecord["purchases"][number] & { profileId: string }>();
+  const ensureWallet = (profile: PlayerProfileRecord): PlatformWalletRecord => {
+    const existing = wallets.get(profile.id);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const wallet: PlatformWalletRecord = {
+      profileId: profile.id,
+      balance: profile.platformCoins,
+      totalSpent: 0,
+      vipExperience: 0,
+      ledgers: []
+    };
+    wallets.set(profile.id, wallet);
+    walletLedgers.set(profile.id, wallet.ledgers);
+    return wallet;
+  };
+  const addLedger = (
+    profileId: string,
+    changeAmount: number,
+    balanceAfter: number,
+    source: PlatformCoinLedgerSource,
+    referenceId: string | null,
+    reason: string
+  ) => {
+    const ledger = {
+      id: randomUUID(),
+      changeAmount,
+      balanceAfter,
+      source,
+      referenceId,
+      reason,
+      createdAt: new Date().toISOString()
+    };
+    const ledgers = walletLedgers.get(profileId) ?? [];
+    ledgers.unshift(ledger);
+    walletLedgers.set(profileId, ledgers);
+    const wallet = wallets.get(profileId);
+    if (wallet !== undefined) {
+      wallet.ledgers = ledgers.slice(0, 20);
+    }
+  };
+  const productPurchaseCount = (profileId: string, productId: string): number =>
+    [...shopPurchases.values()].filter((purchase) => purchase.profileId === profileId && purchase.productId === productId).length;
+  const toShopProduct = (
+    profile: PlayerProfileRecord,
+    product: (typeof shopProducts)[number]
+  ): ShopCenterRecord["products"][number] => {
+    const wallet = ensureWallet(profile);
+    const limitReached = product.purchaseLimit > 0 && productPurchaseCount(profile.id, product.id) >= product.purchaseLimit;
+    const hasEnoughCoins = wallet.balance >= product.pricePlatformCoins;
+    return {
+      ...product,
+      isAvailable: !limitReached && hasEnoughCoins,
+      lockedReason: limitReached ? "购买次数已达上限" : !hasEnoughCoins ? "平台币不足" : null
+    };
+  };
+  const toShopCenter = (profile: PlayerProfileRecord): ShopCenterRecord => ({
+    wallet: ensureWallet(profile),
+    products: shopProducts.map((product) => toShopProduct(profile, product)),
+    purchases: [...shopPurchases.values()]
+      .filter((purchase) => purchase.profileId === profile.id)
+      .map(({ profileId: _profileId, ...purchase }) => purchase)
+  });
 
   return {
     async createAccount(account) {
@@ -1869,6 +1976,119 @@ const createTestRepository = (): GameRepository => {
       action.resultSummary = market.resultSummary;
       action.resolvedAt = market.updatedAt;
       return { market, action, marketCenter: toMarketCenterRecord(profile), result: shareResult.resultSummary } satisfies MarketActionRecord;
+    },
+    async getWallet(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : ensureWallet(profile);
+    },
+    async listShop(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toShopCenter(profile);
+    },
+    async purchaseShopProduct(accountId, serverId, productId, requestId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const existing = [...shopPurchases.values()].find((purchase) => purchase.profileId === profile.id && purchase.requestId === requestId);
+      if (existing !== undefined) {
+        const product = shopProducts.find((item) => item.id === existing.productId);
+        assert.ok(product);
+        return {
+          wallet: ensureWallet(profile),
+          product: toShopProduct(profile, product),
+          purchase: {
+            id: existing.id,
+            productId: existing.productId,
+            requestId: existing.requestId,
+            pricePlatformCoins: existing.pricePlatformCoins,
+            createdAt: existing.createdAt
+          },
+          profile,
+          isDuplicate: true,
+          result: "重复请求已识别，未重复扣除平台币。"
+        };
+      }
+      const product = shopProducts.find((item) => item.id === productId);
+      if (product === undefined) {
+        return "SHOP_PRODUCT_NOT_FOUND";
+      }
+      if (product.purchaseLimit > 0 && productPurchaseCount(profile.id, product.id) >= product.purchaseLimit) {
+        return "PURCHASE_LIMIT_REACHED";
+      }
+      const wallet = ensureWallet(profile);
+      if (wallet.balance < product.pricePlatformCoins) {
+        return "INSUFFICIENT_PLATFORM_COINS";
+      }
+
+      wallet.balance -= product.pricePlatformCoins;
+      wallet.totalSpent += product.pricePlatformCoins;
+      wallet.vipExperience += product.pricePlatformCoins;
+      profile.platformCoins = wallet.balance;
+      profile.cash += product.rewardCash;
+      profile.actionPower += product.rewardActionPower;
+      profile.reputation += product.rewardReputation;
+      const purchase = {
+        id: randomUUID(),
+        profileId: profile.id,
+        productId: product.id,
+        requestId,
+        pricePlatformCoins: product.pricePlatformCoins,
+        createdAt: new Date().toISOString()
+      };
+      shopPurchases.set(purchase.id, purchase);
+      addLedger(profile.id, -product.pricePlatformCoins, wallet.balance, "shop_purchase", purchase.id, `购买商品：${product.name}`);
+      return {
+        wallet,
+        product: toShopProduct(profile, product),
+        purchase: {
+          id: purchase.id,
+          productId: purchase.productId,
+          requestId: purchase.requestId,
+          pricePlatformCoins: purchase.pricePlatformCoins,
+          createdAt: purchase.createdAt
+        },
+        profile,
+        isDuplicate: false,
+        result: `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+      };
+    },
+    async adjustPlatformCoins(adminUserId, profileId, changeAmount, source, reason) {
+      if (source !== "admin_grant" && source !== "admin_deduct" && source !== "admin_correction") {
+        return "INVALID_PLATFORM_COIN_SOURCE";
+      }
+      const profile = [...profiles.values()].find((item) => item.id === profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const wallet = ensureWallet(profile);
+      if (wallet.balance + changeAmount < 0) {
+        return "INSUFFICIENT_PLATFORM_COINS";
+      }
+      wallet.balance += changeAmount;
+      profile.platformCoins = wallet.balance;
+      addLedger(profile.id, changeAmount, wallet.balance, source, null, reason);
+      return {
+        wallet,
+        profile,
+        auditLogId: `${adminUserId}:${profileId}:${wallet.ledgers[0]?.id ?? randomUUID()}`
+      };
+    },
+    async reserveExternalPayment(accountId, serverId, productId, amountCents, platformCoins) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return {
+        id: randomUUID(),
+        profileId: profile.id,
+        productId,
+        provider: "reserved",
+        amountCents,
+        platformCoins,
+        status: "reserved",
+        createdAt: new Date().toISOString()
+      };
     },
     async disconnect() {}
   };
@@ -3415,5 +3635,141 @@ test("logs in admin users and returns admin sessions", async () => {
     assert.equal(session.status, 200);
     assert.equal(session.body.success, true);
     assert.equal(session.body.data?.username, "admin");
+  });
+});
+
+test("lists wallet and buys shop products with idempotent platform coin deduction", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "shopbuyer");
+    const shop = await requestJson<ShopCenterRecord>(baseUrl, "/shop?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(shop.status, 200);
+    assert.equal(shop.body.data?.wallet.balance, profile.platformCoins);
+    assert.ok(shop.body.data?.products.some((product) => product.id === "monthly-card-basic"));
+
+    const requestId = randomUUID();
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId })
+    });
+    assert.equal(bought.status, 201);
+    assert.equal(bought.body.success, true);
+    const boughtData = bought.body.data as {
+      wallet: PlatformWalletRecord;
+      profile: PlayerProfileRecord;
+      isDuplicate: boolean;
+    };
+    assert.equal(boughtData.isDuplicate, false);
+    assert.equal(boughtData.wallet.balance, profile.platformCoins - 1280);
+    assert.equal(boughtData.wallet.vipExperience, 1280);
+    assert.equal(boughtData.profile.platformCoins, boughtData.wallet.balance);
+    assert.equal(boughtData.wallet.ledgers[0]?.source, "shop_purchase");
+
+    const duplicate = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId })
+    });
+    assert.equal(duplicate.status, 200);
+    const duplicateData = duplicate.body.data as {
+      wallet: PlatformWalletRecord;
+      isDuplicate: boolean;
+    };
+    assert.equal(duplicateData.isDuplicate, true);
+    assert.equal(duplicateData.wallet.balance, boughtData.wallet.balance);
+
+    const limited = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId: randomUUID() })
+    });
+    assert.equal(limited.status, 409);
+    assert.equal(limited.body.error?.code, "PURCHASE_LIMIT_REACHED");
+  });
+});
+
+test("blocks insufficient platform coins and reserves external payment orders", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "shoppoor");
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const deducted = await requestJson(baseUrl, "/admin/wallet/adjust", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        source: "admin_deduct",
+        changeAmount: -36300,
+        reason: "测试扣减到低余额"
+      })
+    });
+    assert.equal(deducted.status, 200);
+
+    const blocked = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId: randomUUID() })
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.error?.code, "INSUFFICIENT_PLATFORM_COINS");
+
+    const reserved = await requestJson(baseUrl, "/payments/reserve", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", amountCents: 12800, platformCoins: 1280 })
+    });
+    assert.equal(reserved.status, 201);
+    assert.equal((reserved.body.data as { status: string }).status, "reserved");
+  });
+});
+
+test("admin platform coin adjustment requires admin auth and writes audit-backed ledger", async () => {
+  await withServer(async (baseUrl) => {
+    const { profile } = await createPlayerSession(baseUrl, "adminwallet");
+    const blocked = await requestJson(baseUrl, "/admin/wallet/adjust", {
+      method: "POST",
+      body: JSON.stringify({
+        profileId: profile.id,
+        source: "admin_grant",
+        changeAmount: 1000,
+        reason: "未登录后台"
+      })
+    });
+    assert.equal(blocked.status, 401);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const adjusted = await requestJson(baseUrl, "/admin/wallet/adjust", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        source: "admin_grant",
+        changeAmount: 1200,
+        reason: "运营补偿"
+      })
+    });
+    assert.equal(adjusted.status, 200);
+    const data = adjusted.body.data as {
+      wallet: PlatformWalletRecord;
+      profile: PlayerProfileRecord;
+      auditLogId: string;
+    };
+    assert.equal(data.wallet.balance, profile.platformCoins + 1200);
+    assert.equal(data.profile.platformCoins, data.wallet.balance);
+    assert.ok(data.auditLogId);
+    assert.equal(data.wallet.ledgers[0]?.source, "admin_grant");
   });
 });
