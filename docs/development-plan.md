@@ -1317,26 +1317,26 @@ VIP 权益：
 
 开发内容：
 
-- [ ] 新手步骤埋点。
-- [ ] 任务完成率。
-- [ ] 成就完成率。
-- [ ] 知识点查看率。
-- [ ] 合规事件选择率。
-- [ ] 活动榜参与率。
-- [ ] 项目失败率。
-- [ ] 现金流崩盘点。
-- [ ] 负债率分布。
-- [ ] 融资成功率。
-- [ ] 员工离职率。
-- [ ] 商品点击率。
-- [ ] 平台币消耗、发放、存量统计。
-- [ ] VIP 经验和等级分布。
-- [ ] 商品购买转化率。
-- [ ] 留存统计。
-- [ ] 错误日志。
-- [ ] 接口耗时。
-- [ ] 平台币异常变动告警。
-- [ ] 外部支付异常预留告警。
+- [x] 新手步骤埋点。
+- [x] 任务完成率。
+- [x] 成就完成率。
+- [x] 知识点查看率。
+- [x] 合规事件选择率。
+- [x] 活动榜参与率。
+- [x] 项目失败率。
+- [x] 现金流崩盘点。
+- [x] 负债率分布。
+- [x] 融资成功率。
+- [x] 员工离职率。
+- [x] 商品点击率。
+- [x] 平台币消耗、发放、存量统计。
+- [x] VIP 经验和等级分布。
+- [x] 商品购买转化率。
+- [x] 留存统计。
+- [x] 错误日志。
+- [x] 接口耗时。
+- [x] 平台币异常变动告警。
+- [x] 外部支付异常预留告警。
 
 验收标准：
 
@@ -1361,6 +1361,16 @@ VIP 权益：
 - 错误日志测试。
 - 平台币异常告警测试。
 - `lint/typecheck/build` 全部通过。
+
+阶段总结：
+
+- 完成内容：新增 Phase 17 商业化调优闭环。后端增加玩家埋点事件和 API 请求日志模型，提供 `POST /telemetry/events` 和 `GET /admin/analytics`；运营看板聚合玩家留存、任务/成就/知识查看、事件选择、项目失败、负债分布、融资成功、员工离职、平台币发放/消耗/存量、VIP 等级分布、商品点击和购买转化，并输出平台币异常变动与外部支付预留告警；管理端新增“数据看板”入口；前台在进入游戏、知识库加载和商城商品点击时上报最小埋点，不阻塞主流程。
+- 四插件证据：Superpowers 用于 Phase 17 计划、TDD、验证前检查；Browser Use 打开 `http://127.0.0.1:5174/` 验收数据看板核心指标、漏斗、平台币、VIP 分布和告警，并在 `http://127.0.0.1:5173/` 验收排行榜知识库、商城商品点击和主 HUD 不被遮挡；Build Web Apps 检查 Admin 看板延续既有运营后台信息密度、表格和卡片风格；Game Studio 检查前台埋点只挂在现有入口和奖励/知识/商城流程上，不改变玩法节奏和移动端 HUD 结构。
+- 验证命令：`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm test -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 浏览器/截图验收：Admin 已实测数据看板显示玩家总数、留存、错误/慢接口、任务与玩法漏斗、平台币与商品转化、负债/VIP 分布和告警；客户端已实测恢复进入主页、打开 Rank 荣誉中心、查看知识库免责声明、打开商城并点击商品，埋点表中已出现 `tutorial_step`、`knowledge_view`、`shop_product_click`。Console 当前只有既有 Tailwind CDN warning；历史 `useCallback` 错误来自修复前热更新记录，当前页面已恢复正常。
+- 遗留风险：活动榜参与率和现金流崩盘点当前按既有业务状态与活动榜未开启状态聚合展示，没有新增活动系统；外部支付仍为预留订单告警，不接真实支付回调。API 日志为应用内请求日志，后续上线前可再接入更完整的服务监控。
+- 下一阶段入口：Phase 18。
+- 是否可作为稳定点：可以。
 
 ### Phase 18：上线准备
 

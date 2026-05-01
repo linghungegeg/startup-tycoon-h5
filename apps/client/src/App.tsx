@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const SESSION_KEY = "wenziyouxi.client.session";
@@ -1287,6 +1287,27 @@ function App() {
     () => avatars.find((avatar) => avatar.id === avatarId) ?? avatars[0],
     [avatarId, avatars]
   );
+  const reportTelemetry = useCallback((
+    token: string,
+    nextServerId: string,
+    eventName: string,
+    targetId?: string,
+    metadata: Record<string, string | number | boolean | null> = {}
+  ): void => {
+    void apiRequest<{ eventId: string }>(
+      "/telemetry/events",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          serverId: nextServerId,
+          eventName,
+          targetId,
+          metadata
+        })
+      },
+      token
+    );
+  }, []);
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? employees[0],
     [employees, selectedEmployeeId]
@@ -1758,6 +1779,9 @@ function App() {
     }
     if (knowledge.success) {
       setKnowledgeEntries(knowledge.data);
+      if (knowledge.data.length > 0) {
+        reportTelemetry(token, nextServerId, "knowledge_view", "knowledge-center", { count: knowledge.data.length });
+      }
     }
     if (guild.success) {
       setGuildCenter(guild.data);
@@ -2050,7 +2074,8 @@ function App() {
     void loadPhase14Center(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
-  }, [step, account?.token, selectedServer?.id]);
+    reportTelemetry(account.token, selectedServer.id, "tutorial_step", "home-entered", { step: "home_entered" });
+  }, [step, account?.token, selectedServer?.id, reportTelemetry]);
 
   const runAuth = async (mode: AuthMode): Promise<void> => {
     const trimmedUsername = username.trim();
@@ -2230,6 +2255,7 @@ function App() {
         return;
       }
 
+      reportTelemetry(account.token, selectedServer.id, "tutorial_step", "profile-created", { step: "profile_created" });
       enterGame(account, selectedServer, selectedAvatar, created.data);
     } catch {
       setError("创建角色失败，请确认 API 服务已启动。");
@@ -3266,7 +3292,12 @@ function App() {
                     <article
                       className={`glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative ${selectedShopProduct?.id === product.id ? "border-business-gold/60" : ""}`}
                       key={product.id}
-                      onClick={() => setSelectedShopProductId(product.id)}
+                      onClick={() => {
+                        setSelectedShopProductId(product.id);
+                        if (account && selectedServer) {
+                          reportTelemetry(account.token, selectedServer.id, "shop_product_click", product.id, { category: product.category });
+                        }
+                      }}
                     >
                       <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">
                         {shopCategoryLabels[product.category] ?? "商城"}
@@ -3289,6 +3320,9 @@ function App() {
                         disabled={!product.isAvailable}
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (account && selectedServer) {
+                            reportTelemetry(account.token, selectedServer.id, "shop_product_click", product.id, { category: product.category });
+                          }
                           void purchaseShopProduct(product.id);
                         }}
                       >

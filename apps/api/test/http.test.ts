@@ -1066,6 +1066,8 @@ const createTestRepository = (): GameRepository => {
   const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string }>();
+  const telemetryEvents = new Map<string, { id: string; accountId: string; serverId: string; eventName: string; targetId: string | null; metadata: Record<string, string | number | boolean | null> }>();
+  const apiRequestLogs: Array<{ traceId: string; method: string; path: string; statusCode: number; durationMs: number }> = [];
   const ensureWallet = (profile: PlayerProfileRecord): PlatformWalletRecord => {
     const existing = wallets.get(profile.id);
     if (existing !== undefined) {
@@ -1382,6 +1384,82 @@ const createTestRepository = (): GameRepository => {
     async getAccountBySessionToken(token) {
       const accountId = accountSessions.get(token);
       return [...accounts.values()].find((account) => account.id === accountId);
+    },
+    async recordTelemetryEvent(event) {
+      const profile = profiles.get(`${event.accountId}:${event.serverId}`);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const id = randomUUID();
+      telemetryEvents.set(id, { id, ...event });
+      return { eventId: id };
+    },
+    async getAdminAnalytics() {
+      const allProfiles = [...profiles.values()];
+      const tutorialSteps = new Map<string, number>();
+      for (const event of telemetryEvents.values()) {
+        if (event.eventName !== "tutorial_step") {
+          continue;
+        }
+        const step = typeof event.metadata.step === "string" ? event.metadata.step : event.targetId ?? "unknown";
+        tutorialSteps.set(step, (tutorialSteps.get(step) ?? 0) + 1);
+      }
+      const eventChoices = [...playerEvents.values()].filter((event) => event.selectedOption !== null);
+      const optionCounts = new Map<string, number>();
+      for (const event of eventChoices) {
+        const option = event.selectedOption ?? "unknown";
+        optionCounts.set(option, (optionCounts.get(option) ?? 0) + 1);
+      }
+      const projectSettled = [...projects.values()].filter((project) => project.status === "settled" || project.status === "failed");
+      const projectFailed = projectSettled.filter((project) => project.status === "failed").length;
+      const funded = [...playerFundings.values()].filter((funding) => funding.status === "funded" || funding.status === "failed");
+      const employeesAll = [...employees.values()];
+      const shopClickCount = [...telemetryEvents.values()].filter((event) => event.eventName === "shop_product_click").length;
+      return {
+        overview: {
+          totalPlayers: allProfiles.length,
+          retainedPlayers: allProfiles.filter((profile) => profile.operatingDay > 1).length,
+          apiErrorCount: apiRequestLogs.filter((log) => log.statusCode >= 500).length,
+          slowApiCount: apiRequestLogs.filter((log) => log.durationMs >= 1000).length
+        },
+        onboarding: {
+          tutorialSteps: [...tutorialSteps.entries()].map(([step, count]) => ({ step, count }))
+        },
+        business: {
+          taskCompletionRateBasisPoints: 0,
+          achievementCompletionRateBasisPoints: 0,
+          knowledgeViewRateBasisPoints: 0,
+          eventChoiceRates: [...optionCounts.entries()].map(([option, count]) => ({
+            option,
+            count,
+            rateBasisPoints: eventChoices.length === 0 ? 0 : Math.round((count / eventChoices.length) * 10000)
+          })),
+          projectFailureRateBasisPoints: projectSettled.length === 0 ? 0 : Math.round((projectFailed / projectSettled.length) * 10000),
+          debtRatioDistribution: [
+            { band: "0-30%", count: allProfiles.length },
+            { band: "30-60%", count: 0 },
+            { band: "60-90%", count: 0 },
+            { band: "90%+", count: 0 }
+          ],
+          fundingSuccessRateBasisPoints: funded.length === 0 ? 0 : Math.round((funded.filter((funding) => funding.status === "funded").length / funded.length) * 10000),
+          employeeDepartureRateBasisPoints: employeesAll.length === 0 ? 0 : Math.round((employeesAll.filter((employee) => !employee.isActive).length / employeesAll.length) * 10000)
+        },
+        monetization: {
+          platformCoinBalanceTotal: allProfiles.reduce((total, profile) => total + profile.platformCoins, 0),
+          platformCoinGrantedTotal: 0,
+          platformCoinSpentTotal: 0,
+          vipLevelDistribution: [{ level: 0, count: allProfiles.length }],
+          shopClickCount,
+          shopPurchaseConversionBasisPoints: shopClickCount === 0 ? 0 : Math.round((shopPurchases.size / shopClickCount) * 10000)
+        },
+        alerts: [
+          { level: "info", message: "平台币异常变动监控：发放 0，消耗 0", traceId: null },
+          { level: "info", message: "外部支付异常预留告警：待处理订单 0 条", traceId: null }
+        ]
+      };
+    },
+    async recordApiRequestLog(input) {
+      apiRequestLogs.push(input);
     },
     async findAdminByUsername(username) {
       return admins.get(username);
@@ -4665,6 +4743,76 @@ test("phase 16 admin can query operations data and adjust cross server groups wi
     assert.equal(auditLogs.status, 200);
     assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_player_ban"));
     assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_cross_server_group_assign"));
+  });
+});
+
+test("phase 17 tracks telemetry and exposes operations analytics dashboard", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "analyticsphase17");
+
+    const blocked = await requestJson(baseUrl, "/admin/analytics");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const reported = await requestJson<{ eventId: string }>(baseUrl, "/telemetry/events", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        serverId: "s1",
+        eventName: "tutorial_step",
+        targetId: "profile-created",
+        metadata: { step: "profile_created" }
+      })
+    });
+    assert.equal(reported.status, 201);
+    assert.ok(reported.body.data?.eventId);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const analytics = await requestJson<{
+      overview: {
+        totalPlayers: number;
+        retainedPlayers: number;
+        apiErrorCount: number;
+        slowApiCount: number;
+      };
+      onboarding: {
+        tutorialSteps: Array<{ step: string; count: number }>;
+      };
+      business: {
+        taskCompletionRateBasisPoints: number;
+        achievementCompletionRateBasisPoints: number;
+        knowledgeViewRateBasisPoints: number;
+        eventChoiceRates: Array<{ option: string; count: number; rateBasisPoints: number }>;
+        projectFailureRateBasisPoints: number;
+        debtRatioDistribution: Array<{ band: string; count: number }>;
+        fundingSuccessRateBasisPoints: number;
+        employeeDepartureRateBasisPoints: number;
+      };
+      monetization: {
+        platformCoinBalanceTotal: number;
+        platformCoinGrantedTotal: number;
+        platformCoinSpentTotal: number;
+        vipLevelDistribution: Array<{ level: number; count: number }>;
+        shopClickCount: number;
+        shopPurchaseConversionBasisPoints: number;
+      };
+      alerts: Array<{ level: string; message: string; traceId: string | null }>;
+    }>(baseUrl, "/admin/analytics", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(analytics.status, 200);
+    assert.equal(analytics.body.data?.overview.totalPlayers, 1);
+    assert.ok(analytics.body.data?.onboarding.tutorialSteps.some((step) => step.step === "profile_created" && step.count === 1));
+    assert.equal(analytics.body.data?.monetization.platformCoinBalanceTotal, profile.platformCoins);
+    assert.ok((analytics.body.data?.business.taskCompletionRateBasisPoints ?? -1) >= 0);
+    assert.ok(analytics.body.data?.business.debtRatioDistribution.some((item) => item.band === "0-30%"));
+    assert.equal(analytics.body.data?.alerts.some((alert) => alert.message.includes("平台币")), true);
   });
 });
 

@@ -143,6 +143,37 @@ type AuditResult = {
   auditLogId: string;
 };
 
+type AnalyticsDashboard = {
+  overview: {
+    totalPlayers: number;
+    retainedPlayers: number;
+    apiErrorCount: number;
+    slowApiCount: number;
+  };
+  onboarding: {
+    tutorialSteps: Array<{ step: string; count: number }>;
+  };
+  business: {
+    taskCompletionRateBasisPoints: number;
+    achievementCompletionRateBasisPoints: number;
+    knowledgeViewRateBasisPoints: number;
+    eventChoiceRates: Array<{ option: string; count: number; rateBasisPoints: number }>;
+    projectFailureRateBasisPoints: number;
+    debtRatioDistribution: Array<{ band: string; count: number }>;
+    fundingSuccessRateBasisPoints: number;
+    employeeDepartureRateBasisPoints: number;
+  };
+  monetization: {
+    platformCoinBalanceTotal: number;
+    platformCoinGrantedTotal: number;
+    platformCoinSpentTotal: number;
+    vipLevelDistribution: Array<{ level: number; count: number }>;
+    shopClickCount: number;
+    shopPurchaseConversionBasisPoints: number;
+  };
+  alerts: Array<{ level: string; message: string; traceId: string | null }>;
+};
+
 type MailCompensation = AuditResult & {
   mailId: string;
   wallet: {
@@ -155,9 +186,10 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "players" | "wallet" | "titles" | "cross" | "configs" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "configs" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
+  { id: "analytics", label: "数据看板" },
   { id: "players", label: "玩家查询" },
   { id: "wallet", label: "平台币 / VIP" },
   { id: "titles", label: "称号 / 补偿" },
@@ -167,6 +199,7 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
 ];
 
 const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
+const formatRate = (basisPoints: number): string => `${(basisPoints / 100).toFixed(1)}%`;
 
 const isAdminSession = (value: unknown): value is AdminSession => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -258,6 +291,7 @@ export default function App() {
     leaderboardSnapshots: [],
     mailCompensations: []
   });
+  const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [coinAmount, setCoinAmount] = useState("100");
@@ -314,9 +348,10 @@ export default function App() {
       setCrossGroups(groupList.data.groups);
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, logs] = await Promise.all([
+      const [configs, logs, analyticsResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
-        apiRequest<AuditLog[]>("/admin/audit-logs", {}, token)
+        apiRequest<AuditLog[]>("/admin/audit-logs", {}, token),
+        apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token)
       ]);
       if (!configs.success) {
         setError(configs.error.message);
@@ -326,8 +361,13 @@ export default function App() {
         setError(logs.error.message);
         return;
       }
+      if (!analyticsResponse.success) {
+        setError(analyticsResponse.error.message);
+        return;
+      }
       setConfigCenter(configs.data);
       setAuditLogs(logs.data);
+      setAnalytics(analyticsResponse.data);
       setSelectedTitleId((current) => current || (configs.data.titles[0]?.id ?? ""));
       if (playerList.data.rows.length > 0) {
         setSelectedProfileId((current) => current || (playerList.data.rows[0]?.profileId ?? ""));
@@ -435,6 +475,7 @@ export default function App() {
     setVipConfigs([]);
     setCrossGroups([]);
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [] });
+    setAnalytics(null);
     setAuditLogs([]);
   };
 
@@ -739,7 +780,7 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p>Phase 16 运营后台</p>
+            <p>Phase 17 商业化调优</p>
             <h1>{menuItems.find((item) => item.id === activeSection)?.label}</h1>
           </div>
           <div className="operator-bar">
@@ -778,6 +819,111 @@ export default function App() {
 
         {error && <p className="admin-error">{error}</p>}
         {actionMessage && <p className="action-message">{actionMessage}</p>}
+
+        {activeSection === "analytics" && (
+          <section className="stacked-sections" aria-label="商业化数据看板">
+            <section className="analytics-grid" aria-label="核心指标">
+              <div className="metric-card">
+                <span>玩家总数</span>
+                <strong>{formatNumber(analytics?.overview.totalPlayers ?? 0)}</strong>
+              </div>
+              <div className="metric-card">
+                <span>留存玩家</span>
+                <strong>{formatNumber(analytics?.overview.retainedPlayers ?? 0)}</strong>
+              </div>
+              <div className="metric-card">
+                <span>API 错误</span>
+                <strong>{formatNumber(analytics?.overview.apiErrorCount ?? 0)}</strong>
+              </div>
+              <div className="metric-card">
+                <span>慢接口</span>
+                <strong>{formatNumber(analytics?.overview.slowApiCount ?? 0)}</strong>
+              </div>
+            </section>
+
+            <section className="operation-grid" aria-label="商业化调优指标">
+              <section className="table-section compact-table">
+                <div className="table-toolbar">
+                  <strong>任务与玩法漏斗</strong>
+                  <span>实时聚合</span>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>指标</th>
+                        <th>数值</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>任务完成率</td><td>{formatRate(analytics?.business.taskCompletionRateBasisPoints ?? 0)}</td></tr>
+                      <tr><td>成就完成率</td><td>{formatRate(analytics?.business.achievementCompletionRateBasisPoints ?? 0)}</td></tr>
+                      <tr><td>知识点查看率</td><td>{formatRate(analytics?.business.knowledgeViewRateBasisPoints ?? 0)}</td></tr>
+                      <tr><td>项目失败率</td><td>{formatRate(analytics?.business.projectFailureRateBasisPoints ?? 0)}</td></tr>
+                      <tr><td>融资成功率</td><td>{formatRate(analytics?.business.fundingSuccessRateBasisPoints ?? 0)}</td></tr>
+                      <tr><td>员工离职率</td><td>{formatRate(analytics?.business.employeeDepartureRateBasisPoints ?? 0)}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="table-section compact-table">
+                <div className="table-toolbar">
+                  <strong>商业化与平台币</strong>
+                  <span>发放 / 消耗 / 转化</span>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>指标</th>
+                        <th>数值</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td>平台币存量</td><td>{formatNumber(analytics?.monetization.platformCoinBalanceTotal ?? 0)}</td></tr>
+                      <tr><td>平台币发放</td><td>{formatNumber(analytics?.monetization.platformCoinGrantedTotal ?? 0)}</td></tr>
+                      <tr><td>平台币消耗</td><td>{formatNumber(analytics?.monetization.platformCoinSpentTotal ?? 0)}</td></tr>
+                      <tr><td>商品点击</td><td>{formatNumber(analytics?.monetization.shopClickCount ?? 0)}</td></tr>
+                      <tr><td>购买转化率</td><td>{formatRate(analytics?.monetization.shopPurchaseConversionBasisPoints ?? 0)}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+
+            <section className="config-grid" aria-label="分布与告警">
+              <div>
+                <h3>新手步骤埋点</h3>
+                {(analytics?.onboarding.tutorialSteps.length ?? 0) === 0 ? (
+                  <p>暂无新手步骤数据。</p>
+                ) : analytics?.onboarding.tutorialSteps.map((step) => (
+                  <p key={step.step}>{step.step}：{formatNumber(step.count)}</p>
+                ))}
+              </div>
+              <div>
+                <h3>负债率分布</h3>
+                {(analytics?.business.debtRatioDistribution ?? []).map((item) => (
+                  <p key={item.band}>{item.band}：{formatNumber(item.count)}</p>
+                ))}
+              </div>
+              <div>
+                <h3>VIP 等级分布</h3>
+                {(analytics?.monetization.vipLevelDistribution.length ?? 0) === 0 ? (
+                  <p>暂无 VIP 数据。</p>
+                ) : analytics?.monetization.vipLevelDistribution.map((item) => (
+                  <p key={item.level}>VIP {item.level}：{formatNumber(item.count)}</p>
+                ))}
+              </div>
+              <div>
+                <h3>运营告警</h3>
+                {(analytics?.alerts ?? []).map((alert) => (
+                  <p key={alert.message}>{alert.level}：{alert.message}</p>
+                ))}
+              </div>
+            </section>
+          </section>
+        )}
 
         {activeSection === "players" && (
           <section className="table-section" aria-label="玩家列表">

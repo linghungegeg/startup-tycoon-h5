@@ -667,6 +667,57 @@ export type AdminProfileStatusRecord = {
   auditLogId: string;
 };
 
+export type TelemetryEventInput = {
+  accountId: string;
+  serverId: string;
+  eventName: string;
+  targetId: string | null;
+  metadata: Record<string, string | number | boolean | null>;
+};
+
+export type TelemetryEventRecord = {
+  eventId: string;
+};
+
+export type ApiRequestLogInput = {
+  traceId: string;
+  method: string;
+  path: string;
+  statusCode: number;
+  durationMs: number;
+};
+
+export type AdminAnalyticsRecord = {
+  overview: {
+    totalPlayers: number;
+    retainedPlayers: number;
+    apiErrorCount: number;
+    slowApiCount: number;
+  };
+  onboarding: {
+    tutorialSteps: Array<{ step: string; count: number }>;
+  };
+  business: {
+    taskCompletionRateBasisPoints: number;
+    achievementCompletionRateBasisPoints: number;
+    knowledgeViewRateBasisPoints: number;
+    eventChoiceRates: Array<{ option: string; count: number; rateBasisPoints: number }>;
+    projectFailureRateBasisPoints: number;
+    debtRatioDistribution: Array<{ band: string; count: number }>;
+    fundingSuccessRateBasisPoints: number;
+    employeeDepartureRateBasisPoints: number;
+  };
+  monetization: {
+    platformCoinBalanceTotal: number;
+    platformCoinGrantedTotal: number;
+    platformCoinSpentTotal: number;
+    vipLevelDistribution: Array<{ level: number; count: number }>;
+    shopClickCount: number;
+    shopPurchaseConversionBasisPoints: number;
+  };
+  alerts: Array<{ level: string; message: string; traceId: string | null }>;
+};
+
 export type LeaderboardRowRecord = {
   rank: number;
   profileId: string;
@@ -807,6 +858,9 @@ export type GameRepository = {
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
   createAccountSession(accountId: string, token: string): Promise<void>;
   getAccountBySessionToken(token: string): Promise<AccountRecord | undefined>;
+  recordTelemetryEvent(event: TelemetryEventInput): Promise<TelemetryEventRecord | "PLAYER_NOT_FOUND">;
+  getAdminAnalytics(today: string): Promise<AdminAnalyticsRecord>;
+  recordApiRequestLog(input: ApiRequestLogInput): Promise<void>;
   findAdminByUsername(username: string): Promise<AdminUserRecord | undefined>;
   createAdminSession(adminUserId: string, token: string): Promise<void>;
   getAdminBySessionToken(token: string): Promise<AdminUserRecord | undefined>;
@@ -1783,6 +1837,24 @@ const formatLeaderboardValue = (key: string, value: number): string => {
   return `估值 ${value.toLocaleString("zh-CN")}`;
 };
 
+const rateBasisPoints = (part: number, total: number): number =>
+  total <= 0 ? 0 : Math.min(10000, Math.round((part / total) * 10000));
+
+const debtRatioBand = (totalDebt: number, valuation: number): string => {
+  const ratio = valuation <= 0 ? 10000 : Math.round((totalDebt / valuation) * 10000);
+  if (ratio < 3000) {
+    return "0-30%";
+  }
+  if (ratio < 6000) {
+    return "30-60%";
+  }
+  if (ratio < 9000) {
+    return "60-90%";
+  }
+
+  return "90%+";
+};
+
 const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 
 const isExpiredAt = (expiresAt: Date | null | undefined, today: string): boolean =>
@@ -2139,6 +2211,183 @@ export const createPrismaGameRepository = (
       include: { account: true }
     });
     return session?.account;
+  },
+
+  async recordTelemetryEvent(event) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId: event.accountId,
+          serverId: event.serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const saved = await prisma.playerTelemetryEvent.create({
+      data: {
+        accountId: event.accountId,
+        profileId: profile.id,
+        serverId: event.serverId,
+        eventName: event.eventName,
+        targetId: event.targetId,
+        metadataJson: JSON.stringify(event.metadata)
+      }
+    });
+
+    return { eventId: saved.id };
+  },
+
+  async getAdminAnalytics(_today) {
+    const [
+      profiles,
+      taskTotal,
+      taskClaimed,
+      achievementTotal,
+      achievementCompleted,
+      knowledgeUnlocks,
+      knowledgeViews,
+      eventChoices,
+      projects,
+      fundings,
+      employees,
+      wallets,
+      ledgers,
+      shopClicks,
+      shopPurchases,
+      vipLevels,
+      apiErrors,
+      slowApis,
+      paymentReservedCount,
+      telemetryEvents
+    ] = await Promise.all([
+      prisma.playerProfile.findMany(),
+      prisma.playerTaskProgress.count(),
+      prisma.playerTaskProgress.count({ where: { claimedAt: { not: null } } }),
+      prisma.playerAchievement.count(),
+      prisma.playerAchievement.count({ where: { completedAt: { not: null } } }),
+      prisma.playerKnowledgeUnlock.count(),
+      prisma.playerTelemetryEvent.count({ where: { eventName: "knowledge_view" } }),
+      prisma.playerEvent.findMany({ where: { selectedOption: { not: null } }, select: { selectedOption: true } }),
+      prisma.playerProject.findMany({ where: { status: { in: ["settled", "failed"] } }, select: { status: true, result: true } }),
+      prisma.playerFunding.findMany({ where: { status: { in: ["funded", "failed"] } }, select: { status: true } }),
+      prisma.playerEmployee.findMany({ select: { isActive: true } }),
+      prisma.playerPlatformWallet.findMany({ select: { balance: true, vipExperience: true } }),
+      prisma.platformCoinLedger.findMany({ select: { changeAmount: true, source: true } }),
+      prisma.playerTelemetryEvent.count({ where: { eventName: "shop_product_click" } }),
+      prisma.playerShopPurchase.count(),
+      prisma.vipLevelConfig.findMany({ orderBy: [{ requiredExperience: "asc" }, { sortOrder: "asc" }] }),
+      prisma.apiRequestLog.count({ where: { statusCode: { gte: 500 } } }),
+      prisma.apiRequestLog.count({ where: { durationMs: { gte: 1000 } } }),
+      prisma.externalPaymentOrder.count({ where: { status: "reserved" } }),
+      prisma.playerTelemetryEvent.findMany({ where: { eventName: "tutorial_step" }, select: { targetId: true, metadataJson: true } })
+    ]);
+
+    const tutorialStepCounts = new Map<string, number>();
+    for (const event of telemetryEvents) {
+      let step = event.targetId ?? "unknown";
+      if (event.metadataJson !== null) {
+        try {
+          const metadata = JSON.parse(event.metadataJson) as { step?: unknown };
+          if (typeof metadata.step === "string" && metadata.step.trim() !== "") {
+            step = metadata.step;
+          }
+        } catch {
+          step = event.targetId ?? "unknown";
+        }
+      }
+      tutorialStepCounts.set(step, (tutorialStepCounts.get(step) ?? 0) + 1);
+    }
+
+    const eventChoiceCounts = new Map<string, number>();
+    for (const choice of eventChoices) {
+      const option = choice.selectedOption ?? "unknown";
+      eventChoiceCounts.set(option, (eventChoiceCounts.get(option) ?? 0) + 1);
+    }
+    const eventChoiceTotal = eventChoices.length;
+    const debtDistribution = new Map<string, number>([
+      ["0-30%", 0],
+      ["30-60%", 0],
+      ["60-90%", 0],
+      ["90%+", 0]
+    ]);
+    for (const profile of profiles) {
+      const band = debtRatioBand(profile.totalDebt, profile.valuation);
+      debtDistribution.set(band, (debtDistribution.get(band) ?? 0) + 1);
+    }
+    const levelRecords = vipLevels.map(toVipLevelRecord);
+    const vipLevelCounts = new Map<number, number>();
+    for (const wallet of wallets) {
+      const { currentLevel } = resolveVipLevels(levelRecords, wallet.vipExperience);
+      vipLevelCounts.set(currentLevel.level, (vipLevelCounts.get(currentLevel.level) ?? 0) + 1);
+    }
+    const projectSettledTotal = projects.length;
+    const projectFailedTotal = projects.filter((project) => project.status === "failed" || project.result === "failed").length;
+    const fundingTotal = fundings.length;
+    const fundingSuccessTotal = fundings.filter((funding) => funding.status === "funded").length;
+    const employeeTotal = employees.length;
+    const employeeInactiveTotal = employees.filter((employee) => !employee.isActive).length;
+    const platformCoinBalanceTotal = profiles.reduce((total, profile) => total + profile.platformCoins, 0);
+    const platformCoinGrantedTotal = ledgers
+      .filter((ledger) => ledger.changeAmount > 0)
+      .reduce((total, ledger) => total + ledger.changeAmount, 0);
+    const platformCoinSpentTotal = Math.abs(
+      ledgers
+        .filter((ledger) => ledger.changeAmount < 0)
+        .reduce((total, ledger) => total + ledger.changeAmount, 0)
+    );
+
+    return {
+      overview: {
+        totalPlayers: profiles.length,
+        retainedPlayers: profiles.filter((profile) => profile.operatingDay > 1 || profile.financeMonth > 1).length,
+        apiErrorCount: apiErrors,
+        slowApiCount: slowApis
+      },
+      onboarding: {
+        tutorialSteps: [...tutorialStepCounts.entries()].map(([step, count]) => ({ step, count }))
+      },
+      business: {
+        taskCompletionRateBasisPoints: rateBasisPoints(taskClaimed, taskTotal),
+        achievementCompletionRateBasisPoints: rateBasisPoints(achievementCompleted, achievementTotal),
+        knowledgeViewRateBasisPoints: rateBasisPoints(knowledgeViews + knowledgeUnlocks, Math.max(1, profiles.length)),
+        eventChoiceRates: [...eventChoiceCounts.entries()].map(([option, count]) => ({
+          option,
+          count,
+          rateBasisPoints: rateBasisPoints(count, eventChoiceTotal)
+        })),
+        projectFailureRateBasisPoints: rateBasisPoints(projectFailedTotal, projectSettledTotal),
+        debtRatioDistribution: [...debtDistribution.entries()].map(([band, count]) => ({ band, count })),
+        fundingSuccessRateBasisPoints: rateBasisPoints(fundingSuccessTotal, fundingTotal),
+        employeeDepartureRateBasisPoints: rateBasisPoints(employeeInactiveTotal, employeeTotal)
+      },
+      monetization: {
+        platformCoinBalanceTotal,
+        platformCoinGrantedTotal,
+        platformCoinSpentTotal,
+        vipLevelDistribution: [...vipLevelCounts.entries()].map(([level, count]) => ({ level, count })),
+        shopClickCount: shopClicks,
+        shopPurchaseConversionBasisPoints: rateBasisPoints(shopPurchases, shopClicks)
+      },
+      alerts: [
+        {
+          level: platformCoinGrantedTotal >= 50000 || platformCoinSpentTotal >= 50000 ? "warning" : "info",
+          message: `平台币异常变动监控：发放 ${platformCoinGrantedTotal}，消耗 ${platformCoinSpentTotal}`,
+          traceId: null
+        },
+        {
+          level: paymentReservedCount > 0 ? "warning" : "info",
+          message: `外部支付异常预留告警：待处理订单 ${paymentReservedCount} 条`,
+          traceId: null
+        }
+      ]
+    };
+  },
+
+  async recordApiRequestLog(input) {
+    await prisma.apiRequestLog.create({ data: input });
   },
 
   async findAdminByUsername(username) {

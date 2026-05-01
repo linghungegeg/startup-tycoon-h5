@@ -204,6 +204,22 @@ const readInteger = (body: unknown, key: string): number | undefined => {
   return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 };
 
+const readTelemetryMetadata = (body: Record<string, unknown>): Record<string, string | number | boolean | null> => {
+  const value = body.metadata;
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const metadata: Record<string, string | number | boolean | null> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "string" || typeof item === "number" || typeof item === "boolean" || item === null) {
+      metadata[key] = item;
+    }
+  }
+
+  return metadata;
+};
+
 const readToday = (request: IncomingMessage): string => {
   const header = request.headers["x-server-date"];
   const candidate = Array.isArray(header) ? header[0] : header;
@@ -294,7 +310,13 @@ const authenticate = async (
   return repository.getAccountBySessionToken(token);
 };
 
-const logRequest = (request: IncomingMessage, statusCode: number, traceId: string, startedAt: number): void => {
+const logRequest = (
+  request: IncomingMessage,
+  statusCode: number,
+  traceId: string,
+  startedAt: number,
+  repository: GameRepository
+): void => {
   const durationMs = Date.now() - startedAt;
   console.log(
     JSON.stringify({
@@ -306,6 +328,13 @@ const logRequest = (request: IncomingMessage, statusCode: number, traceId: strin
       durationMs
     })
   );
+  void repository.recordApiRequestLog({
+    traceId,
+    method: request.method ?? "GET",
+    path: request.url ?? "/",
+    statusCode,
+    durationMs
+  }).catch(() => undefined);
 };
 
 export const createApiServer = (
@@ -318,7 +347,7 @@ export const createApiServer = (
     const url = new URL(request.url ?? "/", "http://localhost");
 
     response.on("finish", () => {
-      logRequest(request, response.statusCode, traceId, startedAt);
+      logRequest(request, response.statusCode, traceId, startedAt, repository);
     });
 
     if (request.method === "OPTIONS") {
@@ -432,6 +461,46 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/telemetry/events") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readString(body, "serverId");
+        const eventName = readString(body, "eventName");
+        const targetId = readString(body, "targetId");
+        if (serverId === "" || eventName.length < 2 || eventName.length > 48) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and eventName are required.", traceId));
+          return;
+        }
+
+        const result = await repository.recordTelemetryEvent({
+          accountId: account.id,
+          serverId,
+          eventName,
+          targetId: targetId === "" ? null : targetId,
+          metadata: readTelemetryMetadata(body)
+        });
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+
+        sendJson(response, 201, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/auth/session") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
@@ -441,6 +510,18 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success({ adminUserId: admin.id, username: admin.username }, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/analytics") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.getAdminAnalytics(readToday(request)), traceId));
       return;
     }
 

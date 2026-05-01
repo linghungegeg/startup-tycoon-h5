@@ -78,6 +78,35 @@ model AdminMailCompensation {
   @@index([adminUserId, createdAt])
 }
 
+model PlayerTelemetryEvent {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  accountId   String   @db.VarChar(36)
+  profileId   String?  @db.VarChar(36)
+  serverId    String   @db.VarChar(32)
+  eventName   String   @db.VarChar(48)
+  targetId    String?  @db.VarChar(64)
+  metadataJson String? @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([serverId, eventName])
+  @@index([eventName, createdAt])
+}
+
+model ApiRequestLog {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  traceId     String   @db.VarChar(64)
+  method      String   @db.VarChar(8)
+  path        String   @db.VarChar(220)
+  statusCode  Int
+  durationMs  Int
+  createdAt   DateTime @default(now())
+
+  @@index([statusCode, createdAt])
+  @@index([durationMs, createdAt])
+  @@index([traceId])
+}
+
 model GameServer {
   id            String          @id @db.VarChar(32)
   name          String          @db.VarChar(32)
