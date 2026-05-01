@@ -1726,6 +1726,21 @@ VIP 权益：
 - 遗留风险：通行证额外赛季随机任务、满级宝箱 UI、更多经营道具的具体使用效果仍未实现；下一批不应继续扩行动力基础规则，优先做通行证额外随机任务和满级后奖励展示。
 - 下一阶段入口：Phase 21 第七实施批次：通行证额外赛季随机任务、满级宝箱/满级经验去向前台展示、风险保险/市场情报/财务顾问卡等经营道具使用规则。
 
+### Phase 21 第七实施批次阶段总结：通行证额外赛季随机任务与满级去向展示
+
+- 当前稳定点：`1e673a6 feat: add action drink usage`。
+- 完成内容：通行证开通后，随机任务每日上限增加 1，并额外开放 1 个可见随机任务槽；额外槽优先生成 `season` 类赛季随机任务，普通玩家仍保持每日 6 次和 3 个可见待办。
+- 前台变化：通行证页说明“开通后每日额外获得 1 个赛季随机任务”；公司已满级时，主页等级区域和通行证页展示满级后经验进入声望转换，并显示当前溢出经验。
+- 规则边界：本批没有改行动力恢复、饮料使用、每日礼包限购和随机任务结算收益；风险保险、市场情报、财务顾问卡等经营道具使用规则仍留到后续单独批次。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认通行证购买后随机任务中心仍返回 `dailyLimit = 6`，再补最小实现。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认通行证页新增“开通后每日额外获得 1 个赛季随机任务”说明；购买通行证后按钮变为“通行证已开通”；进入专属经理随机任务页后显示今日处理 `0/7`，并出现“赛季运营 / 赛季风口机会”待办。
+  - Build Web Apps：前台只复用现有深色玻璃面板、资源条和通行证页结构，不新增视觉体系。
+  - Game Studio：额外赛季随机任务仍从专属经理待办进入，不新增强制弹窗，不遮挡主页、背包、通行证和任务主流程。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "season pass adds one daily season random task" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：满级宝箱仍只是设计方向，尚未实现宝箱进度和领奖；风险保险、市场情报、财务顾问卡等经营道具尚未接入随机任务结果修正。
+- 下一阶段入口：Phase 21 第八实施批次：单独实现经营道具使用规则，优先从风险保险或市场情报中选择一条最小闭环。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。

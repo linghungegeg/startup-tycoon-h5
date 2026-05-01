@@ -46,6 +46,8 @@ import type {
   ProductRecord,
   ProjectRecord,
   ProjectSettlementRecord,
+  RandomTaskActionRecord,
+  RandomTaskCenterRecord,
   ServerRecord,
   ShopCenterRecord,
   TaskRecord,
@@ -541,6 +543,89 @@ const createTestRepository = (): GameRepository => {
   const inventoryItems = new Map<string, { id: string; profileId: string; itemId: string; quantity: number; updatedAt: string }>();
   const itemLedgers: Array<{ id: string; profileId: string; itemId: string; changeQuantity: number; balanceAfter: number; source: string; reason: string; createdAt: string }> = [];
   const financeReports = new Map<string, CompanyFinanceSettlementRecord>();
+  const randomTaskConfigs = [
+    {
+      id: "random-cashflow-warning",
+      category: "finance",
+      title: "现金流预警复核",
+      description: "财务顾问提示下月支出会明显提高，需要决定是否提前做预算调整。",
+      source: "财务顾问",
+      riskLabel: "现金流",
+      optionALabel: "亲自复核预算",
+      optionAResult: "现金流风险下降，管理经验提升。",
+      optionAActionPower: -15,
+      optionACash: 60000,
+      optionAReputation: 180,
+      optionACompanyExperience: 65,
+      optionBLabel: "暂缓处理",
+      optionBResult: "保留行动力，但只获得少量经验。",
+      optionBActionPower: 0,
+      optionBCash: 0,
+      optionBReputation: -80,
+      optionBCompanyExperience: 25
+    },
+    {
+      id: "random-market-counter",
+      category: "market",
+      title: "竞品突然降价",
+      description: "同赛道竞品进行短期补贴，市场经理建议立刻选择应对策略。",
+      source: "商业新闻",
+      riskLabel: "市场竞争",
+      optionALabel: "用市场情报反击",
+      optionAResult: "竞品声量被压制，公司声望和市场判断提升。",
+      optionAActionPower: -25,
+      optionACash: 40000,
+      optionAReputation: 420,
+      optionACompanyExperience: 90,
+      optionBLabel: "观察一轮再行动",
+      optionBResult: "节省资源，但市场主动权下降。",
+      optionBActionPower: 0,
+      optionBCash: 0,
+      optionBReputation: -120,
+      optionBCompanyExperience: 35
+    },
+    {
+      id: "random-media-interview",
+      category: "reputation",
+      title: "行业媒体采访邀约",
+      description: "一家垂直媒体希望采访你的创业方法论，是否投入时间准备？",
+      source: "媒体邀约",
+      riskLabel: "品牌口碑",
+      optionALabel: "准备采访提纲",
+      optionAResult: "品牌曝光上升，声望提升明显。",
+      optionAActionPower: -20,
+      optionACash: 0,
+      optionAReputation: 520,
+      optionACompanyExperience: 80,
+      optionBLabel: "提供简短回复",
+      optionBResult: "曝光有限，但不影响主线经营节奏。",
+      optionBActionPower: 0,
+      optionBCash: 0,
+      optionBReputation: 160,
+      optionBCompanyExperience: 35
+    },
+    {
+      id: "random-season-opportunity",
+      category: "season",
+      title: "赛季风口机会",
+      description: "本周赛季主题带来一次曝光机会，适合补一段经营动作。",
+      source: "赛季运营",
+      riskLabel: "赛季机会",
+      optionALabel: "投入精力追风口",
+      optionAResult: "赛季贡献和公司经验增长更快。",
+      optionAActionPower: -20,
+      optionACash: 50000,
+      optionAReputation: 300,
+      optionACompanyExperience: 100,
+      optionBLabel: "只完成基础动作",
+      optionBResult: "稳健推进，不影响日常经营。",
+      optionBActionPower: 0,
+      optionBCash: 20000,
+      optionBReputation: 90,
+      optionBCompanyExperience: 45
+    }
+  ];
+  const playerRandomTasks = new Map<string, RandomTaskCenterRecord["tasks"][number]>();
   const eventConfigs = [
     {
       id: "employee-contract-risk",
@@ -1461,6 +1546,44 @@ const createTestRepository = (): GameRepository => {
   const seasonKey = (profileId: string) => `${profileId}:${seasonConfig.id}`;
   const seasonTaskKey = (profileId: string, taskId: string) => `${profileId}:${taskId}`;
   const activityKey = (profileId: string, activityId: string) => `${profileId}:${activityId}`;
+  const toRandomTask = (
+    profileId: string,
+    config: (typeof randomTaskConfigs)[number],
+    today: string
+  ): RandomTaskCenterRecord["tasks"][number] => ({
+    id: `${profileId}:${today}:${config.id}`,
+    configId: config.id,
+    category: config.category,
+    title: config.title,
+    description: config.description,
+    source: config.source,
+    status: "pending",
+    dailyDate: today,
+    riskLabel: config.riskLabel,
+    expiresAt: `${today}T23:59:59.000Z`,
+    selectedOption: null,
+    resultSummary: null,
+    options: [
+      {
+        key: "A",
+        label: config.optionALabel,
+        actionPowerCost: Math.abs(Math.min(config.optionAActionPower, 0)),
+        cashReward: config.optionACash,
+        reputationReward: config.optionAReputation,
+        companyExperienceReward: config.optionACompanyExperience,
+        result: config.optionAResult
+      },
+      {
+        key: "B",
+        label: config.optionBLabel,
+        actionPowerCost: Math.abs(Math.min(config.optionBActionPower, 0)),
+        cashReward: config.optionBCash,
+        reputationReward: config.optionBReputation,
+        companyExperienceReward: config.optionBCompanyExperience,
+        result: config.optionBResult
+      }
+    ]
+  });
   const toSeasonCenter = (profile: PlayerProfileRecord, today: string) => {
     const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
     const wallet = ensureWallet(profile);
@@ -2260,6 +2383,83 @@ const createTestRepository = (): GameRepository => {
       profile.reputation += config.rewardReputation;
       profile.actionPower += config.rewardActionPower;
       return toTaskRecord(profile.id, config, today);
+    },
+    async listRandomTasks(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const existingToday = [...playerRandomTasks.values()].filter((task) => task.id.startsWith(`${profile.id}:${today}:`));
+      const pendingCount = existingToday.filter((task) => task.status === "pending").length;
+      const hasSeasonPass = [...seasonPassPurchases.values()].some((purchase) => purchase.profileId === profile.id && purchase.seasonId === seasonConfig.id);
+      const dailyLimit = hasSeasonPass ? 7 : 6;
+      const visibleCount = hasSeasonPass ? 4 : 3;
+      const createCount = Math.max(0, Math.min(visibleCount - pendingCount, dailyLimit - existingToday.length));
+      const existingConfigIds = new Set(existingToday.map((task) => task.configId));
+      const nextConfigs = randomTaskConfigs
+        .filter((config) => hasSeasonPass || config.category !== "season")
+        .filter((config) => !existingConfigIds.has(config.id))
+        .sort((left, right) => Number(right.category === "season" && hasSeasonPass) - Number(left.category === "season" && hasSeasonPass))
+        .slice(0, createCount);
+      for (const config of nextConfigs) {
+        const task = toRandomTask(profile.id, config, today);
+        playerRandomTasks.set(task.id, task);
+      }
+
+      const tasks = [...playerRandomTasks.values()].filter((task) => task.id.startsWith(`${profile.id}:${today}:`));
+      return {
+        profile,
+        tasks,
+        dailyLimit,
+        pendingCount: tasks.filter((task) => task.status === "pending").length,
+        handledToday: tasks.filter((task) => task.status !== "pending").length
+      } satisfies RandomTaskCenterRecord;
+    },
+    async resolveRandomTask(accountId, serverId, randomTaskId, option, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const task = playerRandomTasks.get(randomTaskId);
+      if (task === undefined || !randomTaskId.startsWith(`${profile.id}:`)) {
+        return "RANDOM_TASK_NOT_FOUND";
+      }
+      if (task.status !== "pending") {
+        return "RANDOM_TASK_ALREADY_RESOLVED";
+      }
+      const selected = task.options.find((entry) => entry.key === option);
+      assert.ok(selected);
+      if (profile.actionPower < selected.actionPowerCost) {
+        return "INSUFFICIENT_ACTION_POWER";
+      }
+      profile.actionPower -= selected.actionPowerCost;
+      profile.cash += selected.cashReward;
+      profile.reputation += selected.reputationReward;
+      task.status = "resolved";
+      task.selectedOption = option;
+      task.resultSummary = selected.result;
+      const center = await this.listRandomTasks(accountId, serverId, today);
+      assert.notEqual(center, "PLAYER_NOT_FOUND");
+      return { center, task, profile, result: selected.result } satisfies RandomTaskActionRecord;
+    },
+    async dismissRandomTask(accountId, serverId, randomTaskId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const task = playerRandomTasks.get(randomTaskId);
+      if (task === undefined || !randomTaskId.startsWith(`${profile.id}:`)) {
+        return "RANDOM_TASK_NOT_FOUND";
+      }
+      if (task.status !== "pending") {
+        return "RANDOM_TASK_ALREADY_RESOLVED";
+      }
+      task.status = "dismissed";
+      task.resultSummary = "已转入专属经理待办，本次不消耗行动力。";
+      const center = await this.listRandomTasks(accountId, serverId, today);
+      assert.notEqual(center, "PLAYER_NOT_FOUND");
+      return { center, task, profile, result: task.resultSummary } satisfies RandomTaskActionRecord;
     },
     async getCompanyFinance(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5997,6 +6197,40 @@ test("uses action drink and resets daily pack purchase limit by server day", asy
       body: JSON.stringify({ serverId: "s1", productId: "daily-founder-pack", requestId: "daily-pack-20260502" })
     });
     assert.equal(nextDay.status, 201, JSON.stringify(nextDay.body));
+  });
+});
+
+test("season pass adds one daily season random task", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "passrandom");
+    const before = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(before.status, 200);
+    assert.equal(before.body.data?.dailyLimit, 6);
+    assert.equal(before.body.data?.tasks.length, 3);
+
+    const season = await requestJson<{ season: { id: string } }>(baseUrl, "/season?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(season.status, 200);
+    const seasonId = season.body.data?.season.id;
+    assert.ok(seasonId);
+
+    const pass = await requestJson(baseUrl, "/season/pass/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", seasonId, requestId: "pass-random-20260501" })
+    });
+    assert.equal(pass.status, 201, JSON.stringify(pass.body));
+
+    const after = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(after.status, 200);
+    assert.equal(after.body.data?.dailyLimit, 7);
+    assert.equal(after.body.data?.tasks.length, 4);
+    assert.equal(after.body.data?.tasks.filter((task) => task.category === "season").length, 1);
   });
 });
 

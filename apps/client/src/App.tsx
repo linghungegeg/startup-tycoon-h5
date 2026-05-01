@@ -3674,6 +3674,11 @@ function App() {
                     </span>
                     <span className="text-[9px] text-slate-400 font-bold">LV.{profile.companyLevel}/{companyGrowth?.maxLevel ?? 80}</span>
                   </span>
+                  {companyGrowth?.nextLevelExperience === null && (
+                    <span className="mt-1 text-[9px] text-business-gold font-bold">
+                      满级经验转声望 · 溢出 {companyGrowth.fullLevelOverflowExperience}
+                    </span>
+                  )}
                 </span>
               </button>
               <div className="flex flex-col items-end">
@@ -4510,7 +4515,7 @@ function App() {
                     <div>
                       <div className="text-[10px] text-emerald-300 font-black uppercase">赛季通行证</div>
                       <h3 className="mt-1 text-2xl font-black italic text-white">{seasonCenter?.season.name ?? "赛季通行证"}</h3>
-                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验，活动页仅展示状态和积分。</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验；开通后每日额外获得 1 个赛季随机任务。</p>
                     </div>
                     <span className="rounded-2xl bg-slate-900/70 border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200 font-black">
                       {seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}
@@ -4521,6 +4526,14 @@ function App() {
                     <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-business-gold">{seasonCenter?.season.pass.pricePlatformCoins ?? 0}</strong><span className="text-[9px] text-slate-500">开通价格</span></div>
                     <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile.platformCoins}</strong><span className="text-[9px] text-slate-500">平台币</span></div>
                   </div>
+                  {companyGrowth && companyGrowth.nextLevelExperience === null && (
+                    <div className="mt-3 rounded-2xl bg-slate-900/60 border border-business-gold/20 p-3">
+                      <strong className="block text-xs text-business-gold font-black">满级后经验去向</strong>
+                      <span className="mt-1 block text-[10px] leading-4 text-slate-400 font-bold">
+                        已满 {companyGrowth.maxLevel} 级，后续公司经验进入声望转换；当前溢出经验 {companyGrowth.fullLevelOverflowExperience}。
+                      </span>
+                    </div>
+                  )}
                   <button
                     className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark disabled:opacity-45"
                     disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}

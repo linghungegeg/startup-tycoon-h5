@@ -2191,8 +2191,10 @@ const COMPANY_EXPERIENCE_PER_LEVEL = 100;
 const ACTION_POWER_RECOVERY_INTERVAL_MS = 10 * 60 * 1000;
 const ACTION_POWER_RECOVERY_AMOUNT = 10;
 const RANDOM_TASK_VISIBLE_COUNT = 3;
+const RANDOM_TASK_PASS_VISIBLE_BONUS = 1;
 const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
 const RANDOM_TASK_PRIVILEGE_DAILY_LIMIT = 9;
+const RANDOM_TASK_PASS_DAILY_LIMIT_BONUS = 1;
 const VIP3_START_EXPERIENCE = 3000;
 
 const readCompanyLevel = (experience: number): number =>
@@ -3153,30 +3155,58 @@ export const createPrismaGameRepository = (
       recovery.actionPower !== profile.actionPower || recovery.actionPowerRecoveredAt.getTime() !== profile.actionPowerRecoveredAt.getTime()
         ? await prisma.playerProfile.update({ where: { id: profile.id }, data: recovery })
         : profile;
-    const hasPrivilege = await prisma.playerShopPurchase.findFirst({
+    const [hasPrivilege, seasonPass] = await Promise.all([
+      prisma.playerShopPurchase.findFirst({
+        where: {
+          profileId: profile.id,
+          product: { category: { in: ["weekly_card", "monthly_card"] } }
+        }
+      }),
+      prisma.playerSeasonPassPurchase.findFirst({
+        where: {
+          profileId: profile.id,
+          season: {
+            startDate: { lte: today },
+            endDate: { gte: today }
+          }
+        }
+      })
+    ]);
+    const hasSeasonPass = seasonPass !== null;
+    const dailyLimit = (hasPrivilege === null ? RANDOM_TASK_BASE_DAILY_LIMIT : RANDOM_TASK_PRIVILEGE_DAILY_LIMIT) + (hasSeasonPass ? RANDOM_TASK_PASS_DAILY_LIMIT_BONUS : 0);
+    const visibleCount = RANDOM_TASK_VISIBLE_COUNT + (hasSeasonPass ? RANDOM_TASK_PASS_VISIBLE_BONUS : 0);
+    const existingToday = await prisma.playerRandomTask.findMany({
       where: {
         profileId: profile.id,
-        product: { category: { in: ["weekly_card", "monthly_card"] } }
-      }
-    });
-    const dailyLimit = hasPrivilege === null ? RANDOM_TASK_BASE_DAILY_LIMIT : RANDOM_TASK_PRIVILEGE_DAILY_LIMIT;
-    const existingToday = await prisma.playerRandomTask.findMany({
-      where: { profileId: profile.id, dailyDate: today },
+        dailyDate: today
+      },
       include: { config: true },
       orderBy: [{ status: "asc" }, { createdAt: "asc" }]
     });
     const pendingCount = existingToday.filter((task) => task.status === "pending").length;
-    const createCount = Math.max(0, Math.min(RANDOM_TASK_VISIBLE_COUNT - pendingCount, dailyLimit - existingToday.length));
+    const createCount = Math.max(0, Math.min(visibleCount - pendingCount, dailyLimit - existingToday.length));
     if (createCount > 0) {
       const usedConfigIds = new Set(existingToday.map((task) => task.configId));
+      const selectedConfigs = [];
+      if (hasSeasonPass && !existingToday.some((task) => task.config.category === "season")) {
+        const seasonConfig = await prisma.randomTaskConfig.findFirst({
+          where: { isActive: true, category: "season", id: { notIn: [...usedConfigIds] } },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+        });
+        if (seasonConfig !== null) {
+          selectedConfigs.push(seasonConfig);
+          usedConfigIds.add(seasonConfig.id);
+        }
+      }
       const configs = await prisma.randomTaskConfig.findMany({
         where: { isActive: true, id: { notIn: [...usedConfigIds] } },
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-        take: createCount
+        take: createCount - selectedConfigs.length
       });
+      selectedConfigs.push(...configs);
       const expiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
       await prisma.playerRandomTask.createMany({
-        data: configs.map((config) => ({
+        data: selectedConfigs.map((config) => ({
           profileId: profile.id,
           configId: config.id,
           dailyDate: today,
