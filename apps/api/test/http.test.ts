@@ -1306,6 +1306,20 @@ const createTestRepository = (): GameRepository => {
       durationDays: 0,
       purchaseLimit: 0,
       summary: "提供一次市场情报，用于增强市场随机任务收益。"
+    },
+    {
+      id: "finance-advisor-trial",
+      name: "财务顾问体验包",
+      category: "finance",
+      pricePlatformCoins: 520,
+      rewardCash: 0,
+      rewardActionPower: 0,
+      rewardReputation: 0,
+      rewardItemId: "finance-advisor-card",
+      rewardItemQuantity: 1,
+      durationDays: 0,
+      purchaseLimit: 0,
+      summary: "提供一次财务顾问卡，用于优化财务随机任务收益。"
     }
   ];
   const itemConfigs = [
@@ -1335,6 +1349,15 @@ const createTestRepository = (): GameRepository => {
       icon: "radar",
       summary: "用于查看竞争压力并降低进入新赛道的不确定性。",
       usageHint: "市场竞争、跨服排行准备"
+    },
+    {
+      id: "finance-advisor-card",
+      name: "财务顾问卡",
+      category: "operation",
+      rarity: "稀缺",
+      icon: "briefcase",
+      summary: "用于现金流预警、融资和贷款选择，是中期经营缓冲道具。",
+      usageHint: "财务、融资、贷款"
     },
     {
       id: "training-manual",
@@ -2480,29 +2503,41 @@ const createTestRepository = (): GameRepository => {
       if (profile.actionPower < selected.actionPowerCost) {
         return "INSUFFICIENT_ACTION_POWER";
       }
-      if (modifierItemId !== undefined && modifierItemId !== "risk-insurance" && modifierItemId !== "market-intel") {
+      if (modifierItemId !== undefined && modifierItemId !== "risk-insurance" && modifierItemId !== "market-intel" && modifierItemId !== "finance-advisor-card") {
         return "ITEM_NOT_USABLE";
       }
       const canUseRiskInsurance = modifierItemId === "risk-insurance" && task.category !== "season" && (selected.cashReward < 0 || selected.reputationReward < 0);
       const canUseMarketIntel = modifierItemId === "market-intel" && (task.category === "market" || task.category === "season");
+      const canUseFinanceAdvisor = modifierItemId === "finance-advisor-card" && (task.category === "finance" || task.category === "funding" || task.category === "loan");
       if (modifierItemId === "risk-insurance" && !canUseRiskInsurance) {
         return "ITEM_NOT_USABLE";
       }
       if (modifierItemId === "market-intel" && !canUseMarketIntel) {
         return "ITEM_NOT_USABLE";
       }
-      const usedItem = canUseRiskInsurance || canUseMarketIntel
+      if (modifierItemId === "finance-advisor-card" && !canUseFinanceAdvisor) {
+        return "ITEM_NOT_USABLE";
+      }
+      const usedItem = canUseRiskInsurance || canUseMarketIntel || canUseFinanceAdvisor
         ? inventoryItems.get(`${profile.id}:${modifierItemId}`)
         : undefined;
-      if (modifierItemId !== undefined && (canUseRiskInsurance || canUseMarketIntel) && (usedItem === undefined || usedItem.quantity <= 0)) {
+      if (modifierItemId !== undefined && (canUseRiskInsurance || canUseMarketIntel || canUseFinanceAdvisor) && (usedItem === undefined || usedItem.quantity <= 0)) {
         return "ITEM_NOT_FOUND";
       }
-      const nextCashReward = canUseRiskInsurance && selected.cashReward < 0 ? Math.trunc(selected.cashReward / 2) : selected.cashReward;
+      const nextCashReward = canUseFinanceAdvisor
+        ? selected.cashReward > 0 ? Math.trunc(selected.cashReward * 1.2) : Math.trunc(selected.cashReward * 0.8)
+        : canUseRiskInsurance && selected.cashReward < 0 ? Math.trunc(selected.cashReward / 2) : selected.cashReward;
       const nextReputationReward = canUseMarketIntel
         ? selected.reputationReward > 0 ? Math.trunc(selected.reputationReward * 1.2) : Math.trunc(selected.reputationReward * 0.8)
+        : canUseFinanceAdvisor
+          ? selected.reputationReward > 0 ? Math.trunc(selected.reputationReward * 1.1) : Math.trunc(selected.reputationReward * 0.8)
         : canUseRiskInsurance && selected.reputationReward < 0 ? Math.trunc(selected.reputationReward / 2) : selected.reputationReward;
-      const nextCompanyExperienceReward = canUseMarketIntel && selected.companyExperienceReward > 0 ? Math.trunc(selected.companyExperienceReward * 1.1) : selected.companyExperienceReward;
-      const effectSummary = canUseMarketIntel ? "市场情报已生效，优化了本次市场判断。" : "风险保险已生效，降低了本次经营损失。";
+      const nextCompanyExperienceReward = (canUseMarketIntel || canUseFinanceAdvisor) && selected.companyExperienceReward > 0 ? Math.trunc(selected.companyExperienceReward * 1.1) : selected.companyExperienceReward;
+      const effectSummary = canUseMarketIntel
+        ? "市场情报已生效，优化了本次市场判断。"
+        : canUseFinanceAdvisor
+          ? "财务顾问卡已生效，优化了本次现金流判断。"
+          : "风险保险已生效，降低了本次经营损失。";
       if (usedItem !== undefined) {
         usedItem.quantity -= 1;
         usedItem.updatedAt = new Date().toISOString();
@@ -6417,6 +6452,57 @@ test("uses market intel to improve market random task results", async () => {
     });
     assert.equal(afterInventory.status, 200);
     assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "market-intel"), false);
+    assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
+  });
+});
+
+test("uses finance advisor card to improve finance random task results", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "financemodifier");
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", productId: "finance-advisor-trial", requestId: "finance-advisor-20260501" })
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+
+    const beforeInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(beforeInventory.status, 200);
+    assert.equal(beforeInventory.body.data?.items.find((item) => item.itemId === "finance-advisor-card")?.quantity, 1);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(center.status, 200);
+    const financeTask = center.body.data?.tasks.find((task) => task.category === "finance");
+    assert.ok(financeTask);
+    const cashBefore = center.body.data?.profile.cash ?? 0;
+    const reputationBefore = center.body.data?.profile.reputation ?? 0;
+    const experienceBefore = center.body.data?.profile.companyExperience ?? 0;
+
+    const resolved = await requestJson<RandomTaskActionRecord & { usedItem?: { itemId: string; effectSummary: string } }>(
+      baseUrl,
+      `/random-tasks/${encodeURIComponent(financeTask.id)}/resolve`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+        body: JSON.stringify({ serverId: "s1", option: "A", modifierItemId: "finance-advisor-card" })
+      }
+    );
+    assert.equal(resolved.status, 200, JSON.stringify(resolved.body));
+    assert.equal(resolved.body.data?.profile.cash, cashBefore + 72000);
+    assert.equal(resolved.body.data?.profile.reputation, reputationBefore + 198);
+    assert.equal(resolved.body.data?.profile.companyExperience, experienceBefore + 71);
+    assert.equal(resolved.body.data?.usedItem?.itemId, "finance-advisor-card");
+    assert.match(resolved.body.data?.result ?? "", /财务顾问卡已生效/);
+
+    const afterInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(afterInventory.status, 200);
+    assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "finance-advisor-card"), false);
     assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
   });
 });

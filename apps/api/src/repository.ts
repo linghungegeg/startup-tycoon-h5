@@ -2202,6 +2202,7 @@ const RANDOM_TASK_PRIVILEGE_DAILY_LIMIT = 9;
 const RANDOM_TASK_PASS_DAILY_LIMIT_BONUS = 1;
 const RISK_INSURANCE_ITEM_ID = "risk-insurance";
 const MARKET_INTEL_ITEM_ID = "market-intel";
+const FINANCE_ADVISOR_ITEM_ID = "finance-advisor-card";
 const VIP3_START_EXPERIENCE = 3000;
 
 const readCompanyLevel = (experience: number): number =>
@@ -2849,6 +2850,8 @@ const applyRiskInsurance = (
 
 const canUseMarketIntel = (category: string): boolean => category === "market" || category === "season";
 
+const canUseFinanceAdvisor = (category: string): boolean => category === "finance" || category === "funding" || category === "loan";
+
 const applyMarketIntel = (
   category: string,
   reputationDelta: number,
@@ -2862,6 +2865,24 @@ const applyMarketIntel = (
     reputationDelta: reputationDelta > 0 ? Math.trunc(reputationDelta * 1.2) : Math.trunc(reputationDelta * 0.8),
     companyExperience: companyExperience > 0 ? Math.trunc(companyExperience * 1.1) : companyExperience,
     effectSummary: "市场情报已生效，优化了本次市场判断。"
+  };
+};
+
+const applyFinanceAdvisor = (
+  category: string,
+  cashDelta: number,
+  reputationDelta: number,
+  companyExperience: number
+): { cashDelta: number; reputationDelta: number; companyExperience: number; effectSummary: string } | undefined => {
+  if (!canUseFinanceAdvisor(category)) {
+    return undefined;
+  }
+
+  return {
+    cashDelta: cashDelta > 0 ? Math.trunc(cashDelta * 1.2) : Math.trunc(cashDelta * 0.8),
+    reputationDelta: reputationDelta > 0 ? Math.trunc(reputationDelta * 1.1) : Math.trunc(reputationDelta * 0.8),
+    companyExperience: companyExperience > 0 ? Math.trunc(companyExperience * 1.1) : companyExperience,
+    effectSummary: "财务顾问卡已生效，优化了本次现金流判断。"
   };
 };
 
@@ -3308,7 +3329,7 @@ export const createPrismaGameRepository = (
     if (actionPowerDelta < 0 && recovered.actionPower < Math.abs(actionPowerDelta)) {
       return "INSUFFICIENT_ACTION_POWER";
     }
-    if (modifierItemId !== undefined && modifierItemId !== RISK_INSURANCE_ITEM_ID && modifierItemId !== MARKET_INTEL_ITEM_ID) {
+    if (modifierItemId !== undefined && modifierItemId !== RISK_INSURANCE_ITEM_ID && modifierItemId !== MARKET_INTEL_ITEM_ID && modifierItemId !== FINANCE_ADVISOR_ITEM_ID) {
       return "ITEM_NOT_USABLE";
     }
     const insuranceEffect = modifierItemId === RISK_INSURANCE_ITEM_ID
@@ -3317,16 +3338,22 @@ export const createPrismaGameRepository = (
     const marketIntelEffect = modifierItemId === MARKET_INTEL_ITEM_ID
       ? applyMarketIntel(randomTask.config.category, rawReputationDelta, rawCompanyExperience)
       : undefined;
+    const financeAdvisorEffect = modifierItemId === FINANCE_ADVISOR_ITEM_ID
+      ? applyFinanceAdvisor(randomTask.config.category, rawCashDelta, rawReputationDelta, rawCompanyExperience)
+      : undefined;
     if (modifierItemId === RISK_INSURANCE_ITEM_ID && insuranceEffect === undefined) {
       return "ITEM_NOT_USABLE";
     }
     if (modifierItemId === MARKET_INTEL_ITEM_ID && marketIntelEffect === undefined) {
       return "ITEM_NOT_USABLE";
     }
-    const cashDelta = insuranceEffect?.cashDelta ?? rawCashDelta;
-    const reputationDelta = marketIntelEffect?.reputationDelta ?? insuranceEffect?.reputationDelta ?? rawReputationDelta;
-    const companyExperience = marketIntelEffect?.companyExperience ?? rawCompanyExperience;
-    const modifierEffect = insuranceEffect ?? marketIntelEffect;
+    if (modifierItemId === FINANCE_ADVISOR_ITEM_ID && financeAdvisorEffect === undefined) {
+      return "ITEM_NOT_USABLE";
+    }
+    const cashDelta = financeAdvisorEffect?.cashDelta ?? insuranceEffect?.cashDelta ?? rawCashDelta;
+    const reputationDelta = financeAdvisorEffect?.reputationDelta ?? marketIntelEffect?.reputationDelta ?? insuranceEffect?.reputationDelta ?? rawReputationDelta;
+    const companyExperience = financeAdvisorEffect?.companyExperience ?? marketIntelEffect?.companyExperience ?? rawCompanyExperience;
+    const modifierEffect = insuranceEffect ?? marketIntelEffect ?? financeAdvisorEffect;
     const finalResultSummary = modifierEffect === undefined ? resultSummary : `${resultSummary} ${modifierEffect.effectSummary}`;
 
     const result = await prisma.$transaction(async (tx) => {

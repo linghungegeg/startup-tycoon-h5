@@ -1666,6 +1666,10 @@ function App() {
     () => inventoryCenter?.items.find((item) => item.itemId === "market-intel") ?? null,
     [inventoryCenter?.items]
   );
+  const financeAdvisorItem = useMemo(
+    () => inventoryCenter?.items.find((item) => item.itemId === "finance-advisor-card") ?? null,
+    [inventoryCenter?.items]
+  );
   const activeRandomTaskAllowsRiskInsurance = useMemo(
     () =>
       activeRandomTask !== null &&
@@ -1677,7 +1681,20 @@ function App() {
     () => activeRandomTask !== null && (activeRandomTask.category === "market" || activeRandomTask.category === "season"),
     [activeRandomTask]
   );
+  const activeRandomTaskAllowsFinanceAdvisor = useMemo(
+    () => activeRandomTask !== null && (activeRandomTask.category === "finance" || activeRandomTask.category === "funding" || activeRandomTask.category === "loan"),
+    [activeRandomTask]
+  );
   const activeRandomTaskModifier = useMemo(() => {
+    if (activeRandomTaskAllowsFinanceAdvisor) {
+      return {
+        itemId: "finance-advisor-card",
+        item: financeAdvisorItem,
+        label: "财务顾问卡",
+        enabledHint: "优化本次现金流判断",
+        emptyHint: "背包暂无可用顾问卡"
+      };
+    }
     if (activeRandomTaskAllowsMarketIntel) {
       return {
         itemId: "market-intel",
@@ -1697,7 +1714,7 @@ function App() {
       };
     }
     return null;
-  }, [activeRandomTaskAllowsMarketIntel, activeRandomTaskAllowsRiskInsurance, marketIntelItem, riskInsuranceItem]);
+  }, [activeRandomTaskAllowsFinanceAdvisor, activeRandomTaskAllowsMarketIntel, activeRandomTaskAllowsRiskInsurance, financeAdvisorItem, marketIntelItem, riskInsuranceItem]);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
@@ -5910,7 +5927,11 @@ function App() {
                         randomTaskModifierItemId === "market-intel" &&
                         (marketIntelItem?.quantity ?? 0) > 0 &&
                         (activeRandomTask.category === "market" || activeRandomTask.category === "season");
-                      const modifierItemId = shouldUseMarketIntel ? "market-intel" : shouldUseRiskInsurance ? "risk-insurance" : undefined;
+                      const shouldUseFinanceAdvisor =
+                        randomTaskModifierItemId === "finance-advisor-card" &&
+                        (financeAdvisorItem?.quantity ?? 0) > 0 &&
+                        (activeRandomTask.category === "finance" || activeRandomTask.category === "funding" || activeRandomTask.category === "loan");
+                      const modifierItemId = shouldUseFinanceAdvisor ? "finance-advisor-card" : shouldUseMarketIntel ? "market-intel" : shouldUseRiskInsurance ? "risk-insurance" : undefined;
                       return (
                         <button
                           disabled={profile.actionPower < option.actionPowerCost}
@@ -5924,7 +5945,7 @@ function App() {
                           </span>
                           <small>
                             资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
-                            {modifierItemId === "risk-insurance" ? " · 使用风险保险" : modifierItemId === "market-intel" ? " · 使用市场情报" : ""}
+                            {modifierItemId === "risk-insurance" ? " · 使用风险保险" : modifierItemId === "market-intel" ? " · 使用市场情报" : modifierItemId === "finance-advisor-card" ? " · 使用财务顾问卡" : ""}
                           </small>
                         </button>
                       );

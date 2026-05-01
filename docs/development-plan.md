@@ -1771,6 +1771,21 @@ VIP 权益：
 - 遗留风险：财务顾问卡尚未接入财务/融资/贷款类随机任务；满级宝箱仍只是展示方向，尚未实现进度和领奖；本地浏览器回归中曾触发既有成就同步并发唯一键崩溃，重启 API 后本批市场情报链路可完成。
 - 下一阶段入口：Phase 21 第十实施批次：财务顾问卡接入财务/融资/贷款随机任务，继续保持每次随机任务最多使用 1 个经营道具。
 
+### Phase 21 第十实施批次阶段总结：财务顾问卡随机任务修正
+
+- 当前稳定点：`d5fd79f feat: apply market intel to random tasks`。
+- 完成内容：财务顾问卡接入财务/融资/贷款类随机经营任务结算；玩家在适用任务中可选择使用 `finance-advisor-card`，结算成功后扣减 1 张财务顾问卡并写入道具流水；正向现金提升 20%，负向现金损失降低 20%，正向声望提升 10%，负向声望损失降低 20%，正向公司经验提升 10%。
+- 前台变化：随机任务弹窗的经营道具栏继续复用单一道具开关；财务/融资/贷款任务优先显示“财务顾问卡 xN”和“优化本次现金流判断”，勾选后决策按钮展示“使用财务顾问卡”，结算后刷新 HUD、随机任务状态和背包库存。
+- 规则边界：财务顾问卡不影响行动力、平台币、排行榜名次和每日随机任务上限；同一随机任务仍最多使用 1 个经营道具，不与风险保险或市场情报叠加；当前配置中已存在财务类随机任务，融资/贷款类适用范围先在规则层开放，后续新增对应任务配置时自动生效。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认 `modifierItemId = "finance-advisor-card"` 会返回 `ITEM_NOT_USABLE`，再补最小实现并复跑三类经营道具回归。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认专属经理中“现金流预警复核”弹窗显示“财务顾问卡 x2”；勾选后决策按钮显示“使用财务顾问卡”；结算后提示“财务顾问卡已生效，优化了本次现金流判断”，行动力 HUD 从 `240/120` 更新到 `225/120`，背包财务顾问卡从 2 扣到 1。
+  - Build Web Apps：前台只扩展既有随机任务道具栏的数据来源和文案，不新增页面、不改变深色商务手游基线，不引入新的视觉组件。
+  - Game Studio：财务顾问卡仍由玩家在短决策弹窗内主动勾选，不强制弹购买；专属经理待办列表、详情和决策弹窗没有新增遮挡层或连续弹窗。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "uses finance advisor" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "uses finance advisor|uses market intel|uses risk insurance" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：满级宝箱仍只是展示方向，尚未实现进度和领奖；融资/贷款类随机任务配置尚未扩容，本批只完成财务顾问卡对对应类别的通用规则接入。
+- 下一阶段入口：Phase 21 第十一实施批次：满级宝箱/满级经验去向进度和领奖闭环，或先补融资/贷款类随机任务配置扩容，二者需择一单独实施。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。
