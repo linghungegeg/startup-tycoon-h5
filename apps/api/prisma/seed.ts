@@ -251,6 +251,30 @@ const eventConfigs = [
     knowledgeTitle: "融资失败后的现金流替代路线",
     riskExplanation: "融资失败不会直接补充现金，越接近资金紧张区间，越需要用回款、降本或短期授信维持经营安全垫。",
     sortOrder: 5
+  },
+  {
+    id: "product-tech-debt-incident",
+    title: "产品技术债事故预警",
+    source: "技术周报",
+    channel: "product",
+    summary: "产品增长后服务器报警和缺陷反馈同时上升。",
+    context: "研发负责人提醒，继续推增长会让系统稳定性和客服压力同步恶化，需要决定是否暂停迭代补技术债。",
+    optionA: "暂停增长实验，集中修复技术债",
+    optionAResult: "短期增长放慢，但产品口碑和稳定性恢复。",
+    optionACash: -40000,
+    optionAReputation: 800,
+    optionACustomerSatisfaction: 3,
+    optionARiskDelta: -1,
+    optionB: "继续增长，客服先顶住",
+    optionBResult: "用户增长继续，但故障和投诉风险上升。",
+    optionBCash: 30000,
+    optionBReputation: -900,
+    optionBCustomerSatisfaction: -5,
+    optionBRiskDelta: 1,
+    followupEventId: null,
+    knowledgeTitle: "技术债和产品稳定性",
+    riskExplanation: "产品用户增长会放大历史技术债，服务器成本、客服压力和口碑风险会一起出现。",
+    sortOrder: 6
   }
 ];
 
@@ -538,6 +562,138 @@ const projectConfigs = [
   }
 ];
 
+const productConfigs = [
+  {
+    id: "crm-lite-saas",
+    name: "轻量 CRM SaaS",
+    category: "企业服务",
+    summary: "把项目交付经验沉淀成订阅产品，适合早期建立长期收入。",
+    launchCost: 280000,
+    baseUsers: 120,
+    retentionBasisPoints: 4200,
+    payRateBasisPoints: 180,
+    revenuePerPayingUser: 680,
+    acquisitionCost: 90000,
+    serverCost: 28000,
+    techDebtGrowth: 9,
+    reputationGrowth: 3,
+    sortOrder: 1
+  },
+  {
+    id: "ai-customer-copilot",
+    name: "AI 客服 Copilot",
+    category: "AI 工具",
+    summary: "面向中小企业的客服自动化工具，增长快但技术债和服务器压力更高。",
+    launchCost: 420000,
+    baseUsers: 80,
+    retentionBasisPoints: 3600,
+    payRateBasisPoints: 220,
+    revenuePerPayingUser: 980,
+    acquisitionCost: 140000,
+    serverCost: 52000,
+    techDebtGrowth: 15,
+    reputationGrowth: 5,
+    sortOrder: 2
+  }
+];
+
+const marketTrackConfigs = [
+  {
+    id: "enterprise-saas",
+    name: "企业 SaaS",
+    summary: "回款稳定、服务成本中等，容易被价格战和客户迁移影响。",
+    costStructure: "获客成本中等，客服和续费运营占比高。",
+    industryHeat: 66,
+    policyRisk: 18,
+    baseShareBasisPoints: 820,
+    customerPool: 120000,
+    sortOrder: 1
+  },
+  {
+    id: "ai-tools",
+    name: "AI 工具",
+    summary: "行业热度高、增长快，但算力成本、政策变化和专利争议更频繁。",
+    costStructure: "服务器和研发成本高，增长弹性强。",
+    industryHeat: 84,
+    policyRisk: 42,
+    baseShareBasisPoints: 520,
+    customerPool: 180000,
+    sortOrder: 2
+  }
+];
+
+const competitorActionConfigs = [
+  {
+    id: "saas-price-war",
+    trackId: "enterprise-saas",
+    competitorName: "蓝鲸企服",
+    actionType: "price_war",
+    title: "竞品发起价格战",
+    summary: "蓝鲸企服下调年费并承诺免费迁移，短期压缩你的签约转化。",
+    cashImpact: -50000,
+    monthlyIncomeImpact: -60000,
+    monthlyExpenseImpact: 20000,
+    reputationImpact: -400,
+    employeeSatisfactionImpact: 0,
+    customerSatisfactionImpact: -3,
+    marketShareDeltaBasisPoints: -90,
+    competitorShareDeltaBasisPoints: 140,
+    pricePressure: 18,
+    talentPressure: 4,
+    policyRiskDelta: 0,
+    responseCost: 90000,
+    responseShareDeltaBasisPoints: 150,
+    responseReputationImpact: 500,
+    sortOrder: 1
+  },
+  {
+    id: "ai-patent-dispute",
+    trackId: "ai-tools",
+    competitorName: "星河智能",
+    actionType: "patent",
+    title: "竞品提出专利诉讼威胁",
+    summary: "星河智能指控你的客服模型流程相似，要求停止部分宣传。",
+    cashImpact: -90000,
+    monthlyIncomeImpact: -30000,
+    monthlyExpenseImpact: 50000,
+    reputationImpact: -900,
+    employeeSatisfactionImpact: -2,
+    customerSatisfactionImpact: -5,
+    marketShareDeltaBasisPoints: -120,
+    competitorShareDeltaBasisPoints: 100,
+    pricePressure: 6,
+    talentPressure: 8,
+    policyRiskDelta: 8,
+    responseCost: 160000,
+    responseShareDeltaBasisPoints: 190,
+    responseReputationImpact: 900,
+    sortOrder: 2
+  },
+  {
+    id: "saas-poach-manager",
+    trackId: "enterprise-saas",
+    competitorName: "云帆科技",
+    actionType: "poach",
+    title: "竞品挖角客户成功负责人",
+    summary: "云帆科技向你的客户成功团队开出高薪，续费服务稳定性承压。",
+    cashImpact: -30000,
+    monthlyIncomeImpact: -20000,
+    monthlyExpenseImpact: 30000,
+    reputationImpact: -500,
+    employeeSatisfactionImpact: -5,
+    customerSatisfactionImpact: -4,
+    marketShareDeltaBasisPoints: -70,
+    competitorShareDeltaBasisPoints: 90,
+    pricePressure: 3,
+    talentPressure: 20,
+    policyRiskDelta: 0,
+    responseCost: 110000,
+    responseShareDeltaBasisPoints: 130,
+    responseReputationImpact: 400,
+    sortOrder: 3
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -582,6 +738,30 @@ const seed = async (): Promise<void> => {
       where: { id: projectConfig.id },
       update: projectConfig,
       create: projectConfig
+    });
+  }
+
+  for (const productConfig of productConfigs) {
+    await prisma.productConfig.upsert({
+      where: { id: productConfig.id },
+      update: productConfig,
+      create: productConfig
+    });
+  }
+
+  for (const marketTrackConfig of marketTrackConfigs) {
+    await prisma.marketTrackConfig.upsert({
+      where: { id: marketTrackConfig.id },
+      update: marketTrackConfig,
+      create: marketTrackConfig
+    });
+  }
+
+  for (const competitorActionConfig of competitorActionConfigs) {
+    await prisma.competitorActionConfig.upsert({
+      where: { id: competitorActionConfig.id },
+      update: competitorActionConfig,
+      create: competitorActionConfig
     });
   }
 

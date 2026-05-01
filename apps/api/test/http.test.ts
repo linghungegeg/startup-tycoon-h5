@@ -7,7 +7,9 @@ import { createApiServer } from "../src/http.js";
 import type { ApiConfig } from "../src/config.js";
 import { pickRecruitCandidate } from "../src/employee.js";
 import { calculateFinanceReport } from "../src/finance.js";
+import { calculateMarketShare, type CompetitorActionType } from "../src/market.js";
 import { createPasswordRecord } from "../src/password.js";
+import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
 import type {
   AccountRecord,
@@ -25,7 +27,13 @@ import type {
   LoanActionRecord,
   LoanCenterRecord,
   LoanRecord,
+  MarketActionRecord,
+  MarketCenterRecord,
+  PlayerMarketRecord,
   PlayerProfileRecord,
+  ProductActionRecord,
+  ProductCenterRecord,
+  ProductRecord,
   ProjectRecord,
   ProjectSettlementRecord,
   ServerRecord,
@@ -335,6 +343,29 @@ const createTestRepository = (): GameRepository => {
       followupEventId: null,
       knowledgeTitle: "融资失败后的现金流替代路线",
       riskExplanation: "融资失败不会直接补充现金，需要用回款、降本或授信维持安全垫。"
+    },
+    {
+      id: "product-tech-debt-incident",
+      title: "产品技术债事故预警",
+      source: "技术周报",
+      channel: "product",
+      summary: "产品快速增长后技术债累积，线上稳定性开始影响留存和口碑。",
+      context: "服务器成本、客服压力和历史架构问题同时出现，团队需要决定是否暂停增长转向重构。",
+      optionA: "暂停投放并重构核心模块",
+      optionAResult: "短期增长放缓，但事故风险下降。",
+      optionACash: -60000,
+      optionAReputation: 800,
+      optionACustomerSatisfaction: 4,
+      optionARiskDelta: -2,
+      optionB: "继续增长并延后重构",
+      optionBResult: "收入保持增长，但技术债继续推高事故概率。",
+      optionBCash: 90000,
+      optionBReputation: -800,
+      optionBCustomerSatisfaction: -5,
+      optionBRiskDelta: 2,
+      followupEventId: null,
+      knowledgeTitle: "技术债和产品稳定性",
+      riskExplanation: "技术债过高会把增长收益转化为事故、客服和留存压力。"
     }
   ];
   const playerEvents = new Map<string, EventRecord>();
@@ -419,12 +450,152 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const playerLoans = new Map<string, LoanRecord>();
+  const productConfigs = [
+    {
+      id: "crm-lite-saas",
+      name: "轻量 CRM SaaS",
+      category: "企业服务",
+      summary: "把项目交付经验沉淀为订阅产品，适合稳定现金流。",
+      launchCost: 280000,
+      baseUsers: 120,
+      retentionBasisPoints: 4200,
+      payRateBasisPoints: 180,
+      revenuePerPayingUser: 680,
+      acquisitionCost: 90000,
+      serverCost: 28000,
+      techDebtGrowth: 9,
+      reputationGrowth: 3
+    },
+    {
+      id: "ai-customer-copilot",
+      name: "AI 客服 Copilot",
+      category: "AI 工具",
+      summary: "面向中小企业客服团队，增长更快但技术债和服务器成本更高。",
+      launchCost: 420000,
+      baseUsers: 80,
+      retentionBasisPoints: 3600,
+      payRateBasisPoints: 220,
+      revenuePerPayingUser: 980,
+      acquisitionCost: 140000,
+      serverCost: 52000,
+      techDebtGrowth: 15,
+      reputationGrowth: 5
+    }
+  ];
+  const playerProducts = new Map<string, ProductRecord>();
+  const marketTrackConfigs = [
+    {
+      id: "enterprise-saas",
+      name: "企业 SaaS",
+      summary: "回款稳定、服务成本中等，容易被价格战和客户迁移影响。",
+      costStructure: "获客成本中等，客服和续费运营占比高。",
+      industryHeat: 66,
+      policyRisk: 18,
+      baseShareBasisPoints: 820,
+      customerPool: 120000
+    },
+    {
+      id: "ai-tools",
+      name: "AI 工具",
+      summary: "行业热度高、增长快，但算力成本、政策变化和专利争议更频繁。",
+      costStructure: "服务器和研发成本高，增长弹性强。",
+      industryHeat: 84,
+      policyRisk: 42,
+      baseShareBasisPoints: 520,
+      customerPool: 180000
+    }
+  ];
+  const competitorActionConfigs = [
+    {
+      id: "saas-price-war",
+      trackId: "enterprise-saas",
+      competitorName: "蓝鲸企服",
+      actionType: "price_war" as CompetitorActionType,
+      title: "竞品发起价格战",
+      summary: "蓝鲸企服下调年费并承诺免费迁移，短期压缩你的签约转化。",
+      cashImpact: -50000,
+      monthlyIncomeImpact: -60000,
+      monthlyExpenseImpact: 20000,
+      reputationImpact: -400,
+      employeeSatisfactionImpact: 0,
+      customerSatisfactionImpact: -3,
+      marketShareDeltaBasisPoints: -90,
+      competitorShareDeltaBasisPoints: 140,
+      pricePressure: 18,
+      talentPressure: 4,
+      policyRiskDelta: 0,
+      responseCost: 90000,
+      responseShareDeltaBasisPoints: 150,
+      responseReputationImpact: 500
+    },
+    {
+      id: "saas-poach-manager",
+      trackId: "enterprise-saas",
+      competitorName: "云帆科技",
+      actionType: "poach" as CompetitorActionType,
+      title: "竞品挖角客户成功负责人",
+      summary: "云帆科技向你的客户成功团队开出高薪，续费服务稳定性承压。",
+      cashImpact: -30000,
+      monthlyIncomeImpact: -20000,
+      monthlyExpenseImpact: 30000,
+      reputationImpact: -500,
+      employeeSatisfactionImpact: -5,
+      customerSatisfactionImpact: -4,
+      marketShareDeltaBasisPoints: -70,
+      competitorShareDeltaBasisPoints: 90,
+      pricePressure: 3,
+      talentPressure: 20,
+      policyRiskDelta: 0,
+      responseCost: 5000000,
+      responseShareDeltaBasisPoints: 130,
+      responseReputationImpact: 400
+    },
+    {
+      id: "ai-patent-dispute",
+      trackId: "ai-tools",
+      competitorName: "星河智能",
+      actionType: "patent" as CompetitorActionType,
+      title: "竞品提出专利诉讼威胁",
+      summary: "星河智能指控你的客服模型流程相似，要求停止部分宣传。",
+      cashImpact: -90000,
+      monthlyIncomeImpact: -30000,
+      monthlyExpenseImpact: 50000,
+      reputationImpact: -900,
+      employeeSatisfactionImpact: -2,
+      customerSatisfactionImpact: -5,
+      marketShareDeltaBasisPoints: -120,
+      competitorShareDeltaBasisPoints: 100,
+      pricePressure: 6,
+      talentPressure: 8,
+      policyRiskDelta: 8,
+      responseCost: 160000,
+      responseShareDeltaBasisPoints: 190,
+      responseReputationImpact: 900
+    }
+  ];
+  const playerMarkets = new Map<string, PlayerMarketRecord>();
+  const playerCompetitorActions = new Map<string, {
+    id: string;
+    actionId: string;
+    trackId: string;
+    competitorName: string;
+    actionType: CompetitorActionType;
+    title: string;
+    summary: string;
+    status: "pending" | "resolved";
+    response: "defend" | "counter" | null;
+    resultSummary: string | null;
+    createdAt: string;
+    resolvedAt: string | null;
+  }>();
 
   const getProfileByAccountAndServer = (accountId: string, serverId: string): PlayerProfileRecord | undefined =>
     profiles.get(`${accountId}:${serverId}`);
 
   const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRecord => {
     const report = calculateFinanceReport(profile);
+    const riskRank = { "稳健": 0, "预警": 1, "资金紧张": 2 };
+    const riskStatus = riskRank[profile.riskStatus] > riskRank[report.riskStatus] ? profile.riskStatus : report.riskStatus;
 
     return {
       profileId: profile.id,
@@ -444,7 +615,7 @@ const createTestRepository = (): GameRepository => {
       customerSatisfaction: profile.customerSatisfaction,
       financeMonth: profile.financeMonth,
       operatingDay: profile.operatingDay,
-      riskStatus: report.riskStatus,
+      riskStatus,
       riskTips: report.riskTips
     };
   };
@@ -626,6 +797,57 @@ const createTestRepository = (): GameRepository => {
           { id: "restructure", title: "债务重组", impact: "负债-20万，信用降级。" }
         ]
       }
+    };
+  };
+  const productsForProfile = (profileId: string): ProductRecord[] =>
+    [...playerProducts.values()].filter((product) => product.id.startsWith(`${profileId}:`));
+  const toProductCenterRecord = (profile: PlayerProfileRecord): ProductCenterRecord => {
+    const activeConfigIds = new Set(productsForProfile(profile.id).filter((product) => product.status !== "closed").map((product) => product.configId));
+
+    return {
+      offers: productConfigs.map((config) => ({
+        id: config.id,
+        name: config.name,
+        category: config.category,
+        summary: config.summary,
+        launchCost: config.launchCost,
+        baseUsers: config.baseUsers,
+        retentionBasisPoints: config.retentionBasisPoints,
+        payRateBasisPoints: config.payRateBasisPoints,
+        acquisitionCost: config.acquisitionCost,
+        serverCost: config.serverCost,
+        techDebtGrowth: config.techDebtGrowth,
+        reputationGrowth: config.reputationGrowth,
+        isAvailable: !activeConfigIds.has(config.id) && profile.cash >= config.launchCost,
+        lockedReason: activeConfigIds.has(config.id) ? "同类产品运营中" : profile.cash < config.launchCost ? "现金不足" : null
+      })),
+      products: productsForProfile(profile.id),
+      finance: toCompanyFinanceRecord(profile)
+    };
+  };
+  const marketsForProfile = (profileId: string): PlayerMarketRecord[] =>
+    [...playerMarkets.values()].filter((market) => market.id.startsWith(`${profileId}:`));
+  const competitorActionsForProfile = (profileId: string) =>
+    [...playerCompetitorActions.values()].filter((action) => action.id.startsWith(`${profileId}:`));
+  const toMarketCenterRecord = (profile: PlayerProfileRecord): MarketCenterRecord => {
+    const activeTrackIds = new Set(marketsForProfile(profile.id).map((market) => market.trackId));
+
+    return {
+      offers: marketTrackConfigs.map((config) => ({
+        id: config.id,
+        name: config.name,
+        summary: config.summary,
+        costStructure: config.costStructure,
+        industryHeat: config.industryHeat,
+        policyRisk: config.policyRisk,
+        baseShareBasisPoints: config.baseShareBasisPoints,
+        customerPool: config.customerPool,
+        isAvailable: !activeTrackIds.has(config.id),
+        lockedReason: activeTrackIds.has(config.id) ? "赛道已进入" : null
+      })),
+      markets: marketsForProfile(profile.id),
+      actions: competitorActionsForProfile(profile.id),
+      finance: toCompanyFinanceRecord(profile)
     };
   };
 
@@ -1337,6 +1559,316 @@ const createTestRepository = (): GameRepository => {
         fundingCenter: toFundingCenterRecord(profile),
         result: funding.resultSummary
       } satisfies FundingActionRecord;
+    },
+    async listProducts(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toProductCenterRecord(profile);
+    },
+    async startProduct(accountId, serverId, productConfigId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const config = productConfigs.find((item) => item.id === productConfigId);
+      if (config === undefined) {
+        return "PRODUCT_NOT_FOUND";
+      }
+      const productId = `${profile.id}:${config.id}`;
+      const existing = playerProducts.get(productId);
+      if (existing !== undefined && existing.status !== "closed") {
+        return "PRODUCT_ALREADY_ACTIVE";
+      }
+      if (profile.cash < config.launchCost) {
+        return "INSUFFICIENT_CASH";
+      }
+
+      const now = new Date().toISOString();
+      const product: ProductRecord = {
+        id: productId,
+        configId: config.id,
+        name: config.name,
+        category: config.category,
+        stage: "idea",
+        users: config.baseUsers,
+        retentionBasisPoints: config.retentionBasisPoints,
+        payRateBasisPoints: config.payRateBasisPoints,
+        acquisitionCost: config.acquisitionCost,
+        serverCost: config.serverCost,
+        reputationScore: 20 + config.reputationGrowth,
+        techDebt: 8,
+        monthlyRevenue: 0,
+        status: "active",
+        resultSummary: "产品已立项，等待推进 MVP。",
+        createdAt: now,
+        updatedAt: now,
+        closedAt: null
+      };
+      playerProducts.set(product.id, product);
+      profile.cash -= config.launchCost;
+      profile.monthlyExpense += config.serverCost;
+      profile.valuation += Math.round(config.launchCost * 0.6);
+
+      return { product, productCenter: toProductCenterRecord(profile), result: `${config.name} 已完成立项。` } satisfies ProductActionRecord;
+    },
+    async advanceProduct(accountId, serverId, productId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const product = playerProducts.get(productId);
+      if (product === undefined || !product.id.startsWith(`${profile.id}:`)) {
+        return "PRODUCT_NOT_FOUND";
+      }
+      if (product.status === "closed") {
+        return "PRODUCT_CLOSED";
+      }
+      if (profile.cash < product.acquisitionCost) {
+        return "INSUFFICIENT_CASH";
+      }
+      const config = productConfigs.find((item) => item.id === product.configId);
+      if (config === undefined) {
+        return "PRODUCT_NOT_FOUND";
+      }
+
+      const previousRevenue = product.monthlyRevenue;
+      const previousServerCost = product.serverCost;
+      const nextMetrics = calculateNextProductMetrics({
+        stage: product.stage as ProductStage,
+        users: product.users,
+        retentionBasisPoints: product.retentionBasisPoints,
+        payRateBasisPoints: product.payRateBasisPoints,
+        revenuePerPayingUser: config.revenuePerPayingUser,
+        acquisitionCost: product.acquisitionCost,
+        serverCost: product.serverCost,
+        reputationScore: product.reputationScore,
+        techDebt: product.techDebt,
+        techDebtGrowth: config.techDebtGrowth,
+        reputationGrowth: config.reputationGrowth
+      });
+
+      Object.assign(product, {
+        stage: nextMetrics.stage,
+        users: nextMetrics.users,
+        retentionBasisPoints: nextMetrics.retentionBasisPoints,
+        payRateBasisPoints: nextMetrics.payRateBasisPoints,
+        serverCost: nextMetrics.serverCost,
+        reputationScore: nextMetrics.reputationScore,
+        techDebt: nextMetrics.techDebt,
+        monthlyRevenue: nextMetrics.monthlyRevenue,
+        resultSummary: nextMetrics.resultSummary,
+        updatedAt: new Date().toISOString()
+      });
+      profile.cash -= product.acquisitionCost;
+      profile.monthlyIncome += product.monthlyRevenue - previousRevenue;
+      profile.monthlyExpense += product.serverCost - previousServerCost;
+      profile.valuation += Math.round(product.monthlyRevenue * 2.4);
+      profile.reputation += product.reputationScore * 20;
+
+      if (nextMetrics.incidentTriggered) {
+        const eventConfig = eventConfigs.find((item) => item.id === "product-tech-debt-incident");
+        if (eventConfig !== undefined) {
+          const event = toEventRecord(profile.id, eventConfig);
+          playerEvents.set(event.id, event);
+          profile.pendingEventCount += 1;
+          profile.riskStatus = "预警";
+        }
+      }
+
+      return { product, productCenter: toProductCenterRecord(profile), result: product.resultSummary ?? "" } satisfies ProductActionRecord;
+    },
+    async refactorProduct(accountId, serverId, productId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const product = playerProducts.get(productId);
+      if (product === undefined || !product.id.startsWith(`${profile.id}:`)) {
+        return "PRODUCT_NOT_FOUND";
+      }
+      if (product.status === "closed") {
+        return "PRODUCT_CLOSED";
+      }
+      const refactorCost = Math.max(120000, Math.round(product.acquisitionCost * 0.8));
+      if (profile.cash < refactorCost) {
+        return "INSUFFICIENT_CASH";
+      }
+
+      profile.cash -= refactorCost;
+      product.techDebt = Math.max(0, product.techDebt - 38);
+      product.reputationScore = Math.min(100, product.reputationScore + 6);
+      product.stage = product.stage === "decline" ? "growth" : product.stage;
+      product.resultSummary = "产品完成重构，技术债和事故风险下降。";
+      product.updatedAt = new Date().toISOString();
+      profile.reputation += 800;
+      profile.riskStatus = product.techDebt >= 70 ? "预警" : "稳健";
+
+      return { product, productCenter: toProductCenterRecord(profile), result: product.resultSummary } satisfies ProductActionRecord;
+    },
+    async closeProduct(accountId, serverId, productId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const product = playerProducts.get(productId);
+      if (product === undefined || !product.id.startsWith(`${profile.id}:`)) {
+        return "PRODUCT_NOT_FOUND";
+      }
+      if (product.status === "closed") {
+        return "PRODUCT_CLOSED";
+      }
+
+      const now = new Date().toISOString();
+      profile.monthlyIncome = Math.max(0, profile.monthlyIncome - product.monthlyRevenue);
+      profile.monthlyExpense = Math.max(0, profile.monthlyExpense - product.serverCost);
+      profile.reputation = Math.max(0, profile.reputation - 300);
+      product.stage = "closed";
+      product.status = "closed";
+      product.monthlyRevenue = 0;
+      product.resultSummary = "产品已关闭，长期收入和服务器成本同步停止。";
+      product.updatedAt = now;
+      product.closedAt = now;
+
+      return { product, productCenter: toProductCenterRecord(profile), result: product.resultSummary } satisfies ProductActionRecord;
+    },
+    async listMarkets(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toMarketCenterRecord(profile);
+    },
+    async enterMarket(accountId, serverId, trackId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const config = marketTrackConfigs.find((item) => item.id === trackId);
+      if (config === undefined) {
+        return "MARKET_NOT_FOUND";
+      }
+      const marketId = `${profile.id}:${config.id}`;
+      if (playerMarkets.has(marketId)) {
+        return "MARKET_ALREADY_ACTIVE";
+      }
+
+      const now = new Date().toISOString();
+      const market: PlayerMarketRecord = {
+        id: marketId,
+        trackId: config.id,
+        trackName: config.name,
+        playerShareBasisPoints: config.baseShareBasisPoints,
+        competitorShareBasisPoints: Math.max(1200, 3600 - config.baseShareBasisPoints),
+        industryHeat: config.industryHeat,
+        policyRisk: config.policyRisk,
+        pricePressure: 0,
+        talentPressure: config.name.includes("AI") ? 14 : 6,
+        reputationPressure: 0,
+        patentRisk: config.policyRisk,
+        resultSummary: `${config.name} 赛道已进入，后续竞品行为会影响市场份额。`,
+        createdAt: now,
+        updatedAt: now
+      };
+      playerMarkets.set(market.id, market);
+      return { market, action: null, marketCenter: toMarketCenterRecord(profile), result: market.resultSummary ?? "" } satisfies MarketActionRecord;
+    },
+    async triggerCompetitorAction(accountId, serverId, trackId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const market = playerMarkets.get(`${profile.id}:${trackId}`);
+      if (market === undefined) {
+        return "MARKET_NOT_FOUND";
+      }
+      const usedActionIds = new Set(competitorActionsForProfile(profile.id).filter((item) => item.trackId === trackId).map((item) => item.actionId));
+      const config = competitorActionConfigs.find((item) => item.trackId === trackId && !usedActionIds.has(item.id));
+      if (config === undefined) {
+        return "COMPETITOR_ACTION_NOT_FOUND";
+      }
+
+      const now = new Date().toISOString();
+      const action = {
+        id: `${profile.id}:${config.id}`,
+        actionId: config.id,
+        trackId: config.trackId,
+        competitorName: config.competitorName,
+        actionType: config.actionType,
+        title: config.title,
+        summary: config.summary,
+        status: "pending" as const,
+        response: null,
+        resultSummary: null,
+        createdAt: now,
+        resolvedAt: null
+      };
+      playerCompetitorActions.set(action.id, action);
+      market.playerShareBasisPoints = Math.max(100, market.playerShareBasisPoints + config.marketShareDeltaBasisPoints);
+      market.competitorShareBasisPoints += config.competitorShareDeltaBasisPoints;
+      market.pricePressure += config.pricePressure;
+      market.talentPressure += config.talentPressure;
+      market.policyRisk += config.policyRiskDelta;
+      market.reputationPressure += Math.max(0, -config.reputationImpact);
+      market.patentRisk += config.actionType === "patent" ? 18 : 0;
+      market.resultSummary = config.summary;
+      market.updatedAt = now;
+      profile.cash += config.cashImpact;
+      profile.monthlyIncome += config.monthlyIncomeImpact;
+      profile.monthlyExpense += config.monthlyExpenseImpact;
+      profile.reputation += config.reputationImpact;
+      profile.employeeSatisfaction += config.employeeSatisfactionImpact;
+      profile.customerSatisfaction += config.customerSatisfactionImpact;
+      profile.riskStatus = "预警";
+      profile.pendingEventCount += 1;
+      return { market, action, marketCenter: toMarketCenterRecord(profile), result: `${config.competitorName} 已发起${config.title}。` } satisfies MarketActionRecord;
+    },
+    async respondCompetitorAction(accountId, serverId, actionId, response) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const action = playerCompetitorActions.get(actionId);
+      if (action === undefined || !action.id.startsWith(`${profile.id}:`)) {
+        return "COMPETITOR_ACTION_NOT_FOUND";
+      }
+      if (action.status === "resolved") {
+        return "COMPETITOR_ACTION_SETTLED";
+      }
+      const market = playerMarkets.get(`${profile.id}:${action.trackId}`);
+      if (market === undefined) {
+        return "MARKET_NOT_FOUND";
+      }
+      const config = competitorActionConfigs.find((item) => item.id === action.actionId);
+      if (config === undefined) {
+        return "COMPETITOR_ACTION_NOT_FOUND";
+      }
+      const responseCost = response === "counter" ? config.responseCost : Math.round(config.responseCost * 0.55);
+      if (profile.cash < responseCost) {
+        return "INSUFFICIENT_CASH";
+      }
+
+      const shareResult = calculateMarketShare({
+        currentShareBasisPoints: market.playerShareBasisPoints,
+        competitorShareBasisPoints: market.competitorShareBasisPoints,
+        industryHeat: market.industryHeat,
+        reputation: profile.reputation,
+        customerSatisfaction: profile.customerSatisfaction,
+        monthlyIncome: profile.monthlyIncome,
+        monthlyExpense: profile.monthlyExpense,
+        actionShareDeltaBasisPoints: response === "counter" ? config.responseShareDeltaBasisPoints : Math.round(config.responseShareDeltaBasisPoints * 0.65)
+      });
+      profile.cash -= responseCost;
+      profile.reputation += response === "counter" ? config.responseReputationImpact : Math.round(config.responseReputationImpact * 0.45);
+      profile.customerSatisfaction += response === "counter" ? 3 : 2;
+      profile.riskStatus = "稳健";
+      market.playerShareBasisPoints = shareResult.playerShareBasisPoints;
+      market.competitorShareBasisPoints = shareResult.competitorShareBasisPoints;
+      market.pricePressure = Math.max(0, market.pricePressure - (response === "counter" ? 10 : 6));
+      market.talentPressure = Math.max(0, market.talentPressure - (response === "counter" ? 10 : 6));
+      market.reputationPressure = Math.max(0, market.reputationPressure - (response === "counter" ? 800 : 400));
+      market.resultSummary = response === "counter" ? `${action.competitorName} 的攻势被正面反击，市场份额回升。` : `${action.competitorName} 的攻势被防守化解，经营压力下降。`;
+      market.updatedAt = new Date().toISOString();
+      action.status = "resolved";
+      action.response = response;
+      action.resultSummary = market.resultSummary;
+      action.resolvedAt = market.updatedAt;
+      return { market, action, marketCenter: toMarketCenterRecord(profile), result: shareResult.resultSummary } satisfies MarketActionRecord;
     },
     async disconnect() {}
   };
@@ -2646,6 +3178,215 @@ test("records failed funding and creates an investor event without changing cash
     });
     assert.equal(events.status, 200);
     assert.ok(events.body.data?.some((event) => event.configId === "funding-failed-bridge-plan"));
+  });
+});
+
+test("runs product lifecycle from setup to growth revenue", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "productlife");
+    const initial = await requestJson<ProductCenterRecord>(baseUrl, "/products?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.success, true);
+    assert.equal(initial.body.data?.offers[0]?.name, "轻量 CRM SaaS");
+
+    const started = await requestJson<ProductActionRecord>(baseUrl, "/products/start", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productConfigId: "crm-lite-saas" })
+    });
+    assert.equal(started.status, 201);
+    assert.equal(started.body.data?.product.stage, "idea");
+    assert.equal(started.body.data?.productCenter.finance.cash, profile.cash - 280000);
+    assert.ok((started.body.data?.productCenter.finance.monthlyExpense ?? 0) > profile.monthlyExpense);
+
+    let productId = started.body.data?.product.id;
+    assert.ok(productId);
+    let latest = started;
+    for (let index = 0; index < 4; index += 1) {
+      latest = await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/advance`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(latest.status, 200);
+      productId = latest.body.data?.product.id;
+      assert.ok(productId);
+    }
+
+    assert.equal(latest.body.data?.product.stage, "growth");
+    assert.ok((latest.body.data?.product.monthlyRevenue ?? 0) > 0);
+    assert.ok((latest.body.data?.product.users ?? 0) > 120);
+    assert.ok((latest.body.data?.productCenter.finance.monthlyIncome ?? 0) > profile.monthlyIncome);
+  });
+});
+
+test("triggers product tech debt events and supports refactor and close", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "productrisk");
+    const started = await requestJson<ProductActionRecord>(baseUrl, "/products/start", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productConfigId: "ai-customer-copilot" })
+    });
+    assert.equal(started.status, 201);
+    const productId = started.body.data?.product.id;
+    assert.ok(productId);
+
+    let advanced = started;
+    for (let index = 0; index < 4; index += 1) {
+      advanced = await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/advance`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(advanced.status, 200);
+    }
+
+    assert.ok((advanced.body.data?.product.techDebt ?? 0) >= 75);
+    assert.equal(advanced.body.data?.productCenter.finance.riskStatus, "预警");
+    const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(events.status, 200);
+    assert.ok(events.body.data?.some((event) => event.configId === "product-tech-debt-incident"));
+
+    const refactored = await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/refactor`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(refactored.status, 200);
+    assert.ok((refactored.body.data?.product.techDebt ?? 100) < (advanced.body.data?.product.techDebt ?? 0));
+
+    const closed = await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/close`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(closed.status, 200);
+    assert.equal(closed.body.data?.product.status, "closed");
+    assert.equal(closed.body.data?.product.monthlyRevenue, 0);
+
+    const duplicateClose = await requestJson<ProductActionRecord>(baseUrl, `/products/${encodeURIComponent(productId)}/close`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicateClose.status, 409);
+  });
+});
+
+test("lists market tracks with different cost structures and enters a track", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "marketlist");
+    const initial = await requestJson<MarketCenterRecord>(baseUrl, "/markets?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(initial.status, 200);
+    assert.equal(initial.body.success, true);
+    assert.equal(initial.body.data?.offers.length, 2);
+    assert.notEqual(initial.body.data?.offers[0]?.costStructure, initial.body.data?.offers[1]?.costStructure);
+    assert.notEqual(initial.body.data?.offers[0]?.policyRisk, initial.body.data?.offers[1]?.policyRisk);
+
+    const entered = await requestJson<MarketActionRecord>(baseUrl, "/markets/enter", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    assert.equal(entered.status, 201);
+    assert.equal(entered.body.data?.market.trackName, "企业 SaaS");
+    assert.equal(entered.body.data?.market.playerShareBasisPoints, 820);
+
+    const duplicate = await requestJson<MarketActionRecord>(baseUrl, "/markets/enter", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    assert.equal(duplicate.status, 409);
+  });
+});
+
+test("applies competitor price war and lets players respond", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "marketprice");
+    await requestJson<MarketActionRecord>(baseUrl, "/markets/enter", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+
+    const attacked = await requestJson<MarketActionRecord>(baseUrl, "/markets/competitor-action", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    assert.equal(attacked.status, 201);
+    assert.equal(attacked.body.data?.action?.actionType, "price_war");
+    assert.ok((attacked.body.data?.market.pricePressure ?? 0) > 0);
+    assert.ok((attacked.body.data?.market.playerShareBasisPoints ?? 10000) < 820);
+    assert.ok((attacked.body.data?.marketCenter.finance.monthlyIncome ?? profile.monthlyIncome) < profile.monthlyIncome);
+
+    const actionId = attacked.body.data?.action?.id;
+    assert.ok(actionId);
+    const defended = await requestJson<MarketActionRecord>(baseUrl, `/markets/actions/${encodeURIComponent(actionId)}/respond`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", response: "counter" })
+    });
+    assert.equal(defended.status, 200);
+    assert.equal(defended.body.data?.action?.status, "resolved");
+    assert.ok((defended.body.data?.market.playerShareBasisPoints ?? 0) > (attacked.body.data?.market.playerShareBasisPoints ?? 0));
+
+    const duplicate = await requestJson<MarketActionRecord>(baseUrl, `/markets/actions/${encodeURIComponent(actionId)}/respond`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", response: "counter" })
+    });
+    assert.equal(duplicate.status, 409);
+  });
+});
+
+test("applies poaching pressure and blocks responses without enough cash", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "marketpoach");
+    await requestJson<MarketActionRecord>(baseUrl, "/markets/enter", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    const first = await requestJson<MarketActionRecord>(baseUrl, "/markets/competitor-action", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    assert.equal(first.status, 201);
+    const firstActionId = first.body.data?.action?.id;
+    assert.ok(firstActionId);
+    await requestJson<MarketActionRecord>(baseUrl, `/markets/actions/${encodeURIComponent(firstActionId)}/respond`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", response: "defend" })
+    });
+
+    const poach = await requestJson<MarketActionRecord>(baseUrl, "/markets/competitor-action", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", trackId: "enterprise-saas" })
+    });
+    assert.equal(poach.status, 201);
+    assert.equal(poach.body.data?.action?.actionType, "poach");
+    assert.ok((poach.body.data?.market.talentPressure ?? 0) >= 20);
+
+    const actionId = poach.body.data?.action?.id;
+    assert.ok(actionId);
+    const blocked = await requestJson<MarketActionRecord>(baseUrl, `/markets/actions/${encodeURIComponent(actionId)}/respond`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", response: "counter" })
+    });
+    assert.equal(blocked.status, 409);
   });
 });
 

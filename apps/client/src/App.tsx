@@ -317,6 +317,137 @@ type FundingActionResult = {
   result: string;
 };
 
+type ProductStage = "idea" | "mvp" | "beta" | "launched" | "growth" | "mature" | "decline" | "closed";
+
+type ProductOffer = {
+  id: string;
+  name: string;
+  category: string;
+  summary: string;
+  launchCost: number;
+  baseUsers: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+  acquisitionCost: number;
+  serverCost: number;
+  techDebtGrowth: number;
+  reputationGrowth: number;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+type PlayerProduct = {
+  id: string;
+  configId: string;
+  name: string;
+  category: string;
+  stage: ProductStage;
+  users: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+  acquisitionCost: number;
+  serverCost: number;
+  reputationScore: number;
+  techDebt: number;
+  monthlyRevenue: number;
+  status: "active" | "closed";
+  resultSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+};
+
+type ProductCenter = {
+  offers: ProductOffer[];
+  products: PlayerProduct[];
+  finance: CompanyFinance;
+};
+
+type ProductActionResult = {
+  product: PlayerProduct;
+  productCenter: ProductCenter;
+  result: string;
+};
+
+type CompetitorActionType = "price_war" | "poach" | "public_opinion" | "patent";
+
+type MarketTrackOffer = {
+  id: string;
+  name: string;
+  summary: string;
+  costStructure: string;
+  industryHeat: number;
+  policyRisk: number;
+  baseShareBasisPoints: number;
+  customerPool: number;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+type PlayerMarket = {
+  id: string;
+  trackId: string;
+  trackName: string;
+  playerShareBasisPoints: number;
+  competitorShareBasisPoints: number;
+  industryHeat: number;
+  policyRisk: number;
+  pricePressure: number;
+  talentPressure: number;
+  reputationPressure: number;
+  patentRisk: number;
+  resultSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CompetitorAction = {
+  id: string;
+  actionId: string;
+  trackId: string;
+  competitorName: string;
+  actionType: CompetitorActionType;
+  title: string;
+  summary: string;
+  status: "pending" | "resolved";
+  response: "defend" | "counter" | null;
+  resultSummary: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+type MarketCenter = {
+  offers: MarketTrackOffer[];
+  markets: PlayerMarket[];
+  actions: CompetitorAction[];
+  finance: CompanyFinance;
+};
+
+type MarketActionResult = {
+  market: PlayerMarket;
+  action: CompetitorAction | null;
+  marketCenter: MarketCenter;
+  result: string;
+};
+
+const productStageLabels: Record<ProductStage, string> = {
+  idea: "立项",
+  mvp: "MVP",
+  beta: "内测",
+  launched: "上线",
+  growth: "增长",
+  mature: "成熟",
+  decline: "衰退",
+  closed: "关闭"
+};
+
+const competitorActionLabels: Record<CompetitorActionType, string> = {
+  price_war: "价格战",
+  poach: "挖员工",
+  public_opinion: "舆论战",
+  patent: "专利诉讼"
+};
+
 const sideActions = ["财务", "融资", "贷款", "风险", "合同"];
 const rightActions = ["首充", "月卡", "礼包", "活动", "排行", "邮件", "VIP"];
 const navItems = ["公司", "员工", "项目", "产品", "市场", "商会"];
@@ -866,6 +997,17 @@ function App() {
   const [selectedFundingId, setSelectedFundingId] = useState("");
   const [fundingError, setFundingError] = useState("");
   const [fundingNotice, setFundingNotice] = useState("");
+  const [productCenter, setProductCenter] = useState<ProductCenter | null>(null);
+  const [selectedProductOfferId, setSelectedProductOfferId] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+  const [productError, setProductError] = useState("");
+  const [productNotice, setProductNotice] = useState("");
+  const [marketCenter, setMarketCenter] = useState<MarketCenter | null>(null);
+  const [selectedMarketOfferId, setSelectedMarketOfferId] = useState("");
+  const [selectedMarketId, setSelectedMarketId] = useState("");
+  const [selectedCompetitorActionId, setSelectedCompetitorActionId] = useState("");
+  const [marketError, setMarketError] = useState("");
+  const [marketNotice, setMarketNotice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -963,6 +1105,38 @@ function App() {
   const selectedFunding = useMemo(
     () => pendingFundings.find((item) => item.id === selectedFundingId) ?? pendingFundings[0],
     [pendingFundings, selectedFundingId]
+  );
+  const selectedProductOffer = useMemo(
+    () => productCenter?.offers.find((item) => item.id === selectedProductOfferId) ?? productCenter?.offers[0],
+    [productCenter?.offers, selectedProductOfferId]
+  );
+  const activeProducts = useMemo(
+    () => productCenter?.products.filter((item) => item.status !== "closed") ?? [],
+    [productCenter?.products]
+  );
+  const selectedProduct = useMemo(
+    () => activeProducts.find((item) => item.id === selectedProductId) ?? activeProducts[0],
+    [activeProducts, selectedProductId]
+  );
+  const totalProductUsers = useMemo(
+    () => activeProducts.reduce((total, item) => total + item.users, 0),
+    [activeProducts]
+  );
+  const selectedMarketOffer = useMemo(
+    () => marketCenter?.offers.find((item) => item.id === selectedMarketOfferId) ?? marketCenter?.offers[0],
+    [marketCenter?.offers, selectedMarketOfferId]
+  );
+  const selectedMarket = useMemo(
+    () => marketCenter?.markets.find((item) => item.id === selectedMarketId) ?? marketCenter?.markets[0],
+    [marketCenter?.markets, selectedMarketId]
+  );
+  const pendingCompetitorActions = useMemo(
+    () => marketCenter?.actions.filter((item) => item.status === "pending") ?? [],
+    [marketCenter?.actions]
+  );
+  const selectedCompetitorAction = useMemo(
+    () => pendingCompetitorActions.find((item) => item.id === selectedCompetitorActionId) ?? pendingCompetitorActions[0],
+    [pendingCompetitorActions, selectedCompetitorActionId]
   );
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
@@ -1118,6 +1292,62 @@ function App() {
     );
   };
 
+  const applyProductCenter = (nextProductCenter: ProductCenter): void => {
+    setProductCenter(nextProductCenter);
+    setSelectedProductOfferId((currentId) => nextProductCenter.offers.find((item) => item.id === currentId)?.id ?? nextProductCenter.offers[0]?.id ?? "");
+    const active = nextProductCenter.products.filter((item) => item.status !== "closed");
+    setSelectedProductId((currentId) => active.find((item) => item.id === currentId)?.id ?? active[0]?.id ?? "");
+    setCompanyFinance(nextProductCenter.finance);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            cash: nextProductCenter.finance.cash,
+            monthlyIncome: nextProductCenter.finance.monthlyIncome,
+            monthlyExpense: nextProductCenter.finance.monthlyExpense,
+            valuation: nextProductCenter.finance.valuation,
+            totalDebt: nextProductCenter.finance.totalDebt,
+            creditRating: nextProductCenter.finance.creditRating,
+            reputation: nextProductCenter.finance.brandReputation,
+            customerSatisfaction: nextProductCenter.finance.customerSatisfaction,
+            financeMonth: nextProductCenter.finance.financeMonth,
+            operatingDay: nextProductCenter.finance.operatingDay,
+            riskStatus: nextProductCenter.finance.riskStatus,
+            debtWarning: nextProductCenter.finance.debtRatioBasisPoints >= 6000 ? "高" : nextProductCenter.finance.totalDebt > 0 ? "中" : "低"
+          }
+    );
+  };
+
+  const applyMarketCenter = (nextMarketCenter: MarketCenter): void => {
+    setMarketCenter(nextMarketCenter);
+    setSelectedMarketOfferId((currentId) => nextMarketCenter.offers.find((item) => item.id === currentId)?.id ?? nextMarketCenter.offers[0]?.id ?? "");
+    setSelectedMarketId((currentId) => nextMarketCenter.markets.find((item) => item.id === currentId)?.id ?? nextMarketCenter.markets[0]?.id ?? "");
+    const pending = nextMarketCenter.actions.filter((item) => item.status === "pending");
+    setSelectedCompetitorActionId((currentId) => pending.find((item) => item.id === currentId)?.id ?? pending[0]?.id ?? "");
+    setCompanyFinance(nextMarketCenter.finance);
+    setProfile((currentProfile) =>
+      currentProfile === null
+        ? currentProfile
+        : {
+            ...currentProfile,
+            cash: nextMarketCenter.finance.cash,
+            monthlyIncome: nextMarketCenter.finance.monthlyIncome,
+            monthlyExpense: nextMarketCenter.finance.monthlyExpense,
+            valuation: nextMarketCenter.finance.valuation,
+            totalDebt: nextMarketCenter.finance.totalDebt,
+            creditRating: nextMarketCenter.finance.creditRating,
+            reputation: nextMarketCenter.finance.brandReputation,
+            employeeSatisfaction: nextMarketCenter.finance.employeeSatisfaction,
+            customerSatisfaction: nextMarketCenter.finance.customerSatisfaction,
+            financeMonth: nextMarketCenter.finance.financeMonth,
+            operatingDay: nextMarketCenter.finance.operatingDay,
+            riskStatus: nextMarketCenter.finance.riskStatus,
+            debtWarning: nextMarketCenter.finance.debtRatioBasisPoints >= 6000 ? "高" : nextMarketCenter.finance.totalDebt > 0 ? "中" : "低"
+          }
+    );
+  };
+
   const loadLoanCenter = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<LoanCenter>(
       `/finance/loans?serverId=${encodeURIComponent(nextServerId)}`,
@@ -1148,6 +1378,38 @@ function App() {
     }
 
     setFundingError(response.error.message);
+  };
+
+  const loadProductCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<ProductCenter>(
+      `/products?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyProductCenter(response.data);
+      setProductError("");
+      return;
+    }
+
+    setProductError(response.error.message);
+  };
+
+  const loadMarketCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<MarketCenter>(
+      `/markets?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      applyMarketCenter(response.data);
+      setMarketError("");
+      return;
+    }
+
+    setMarketError(response.error.message);
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -1279,6 +1541,8 @@ function App() {
     void loadCompanyFinance(account.token, selectedServer.id);
     void loadLoanCenter(account.token, selectedServer.id);
     void loadFundingCenter(account.token, selectedServer.id);
+    void loadProductCenter(account.token, selectedServer.id);
+    void loadMarketCenter(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -1515,7 +1779,7 @@ function App() {
       return;
     }
 
-    if (panelName === "贷款" || panelName === "融资") {
+    if (panelName === "贷款" || panelName === "融资" || panelName === "产品" || panelName === "市场") {
       setActivePanel(null);
       setNativeHomePage(null);
       setActiveNav(panelName);
@@ -1926,6 +2190,64 @@ function App() {
     setFundingError(response.error.message);
   };
 
+  const runProductAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
+    if (!account || !selectedServer) {
+      setProductError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<ProductActionResult>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      applyProductCenter(response.data.productCenter);
+      setSelectedProductId(response.data.product.id);
+      setProductNotice(response.data.result);
+      setProductError("");
+      if (response.data.product.techDebt >= 75) {
+        void loadEvents(account.token, selectedServer.id);
+      }
+      return;
+    }
+
+    setProductError(response.error.message);
+  };
+
+  const runMarketAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
+    if (!account || !selectedServer) {
+      setMarketError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+
+    const response = await apiRequest<MarketActionResult>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      applyMarketCenter(response.data.marketCenter);
+      setSelectedMarketId(response.data.market.id);
+      if (response.data.action) {
+        setSelectedCompetitorActionId(response.data.action.id);
+      }
+      setMarketNotice(response.data.result);
+      setMarketError("");
+      return;
+    }
+
+    setMarketError(response.error.message);
+  };
+
   const resolveCrisis = async (route: "financing" | "cost_cut" | "restructure"): Promise<void> => {
     if (!account || !selectedServer) {
       setLoanError("账号或区服状态缺失，请重新登录。");
@@ -2113,7 +2435,7 @@ function App() {
                   if (item === "公司") {
                     setActivePanel(null);
                     setNativeHomePage(null);
-                  } else if (item === "员工" || item === "项目") {
+                  } else if (item === "员工" || item === "项目" || item === "产品" || item === "市场") {
                     setActivePanel(null);
                     setNativeHomePage(null);
                   } else {
@@ -2544,6 +2866,250 @@ function App() {
                       <p>接下第一单项目，分配员工后推进交付，结算结果会影响现金、声誉和客户满意度。</p>
                       <button type="button" onClick={() => void startProject()}>接项目</button>
                     </div>
+                  )}
+                </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "产品" && (
+            <section className="funding-screen product-screen" aria-label="产品生命周期">
+              <header className="funding-header">
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <div>
+                  <strong>产品</strong>
+                  <span>用户 {compactNumber(totalProductUsers)} · 月收入 {compactNumber(productCenter?.products.reduce((total, item) => total + item.monthlyRevenue, 0) ?? 0)}</span>
+                </div>
+                <button type="button" onClick={() => account && selectedServer && void loadProductCenter(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <section className="funding-summary" aria-label="产品概览">
+                <span>在营 {activeProducts.length}</span>
+                <span>现金 {compactNumber(productCenter?.finance.cash ?? profile.cash)}</span>
+                <span>风险 {productCenter?.finance.riskStatus ?? profile.riskStatus}</span>
+              </section>
+              {productNotice && <p className="funding-notice">{productNotice}</p>}
+              {productError && <p className="funding-error">{productError}</p>}
+
+              <section className="funding-layout">
+                <div className="funding-list" aria-label="产品方向列表">
+                  {(productCenter?.offers ?? []).map((offer) => (
+                    <button
+                      className={offer.id === selectedProductOffer?.id ? "selected" : undefined}
+                      key={offer.id}
+                      type="button"
+                      onClick={() => setSelectedProductOfferId(offer.id)}
+                    >
+                      <strong>{offer.name}</strong>
+                      <em>{offer.category} · 启动 {compactNumber(offer.launchCost)}</em>
+                      <span>基准{compactNumber(offer.baseUsers)}用户 / 留存{(offer.retentionBasisPoints / 100).toFixed(1)}% / 付费{(offer.payRateBasisPoints / 100).toFixed(1)}%</span>
+                      <small>{offer.lockedReason ?? "可立项"}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="funding-detail" aria-label="产品详情">
+                  {selectedProductOffer ? (
+                    <>
+                      <div className="funding-title">
+                        <span>产</span>
+                        <strong>{selectedProduct?.name ?? selectedProductOffer.name}</strong>
+                        <em>{selectedProduct?.resultSummary ?? selectedProductOffer.summary}</em>
+                      </div>
+
+                      <dl className="funding-stats">
+                        <div>
+                          <dt>阶段</dt>
+                          <dd>{selectedProduct ? productStageLabels[selectedProduct.stage] : "未立项"}</dd>
+                        </div>
+                        <div>
+                          <dt>用户</dt>
+                          <dd>{compactNumber(selectedProduct?.users ?? selectedProductOffer.baseUsers)}</dd>
+                        </div>
+                        <div>
+                          <dt>留存</dt>
+                          <dd>{((selectedProduct?.retentionBasisPoints ?? selectedProductOffer.retentionBasisPoints) / 100).toFixed(1)}%</dd>
+                        </div>
+                        <div>
+                          <dt>付费</dt>
+                          <dd>{((selectedProduct?.payRateBasisPoints ?? selectedProductOffer.payRateBasisPoints) / 100).toFixed(1)}%</dd>
+                        </div>
+                        <div>
+                          <dt>收入</dt>
+                          <dd>{compactNumber(selectedProduct?.monthlyRevenue ?? 0)}</dd>
+                        </div>
+                        <div>
+                          <dt>技术债</dt>
+                          <dd>{selectedProduct?.techDebt ?? 8}</dd>
+                        </div>
+                      </dl>
+
+                      {selectedProduct && (
+                        <section className="funding-active">
+                          <strong>{productStageLabels[selectedProduct.stage]} · {selectedProduct.category}</strong>
+                          <span>服务器成本 {compactNumber(selectedProduct.serverCost)}，获客成本 {compactNumber(selectedProduct.acquisitionCost)}。</span>
+                          <small>口碑 {selectedProduct.reputationScore} · 状态 {selectedProduct.status === "closed" ? "已关闭" : "运营中"}</small>
+                        </section>
+                      )}
+
+                      <div className="funding-actions">
+                        <button
+                          type="button"
+                          disabled={!selectedProductOffer.isAvailable}
+                          onClick={() => void runProductAction("/products/start", { productConfigId: selectedProductOffer.id })}
+                        >
+                          立项
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedProduct}
+                          onClick={() => selectedProduct && void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/advance`)}
+                        >
+                          推进
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedProduct}
+                          onClick={() => selectedProduct && void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/refactor`)}
+                        >
+                          重构
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedProduct}
+                          onClick={() => selectedProduct && window.confirm("关闭产品会停止长期收入，并降低部分口碑。确认关闭？") && void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/close`)}
+                        >
+                          关闭
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="funding-empty">产品配置读取中，请确认 API 服务已启动。</div>
+                  )}
+                </article>
+              </section>
+            </section>
+          )}
+
+          {activeNav === "市场" && (
+            <section className="funding-screen market-screen" aria-label="市场竞争">
+              <header className="funding-header">
+                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
+                <div>
+                  <strong>市场</strong>
+                  <span>份额 {((selectedMarket?.playerShareBasisPoints ?? selectedMarketOffer?.baseShareBasisPoints ?? 0) / 100).toFixed(1)}% · 待应对 {pendingCompetitorActions.length}</span>
+                </div>
+                <button type="button" onClick={() => account && selectedServer && void loadMarketCenter(account.token, selectedServer.id)}>刷新</button>
+              </header>
+
+              <section className="funding-summary" aria-label="市场概览">
+                <span>赛道 {marketCenter?.markets.length ?? 0}</span>
+                <span>热度 {selectedMarket?.industryHeat ?? selectedMarketOffer?.industryHeat ?? 0}</span>
+                <span>风险 {marketCenter?.finance.riskStatus ?? profile.riskStatus}</span>
+              </section>
+              {marketNotice && <p className="funding-notice">{marketNotice}</p>}
+              {marketError && <p className="funding-error">{marketError}</p>}
+
+              <section className="funding-layout">
+                <div className="funding-list" aria-label="赛道列表">
+                  {(marketCenter?.offers ?? []).map((offer) => (
+                    <button
+                      className={offer.id === selectedMarketOffer?.id ? "selected" : undefined}
+                      key={offer.id}
+                      type="button"
+                      onClick={() => setSelectedMarketOfferId(offer.id)}
+                    >
+                      <strong>{offer.name}</strong>
+                      <em>热度 {offer.industryHeat} · 政策风险 {offer.policyRisk}</em>
+                      <span>基础份额 {(offer.baseShareBasisPoints / 100).toFixed(1)}% / 客户池 {compactNumber(offer.customerPool)}</span>
+                      <small>{offer.lockedReason ?? "可进入"}</small>
+                    </button>
+                  ))}
+                </div>
+
+                <article className="funding-detail" aria-label="市场详情">
+                  {selectedMarketOffer ? (
+                    <>
+                      <div className="funding-title">
+                        <span>市</span>
+                        <strong>{selectedMarket?.trackName ?? selectedMarketOffer.name}</strong>
+                        <em>{selectedMarket?.resultSummary ?? selectedMarketOffer.summary}</em>
+                      </div>
+
+                      <dl className="funding-stats">
+                        <div>
+                          <dt>我方份额</dt>
+                          <dd>{((selectedMarket?.playerShareBasisPoints ?? selectedMarketOffer.baseShareBasisPoints) / 100).toFixed(1)}%</dd>
+                        </div>
+                        <div>
+                          <dt>竞品份额</dt>
+                          <dd>{((selectedMarket?.competitorShareBasisPoints ?? 0) / 100).toFixed(1)}%</dd>
+                        </div>
+                        <div>
+                          <dt>价格战</dt>
+                          <dd>{selectedMarket?.pricePressure ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>挖人</dt>
+                          <dd>{selectedMarket?.talentPressure ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>舆论</dt>
+                          <dd>{selectedMarket?.reputationPressure ?? 0}</dd>
+                        </div>
+                        <div>
+                          <dt>专利</dt>
+                          <dd>{selectedMarket?.patentRisk ?? selectedMarketOffer.policyRisk}</dd>
+                        </div>
+                      </dl>
+
+                      <section className="funding-active">
+                        <strong>成本结构</strong>
+                        <span>{selectedMarketOffer.costStructure}</span>
+                        <small>行业热度 {selectedMarketOffer.industryHeat}，政策风险 {selectedMarketOffer.policyRisk}。</small>
+                      </section>
+
+                      {selectedCompetitorAction && (
+                        <section className="funding-active">
+                          <strong>{competitorActionLabels[selectedCompetitorAction.actionType]} · {selectedCompetitorAction.competitorName}</strong>
+                          <span>{selectedCompetitorAction.title}</span>
+                          <small>{selectedCompetitorAction.summary}</small>
+                        </section>
+                      )}
+
+                      <div className="funding-actions">
+                        <button
+                          type="button"
+                          disabled={!selectedMarketOffer.isAvailable}
+                          onClick={() => void runMarketAction("/markets/enter", { trackId: selectedMarketOffer.id })}
+                        >
+                          进入
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedMarket}
+                          onClick={() => selectedMarket && void runMarketAction("/markets/competitor-action", { trackId: selectedMarket.trackId })}
+                        >
+                          竞品行动
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedCompetitorAction}
+                          onClick={() => selectedCompetitorAction && void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "defend" })}
+                        >
+                          防守
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedCompetitorAction}
+                          onClick={() => selectedCompetitorAction && void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "counter" })}
+                        >
+                          反击
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="funding-empty">市场配置读取中，请确认 API 服务已启动。</div>
                   )}
                 </article>
               </section>

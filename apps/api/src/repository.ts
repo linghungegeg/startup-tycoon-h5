@@ -5,6 +5,8 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
 import { pickRecruitCandidate } from "./employee.js";
 import { calculateFinanceReport } from "./finance.js";
+import { calculateMarketShare, type CompetitorActionType } from "./market.js";
+import { calculateNextProductMetrics, calculateProductRevenue, type ProductStage } from "./product.js";
 import { calculateProjectProgressGain, calculateProjectSuccessRate } from "./project.js";
 
 export type AccountRecord = {
@@ -300,6 +302,115 @@ export type FundingActionRecord = {
   result: string;
 };
 
+export type ProductOfferRecord = {
+  id: string;
+  name: string;
+  category: string;
+  summary: string;
+  launchCost: number;
+  baseUsers: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+  acquisitionCost: number;
+  serverCost: number;
+  techDebtGrowth: number;
+  reputationGrowth: number;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+export type ProductRecord = {
+  id: string;
+  configId: string;
+  name: string;
+  category: string;
+  stage: ProductStage;
+  users: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+  acquisitionCost: number;
+  serverCost: number;
+  reputationScore: number;
+  techDebt: number;
+  monthlyRevenue: number;
+  status: "active" | "closed";
+  resultSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+};
+
+export type ProductCenterRecord = {
+  offers: ProductOfferRecord[];
+  products: ProductRecord[];
+  finance: CompanyFinanceRecord;
+};
+
+export type ProductActionRecord = {
+  product: ProductRecord;
+  productCenter: ProductCenterRecord;
+  result: string;
+};
+
+export type MarketTrackOfferRecord = {
+  id: string;
+  name: string;
+  summary: string;
+  costStructure: string;
+  industryHeat: number;
+  policyRisk: number;
+  baseShareBasisPoints: number;
+  customerPool: number;
+  isAvailable: boolean;
+  lockedReason: string | null;
+};
+
+export type PlayerMarketRecord = {
+  id: string;
+  trackId: string;
+  trackName: string;
+  playerShareBasisPoints: number;
+  competitorShareBasisPoints: number;
+  industryHeat: number;
+  policyRisk: number;
+  pricePressure: number;
+  talentPressure: number;
+  reputationPressure: number;
+  patentRisk: number;
+  resultSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CompetitorActionRecord = {
+  id: string;
+  actionId: string;
+  trackId: string;
+  competitorName: string;
+  actionType: CompetitorActionType;
+  title: string;
+  summary: string;
+  status: "pending" | "resolved";
+  response: "defend" | "counter" | null;
+  resultSummary: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+};
+
+export type MarketCenterRecord = {
+  offers: MarketTrackOfferRecord[];
+  markets: PlayerMarketRecord[];
+  actions: CompetitorActionRecord[];
+  finance: CompanyFinanceRecord;
+};
+
+export type MarketActionRecord = {
+  market: PlayerMarketRecord;
+  action: CompetitorActionRecord | null;
+  marketCenter: MarketCenterRecord;
+  result: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -338,6 +449,15 @@ export type GameRepository = {
   listFundings(accountId: string, serverId: string): Promise<FundingCenterRecord | "PLAYER_NOT_FOUND">;
   startFunding(accountId: string, serverId: string, investorId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "INVESTOR_NOT_FOUND" | "FUNDING_LOCKED" | "FUNDING_ALREADY_ACTIVE">;
   settleFunding(accountId: string, serverId: string, fundingId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_ALREADY_SETTLED">;
+  listProducts(accountId: string, serverId: string): Promise<ProductCenterRecord | "PLAYER_NOT_FOUND">;
+  startProduct(accountId: string, serverId: string, productConfigId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_ALREADY_ACTIVE" | "INSUFFICIENT_CASH">;
+  advanceProduct(accountId: string, serverId: string, productId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_CLOSED" | "INSUFFICIENT_CASH">;
+  refactorProduct(accountId: string, serverId: string, productId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_CLOSED" | "INSUFFICIENT_CASH">;
+  closeProduct(accountId: string, serverId: string, productId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_CLOSED">;
+  listMarkets(accountId: string, serverId: string): Promise<MarketCenterRecord | "PLAYER_NOT_FOUND">;
+  enterMarket(accountId: string, serverId: string, trackId: string): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "MARKET_ALREADY_ACTIVE">;
+  triggerCompetitorAction(accountId: string, serverId: string, trackId: string): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND">;
+  respondCompetitorAction(accountId: string, serverId: string, actionId: string, response: "defend" | "counter"): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND" | "COMPETITOR_ACTION_SETTLED" | "INSUFFICIENT_CASH">;
   disconnect(): Promise<void>;
 };
 
@@ -391,6 +511,11 @@ const toProfileRecord = (profile: {
 
 const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRecord => {
   const report = calculateFinanceReport(profile);
+  const normalizeRiskStatus = (status: string): CompanyFinanceRecord["riskStatus"] =>
+    status === "预警" || status === "资金紧张" ? status : "稳健";
+  const riskRank: Record<CompanyFinanceRecord["riskStatus"], number> = { "稳健": 0, "预警": 1, "资金紧张": 2 };
+  const profileRiskStatus = normalizeRiskStatus(profile.riskStatus);
+  const riskStatus = riskRank[profileRiskStatus] > riskRank[report.riskStatus] ? profileRiskStatus : report.riskStatus;
 
   return {
     profileId: profile.id,
@@ -410,7 +535,7 @@ const toCompanyFinanceRecord = (profile: PlayerProfileRecord): CompanyFinanceRec
     customerSatisfaction: profile.customerSatisfaction,
     financeMonth: profile.financeMonth,
     operatingDay: profile.operatingDay,
-    riskStatus: report.riskStatus,
+    riskStatus,
     riskTips: report.riskTips
   };
 };
@@ -677,6 +802,127 @@ const toFundingRecord = (funding: {
   resolvedAt: funding.resolvedAt?.toISOString() ?? null
 });
 
+const readProductStage = (stage: string): ProductStage =>
+  stage === "mvp" ||
+  stage === "beta" ||
+  stage === "launched" ||
+  stage === "growth" ||
+  stage === "mature" ||
+  stage === "decline" ||
+  stage === "closed"
+    ? stage
+    : "idea";
+
+const readProductStatus = (status: string): ProductRecord["status"] => (status === "closed" ? "closed" : "active");
+
+const toProductRecord = (product: {
+  id: string;
+  configId: string;
+  name: string;
+  category: string;
+  stage: string;
+  users: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+  acquisitionCost: number;
+  serverCost: number;
+  reputationScore: number;
+  techDebt: number;
+  monthlyRevenue: number;
+  status: string;
+  resultSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  closedAt: Date | null;
+}): ProductRecord => ({
+  id: product.id,
+  configId: product.configId,
+  name: product.name,
+  category: product.category,
+  stage: readProductStage(product.stage),
+  users: product.users,
+  retentionBasisPoints: product.retentionBasisPoints,
+  payRateBasisPoints: product.payRateBasisPoints,
+  acquisitionCost: product.acquisitionCost,
+  serverCost: product.serverCost,
+  reputationScore: product.reputationScore,
+  techDebt: product.techDebt,
+  monthlyRevenue: product.monthlyRevenue,
+  status: readProductStatus(product.status),
+  resultSummary: product.resultSummary,
+  createdAt: product.createdAt.toISOString(),
+  updatedAt: product.updatedAt.toISOString(),
+  closedAt: product.closedAt?.toISOString() ?? null
+});
+
+const readCompetitorActionType = (actionType: string): CompetitorActionType =>
+  actionType === "poach" || actionType === "public_opinion" || actionType === "patent" ? actionType : "price_war";
+
+const readCompetitorActionStatus = (status: string): CompetitorActionRecord["status"] => (status === "resolved" ? "resolved" : "pending");
+
+const readCompetitorResponse = (response: string | null): CompetitorActionRecord["response"] =>
+  response === "defend" || response === "counter" ? response : null;
+
+const toPlayerMarketRecord = (market: {
+  id: string;
+  trackId: string;
+  trackName: string;
+  playerShareBasisPoints: number;
+  competitorShareBasisPoints: number;
+  industryHeat: number;
+  policyRisk: number;
+  pricePressure: number;
+  talentPressure: number;
+  reputationPressure: number;
+  patentRisk: number;
+  resultSummary: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): PlayerMarketRecord => ({
+  id: market.id,
+  trackId: market.trackId,
+  trackName: market.trackName,
+  playerShareBasisPoints: market.playerShareBasisPoints,
+  competitorShareBasisPoints: market.competitorShareBasisPoints,
+  industryHeat: market.industryHeat,
+  policyRisk: market.policyRisk,
+  pricePressure: market.pricePressure,
+  talentPressure: market.talentPressure,
+  reputationPressure: market.reputationPressure,
+  patentRisk: market.patentRisk,
+  resultSummary: market.resultSummary,
+  createdAt: market.createdAt.toISOString(),
+  updatedAt: market.updatedAt.toISOString()
+});
+
+const toCompetitorActionRecord = (action: {
+  id: string;
+  actionId: string;
+  trackId: string;
+  competitorName: string;
+  actionType: string;
+  title: string;
+  summary: string;
+  status: string;
+  response: string | null;
+  resultSummary: string | null;
+  createdAt: Date;
+  resolvedAt: Date | null;
+}): CompetitorActionRecord => ({
+  id: action.id,
+  actionId: action.actionId,
+  trackId: action.trackId,
+  competitorName: action.competitorName,
+  actionType: readCompetitorActionType(action.actionType),
+  title: action.title,
+  summary: action.summary,
+  status: readCompetitorActionStatus(action.status),
+  response: readCompetitorResponse(action.response),
+  resultSummary: action.resultSummary,
+  createdAt: action.createdAt.toISOString(),
+  resolvedAt: action.resolvedAt?.toISOString() ?? null
+});
+
 const calculateFundingOffer = (
   profile: PlayerProfileRecord,
   config: {
@@ -751,6 +997,77 @@ const toFundingCenterRecord = async (
   return {
     offers: configs.map((config) => calculateFundingOffer(profile, config, completedInvestorIds)),
     fundings: fundings.map(toFundingRecord),
+    finance: toCompanyFinanceRecord(profile)
+  };
+};
+
+const toProductCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<ProductCenterRecord> => {
+  const [configs, products] = await Promise.all([
+    prisma.productConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.playerProduct.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+    })
+  ]);
+  const activeConfigIds = new Set(products.filter((product) => product.status !== "closed").map((product) => product.configId));
+
+  return {
+    offers: configs.map((config) => ({
+      id: config.id,
+      name: config.name,
+      category: config.category,
+      summary: config.summary,
+      launchCost: config.launchCost,
+      baseUsers: config.baseUsers,
+      retentionBasisPoints: config.retentionBasisPoints,
+      payRateBasisPoints: config.payRateBasisPoints,
+      acquisitionCost: config.acquisitionCost,
+      serverCost: config.serverCost,
+      techDebtGrowth: config.techDebtGrowth,
+      reputationGrowth: config.reputationGrowth,
+      isAvailable: !activeConfigIds.has(config.id) && profile.cash >= config.launchCost,
+      lockedReason: activeConfigIds.has(config.id) ? "产品线已在运营" : profile.cash < config.launchCost ? "现金不足" : null
+    })),
+    products: products.map(toProductRecord),
+    finance: toCompanyFinanceRecord(profile)
+  };
+};
+
+const toMarketCenterRecord = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<MarketCenterRecord> => {
+  const [configs, markets, actions] = await Promise.all([
+    prisma.marketTrackConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.playerMarketState.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ createdAt: "asc" }]
+    }),
+    prisma.playerCompetitorAction.findMany({
+      where: { profileId: profile.id },
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }]
+    })
+  ]);
+  const activeTrackIds = new Set(markets.map((market) => market.trackId));
+
+  return {
+    offers: configs.map((config) => ({
+      id: config.id,
+      name: config.name,
+      summary: config.summary,
+      costStructure: config.costStructure,
+      industryHeat: config.industryHeat,
+      policyRisk: config.policyRisk,
+      baseShareBasisPoints: config.baseShareBasisPoints,
+      customerPool: config.customerPool,
+      isAvailable: !activeTrackIds.has(config.id),
+      lockedReason: activeTrackIds.has(config.id) ? "赛道已进入" : null
+    })),
+    markets: markets.map(toPlayerMarketRecord),
+    actions: actions.map(toCompetitorActionRecord),
     finance: toCompanyFinanceRecord(profile)
   };
 };
@@ -2330,6 +2647,581 @@ export const createPrismaGameRepository = (
       funding: toFundingRecord(settled.funding),
       fundingCenter: await toFundingCenterRecord(prisma, toProfileRecord(settled.profile)),
       result: settled.resultSummary
+    };
+  },
+
+  async listProducts(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toProductCenterRecord(prisma, toProfileRecord(profile));
+  },
+
+  async startProduct(accountId, serverId, productConfigId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const config = await prisma.productConfig.findUnique({ where: { id: productConfigId } });
+    if (config === null) {
+      return "PRODUCT_NOT_FOUND";
+    }
+    if (profile.cash < config.launchCost) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const existing = await prisma.playerProduct.findFirst({
+      where: {
+        profileId: profile.id,
+        configId: config.id,
+        status: { not: "closed" }
+      }
+    });
+    if (existing !== null) {
+      return "PRODUCT_ALREADY_ACTIVE";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const monthlyRevenue = 0;
+      const product = await tx.playerProduct.create({
+        data: {
+          id: randomUUID(),
+          profileId: profile.id,
+          configId: config.id,
+          name: config.name,
+          category: config.category,
+          stage: "idea",
+          users: config.baseUsers,
+          retentionBasisPoints: config.retentionBasisPoints,
+          payRateBasisPoints: config.payRateBasisPoints,
+          acquisitionCost: config.acquisitionCost,
+          serverCost: config.serverCost,
+          reputationScore: 52,
+          techDebt: 8,
+          monthlyRevenue,
+          resultSummary: "产品已立项，进入 MVP 打磨阶段前需要持续投入。"
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: config.launchCost },
+          monthlyExpense: { increment: config.serverCost },
+          valuation: { increment: Math.round(config.launchCost * 0.6) }
+        }
+      });
+      return { product, profile: updatedProfile };
+    });
+
+    return {
+      product: toProductRecord(result.product),
+      productCenter: await toProductCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: `${config.name} 已完成产品立项，启动成本已计入现金流。`
+    };
+  },
+
+  async advanceProduct(accountId, serverId, productId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const product = await prisma.playerProduct.findFirst({
+      where: {
+        id: productId,
+        profileId: profile.id
+      },
+      include: { config: true }
+    });
+    if (product === null) {
+      return "PRODUCT_NOT_FOUND";
+    }
+    if (product.status === "closed") {
+      return "PRODUCT_CLOSED";
+    }
+    if (profile.cash < product.acquisitionCost) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const nextMetrics = calculateNextProductMetrics({
+      stage: readProductStage(product.stage),
+      users: product.users,
+      retentionBasisPoints: product.retentionBasisPoints,
+      payRateBasisPoints: product.payRateBasisPoints,
+      revenuePerPayingUser: product.config.revenuePerPayingUser,
+      acquisitionCost: product.acquisitionCost,
+      serverCost: product.serverCost,
+      reputationScore: product.reputationScore,
+      techDebt: product.techDebt,
+      techDebtGrowth: product.config.techDebtGrowth,
+      reputationGrowth: product.config.reputationGrowth
+    });
+    const incomeDelta = nextMetrics.monthlyRevenue - product.monthlyRevenue;
+    const expenseDelta = nextMetrics.serverCost - product.serverCost;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedProduct = await tx.playerProduct.update({
+        where: { id: product.id },
+        data: {
+          stage: nextMetrics.stage,
+          users: nextMetrics.users,
+          retentionBasisPoints: nextMetrics.retentionBasisPoints,
+          payRateBasisPoints: nextMetrics.payRateBasisPoints,
+          serverCost: nextMetrics.serverCost,
+          reputationScore: nextMetrics.reputationScore,
+          techDebt: nextMetrics.techDebt,
+          monthlyRevenue: nextMetrics.monthlyRevenue,
+          resultSummary: nextMetrics.resultSummary
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: product.acquisitionCost },
+          monthlyIncome: { increment: incomeDelta },
+          monthlyExpense: { increment: expenseDelta },
+          valuation: { increment: Math.max(0, Math.round(nextMetrics.monthlyRevenue * 2.4)) },
+          reputation: { increment: nextMetrics.reputationScore * 20 },
+          riskStatus: nextMetrics.incidentTriggered ? "预警" : profile.riskStatus,
+          pendingEventCount: nextMetrics.incidentTriggered ? { increment: 1 } : undefined
+        }
+      });
+
+      if (nextMetrics.incidentTriggered) {
+        const incidentConfig = await tx.eventConfig.findUnique({ where: { id: "product-tech-debt-incident" } });
+        if (incidentConfig !== null) {
+          await tx.playerEvent.upsert({
+            where: {
+              profileId_configId: {
+                profileId: profile.id,
+                configId: incidentConfig.id
+              }
+            },
+            update: { status: "pending" },
+            create: {
+              id: randomUUID(),
+              profileId: profile.id,
+              configId: incidentConfig.id
+            }
+          });
+        }
+      }
+
+      return { product: updatedProduct, profile: updatedProfile };
+    });
+
+    return {
+      product: toProductRecord(result.product),
+      productCenter: await toProductCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: nextMetrics.resultSummary
+    };
+  },
+
+  async refactorProduct(accountId, serverId, productId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const product = await prisma.playerProduct.findFirst({
+      where: {
+        id: productId,
+        profileId: profile.id
+      },
+      include: { config: true }
+    });
+    if (product === null) {
+      return "PRODUCT_NOT_FOUND";
+    }
+    if (product.status === "closed") {
+      return "PRODUCT_CLOSED";
+    }
+
+    const refactorCost = Math.max(120000, Math.round(product.acquisitionCost * 0.8));
+    if (profile.cash < refactorCost) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const nextTechDebt = Math.max(0, product.techDebt - 38);
+    const nextStage = product.stage === "decline" ? "growth" : product.stage;
+    const nextUsers = product.stage === "decline" ? Math.round(product.users * 1.12) : product.users;
+    const nextMonthlyRevenue = calculateProductRevenue(nextUsers, product.payRateBasisPoints, product.config.revenuePerPayingUser);
+    const incomeDelta = nextMonthlyRevenue - product.monthlyRevenue;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedProduct = await tx.playerProduct.update({
+        where: { id: product.id },
+        data: {
+          stage: nextStage,
+          users: nextUsers,
+          techDebt: nextTechDebt,
+          reputationScore: Math.min(100, product.reputationScore + 8),
+          monthlyRevenue: nextMonthlyRevenue,
+          resultSummary: "产品重构完成，技术债下降，衰退风险得到缓解。"
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: refactorCost },
+          monthlyIncome: { increment: incomeDelta },
+          reputation: { increment: 800 },
+          riskStatus: nextTechDebt >= 70 ? "预警" : "稳健"
+        }
+      });
+      return { product: updatedProduct, profile: updatedProfile };
+    });
+
+    return {
+      product: toProductRecord(result.product),
+      productCenter: await toProductCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: "产品重构完成，技术债下降，衰退风险得到缓解。"
+    };
+  },
+
+  async closeProduct(accountId, serverId, productId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const product = await prisma.playerProduct.findFirst({
+      where: {
+        id: productId,
+        profileId: profile.id
+      }
+    });
+    if (product === null) {
+      return "PRODUCT_NOT_FOUND";
+    }
+    if (product.status === "closed") {
+      return "PRODUCT_CLOSED";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedProduct = await tx.playerProduct.update({
+        where: { id: product.id },
+        data: {
+          stage: "closed",
+          status: "closed",
+          monthlyRevenue: 0,
+          resultSummary: "产品线已关闭，长期收入停止，服务器和客服成本同步释放。",
+          closedAt: new Date()
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          monthlyIncome: { decrement: product.monthlyRevenue },
+          monthlyExpense: { decrement: Math.min(profile.monthlyExpense, product.serverCost) },
+          reputation: { decrement: 300 }
+        }
+      });
+      return { product: updatedProduct, profile: updatedProfile };
+    });
+
+    return {
+      product: toProductRecord(result.product),
+      productCenter: await toProductCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: "产品线已关闭，长期收入停止，服务器和客服成本同步释放。"
+    };
+  },
+
+  async listMarkets(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return toMarketCenterRecord(prisma, toProfileRecord(profile));
+  },
+
+  async enterMarket(accountId, serverId, trackId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const config = await prisma.marketTrackConfig.findUnique({ where: { id: trackId } });
+    if (config === null) {
+      return "MARKET_NOT_FOUND";
+    }
+    const existing = await prisma.playerMarketState.findUnique({
+      where: {
+        profileId_trackId: {
+          profileId: profile.id,
+          trackId: config.id
+        }
+      }
+    });
+    if (existing !== null) {
+      return "MARKET_ALREADY_ACTIVE";
+    }
+
+    const market = await prisma.playerMarketState.create({
+      data: {
+        profileId: profile.id,
+        trackId: config.id,
+        trackName: config.name,
+        playerShareBasisPoints: config.baseShareBasisPoints,
+        competitorShareBasisPoints: Math.max(1200, 3600 - config.baseShareBasisPoints),
+        industryHeat: config.industryHeat,
+        policyRisk: config.policyRisk,
+        pricePressure: 0,
+        talentPressure: config.name.includes("AI") ? 14 : 6,
+        reputationPressure: 0,
+        patentRisk: config.policyRisk,
+        resultSummary: `${config.name} 赛道已进入，后续竞品行为会影响市场份额。`
+      }
+    });
+
+    return {
+      market: toPlayerMarketRecord(market),
+      action: null,
+      marketCenter: await toMarketCenterRecord(prisma, toProfileRecord(profile)),
+      result: market.resultSummary ?? "赛道已进入。"
+    };
+  },
+
+  async triggerCompetitorAction(accountId, serverId, trackId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const market = await prisma.playerMarketState.findUnique({
+      where: {
+        profileId_trackId: {
+          profileId: profile.id,
+          trackId
+        }
+      }
+    });
+    if (market === null) {
+      return "MARKET_NOT_FOUND";
+    }
+    const config = await prisma.competitorActionConfig.findFirst({
+      where: {
+        trackId,
+        playerActions: {
+          none: {
+            profileId: profile.id
+          }
+        }
+      },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+    });
+    if (config === null) {
+      return "COMPETITOR_ACTION_NOT_FOUND";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const action = await tx.playerCompetitorAction.create({
+        data: {
+          profileId: profile.id,
+          actionId: config.id,
+          trackId: config.trackId,
+          competitorName: config.competitorName,
+          actionType: config.actionType,
+          title: config.title,
+          summary: config.summary
+        }
+      });
+      const updatedMarket = await tx.playerMarketState.update({
+        where: { id: market.id },
+        data: {
+          playerShareBasisPoints: { increment: config.marketShareDeltaBasisPoints },
+          competitorShareBasisPoints: { increment: config.competitorShareDeltaBasisPoints },
+          pricePressure: { increment: config.pricePressure },
+          talentPressure: { increment: config.talentPressure },
+          policyRisk: { increment: config.policyRiskDelta },
+          reputationPressure: { increment: Math.max(0, -config.reputationImpact) },
+          patentRisk: { increment: readCompetitorActionType(config.actionType) === "patent" ? 18 : 0 },
+          resultSummary: config.summary
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: config.cashImpact },
+          monthlyIncome: { increment: config.monthlyIncomeImpact },
+          monthlyExpense: { increment: config.monthlyExpenseImpact },
+          reputation: { increment: config.reputationImpact },
+          employeeSatisfaction: { increment: config.employeeSatisfactionImpact },
+          customerSatisfaction: { increment: config.customerSatisfactionImpact },
+          riskStatus: "预警",
+          pendingEventCount: { increment: 1 }
+        }
+      });
+
+      return { action, market: updatedMarket, profile: updatedProfile };
+    });
+
+    return {
+      market: toPlayerMarketRecord(result.market),
+      action: toCompetitorActionRecord(result.action),
+      marketCenter: await toMarketCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: `${config.competitorName} 已发起${config.title}。`
+    };
+  },
+
+  async respondCompetitorAction(accountId, serverId, actionId, response) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const action = await prisma.playerCompetitorAction.findFirst({
+      where: {
+        id: actionId,
+        profileId: profile.id
+      },
+      include: { config: true }
+    });
+    if (action === null) {
+      return "COMPETITOR_ACTION_NOT_FOUND";
+    }
+    if (action.status === "resolved") {
+      return "COMPETITOR_ACTION_SETTLED";
+    }
+    const market = await prisma.playerMarketState.findUnique({
+      where: {
+        profileId_trackId: {
+          profileId: profile.id,
+          trackId: action.trackId
+        }
+      }
+    });
+    if (market === null) {
+      return "MARKET_NOT_FOUND";
+    }
+    const responseCost = response === "counter" ? action.config.responseCost : Math.round(action.config.responseCost * 0.55);
+    if (profile.cash < responseCost) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const shareResult = calculateMarketShare({
+      currentShareBasisPoints: market.playerShareBasisPoints,
+      competitorShareBasisPoints: market.competitorShareBasisPoints,
+      industryHeat: market.industryHeat,
+      reputation: profile.reputation,
+      customerSatisfaction: profile.customerSatisfaction,
+      monthlyIncome: profile.monthlyIncome,
+      monthlyExpense: profile.monthlyExpense,
+      actionShareDeltaBasisPoints:
+        response === "counter"
+          ? action.config.responseShareDeltaBasisPoints
+          : Math.round(action.config.responseShareDeltaBasisPoints * 0.65)
+    });
+    const reputationImpact =
+      response === "counter" ? action.config.responseReputationImpact : Math.round(action.config.responseReputationImpact * 0.45);
+    const resultSummary =
+      response === "counter"
+        ? `${action.competitorName} 的攻势被正面反击，市场份额回升。`
+        : `${action.competitorName} 的攻势被防守化解，经营压力下降。`;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedMarket = await tx.playerMarketState.update({
+        where: { id: market.id },
+        data: {
+          playerShareBasisPoints: shareResult.playerShareBasisPoints,
+          competitorShareBasisPoints: shareResult.competitorShareBasisPoints,
+          pricePressure: { decrement: Math.min(market.pricePressure, response === "counter" ? 10 : 6) },
+          talentPressure: { decrement: Math.min(market.talentPressure, response === "counter" ? 10 : 6) },
+          reputationPressure: { decrement: Math.min(market.reputationPressure, response === "counter" ? 800 : 400) },
+          resultSummary
+        }
+      });
+      const updatedAction = await tx.playerCompetitorAction.update({
+        where: { id: action.id },
+        data: {
+          status: "resolved",
+          response,
+          resultSummary,
+          resolvedAt: new Date()
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { decrement: responseCost },
+          reputation: { increment: reputationImpact },
+          customerSatisfaction: { increment: response === "counter" ? 3 : 2 },
+          riskStatus: "稳健"
+        }
+      });
+
+      return { action: updatedAction, market: updatedMarket, profile: updatedProfile };
+    });
+
+    return {
+      market: toPlayerMarketRecord(result.market),
+      action: toCompetitorActionRecord(result.action),
+      marketCenter: await toMarketCenterRecord(prisma, toProfileRecord(result.profile)),
+      result: shareResult.resultSummary
     };
   },
 

@@ -671,6 +671,236 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/products") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const products = await repository.listProducts(account.id, serverId);
+      if (products === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(products, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/markets") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const markets = await repository.listMarkets(account.id, serverId);
+      if (markets === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(markets, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/markets/enter") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const trackId = isRecord(body) && typeof body.trackId === "string" ? body.trackId.trim() : "";
+      if (serverId === undefined || trackId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and trackId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.enterMarket(account.id, serverId, trackId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "MARKET_NOT_FOUND") {
+        sendJson(response, 404, failure("MARKET_NOT_FOUND", "Market track not found.", traceId));
+        return;
+      }
+      if (result === "MARKET_ALREADY_ACTIVE") {
+        sendJson(response, 409, failure("MARKET_ALREADY_ACTIVE", "This market track is already active.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/markets/competitor-action") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const trackId = isRecord(body) && typeof body.trackId === "string" ? body.trackId.trim() : "";
+      if (serverId === undefined || trackId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and trackId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.triggerCompetitorAction(account.id, serverId, trackId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "MARKET_NOT_FOUND") {
+        sendJson(response, 404, failure("MARKET_NOT_FOUND", "Market track not found.", traceId));
+        return;
+      }
+      if (result === "COMPETITOR_ACTION_NOT_FOUND") {
+        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "No competitor action is available.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
+    const competitorResponseMatch = /^\/markets\/actions\/([^/]+)\/respond$/.exec(url.pathname);
+    if (request.method === "POST" && competitorResponseMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const actionId = competitorResponseMatch[1];
+      const responseKind = isRecord(body) && typeof body.response === "string" ? body.response.trim() : "";
+      if (serverId === undefined || actionId === undefined || (responseKind !== "defend" && responseKind !== "counter")) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, actionId and response are required.", traceId));
+        return;
+      }
+
+      const result = await repository.respondCompetitorAction(account.id, serverId, decodeURIComponent(actionId), responseKind);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "MARKET_NOT_FOUND") {
+        sendJson(response, 404, failure("MARKET_NOT_FOUND", "Market track not found.", traceId));
+        return;
+      }
+      if (result === "COMPETITOR_ACTION_NOT_FOUND") {
+        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "Competitor action not found.", traceId));
+        return;
+      }
+      if (result === "COMPETITOR_ACTION_SETTLED") {
+        sendJson(response, 409, failure("COMPETITOR_ACTION_SETTLED", "Competitor action has already been resolved.", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this market response.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/products/start") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const productConfigId = isRecord(body) && typeof body.productConfigId === "string" ? body.productConfigId.trim() : "";
+      if (serverId === undefined || productConfigId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and productConfigId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.startProduct(account.id, serverId, productConfigId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "PRODUCT_NOT_FOUND") {
+        sendJson(response, 404, failure("PRODUCT_NOT_FOUND", "Product config not found.", traceId));
+        return;
+      }
+      if (result === "PRODUCT_ALREADY_ACTIVE") {
+        sendJson(response, 409, failure("PRODUCT_ALREADY_ACTIVE", "This product line is already active.", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this product action.", traceId));
+        return;
+      }
+
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
+    const productActionMatch = /^\/products\/([^/]+)\/(advance|refactor|close)$/.exec(url.pathname);
+    if (request.method === "POST" && productActionMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const productId = productActionMatch[1];
+      const action = productActionMatch[2];
+      if (serverId === undefined || productId === undefined || action === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and productId are required.", traceId));
+        return;
+      }
+
+      const decodedProductId = decodeURIComponent(productId);
+      const result =
+        action === "advance"
+          ? await repository.advanceProduct(account.id, serverId, decodedProductId)
+          : action === "refactor"
+            ? await repository.refactorProduct(account.id, serverId, decodedProductId)
+            : await repository.closeProduct(account.id, serverId, decodedProductId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "PRODUCT_NOT_FOUND") {
+        sendJson(response, 404, failure("PRODUCT_NOT_FOUND", "Product not found.", traceId));
+        return;
+      }
+      if (result === "PRODUCT_CLOSED") {
+        sendJson(response, 409, failure("PRODUCT_CLOSED", "Product line has already been closed.", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this product action.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/finance/fundings/start") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

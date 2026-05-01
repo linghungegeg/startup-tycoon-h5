@@ -120,6 +120,9 @@ model PlayerProfile {
   events      PlayerEvent[]
   loans       PlayerLoan[]
   fundings    PlayerFunding[]
+  products    PlayerProduct[]
+  markets     PlayerMarketState[]
+  competitorActions PlayerCompetitorAction[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -359,6 +362,147 @@ model PlayerFunding {
 
   @@index([profileId, status])
   @@index([investorId])
+}
+
+model ProductConfig {
+  id        String          @id @db.VarChar(32)
+  name      String          @db.VarChar(48)
+  category  String          @db.VarChar(24)
+  summary   String          @db.VarChar(180)
+  launchCost Int
+  baseUsers Int
+  retentionBasisPoints Int
+  payRateBasisPoints Int
+  revenuePerPayingUser Int
+  acquisitionCost Int
+  serverCost Int
+  techDebtGrowth Int
+  reputationGrowth Int
+  sortOrder Int             @default(0)
+  createdAt DateTime        @default(now())
+  products  PlayerProduct[]
+
+  @@index([sortOrder])
+}
+
+model PlayerProduct {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  configId  String       @db.VarChar(32)
+  name      String       @db.VarChar(48)
+  category  String       @db.VarChar(24)
+  stage     String       @default("idea") @db.VarChar(16)
+  users     Int          @default(0)
+  retentionBasisPoints Int
+  payRateBasisPoints Int
+  acquisitionCost Int
+  serverCost Int
+  reputationScore Int    @default(50)
+  techDebt  Int          @default(0)
+  monthlyRevenue Int     @default(0)
+  status    String       @default("active") @db.VarChar(16)
+  resultSummary String?  @db.VarChar(220)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  closedAt  DateTime?
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    ProductConfig @relation(fields: [configId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, configId])
+  @@index([profileId, status])
+  @@index([configId])
+}
+
+model MarketTrackConfig {
+  id        String        @id @db.VarChar(32)
+  name      String        @db.VarChar(48)
+  summary   String        @db.VarChar(180)
+  costStructure String    @db.VarChar(80)
+  industryHeat Int
+  policyRisk Int
+  baseShareBasisPoints Int
+  customerPool Int
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  states    PlayerMarketState[]
+  actions   CompetitorActionConfig[]
+
+  @@index([sortOrder])
+}
+
+model PlayerMarketState {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  trackId   String       @db.VarChar(32)
+  trackName String       @db.VarChar(48)
+  playerShareBasisPoints Int
+  competitorShareBasisPoints Int
+  industryHeat Int
+  policyRisk Int
+  pricePressure Int      @default(0)
+  talentPressure Int     @default(0)
+  reputationPressure Int @default(0)
+  patentRisk Int         @default(0)
+  resultSummary String?  @db.VarChar(220)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  track     MarketTrackConfig @relation(fields: [trackId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, trackId])
+  @@index([profileId])
+  @@index([trackId])
+}
+
+model CompetitorActionConfig {
+  id        String        @id @db.VarChar(40)
+  trackId   String       @db.VarChar(32)
+  competitorName String  @db.VarChar(48)
+  actionType String      @db.VarChar(24)
+  title     String       @db.VarChar(64)
+  summary   String       @db.VarChar(180)
+  cashImpact Int
+  monthlyIncomeImpact Int
+  monthlyExpenseImpact Int
+  reputationImpact Int
+  employeeSatisfactionImpact Int
+  customerSatisfactionImpact Int
+  marketShareDeltaBasisPoints Int
+  competitorShareDeltaBasisPoints Int
+  pricePressure Int
+  talentPressure Int
+  policyRiskDelta Int
+  responseCost Int
+  responseShareDeltaBasisPoints Int
+  responseReputationImpact Int
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  track     MarketTrackConfig @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  playerActions PlayerCompetitorAction[]
+
+  @@index([trackId, sortOrder])
+  @@index([actionType])
+}
+
+model PlayerCompetitorAction {
+  id        String        @id @default(uuid()) @db.VarChar(36)
+  profileId String       @db.VarChar(36)
+  actionId  String       @db.VarChar(40)
+  trackId   String       @db.VarChar(32)
+  competitorName String  @db.VarChar(48)
+  actionType String      @db.VarChar(24)
+  title     String       @db.VarChar(64)
+  summary   String       @db.VarChar(180)
+  status    String       @default("pending") @db.VarChar(16)
+  response  String?      @db.VarChar(16)
+  resultSummary String?  @db.VarChar(220)
+  createdAt DateTime     @default(now())
+  resolvedAt DateTime?
+  profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  config    CompetitorActionConfig @relation(fields: [actionId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, status])
+  @@index([actionId])
 }
 
 model CompanyFinanceReport {
