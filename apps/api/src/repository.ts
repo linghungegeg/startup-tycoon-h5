@@ -2201,6 +2201,7 @@ const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
 const RANDOM_TASK_PRIVILEGE_DAILY_LIMIT = 9;
 const RANDOM_TASK_PASS_DAILY_LIMIT_BONUS = 1;
 const RISK_INSURANCE_ITEM_ID = "risk-insurance";
+const MARKET_INTEL_ITEM_ID = "market-intel";
 const VIP3_START_EXPERIENCE = 3000;
 
 const readCompanyLevel = (experience: number): number =>
@@ -2846,6 +2847,24 @@ const applyRiskInsurance = (
   };
 };
 
+const canUseMarketIntel = (category: string): boolean => category === "market" || category === "season";
+
+const applyMarketIntel = (
+  category: string,
+  reputationDelta: number,
+  companyExperience: number
+): { reputationDelta: number; companyExperience: number; effectSummary: string } | undefined => {
+  if (!canUseMarketIntel(category)) {
+    return undefined;
+  }
+
+  return {
+    reputationDelta: reputationDelta > 0 ? Math.trunc(reputationDelta * 1.2) : Math.trunc(reputationDelta * 0.8),
+    companyExperience: companyExperience > 0 ? Math.trunc(companyExperience * 1.1) : companyExperience,
+    effectSummary: "市场情报已生效，优化了本次市场判断。"
+  };
+};
+
 export const createPrismaGameRepository = (
   prisma = new PrismaClient()
 ): GameRepository => ({
@@ -3283,28 +3302,36 @@ export const createPrismaGameRepository = (
     const actionPowerDelta = option === "A" ? randomTask.config.optionAActionPower : randomTask.config.optionBActionPower;
     const rawCashDelta = option === "A" ? randomTask.config.optionACash : randomTask.config.optionBCash;
     const rawReputationDelta = option === "A" ? randomTask.config.optionAReputation : randomTask.config.optionBReputation;
-    const companyExperience = option === "A" ? randomTask.config.optionACompanyExperience : randomTask.config.optionBCompanyExperience;
+    const rawCompanyExperience = option === "A" ? randomTask.config.optionACompanyExperience : randomTask.config.optionBCompanyExperience;
     const resultSummary = option === "A" ? randomTask.config.optionAResult : randomTask.config.optionBResult;
     const recovered = recoverActionPowerData(profile);
     if (actionPowerDelta < 0 && recovered.actionPower < Math.abs(actionPowerDelta)) {
       return "INSUFFICIENT_ACTION_POWER";
     }
-    if (modifierItemId !== undefined && modifierItemId !== RISK_INSURANCE_ITEM_ID) {
+    if (modifierItemId !== undefined && modifierItemId !== RISK_INSURANCE_ITEM_ID && modifierItemId !== MARKET_INTEL_ITEM_ID) {
       return "ITEM_NOT_USABLE";
     }
     const insuranceEffect = modifierItemId === RISK_INSURANCE_ITEM_ID
       ? applyRiskInsurance(randomTask.config.category, rawCashDelta, rawReputationDelta)
       : undefined;
+    const marketIntelEffect = modifierItemId === MARKET_INTEL_ITEM_ID
+      ? applyMarketIntel(randomTask.config.category, rawReputationDelta, rawCompanyExperience)
+      : undefined;
     if (modifierItemId === RISK_INSURANCE_ITEM_ID && insuranceEffect === undefined) {
       return "ITEM_NOT_USABLE";
     }
+    if (modifierItemId === MARKET_INTEL_ITEM_ID && marketIntelEffect === undefined) {
+      return "ITEM_NOT_USABLE";
+    }
     const cashDelta = insuranceEffect?.cashDelta ?? rawCashDelta;
-    const reputationDelta = insuranceEffect?.reputationDelta ?? rawReputationDelta;
-    const finalResultSummary = insuranceEffect === undefined ? resultSummary : `${resultSummary} ${insuranceEffect.effectSummary}`;
+    const reputationDelta = marketIntelEffect?.reputationDelta ?? insuranceEffect?.reputationDelta ?? rawReputationDelta;
+    const companyExperience = marketIntelEffect?.companyExperience ?? rawCompanyExperience;
+    const modifierEffect = insuranceEffect ?? marketIntelEffect;
+    const finalResultSummary = modifierEffect === undefined ? resultSummary : `${resultSummary} ${modifierEffect.effectSummary}`;
 
     const result = await prisma.$transaction(async (tx) => {
       let usedItem: RandomTaskActionRecord["usedItem"];
-      if (modifierItemId === RISK_INSURANCE_ITEM_ID && insuranceEffect !== undefined) {
+      if (modifierItemId !== undefined && modifierEffect !== undefined) {
         const inventoryItem = await tx.playerInventoryItem.findUnique({
           where: { profileId_itemId: { profileId: profile.id, itemId: modifierItemId } },
           include: { item: true }
@@ -3331,7 +3358,7 @@ export const createPrismaGameRepository = (
         usedItem = {
           itemId: modifierItemId,
           itemName: inventoryItem.item.name,
-          effectSummary: insuranceEffect.effectSummary
+          effectSummary: modifierEffect.effectSummary
         };
       }
       await tx.playerRandomTask.update({

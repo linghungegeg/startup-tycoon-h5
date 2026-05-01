@@ -1292,6 +1292,20 @@ const createTestRepository = (): GameRepository => {
       durationDays: 0,
       purchaseLimit: 0,
       summary: "提供一次风险保险，用于降低随机经营任务损失。"
+    },
+    {
+      id: "market-intel-trial",
+      name: "市场情报体验包",
+      category: "market",
+      pricePlatformCoins: 520,
+      rewardCash: 0,
+      rewardActionPower: 0,
+      rewardReputation: 0,
+      rewardItemId: "market-intel",
+      rewardItemQuantity: 1,
+      durationDays: 0,
+      purchaseLimit: 0,
+      summary: "提供一次市场情报，用于增强市场随机任务收益。"
     }
   ];
   const itemConfigs = [
@@ -1312,6 +1326,15 @@ const createTestRepository = (): GameRepository => {
       icon: "zap",
       summary: "用于补充行动力，支撑首日和每日经营循环。",
       usageHint: "项目推进、产品研发、每日任务"
+    },
+    {
+      id: "market-intel",
+      name: "市场情报",
+      category: "operation",
+      rarity: "稀缺",
+      icon: "radar",
+      summary: "用于查看竞争压力并降低进入新赛道的不确定性。",
+      usageHint: "市场竞争、跨服排行准备"
     },
     {
       id: "training-manual",
@@ -2315,6 +2338,7 @@ const createTestRepository = (): GameRepository => {
         id: randomUUID(),
         createdAt: new Date().toISOString(),
         companyLevel: 1,
+        companyExperience: 0,
         cash: 2450000,
         platformCoins: 36580,
         premiumCurrency: 8680,
@@ -2456,33 +2480,40 @@ const createTestRepository = (): GameRepository => {
       if (profile.actionPower < selected.actionPowerCost) {
         return "INSUFFICIENT_ACTION_POWER";
       }
-      if (modifierItemId !== undefined && modifierItemId !== "risk-insurance") {
+      if (modifierItemId !== undefined && modifierItemId !== "risk-insurance" && modifierItemId !== "market-intel") {
         return "ITEM_NOT_USABLE";
       }
       const canUseRiskInsurance = modifierItemId === "risk-insurance" && task.category !== "season" && (selected.cashReward < 0 || selected.reputationReward < 0);
+      const canUseMarketIntel = modifierItemId === "market-intel" && (task.category === "market" || task.category === "season");
       if (modifierItemId === "risk-insurance" && !canUseRiskInsurance) {
         return "ITEM_NOT_USABLE";
       }
-      const usedItem = canUseRiskInsurance
-        ? inventoryItems.get(`${profile.id}:risk-insurance`)
+      if (modifierItemId === "market-intel" && !canUseMarketIntel) {
+        return "ITEM_NOT_USABLE";
+      }
+      const usedItem = canUseRiskInsurance || canUseMarketIntel
+        ? inventoryItems.get(`${profile.id}:${modifierItemId}`)
         : undefined;
-      if (modifierItemId === "risk-insurance" && (usedItem === undefined || usedItem.quantity <= 0)) {
+      if (modifierItemId !== undefined && (canUseRiskInsurance || canUseMarketIntel) && (usedItem === undefined || usedItem.quantity <= 0)) {
         return "ITEM_NOT_FOUND";
       }
       const nextCashReward = canUseRiskInsurance && selected.cashReward < 0 ? Math.trunc(selected.cashReward / 2) : selected.cashReward;
-      const nextReputationReward = canUseRiskInsurance && selected.reputationReward < 0 ? Math.trunc(selected.reputationReward / 2) : selected.reputationReward;
-      const effectSummary = "风险保险已生效，降低了本次经营损失。";
+      const nextReputationReward = canUseMarketIntel
+        ? selected.reputationReward > 0 ? Math.trunc(selected.reputationReward * 1.2) : Math.trunc(selected.reputationReward * 0.8)
+        : canUseRiskInsurance && selected.reputationReward < 0 ? Math.trunc(selected.reputationReward / 2) : selected.reputationReward;
+      const nextCompanyExperienceReward = canUseMarketIntel && selected.companyExperienceReward > 0 ? Math.trunc(selected.companyExperienceReward * 1.1) : selected.companyExperienceReward;
+      const effectSummary = canUseMarketIntel ? "市场情报已生效，优化了本次市场判断。" : "风险保险已生效，降低了本次经营损失。";
       if (usedItem !== undefined) {
         usedItem.quantity -= 1;
         usedItem.updatedAt = new Date().toISOString();
         itemLedgers.unshift({
           id: randomUUID(),
           profileId: profile.id,
-          itemId: "risk-insurance",
+          itemId: usedItem.itemId,
           changeQuantity: -1,
           balanceAfter: usedItem.quantity,
           source: "random_task_modifier",
-          reason: "随机任务使用：风险保险",
+          reason: `随机任务使用：${itemConfigs.find((item) => item.id === usedItem.itemId)?.name ?? usedItem.itemId}`,
           createdAt: new Date().toISOString()
         });
       }
@@ -2492,6 +2523,7 @@ const createTestRepository = (): GameRepository => {
       task.status = "resolved";
       task.selectedOption = option;
       task.resultSummary = usedItem === undefined ? selected.result : `${selected.result} ${effectSummary}`;
+      profile.companyExperience += nextCompanyExperienceReward;
       const center = await this.listRandomTasks(accountId, serverId, today);
       assert.notEqual(center, "PLAYER_NOT_FOUND");
       return {
@@ -2499,7 +2531,7 @@ const createTestRepository = (): GameRepository => {
         task,
         profile,
         result: task.resultSummary,
-        usedItem: usedItem === undefined ? undefined : { itemId: "risk-insurance", itemName: "风险保险", effectSummary }
+        usedItem: usedItem === undefined ? undefined : { itemId: usedItem.itemId, itemName: itemConfigs.find((item) => item.id === usedItem.itemId)?.name ?? usedItem.itemId, effectSummary }
       } satisfies RandomTaskActionRecord;
     },
     async dismissRandomTask(accountId, serverId, randomTaskId, today) {
@@ -6336,6 +6368,55 @@ test("uses risk insurance to reduce random task losses", async () => {
     });
     assert.equal(afterInventory.status, 200);
     assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "risk-insurance"), false);
+    assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
+  });
+});
+
+test("uses market intel to improve market random task results", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "marketmodifier");
+    const bought = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", productId: "market-intel-trial", requestId: "market-intel-20260501" })
+    });
+    assert.equal(bought.status, 201, JSON.stringify(bought.body));
+
+    const beforeInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(beforeInventory.status, 200);
+    assert.equal(beforeInventory.body.data?.items.find((item) => item.itemId === "market-intel")?.quantity, 1);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(center.status, 200);
+    const marketTask = center.body.data?.tasks.find((task) => task.category === "market");
+    assert.ok(marketTask);
+    const reputationBefore = center.body.data?.profile.reputation ?? 0;
+    const experienceBefore = center.body.data?.profile.companyExperience ?? 0;
+
+    const resolved = await requestJson<RandomTaskActionRecord & { usedItem?: { itemId: string; effectSummary: string } }>(
+      baseUrl,
+      `/random-tasks/${encodeURIComponent(marketTask.id)}/resolve`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+        body: JSON.stringify({ serverId: "s1", option: "A", modifierItemId: "market-intel" })
+      }
+    );
+    assert.equal(resolved.status, 200, JSON.stringify(resolved.body));
+    assert.equal(resolved.body.data?.profile.reputation, reputationBefore + 504);
+    assert.equal(resolved.body.data?.profile.companyExperience, experienceBefore + 99);
+    assert.equal(resolved.body.data?.usedItem?.itemId, "market-intel");
+    assert.match(resolved.body.data?.result ?? "", /市场情报已生效/);
+
+    const afterInventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(afterInventory.status, 200);
+    assert.equal(afterInventory.body.data?.items.some((item) => item.itemId === "market-intel"), false);
     assert.equal(afterInventory.body.data?.recentLedgers[0]?.source, "random_task_modifier");
   });
 });

@@ -1662,6 +1662,10 @@ function App() {
     () => inventoryCenter?.items.find((item) => item.itemId === "risk-insurance") ?? null,
     [inventoryCenter?.items]
   );
+  const marketIntelItem = useMemo(
+    () => inventoryCenter?.items.find((item) => item.itemId === "market-intel") ?? null,
+    [inventoryCenter?.items]
+  );
   const activeRandomTaskAllowsRiskInsurance = useMemo(
     () =>
       activeRandomTask !== null &&
@@ -1669,6 +1673,31 @@ function App() {
       activeRandomTask.options.some((option) => option.cashReward < 0 || option.reputationReward < 0),
     [activeRandomTask]
   );
+  const activeRandomTaskAllowsMarketIntel = useMemo(
+    () => activeRandomTask !== null && (activeRandomTask.category === "market" || activeRandomTask.category === "season"),
+    [activeRandomTask]
+  );
+  const activeRandomTaskModifier = useMemo(() => {
+    if (activeRandomTaskAllowsMarketIntel) {
+      return {
+        itemId: "market-intel",
+        item: marketIntelItem,
+        label: "市场情报",
+        enabledHint: "优化本次市场判断",
+        emptyHint: "背包暂无可用情报"
+      };
+    }
+    if (activeRandomTaskAllowsRiskInsurance) {
+      return {
+        itemId: "risk-insurance",
+        item: riskInsuranceItem,
+        label: "风险保险",
+        enabledHint: "降低本次现金或声望损失",
+        emptyHint: "背包暂无可用保险"
+      };
+    }
+    return null;
+  }, [activeRandomTaskAllowsMarketIntel, activeRandomTaskAllowsRiskInsurance, marketIntelItem, riskInsuranceItem]);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
@@ -5855,17 +5884,17 @@ function App() {
                     </span>
                   )}
 
-                  {activeRandomTaskAllowsRiskInsurance && (
+                  {activeRandomTaskModifier && (
                     <label className="random-task-modifier">
                       <input
-                        checked={randomTaskModifierItemId === "risk-insurance"}
-                        disabled={(riskInsuranceItem?.quantity ?? 0) <= 0}
+                        checked={randomTaskModifierItemId === activeRandomTaskModifier.itemId}
+                        disabled={(activeRandomTaskModifier.item?.quantity ?? 0) <= 0}
                         type="checkbox"
-                        onChange={(event) => setRandomTaskModifierItemId(event.target.checked ? "risk-insurance" : "")}
+                        onChange={(event) => setRandomTaskModifierItemId(event.target.checked ? activeRandomTaskModifier.itemId : "")}
                       />
                       <span>
-                        <strong>风险保险 x{riskInsuranceItem?.quantity ?? 0}</strong>
-                        <em>{(riskInsuranceItem?.quantity ?? 0) > 0 ? "降低本次现金或声望损失" : "背包暂无可用保险"}</em>
+                        <strong>{activeRandomTaskModifier.label} x{activeRandomTaskModifier.item?.quantity ?? 0}</strong>
+                        <em>{(activeRandomTaskModifier.item?.quantity ?? 0) > 0 ? activeRandomTaskModifier.enabledHint : activeRandomTaskModifier.emptyHint}</em>
                       </span>
                     </label>
                   )}
@@ -5877,12 +5906,17 @@ function App() {
                         (riskInsuranceItem?.quantity ?? 0) > 0 &&
                         activeRandomTask.category !== "season" &&
                         (option.cashReward < 0 || option.reputationReward < 0);
+                      const shouldUseMarketIntel =
+                        randomTaskModifierItemId === "market-intel" &&
+                        (marketIntelItem?.quantity ?? 0) > 0 &&
+                        (activeRandomTask.category === "market" || activeRandomTask.category === "season");
+                      const modifierItemId = shouldUseMarketIntel ? "market-intel" : shouldUseRiskInsurance ? "risk-insurance" : undefined;
                       return (
                         <button
                           disabled={profile.actionPower < option.actionPowerCost}
                           key={option.key}
                           type="button"
-                          onClick={() => void resolveRandomTask(activeRandomTask.id, option.key, shouldUseRiskInsurance ? "risk-insurance" : undefined)}
+                          onClick={() => void resolveRandomTask(activeRandomTask.id, option.key, modifierItemId)}
                         >
                           <span>
                             <strong>{option.label}</strong>
@@ -5890,7 +5924,7 @@ function App() {
                           </span>
                           <small>
                             资金 {compactNumber(option.cashReward)} · 声望 {option.reputationReward} · 经验 {option.companyExperienceReward}
-                            {shouldUseRiskInsurance ? " · 使用风险保险" : ""}
+                            {modifierItemId === "risk-insurance" ? " · 使用风险保险" : modifierItemId === "market-intel" ? " · 使用市场情报" : ""}
                           </small>
                         </button>
                       );

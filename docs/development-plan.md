@@ -1756,6 +1756,21 @@ VIP 权益：
 - 遗留风险：市场情报、财务顾问卡尚未接入随机任务结果修正；满级宝箱仍只是展示方向，尚未实现进度和领奖。
 - 下一阶段入口：Phase 21 第九实施批次：市场情报接入市场/赛季随机任务，继续保持每次随机任务最多使用 1 个经营道具。
 
+### Phase 21 第九实施批次阶段总结：市场情报随机任务修正
+
+- 当前稳定点：`815b268 feat: apply risk insurance to random tasks`。
+- 完成内容：市场情报接入市场/赛季随机经营任务结算；玩家在适用任务中可选择使用 `market-intel`，结算成功后扣减 1 个市场情报并写入道具流水；正向声望提升 20%，负向声望损失降低 20%，正向公司经验提升 10%。
+- 前台变化：随机任务弹窗的经营道具栏从风险保险单一路径扩展为按任务类型选择修正道具；市场/赛季任务显示“市场情报 xN”和“优化本次市场判断”，勾选后决策按钮展示“使用市场情报”，结算后刷新 HUD、随机任务状态和背包库存。
+- 规则边界：市场情报不影响现金、行动力、平台币、排行榜名次和每日随机任务上限；同一随机任务仍最多使用 1 个经营道具，不与风险保险叠加；财务顾问卡仍留到后续批次单独实现。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写失败测试，确认 `modifierItemId = "market-intel"` 尚不能修正市场随机任务结果，再补最小实现并复跑风险保险回归。
+  - Browser Use：刷新 `http://127.0.0.1:5173/` 后使用本地 QA 账号验收，确认专属经理中“竞品突然降价”弹窗显示“市场情报 x3”；勾选后决策按钮显示“使用市场情报”；结算后提示“市场情报已生效，优化了本次市场判断”，行动力 HUD 从 `200/150` 更新到 `175/120`，背包市场情报从 3 扣到 2。
+  - Build Web Apps：前台继续复用第八批次的随机任务道具栏，不新增入口、不改变深色商务手游基线，只替换适用任务中的文案、开关状态和按钮附加说明。
+  - Game Studio：市场情报作为玩家主动勾选的单次经营判断修正，不强制弹购买，不遮挡专属经理待办列表；随机任务弹窗仍保留标题、来源、说明、2 个决策和稍后处理。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "uses market intel" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "uses market intel|uses risk insurance" --import tsx apps/api/test/http.test.ts`、`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 遗留风险：财务顾问卡尚未接入财务/融资/贷款类随机任务；满级宝箱仍只是展示方向，尚未实现进度和领奖；本地浏览器回归中曾触发既有成就同步并发唯一键崩溃，重启 API 后本批市场情报链路可完成。
+- 下一阶段入口：Phase 21 第十实施批次：财务顾问卡接入财务/融资/贷款随机任务，继续保持每次随机任务最多使用 1 个经营道具。
+
 ## 12. 创业知识内容规则
 
 - 知识内容在开发和运营配置时必须联网检索，不凭空编写关键法律常识。
