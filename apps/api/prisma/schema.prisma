@@ -129,6 +129,13 @@ model PlayerProfile {
   shopPurchases PlayerShopPurchase[]
   paymentOrders ExternalPaymentOrder[]
   vipDailyGifts PlayerVipDailyGift[]
+  leaderboardRewards LeaderboardRewardDelivery[]
+  playerTitles PlayerTitle[]
+  titleEquipment PlayerTitleEquipment?
+  achievements PlayerAchievement[]
+  knowledgeUnlocks PlayerKnowledgeUnlock[]
+  guildMembership GuildMember?
+  guildHelpRequests GuildHelpRequest[]
 
   @@unique([accountId, serverId])
   @@index([serverId])
@@ -183,6 +190,232 @@ model PlayerVipDailyGift {
 
   @@unique([profileId, giftDate])
   @@index([walletId, createdAt])
+}
+
+model LeaderboardSnapshot {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  serverId    String   @db.VarChar(32)
+  boardKey    String   @db.VarChar(32)
+  boardName   String   @db.VarChar(48)
+  snapshotDate String  @db.VarChar(10)
+  entriesJson String   @db.Text
+  createdAt   DateTime @default(now())
+
+  @@unique([serverId, boardKey, snapshotDate])
+  @@index([serverId, snapshotDate])
+}
+
+model LeaderboardRewardDelivery {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  serverId    String        @db.VarChar(32)
+  boardKey    String        @db.VarChar(32)
+  snapshotDate String       @db.VarChar(10)
+  rank        Int
+  rewardPlatformCoins Int   @default(0)
+  rewardTitleId String?     @db.VarChar(40)
+  mailSubject String        @db.VarChar(80)
+  mailBody    String        @db.VarChar(220)
+  deliveredAt DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, boardKey, snapshotDate])
+  @@index([serverId, boardKey, snapshotDate])
+}
+
+model TitleConfig {
+  id          String        @id @db.VarChar(40)
+  name        String        @db.VarChar(32)
+  category    String        @db.VarChar(24)
+  source      String        @db.VarChar(32)
+  bonusLabel  String        @db.VarChar(80)
+  durationDays Int          @default(0)
+  sortOrder   Int          @default(0)
+  createdAt   DateTime      @default(now())
+  playerTitles PlayerTitle[]
+  achievements AchievementConfig[]
+
+  @@index([category, sortOrder])
+}
+
+model PlayerTitle {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  titleId     String        @db.VarChar(40)
+  source      String        @db.VarChar(32)
+  obtainedAt  DateTime      @default(now())
+  expiresAt   DateTime?
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  title       TitleConfig   @relation(fields: [titleId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, titleId])
+  @@index([profileId, expiresAt])
+}
+
+model PlayerTitleEquipment {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @unique @db.VarChar(36)
+  titleId     String        @db.VarChar(40)
+  equippedAt  DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model AchievementConfig {
+  id          String        @id @db.VarChar(48)
+  name        String        @db.VarChar(48)
+  category    String        @db.VarChar(24)
+  description String        @db.VarChar(180)
+  conditionKind String      @db.VarChar(32)
+  conditionValue Int        @default(1)
+  rewardCash  Int           @default(0)
+  rewardPlatformCoins Int   @default(0)
+  rewardActionPower Int     @default(0)
+  rewardTitleId String?     @db.VarChar(40)
+  rewardKnowledgeId String? @db.VarChar(48)
+  isHidden    Boolean       @default(false)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now())
+  title       TitleConfig?  @relation(fields: [rewardTitleId], references: [id], onDelete: SetNull)
+  progresses  PlayerAchievement[]
+
+  @@index([category, sortOrder])
+  @@index([conditionKind])
+}
+
+model PlayerAchievement {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  achievementId String      @db.VarChar(48)
+  progress    Int           @default(0)
+  completedAt DateTime?
+  claimedAt   DateTime?
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  achievement AchievementConfig @relation(fields: [achievementId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, achievementId])
+  @@index([profileId, completedAt])
+}
+
+model KnowledgeCategory {
+  id          String        @id @db.VarChar(32)
+  name        String        @db.VarChar(32)
+  sortOrder   Int           @default(0)
+  entries     KnowledgeEntry[]
+}
+
+model KnowledgeEntry {
+  id          String        @id @db.VarChar(48)
+  categoryId  String        @db.VarChar(32)
+  title       String        @db.VarChar(64)
+  summary     String        @db.VarChar(220)
+  sourceUrl   String        @db.VarChar(220)
+  collectedAt String        @db.VarChar(10)
+  contentVersion String     @db.VarChar(24)
+  disclaimer  String        @db.VarChar(120)
+  sortOrder   Int           @default(0)
+  category    KnowledgeCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  unlocks     PlayerKnowledgeUnlock[]
+
+  @@index([categoryId, sortOrder])
+}
+
+model PlayerKnowledgeUnlock {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  knowledgeId String        @db.VarChar(48)
+  source      String        @db.VarChar(32)
+  unlockedAt  DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  knowledge   KnowledgeEntry @relation(fields: [knowledgeId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, knowledgeId])
+  @@index([profileId, unlockedAt])
+}
+
+model Guild {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  serverId    String        @db.VarChar(32)
+  name        String        @db.VarChar(32)
+  level       Int           @default(1)
+  contributionScore Int     @default(0)
+  createdAt   DateTime      @default(now())
+  members     GuildMember[]
+  taskProgress GuildTaskProgress[]
+  techStates  GuildTechState[]
+  helpRequests GuildHelpRequest[]
+
+  @@unique([serverId, name])
+  @@index([serverId, contributionScore])
+}
+
+model GuildMember {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  profileId   String        @unique @db.VarChar(36)
+  role        String        @default("member") @db.VarChar(16)
+  contributionScore Int     @default(0)
+  joinedAt    DateTime      @default(now())
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, contributionScore])
+}
+
+model GuildTaskConfig {
+  id          String        @id @db.VarChar(40)
+  title       String        @db.VarChar(64)
+  description String        @db.VarChar(180)
+  target      Int
+  contributionReward Int
+  sortOrder   Int           @default(0)
+  progresses  GuildTaskProgress[]
+}
+
+model GuildTaskProgress {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  taskId      String        @db.VarChar(40)
+  progress    Int           @default(0)
+  claimedAt   DateTime?
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  task        GuildTaskConfig @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@unique([guildId, taskId])
+}
+
+model GuildTechConfig {
+  id          String        @id @db.VarChar(40)
+  name        String        @db.VarChar(48)
+  description String        @db.VarChar(180)
+  maxLevel    Int
+  sortOrder   Int           @default(0)
+  states      GuildTechState[]
+}
+
+model GuildTechState {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  techId      String        @db.VarChar(40)
+  level       Int           @default(0)
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  tech        GuildTechConfig @relation(fields: [techId], references: [id], onDelete: Restrict)
+
+  @@unique([guildId, techId])
+}
+
+model GuildHelpRequest {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  requestType String        @db.VarChar(24)
+  status      String        @default("open") @db.VarChar(16)
+  createdAt   DateTime      @default(now())
+  fulfilledAt DateTime?
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, status])
+  @@index([profileId, createdAt])
 }
 
 model PlatformCoinLedger {

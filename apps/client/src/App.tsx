@@ -526,6 +526,128 @@ type VipDailyGiftResult = {
   result: string;
 };
 
+type LeaderboardRow = {
+  rank: number;
+  profileId: string;
+  founderName: string;
+  companyName: string;
+  value: number;
+  valueLabel: string;
+  equippedTitle: string | null;
+};
+
+type LeaderboardCenter = {
+  boards: Array<{
+    key: string;
+    name: string;
+    scope: "server" | "cross" | "activity";
+    isActive: boolean;
+    rows: LeaderboardRow[];
+    snapshotDate: string;
+  }>;
+  activityBoards: Array<{
+    key: string;
+    name: string;
+    scope: "server" | "cross" | "activity";
+    isActive: boolean;
+    rows: LeaderboardRow[];
+    snapshotDate: string;
+  }>;
+};
+
+type TitleItem = {
+  id: string;
+  name: string;
+  category: string;
+  source: string;
+  bonusLabel: string;
+  obtainedAt: string;
+  expiresAt: string | null;
+  isEquipped: boolean;
+  isExpired: boolean;
+};
+
+type TitleCenter = {
+  equippedTitle: TitleItem | null;
+  titles: TitleItem[];
+};
+
+type AchievementItem = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  progress: number;
+  target: number;
+  isHidden: boolean;
+  isCompleted: boolean;
+  isClaimed: boolean;
+  rewardLabel: string;
+};
+
+type KnowledgeEntry = {
+  id: string;
+  category: string;
+  title: string;
+  summary: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  disclaimer: string;
+  unlockedAt: string;
+};
+
+type GuildCenter = {
+  guild: {
+    id: string;
+    name: string;
+    level: number;
+    contributionScore: number;
+  } | null;
+  members: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    role: string;
+    contributionScore: number;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    contributionReward: number;
+    isClaimed: boolean;
+  }>;
+  techs: Array<{
+    id: string;
+    name: string;
+    description: string;
+    level: number;
+    maxLevel: number;
+  }>;
+  helpRequests: Array<{
+    id: string;
+    requestType: string;
+    status: string;
+    createdAt: string;
+  }>;
+  leaderboard: LeaderboardRow[];
+};
+
+type AchievementClaimResult = {
+  achievement: AchievementItem;
+  profile: PlayerProfile;
+  titleCenter: TitleCenter;
+  result: string;
+};
+
+type GuildActionResult = {
+  guildCenter: GuildCenter;
+  result: string;
+};
+
 const productStageLabels: Record<ProductStage, string> = {
   idea: "立项",
   mvp: "MVP",
@@ -1120,6 +1242,13 @@ function App() {
   const [vipCenter, setVipCenter] = useState<VipCenter | null>(null);
   const [vipError, setVipError] = useState("");
   const [vipNotice, setVipNotice] = useState("");
+  const [leaderboardCenter, setLeaderboardCenter] = useState<LeaderboardCenter | null>(null);
+  const [titleCenter, setTitleCenter] = useState<TitleCenter | null>(null);
+  const [achievements, setAchievements] = useState<AchievementItem[]>([]);
+  const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
+  const [guildCenter, setGuildCenter] = useState<GuildCenter | null>(null);
+  const [phase14Error, setPhase14Error] = useState("");
+  const [phase14Notice, setPhase14Notice] = useState("");
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === serverId) ?? servers[0],
@@ -1258,6 +1387,7 @@ function App() {
     () => tasks.filter((task) => task.type === activeTaskType),
     [activeTaskType, tasks]
   );
+  const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const activeTaskTip =
     activeTaskType === "daily"
       ? "每日任务按服务器日刷新，已领取奖励不会在同一天重复发放。"
@@ -1586,6 +1716,134 @@ function App() {
     setVipError(response.error.message);
   };
 
+  const loadPhase14Center = async (token: string, nextServerId: string): Promise<void> => {
+    const [leaderboards, titles, achievementList, knowledge, guild] = await Promise.all([
+      apiRequest<LeaderboardCenter>(`/leaderboards?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<TitleCenter>(`/titles?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<AchievementItem[]>(`/achievements?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<KnowledgeEntry[]>(`/knowledge?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<GuildCenter>(`/guild?serverId=${encodeURIComponent(nextServerId)}`, {}, token)
+    ]);
+
+    if (leaderboards.success) {
+      setLeaderboardCenter(leaderboards.data);
+    }
+    if (titles.success) {
+      setTitleCenter(titles.data);
+    }
+    if (achievementList.success) {
+      setAchievements(achievementList.data);
+    }
+    if (knowledge.success) {
+      setKnowledgeEntries(knowledge.data);
+    }
+    if (guild.success) {
+      setGuildCenter(guild.data);
+    }
+
+    const firstError = [leaderboards, titles, achievementList, knowledge, guild].find((response) => !response.success);
+    setPhase14Error(firstError && !firstError.success ? firstError.error.message : "");
+  };
+
+  const claimAchievement = async (achievementId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<AchievementClaimResult>(
+      `/achievements/${encodeURIComponent(achievementId)}/claim`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setProfile(response.data.profile);
+      setTitleCenter(response.data.titleCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const equipTitle = async (titleId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<TitleCenter>(
+      "/titles/equip",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, titleId })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setTitleCenter(response.data);
+      setPhase14Notice("称号已装备。");
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const joinGuild = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      "/guild/join",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, guildName: `${selectedServer.name}创业会` })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const requestGuildHelp = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      "/guild/help",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, requestType: "project-advice" })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<Employee[]>(
       `/employees?serverId=${encodeURIComponent(nextServerId)}`,
@@ -1719,6 +1977,7 @@ function App() {
     void loadMarketCenter(account.token, selectedServer.id);
     void loadShopCenter(account.token, selectedServer.id);
     void loadVipCenter(account.token, selectedServer.id);
+    void loadPhase14Center(account.token, selectedServer.id);
     void loadEmployees(account.token, selectedServer.id);
     void loadProjects(account.token, selectedServer.id);
   }, [step, account?.token, selectedServer?.id]);
@@ -1926,6 +2185,9 @@ function App() {
     if (panelName === "排行榜" || panelName === "排行") {
       setActivePanel(null);
       setNativeHomePage("leaderboard");
+      if (account && selectedServer) {
+        void loadPhase14Center(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -1964,6 +2226,15 @@ function App() {
       setActivePanel(null);
       setNativeHomePage(null);
       setActiveNav("事件");
+      return;
+    }
+
+    if (panelName === "商会") {
+      setActivePanel(null);
+      setNativeHomePage("leaderboard");
+      if (account && selectedServer) {
+        void loadPhase14Center(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -2705,49 +2976,141 @@ function App() {
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="award" className="w-7 h-7 text-business-gold" />
-                  <h2 className="text-xl font-black text-white italic uppercase">Rank 排行榜</h2>
+                  <h2 className="text-xl font-black text-white italic uppercase">Rank 荣誉中心</h2>
                 </div>
                 <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭排行榜" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
-              <div className="px-6 flex gap-8 border-b border-white/5 mb-4">
-                <button className="pb-3 border-b-2 border-business-gold text-business-gold font-bold text-sm" type="button">全服估值榜</button>
-                <button className="pb-3 text-slate-500 font-bold text-sm" type="button">月度盈利榜</button>
+              <div className="px-6 grid grid-cols-4 gap-2 mb-4">
+                {(leaderboardCenter?.boards ?? []).map((board) => (
+                  <div className="glass-panel rounded-2xl p-2 text-center" key={board.key}>
+                    <strong className="block text-[10px] text-business-gold font-black">{board.name.replace("榜", "")}</strong>
+                    <span className="text-[8px] text-slate-500">{board.snapshotDate}</span>
+                  </div>
+                ))}
               </div>
               <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
-                {[
-                  { rank: "NO.1", name: "马氪 · 万向集团", value: "估值: ¥145.2 亿", crown: true, initial: "马" },
-                  { rank: "2", name: "许天 · 天空资本", value: "估值: ¥98.7 亿", initial: "许" },
-                  { rank: "3", name: "张强 · 巅峰科技", value: "估值: ¥82.1 亿", initial: "张" }
-                ].map((row) => (
+                {(phase14Notice || phase14Error) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {phase14Error || phase14Notice}
+                  </p>
+                )}
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">{primaryLeaderboard?.name ?? "公司估值榜"}</strong>
+                    <span className="text-[10px] text-slate-500">活动榜未开启</span>
+                  </div>
+                  <div className="space-y-3">
+                {(primaryLeaderboard?.rows ?? []).slice(0, 5).map((row) => (
                   <article
-                    className={`glass-panel p-4 rounded-2xl flex items-center gap-4 ${row.crown ? "bg-gradient-to-r from-business-gold/10 to-transparent border-business-gold/30" : ""}`}
-                    key={row.name}
+                    className={`p-3 rounded-2xl flex items-center gap-3 border ${row.rank === 1 ? "bg-business-gold/10 border-business-gold/30" : "bg-slate-900/60 border-white/5"}`}
+                    key={row.profileId}
                   >
-                    <div className={row.crown ? "w-8 h-8 flex items-center justify-center" : "w-8 text-center text-slate-500 font-black text-lg italic"}>
-                      {row.crown ? <Icon name="crown" className="w-6 h-6 text-business-gold" /> : row.rank}
+                    <div className={row.rank === 1 ? "w-8 h-8 flex items-center justify-center" : "w-8 text-center text-slate-500 font-black text-lg italic"}>
+                      {row.rank === 1 ? <Icon name="crown" className="w-6 h-6 text-business-gold" /> : row.rank}
                     </div>
-                    <div className={`w-10 h-10 rounded-full border-2 ${row.crown ? "border-business-gold" : "border-slate-700"} p-0.5`}>
-                      <span className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-white">{row.initial}</span>
+                    <div className={`w-10 h-10 rounded-full border-2 ${row.rank === 1 ? "border-business-gold" : "border-slate-700"} p-0.5`}>
+                      <span className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-white">{row.founderName.slice(0, 1)}</span>
                     </div>
                     <div className="flex-1">
-                      <div className="text-xs font-black text-white">{row.name}</div>
-                      <div className="text-[9px] text-slate-500">{row.value}</div>
+                      <div className="text-xs font-black text-white">{row.founderName} · {row.companyName}</div>
+                      <div className="text-[9px] text-slate-500">{row.equippedTitle ?? "未装备称号"}</div>
                     </div>
-                    {row.crown && <div className="text-[10px] font-black text-business-gold italic">{row.rank}</div>}
+                    <div className="text-[10px] font-black text-business-gold">{row.valueLabel}</div>
                   </article>
                 ))}
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">称号</strong>
+                    <span className="text-[10px] text-business-gold">{titleCenter?.equippedTitle?.name ?? "未装备"}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(titleCenter?.titles ?? []).slice(0, 4).map((title) => (
+                      <button
+                        className={`rounded-2xl border p-3 text-left ${title.isEquipped ? "border-business-gold bg-business-gold/10" : "border-white/10 bg-slate-900/60"}`}
+                        disabled={title.isExpired}
+                        key={title.id}
+                        type="button"
+                        onClick={() => void equipTitle(title.id)}
+                      >
+                        <strong className="block text-xs text-white font-black">{title.name}</strong>
+                        <span className="text-[9px] text-slate-500">{title.isExpired ? "已过期" : title.bonusLabel}</span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">成就</strong>
+                    <span className="text-[10px] text-slate-500">{achievements.filter((item) => item.isCompleted).length}/{achievements.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {achievements.slice(0, 4).map((achievement) => (
+                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={achievement.id}>
+                        <div className="flex items-center justify-between">
+                          <strong className="text-xs text-white font-black">{achievement.name}</strong>
+                          <span className="text-[9px] text-slate-500">{achievement.progress}/{achievement.target}</span>
+                        </div>
+                        <p className="mt-1 text-[9px] text-slate-400">{achievement.description}</p>
+                        <button
+                          className="mt-2 btn-gold px-3 py-1 rounded-lg text-[10px] font-black text-business-dark disabled:opacity-45"
+                          disabled={!achievement.isCompleted || achievement.isClaimed}
+                          type="button"
+                          onClick={() => void claimAchievement(achievement.id)}
+                        >
+                          {achievement.isClaimed ? "已领取" : achievement.isCompleted ? "领取" : "未完成"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">知识库</strong>
+                    <span className="text-[10px] text-business-gold">{knowledgeEntries.length} 张</span>
+                  </div>
+                  {knowledgeEntries.length === 0 ? (
+                    <p className="text-xs text-slate-400 font-bold">领取成就后解锁知识卡。</p>
+                  ) : knowledgeEntries.slice(0, 3).map((entry) => (
+                    <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 mb-2" key={entry.id}>
+                      <strong className="block text-xs text-white font-black">{entry.title}</strong>
+                      <p className="mt-1 text-[9px] text-slate-400">{entry.summary}</p>
+                      <span className="mt-2 block text-[8px] text-business-gold">{entry.category} · {entry.contentVersion} · {entry.disclaimer}</span>
+                    </article>
+                  ))}
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong className="text-sm text-white font-black">商会</strong>
+                    <span className="text-[10px] text-business-gold">{guildCenter?.guild?.name ?? "未加入"}</span>
+                  </div>
+                  {guildCenter?.guild ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.guild.level}</strong><span className="text-[9px] text-slate-500">等级</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.members.length}</strong><span className="text-[9px] text-slate-500">成员</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.guild.contributionScore}</strong><span className="text-[9px] text-slate-500">贡献</span></div>
+                      </div>
+                      <button className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void requestGuildHelp()}>发布互助</button>
+                    </>
+                  ) : (
+                    <button className="w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void joinGuild()}>加入本服商会</button>
+                  )}
+                </section>
+                {!leaderboardCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">排行榜读取中，请确认 API 服务已启动。</p>}
               </div>
               <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-4 px-2">
-                  <div className="w-8 text-center text-business-gold font-black italic">45</div>
+                  <div className="w-8 text-center text-business-gold font-black italic">{primaryLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</div>
                   <div className="w-10 h-10 rounded-full border-2 border-business-gold p-0.5">
                     <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full rounded-full object-cover" />
                   </div>
                   <div className="flex-1">
                     <div className="text-xs font-black text-white">{profile.founderName || account?.username || "创业新星"} · {profile.companyName}</div>
-                    <div className="text-[9px] text-slate-400 italic">击败了 85% 的玩家</div>
+                    <div className="text-[9px] text-slate-400 italic">{titleCenter?.equippedTitle?.name ?? "创业履历收集中"}</div>
                   </div>
                   <div className="text-xs font-black text-business-gold">{compactNumber(profile.valuation)}</div>
                 </div>

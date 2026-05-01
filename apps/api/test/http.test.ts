@@ -24,6 +24,13 @@ import type {
   FundingCenterRecord,
   FundingRecord,
   GameRepository,
+  AchievementClaimRecord,
+  AchievementRecord,
+  GuildActionRecord,
+  GuildCenterRecord,
+  KnowledgeEntryRecord,
+  LeaderboardCenterRecord,
+  LeaderboardSettlementRecord,
   LoanActionRecord,
   LoanCenterRecord,
   LoanRecord,
@@ -41,6 +48,7 @@ import type {
   ServerRecord,
   ShopCenterRecord,
   TaskRecord,
+  TitleCenterRecord,
   VipCenterRecord
 } from "../src/repository.js";
 
@@ -958,6 +966,95 @@ const createTestRepository = (): GameRepository => {
   ];
   const shopPurchases = new Map<string, ShopCenterRecord["purchases"][number] & { profileId: string }>();
   const vipDailyGifts = new Set<string>();
+  const titleConfigs = [
+    { id: "startup-founder", name: "初创老板", category: "growth", source: "achievement", bonusLabel: "身份展示", durationDays: 0 },
+    { id: "cashflow-master", name: "现金流大师", category: "finance", source: "achievement", bonusLabel: "现金流榜展示", durationDays: 0 },
+    { id: "server-richest", name: "本服首富", category: "rank", source: "leaderboard", bonusLabel: "排行榜展示", durationDays: 7 }
+  ];
+  const achievementConfigs = [
+    {
+      id: "profile-created",
+      name: "创业开张",
+      category: "growth",
+      description: "完成创始人和公司档案。",
+      conditionKind: "profile_created",
+      conditionValue: 1,
+      rewardCash: 50000,
+      rewardPlatformCoins: 0,
+      rewardActionPower: 20,
+      rewardTitleId: "startup-founder",
+      rewardKnowledgeId: "company-registration-basics",
+      isHidden: false
+    },
+    {
+      id: "positive-cashflow",
+      name: "现金流转正",
+      category: "finance",
+      description: "公司月收入高于月支出。",
+      conditionKind: "positive_cashflow",
+      conditionValue: 1,
+      rewardCash: 80000,
+      rewardPlatformCoins: 0,
+      rewardActionPower: 20,
+      rewardTitleId: "cashflow-master",
+      rewardKnowledgeId: "cashflow-safety-line",
+      isHidden: false
+    },
+    {
+      id: "valuation-ten-million",
+      name: "千万估值",
+      category: "growth",
+      description: "公司估值达到 1000 万。",
+      conditionKind: "valuation",
+      conditionValue: 10000000,
+      rewardCash: 0,
+      rewardPlatformCoins: 120,
+      rewardActionPower: 0,
+      rewardTitleId: null,
+      rewardKnowledgeId: "valuation-method-note",
+      isHidden: true
+    }
+  ];
+  const knowledgeEntries = [
+    {
+      id: "company-registration-basics",
+      category: "创业基础",
+      title: "公司档案与主体登记",
+      summary: "公司档案对应真实创业里的主体信息。",
+      sourceUrl: "https://www.samr.gov.cn/",
+      collectedAt: "2026-05-01",
+      contentVersion: "2026.05",
+      disclaimer: "仅作游戏科普，不构成法律建议"
+    },
+    {
+      id: "cashflow-safety-line",
+      category: "财务合规",
+      title: "现金流安全线",
+      summary: "持续正向现金流反映早期公司的生存质量。",
+      sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
+      collectedAt: "2026-05-01",
+      contentVersion: "2026.05",
+      disclaimer: "仅作游戏科普，不构成法律建议"
+    },
+    {
+      id: "valuation-method-note",
+      category: "财务合规",
+      title: "估值只是谈判结果",
+      summary: "估值受到现金流、增长、债务和市场预期影响。",
+      sourceUrl: "https://www.sec.gov/education",
+      collectedAt: "2026-05-01",
+      contentVersion: "2026.05",
+      disclaimer: "仅作游戏科普，不构成法律建议"
+    }
+  ];
+  const playerTitles = new Map<string, { profileId: string; titleId: string; source: string; obtainedAt: string; expiresAt: string | null }>();
+  const titleEquipment = new Map<string, string>();
+  const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
+  const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
+  const leaderboardRewards = new Set<string>();
+  const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
+  const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
+  const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string }>();
   const ensureWallet = (profile: PlayerProfileRecord): PlatformWalletRecord => {
     const existing = wallets.get(profile.id);
     if (existing !== undefined) {
@@ -1050,6 +1147,173 @@ const createTestRepository = (): GameRepository => {
         rewardPlatformCoins: currentLevel.dailyGiftPlatformCoins,
         rewardActionPower: currentLevel.dailyGiftActionPower
       }
+    };
+  };
+  const titleKey = (profileId: string, titleId: string) => `${profileId}:${titleId}`;
+  const achievementKey = (profileId: string, achievementId: string) => `${profileId}:${achievementId}`;
+  const knowledgeKey = (profileId: string, knowledgeId: string) => `${profileId}:${knowledgeId}`;
+  const isExpired = (expiresAt: string | null, today: string) => expiresAt !== null && expiresAt.slice(0, 10) < today;
+  const addTitle = (profileId: string, titleId: string, source: string, today = "2026-05-01") => {
+    const config = titleConfigs.find((item) => item.id === titleId);
+    if (config === undefined) {
+      return;
+    }
+    const expiresAt = config.durationDays > 0 ? new Date(Date.parse(`${today}T00:00:00.000Z`) + config.durationDays * 86400000).toISOString() : null;
+    const key = titleKey(profileId, titleId);
+    if (!playerTitles.has(key)) {
+      playerTitles.set(key, { profileId, titleId, source, obtainedAt: `${today}T00:00:00.000Z`, expiresAt });
+    }
+  };
+  const unlockKnowledgeEntry = (profileId: string, knowledgeId: string | null, source: string) => {
+    if (knowledgeId === null) {
+      return;
+    }
+    const key = knowledgeKey(profileId, knowledgeId);
+    if (!knowledgeUnlocks.has(key)) {
+      knowledgeUnlocks.set(key, { profileId, knowledgeId, source, unlockedAt: new Date().toISOString() });
+    }
+  };
+  const readAchievementProgress = (profile: PlayerProfileRecord, conditionKind: string) =>
+    conditionKind === "profile_created"
+      ? 1
+      : conditionKind === "positive_cashflow"
+        ? profile.monthlyIncome > profile.monthlyExpense ? 1 : 0
+        : conditionKind === "valuation"
+          ? profile.valuation
+          : 0;
+  const syncAchievements = (profile: PlayerProfileRecord) => {
+    for (const config of achievementConfigs) {
+      const key = achievementKey(profile.id, config.id);
+      const existing = achievements.get(key);
+      const progress = readAchievementProgress(profile, config.conditionKind);
+      achievements.set(key, {
+        profileId: profile.id,
+        achievementId: config.id,
+        progress: Math.max(existing?.progress ?? 0, progress),
+        completedAt: existing?.completedAt ?? (progress >= config.conditionValue ? new Date().toISOString() : null),
+        claimedAt: existing?.claimedAt ?? null
+      });
+    }
+  };
+  const toTitleCenter = (profile: PlayerProfileRecord, today: string): TitleCenterRecord => {
+    syncAchievements(profile);
+    for (const achievement of achievements.values()) {
+      if (achievement.profileId === profile.id && achievement.completedAt !== null) {
+        const config = achievementConfigs.find((item) => item.id === achievement.achievementId);
+        if (config?.rewardTitleId !== null && config?.rewardTitleId !== undefined) {
+          addTitle(profile.id, config.rewardTitleId, "achievement", today);
+        }
+      }
+    }
+    const titles = [...playerTitles.values()]
+      .filter((title) => title.profileId === profile.id)
+      .map((title) => {
+        const config = titleConfigs.find((item) => item.id === title.titleId);
+        return {
+          id: title.titleId,
+          name: config?.name ?? title.titleId,
+          category: config?.category ?? "growth",
+          source: title.source,
+          bonusLabel: config?.bonusLabel ?? "身份展示",
+          obtainedAt: title.obtainedAt,
+          expiresAt: title.expiresAt,
+          isEquipped: titleEquipment.get(profile.id) === title.titleId,
+          isExpired: isExpired(title.expiresAt, today)
+        };
+      });
+    return {
+      equippedTitle: titles.find((title) => title.isEquipped && !title.isExpired) ?? null,
+      titles
+    };
+  };
+  const toAchievement = (profile: PlayerProfileRecord, config: (typeof achievementConfigs)[number]): AchievementRecord => {
+    const progress = achievements.get(achievementKey(profile.id, config.id));
+    const isCompleted = progress?.completedAt !== null && progress?.completedAt !== undefined;
+    return {
+      id: config.id,
+      name: config.name,
+      category: config.category,
+      description: config.description,
+      progress: Math.min(progress?.progress ?? 0, config.conditionValue),
+      target: config.conditionValue,
+      isHidden: config.isHidden && !isCompleted,
+      isCompleted,
+      isClaimed: progress?.claimedAt !== null && progress?.claimedAt !== undefined,
+      rewardLabel: "资金/行动力/称号/知识卡"
+    };
+  };
+  const buildLeaderboards = (serverId: string, today: string): LeaderboardCenterRecord => {
+    const rowsFor = (key: string) => [...profiles.values()]
+      .filter((profile) => profile.serverId === serverId)
+      .map((profile) => {
+        const productGrowth = productsForProfile(profile.id).reduce((total, product) => total + product.users + product.monthlyRevenue, 0);
+        const member = guildMembers.get(profile.id);
+        const value =
+          key === "company-value"
+            ? profile.valuation
+            : key === "cashflow"
+              ? profile.monthlyIncome - profile.monthlyExpense
+              : key === "product-growth"
+                ? productGrowth
+                : member?.contributionScore ?? 0;
+        return {
+          rank: 0,
+          profileId: profile.id,
+          founderName: profile.founderName,
+          companyName: profile.companyName,
+          value,
+          valueLabel: `${value.toLocaleString("zh-CN")}`,
+          equippedTitle: toTitleCenter(profile, today).equippedTitle?.name ?? null
+        };
+      })
+      .sort((left, right) => right.value - left.value)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+    return {
+      boards: [
+        { key: "company-value", name: "公司估值榜", scope: "server", isActive: true, rows: rowsFor("company-value"), snapshotDate: today },
+        { key: "cashflow", name: "现金流榜", scope: "server", isActive: true, rows: rowsFor("cashflow"), snapshotDate: today },
+        { key: "product-growth", name: "产品增长榜", scope: "server", isActive: true, rows: rowsFor("product-growth"), snapshotDate: today },
+        { key: "guild", name: "商会榜", scope: "server", isActive: true, rows: rowsFor("guild"), snapshotDate: today }
+      ],
+      activityBoards: []
+    };
+  };
+  const toGuildCenter = (profile: PlayerProfileRecord): GuildCenterRecord => {
+    const member = guildMembers.get(profile.id);
+    if (member === undefined) {
+      return { guild: null, members: [], tasks: [], techs: [], helpRequests: [], leaderboard: [] };
+    }
+    const guild = guilds.get(member.guildId);
+    const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
+    return {
+      guild: guild === undefined ? null : { id: guild.id, name: guild.name, level: guild.level, contributionScore: guild.contributionScore },
+      members: members.map((item) => {
+        const memberProfile = profiles.get(item.profileId);
+        return {
+          profileId: item.profileId,
+          founderName: memberProfile?.founderName ?? "",
+          companyName: memberProfile?.companyName ?? "",
+          role: item.role,
+          contributionScore: item.contributionScore
+        };
+      }),
+      tasks: [{ id: "guild-daily-help", title: "成员互助", description: "完成一次商会互助。", progress: Math.min(member.contributionScore / 20, 1), target: 1, contributionReward: 20, isClaimed: member.contributionScore > 0 }],
+      techs: [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: 0, maxLevel: 5 }],
+      helpRequests: [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId),
+      leaderboard: members
+        .sort((left, right) => right.contributionScore - left.contributionScore)
+        .map((item, index) => {
+          const memberProfile = profiles.get(item.profileId);
+          return {
+            rank: index + 1,
+            profileId: item.profileId,
+            founderName: memberProfile?.founderName ?? "",
+            companyName: memberProfile?.companyName ?? "",
+            value: item.contributionScore,
+            valueLabel: `${item.contributionScore}`,
+            equippedTitle: null
+          };
+        })
     };
   };
 
@@ -2244,6 +2508,145 @@ const createTestRepository = (): GameRepository => {
         config,
         auditLogId: `${adminUserId}:vip-config:${config.level}:${reason}`
       };
+    },
+    async getLeaderboards(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : buildLeaderboards(serverId, today);
+    },
+    async settleLeaderboardRewards(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const leaderboard = buildLeaderboards(serverId, today);
+      let deliveredRewards = 0;
+      for (const board of leaderboard.boards) {
+        for (const row of board.rows.slice(0, 3)) {
+          const key = `${row.profileId}:${board.key}:${today}`;
+          if (!leaderboardRewards.has(key)) {
+            leaderboardRewards.add(key);
+            deliveredRewards += 1;
+            if (board.key === "company-value" && row.rank === 1) {
+              addTitle(row.profileId, "server-richest", "leaderboard", today);
+            }
+          }
+        }
+      }
+      return { leaderboard, deliveredRewards } satisfies LeaderboardSettlementRecord;
+    },
+    async listTitles(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toTitleCenter(profile, today);
+    },
+    async equipTitle(accountId, serverId, titleId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const title = playerTitles.get(titleKey(profile.id, titleId));
+      if (title === undefined) {
+        return "TITLE_NOT_FOUND";
+      }
+      if (isExpired(title.expiresAt, today)) {
+        return "TITLE_EXPIRED";
+      }
+      titleEquipment.set(profile.id, titleId);
+      return toTitleCenter(profile, today);
+    },
+    async listAchievements(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      syncAchievements(profile);
+      return achievementConfigs.map((config) => toAchievement(profile, config)).filter((achievement) => !achievement.isHidden || achievement.isCompleted);
+    },
+    async claimAchievement(accountId, serverId, achievementId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      syncAchievements(profile);
+      const progress = achievements.get(achievementKey(profile.id, achievementId));
+      const config = achievementConfigs.find((item) => item.id === achievementId);
+      if (progress === undefined || config === undefined) {
+        return "ACHIEVEMENT_NOT_FOUND";
+      }
+      if (progress.completedAt === null) {
+        return "ACHIEVEMENT_INCOMPLETE";
+      }
+      if (progress.claimedAt !== null) {
+        return "ACHIEVEMENT_ALREADY_CLAIMED";
+      }
+      progress.claimedAt = new Date().toISOString();
+      profile.cash += config.rewardCash;
+      profile.platformCoins += config.rewardPlatformCoins;
+      profile.actionPower += config.rewardActionPower;
+      if (config.rewardTitleId !== null) {
+        addTitle(profile.id, config.rewardTitleId, "achievement");
+      }
+      unlockKnowledgeEntry(profile.id, config.rewardKnowledgeId, "achievement");
+      return {
+        achievement: toAchievement(profile, config),
+        profile,
+        titleCenter: toTitleCenter(profile, new Date().toISOString().slice(0, 10)),
+        result: `${config.name} 奖励已领取。`
+      } satisfies AchievementClaimRecord;
+    },
+    async listKnowledge(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return [...knowledgeUnlocks.values()]
+        .filter((unlock) => unlock.profileId === profile.id)
+        .map((unlock) => {
+          const knowledge = knowledgeEntries.find((entry) => entry.id === unlock.knowledgeId);
+          return {
+            id: unlock.knowledgeId,
+            category: knowledge?.category ?? "",
+            title: knowledge?.title ?? "",
+            summary: knowledge?.summary ?? "",
+            sourceUrl: knowledge?.sourceUrl ?? "",
+            collectedAt: knowledge?.collectedAt ?? "",
+            contentVersion: knowledge?.contentVersion ?? "",
+            disclaimer: knowledge?.disclaimer ?? "",
+            unlockedAt: unlock.unlockedAt
+          };
+        }) satisfies KnowledgeEntryRecord[];
+    },
+    async getGuildCenter(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toGuildCenter(profile);
+    },
+    async joinOrCreateGuild(accountId, serverId, guildName) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const guildKey = `${serverId}:${guildName}`;
+      const guild = guilds.get(guildKey) ?? { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0 };
+      guilds.set(guildKey, guild);
+      guildMembers.set(profile.id, { guildId: guild.id, profileId: profile.id, role: "leader", contributionScore: 0 });
+      return { guildCenter: toGuildCenter(profile), result: `${guildName} 已加入。` } satisfies GuildActionRecord;
+    },
+    async requestGuildHelp(accountId, serverId, requestType) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const member = guildMembers.get(profile.id);
+      if (member === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      const request = { id: randomUUID(), guildId: member.guildId, profileId: profile.id, requestType, status: "open", createdAt: new Date().toISOString() };
+      guildHelpRequests.set(request.id, request);
+      member.contributionScore += 20;
+      const guild = [...guilds.values()].find((item) => item.id === member.guildId);
+      if (guild !== undefined) {
+        guild.contributionScore += 20;
+      }
+      return { guildCenter: toGuildCenter(profile), result: "商会互助已发布。" } satisfies GuildActionRecord;
     },
     async disconnect() {}
   };
@@ -4084,5 +4487,103 @@ test("admin can query and configure VIP level benefits", async () => {
     assert.equal(playerVip.body.data?.currentLevel.level, 4);
     assert.equal(playerVip.body.data?.benefits.title, "战略投资人");
     assert.equal(playerVip.body.data?.dailyGift.rewardPlatformCoins, 180);
+  });
+});
+
+test("phase 14 leaderboards snapshot rewards and title expiry are idempotent", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "ranker");
+
+    const leaderboards = await requestJson<LeaderboardCenterRecord>(baseUrl, "/leaderboards?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(leaderboards.status, 200);
+    assert.equal(leaderboards.body.data?.boards.length, 4);
+    assert.equal(leaderboards.body.data?.activityBoards.length, 0);
+    assert.ok(leaderboards.body.data?.boards.every((board) => board.scope === "server"));
+
+    const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/leaderboards/settle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200);
+    assert.ok((settled.body.data?.deliveredRewards ?? 0) > 0);
+
+    const duplicate = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/leaderboards/settle", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.body.data?.deliveredRewards, 0);
+
+    const expiredEquip = await requestJson(baseUrl, "/titles/equip", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-09" },
+      body: JSON.stringify({ serverId: "s1", titleId: "server-richest" })
+    });
+    assert.equal(expiredEquip.status, 409);
+    assert.equal(expiredEquip.body.error?.code, "TITLE_EXPIRED");
+  });
+});
+
+test("phase 14 achievements titles knowledge and guild basics work together", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "collector");
+
+    const achievements = await requestJson<AchievementRecord[]>(baseUrl, "/achievements?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(achievements.status, 200);
+    assert.ok(achievements.body.data?.some((achievement) => achievement.id === "profile-created" && achievement.isCompleted));
+
+    const claimed = await requestJson<AchievementClaimRecord>(baseUrl, "/achievements/profile-created/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200);
+    assert.ok((claimed.body.data?.profile.cash ?? 0) > profile.cash);
+    assert.ok(claimed.body.data?.titleCenter.titles.some((title) => title.id === "startup-founder"));
+
+    const duplicate = await requestJson(baseUrl, "/achievements/profile-created/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "ACHIEVEMENT_ALREADY_CLAIMED");
+
+    const equipped = await requestJson<TitleCenterRecord>(baseUrl, "/titles/equip", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", titleId: "startup-founder" })
+    });
+    assert.equal(equipped.status, 200);
+    assert.equal(equipped.body.data?.equippedTitle?.name, "初创老板");
+
+    const knowledge = await requestJson<KnowledgeEntryRecord[]>(baseUrl, "/knowledge?serverId=s1", {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(knowledge.status, 200);
+    assert.ok(knowledge.body.data?.some((entry) => entry.disclaimer === "仅作游戏科普，不构成法律建议" && entry.sourceUrl.startsWith("https://")));
+
+    const joined = await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", guildName: "长宁创业会" })
+    });
+    assert.equal(joined.status, 200);
+    assert.equal(joined.body.data?.guildCenter.guild?.name, "长宁创业会");
+
+    const helped = await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    assert.equal(helped.status, 200);
+    assert.equal(helped.body.data?.guildCenter.helpRequests.length, 1);
+    assert.ok((helped.body.data?.guildCenter.guild?.contributionScore ?? 0) > 0);
   });
 });

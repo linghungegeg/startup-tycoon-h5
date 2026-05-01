@@ -587,6 +587,258 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/leaderboards") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.getLeaderboards(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/leaderboards/settle") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleLeaderboardRewards(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/titles") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.listTitles(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/titles/equip") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const titleId = isRecord(body) ? readString(body, "titleId") : "";
+      if (serverId === undefined || titleId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and titleId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.equipTitle(account.id, serverId, titleId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "TITLE_NOT_FOUND") {
+        sendJson(response, 404, failure("TITLE_NOT_FOUND", "Title not found.", traceId));
+        return;
+      }
+      if (result === "TITLE_EXPIRED") {
+        sendJson(response, 409, failure("TITLE_EXPIRED", "Title has expired.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/achievements") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.listAchievements(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const achievementClaimMatch = /^\/achievements\/([^/]+)\/claim$/.exec(url.pathname);
+    if (request.method === "POST" && achievementClaimMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      const achievementId = achievementClaimMatch[1];
+      if (serverId === undefined || achievementId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and achievementId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.claimAchievement(account.id, serverId, decodeURIComponent(achievementId));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "ACHIEVEMENT_NOT_FOUND") {
+        sendJson(response, 404, failure("ACHIEVEMENT_NOT_FOUND", "Achievement not found.", traceId));
+        return;
+      }
+      if (result === "ACHIEVEMENT_INCOMPLETE") {
+        sendJson(response, 409, failure("ACHIEVEMENT_INCOMPLETE", "Achievement is not completed.", traceId));
+        return;
+      }
+      if (result === "ACHIEVEMENT_ALREADY_CLAIMED") {
+        sendJson(response, 409, failure("ACHIEVEMENT_ALREADY_CLAIMED", "Achievement reward has already been claimed.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/knowledge") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.listKnowledge(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/guild") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.getGuildCenter(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/guild/join") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const guildName = isRecord(body) ? readString(body, "guildName") : "";
+      if (serverId === undefined || guildName.length < 2 || guildName.length > 32) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and guildName are required.", traceId));
+        return;
+      }
+
+      const result = await repository.joinOrCreateGuild(account.id, serverId, guildName);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/guild/help") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const requestType = isRecord(body) ? readString(body, "requestType") : "";
+      if (serverId === undefined || requestType === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and requestType are required.", traceId));
+        return;
+      }
+
+      const result = await repository.requestGuildHelp(account.id, serverId, requestType);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before requesting help.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/servers") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

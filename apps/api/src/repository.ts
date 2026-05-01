@@ -543,6 +543,128 @@ export type AdminVipConfigRecord = {
   auditLogId: string;
 };
 
+export type LeaderboardRowRecord = {
+  rank: number;
+  profileId: string;
+  founderName: string;
+  companyName: string;
+  value: number;
+  valueLabel: string;
+  equippedTitle: string | null;
+};
+
+export type LeaderboardBoardRecord = {
+  key: string;
+  name: string;
+  scope: "server" | "cross" | "activity";
+  isActive: boolean;
+  rows: LeaderboardRowRecord[];
+  snapshotDate: string;
+};
+
+export type LeaderboardCenterRecord = {
+  boards: LeaderboardBoardRecord[];
+  activityBoards: LeaderboardBoardRecord[];
+};
+
+export type LeaderboardSettlementRecord = {
+  leaderboard: LeaderboardCenterRecord;
+  deliveredRewards: number;
+};
+
+export type TitleRecord = {
+  id: string;
+  name: string;
+  category: string;
+  source: string;
+  bonusLabel: string;
+  obtainedAt: string;
+  expiresAt: string | null;
+  isEquipped: boolean;
+  isExpired: boolean;
+};
+
+export type TitleCenterRecord = {
+  equippedTitle: TitleRecord | null;
+  titles: TitleRecord[];
+};
+
+export type AchievementRecord = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  progress: number;
+  target: number;
+  isHidden: boolean;
+  isCompleted: boolean;
+  isClaimed: boolean;
+  rewardLabel: string;
+};
+
+export type AchievementClaimRecord = {
+  achievement: AchievementRecord;
+  profile: PlayerProfileRecord;
+  titleCenter: TitleCenterRecord;
+  result: string;
+};
+
+export type KnowledgeEntryRecord = {
+  id: string;
+  category: string;
+  title: string;
+  summary: string;
+  sourceUrl: string;
+  collectedAt: string;
+  contentVersion: string;
+  disclaimer: string;
+  unlockedAt: string;
+};
+
+export type GuildCenterRecord = {
+  guild: {
+    id: string;
+    name: string;
+    level: number;
+    contributionScore: number;
+  } | null;
+  members: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    role: string;
+    contributionScore: number;
+  }>;
+  tasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    contributionReward: number;
+    isClaimed: boolean;
+  }>;
+  techs: Array<{
+    id: string;
+    name: string;
+    description: string;
+    level: number;
+    maxLevel: number;
+  }>;
+  helpRequests: Array<{
+    id: string;
+    requestType: string;
+    status: string;
+    createdAt: string;
+  }>;
+  leaderboard: LeaderboardRowRecord[];
+};
+
+export type GuildActionRecord = {
+  guildCenter: GuildCenterRecord;
+  result: string;
+};
+
 export type GameRepository = {
   createAccount(account: Omit<AccountRecord, "id">): Promise<AccountRecord | "ACCOUNT_EXISTS">;
   findAccountByUsername(username: string): Promise<AccountRecord | undefined>;
@@ -601,6 +723,16 @@ export type GameRepository = {
   getAdminVipRecord(profileId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
   listVipLevelConfigs(): Promise<VipLevelRecord[]>;
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
+  getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
+  settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
+  listTitles(accountId: string, serverId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND">;
+  equipTitle(accountId: string, serverId: string, titleId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND" | "TITLE_EXPIRED">;
+  listAchievements(accountId: string, serverId: string): Promise<AchievementRecord[] | "PLAYER_NOT_FOUND">;
+  claimAchievement(accountId: string, serverId: string, achievementId: string): Promise<AchievementClaimRecord | "PLAYER_NOT_FOUND" | "ACHIEVEMENT_NOT_FOUND" | "ACHIEVEMENT_INCOMPLETE" | "ACHIEVEMENT_ALREADY_CLAIMED">;
+  listKnowledge(accountId: string, serverId: string): Promise<KnowledgeEntryRecord[] | "PLAYER_NOT_FOUND">;
+  getGuildCenter(accountId: string, serverId: string): Promise<GuildCenterRecord | "PLAYER_NOT_FOUND">;
+  joinOrCreateGuild(accountId: string, serverId: string, guildName: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND">;
+  requestGuildHelp(accountId: string, serverId: string, requestType: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
   disconnect(): Promise<void>;
 };
 
@@ -1274,6 +1406,14 @@ const ensureWallet = async (
       totalSpent: 0,
       vipExperience: 0
     }
+  }).catch(async (error: unknown) => {
+    if (error instanceof PrismaClientKnownRequestError && error.code === "P2002") {
+      const wallet = await prisma.playerPlatformWallet.findUnique({ where: { profileId: profile.id } });
+      if (wallet !== null) {
+        return wallet;
+      }
+    }
+    throw error;
   });
 
 const toPlatformWalletRecord = async (
@@ -1463,6 +1603,232 @@ const toVipCenterRecord = async (
     }
   };
 };
+
+const leaderboardConfigs = [
+  { key: "company-value", name: "公司估值榜" },
+  { key: "cashflow", name: "现金流榜" },
+  { key: "product-growth", name: "产品增长榜" },
+  { key: "guild", name: "商会榜" }
+] as const;
+
+const formatLeaderboardValue = (key: string, value: number): string => {
+  if (key === "cashflow") {
+    return `净现金流 ${value.toLocaleString("zh-CN")}`;
+  }
+  if (key === "product-growth") {
+    return `产品增长 ${value.toLocaleString("zh-CN")}`;
+  }
+  if (key === "guild") {
+    return `贡献 ${value.toLocaleString("zh-CN")}`;
+  }
+
+  return `估值 ${value.toLocaleString("zh-CN")}`;
+};
+
+const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+
+const isExpiredAt = (expiresAt: Date | null | undefined, today: string): boolean =>
+  expiresAt !== null && expiresAt !== undefined && expiresAt.toISOString().slice(0, 10) < today;
+
+const grantTitle = async (
+  prisma: PrismaClient,
+  profileId: string,
+  titleId: string,
+  source: string,
+  now: Date
+): Promise<void> => {
+  const config = await prisma.titleConfig.findUnique({ where: { id: titleId } });
+  if (config === null) {
+    return;
+  }
+  await prisma.playerTitle.upsert({
+    where: {
+      profileId_titleId: {
+        profileId,
+        titleId
+      }
+    },
+    update: {},
+    create: {
+      profileId,
+      titleId,
+      source,
+      expiresAt: config.durationDays > 0 ? addDays(now, config.durationDays) : null
+    }
+  });
+};
+
+const unlockKnowledge = async (
+  prisma: PrismaClient,
+  profileId: string,
+  knowledgeId: string | null,
+  source: string
+): Promise<void> => {
+  if (knowledgeId === null) {
+    return;
+  }
+  const knowledge = await prisma.knowledgeEntry.findUnique({ where: { id: knowledgeId } });
+  if (knowledge === null) {
+    return;
+  }
+  await prisma.playerKnowledgeUnlock.upsert({
+    where: {
+      profileId_knowledgeId: {
+        profileId,
+        knowledgeId
+      }
+    },
+    update: {},
+    create: {
+      profileId,
+      knowledgeId,
+      source
+    }
+  });
+};
+
+const readAchievementProgress = (
+  profile: PlayerProfileRecord,
+  conditionKind: string
+): number => {
+  if (conditionKind === "profile_created") {
+    return 1;
+  }
+  if (conditionKind === "positive_cashflow") {
+    return profile.monthlyIncome > profile.monthlyExpense ? 1 : 0;
+  }
+  if (conditionKind === "valuation") {
+    return profile.valuation;
+  }
+
+  return 0;
+};
+
+const syncAchievements = async (
+  prisma: PrismaClient,
+  profile: PlayerProfileRecord
+): Promise<void> => {
+  const configs = await prisma.achievementConfig.findMany();
+  for (const config of configs) {
+    const progress = readAchievementProgress(profile, config.conditionKind);
+    const completedAt = progress >= config.conditionValue ? new Date() : null;
+    const existing = await prisma.playerAchievement.findUnique({
+      where: {
+        profileId_achievementId: {
+          profileId: profile.id,
+          achievementId: config.id
+        }
+      }
+    });
+    await prisma.playerAchievement.upsert({
+      where: {
+        profileId_achievementId: {
+          profileId: profile.id,
+          achievementId: config.id
+        }
+      },
+      update: {
+        progress: Math.max(existing?.progress ?? 0, progress),
+        completedAt: existing?.completedAt ?? completedAt
+      },
+      create: {
+        profileId: profile.id,
+        achievementId: config.id,
+        progress,
+        completedAt
+      }
+    });
+  }
+};
+
+const toTitleCenterRecord = async (
+  prisma: PrismaClient,
+  profileId: string,
+  today: string
+): Promise<TitleCenterRecord> => {
+  const [titles, equipment] = await Promise.all([
+    prisma.playerTitle.findMany({
+      where: { profileId },
+      include: { title: true },
+      orderBy: { obtainedAt: "asc" }
+    }),
+    prisma.playerTitleEquipment.findUnique({ where: { profileId } })
+  ]);
+  const records = titles.map((title) => ({
+    id: title.titleId,
+    name: title.title.name,
+    category: title.title.category,
+    source: title.source,
+    bonusLabel: title.title.bonusLabel,
+    obtainedAt: title.obtainedAt.toISOString(),
+    expiresAt: title.expiresAt?.toISOString() ?? null,
+    isEquipped: equipment?.titleId === title.titleId,
+    isExpired: isExpiredAt(title.expiresAt, today)
+  }));
+
+  return {
+    equippedTitle: records.find((title) => title.isEquipped && !title.isExpired) ?? null,
+    titles: records
+  };
+};
+
+const toAchievementRecord = (achievement: {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  conditionValue: number;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+  rewardActionPower: number;
+  rewardTitleId: string | null;
+  rewardKnowledgeId: string | null;
+  isHidden: boolean;
+  progress: number;
+  completedAt: Date | null;
+  claimedAt: Date | null;
+}): AchievementRecord => ({
+  id: achievement.id,
+  name: achievement.name,
+  category: achievement.category,
+  description: achievement.description,
+  progress: Math.min(achievement.progress, achievement.conditionValue),
+  target: achievement.conditionValue,
+  isHidden: achievement.isHidden && achievement.completedAt === null,
+  isCompleted: achievement.completedAt !== null,
+  isClaimed: achievement.claimedAt !== null,
+  rewardLabel: [
+    achievement.rewardCash > 0 ? `资金 ${achievement.rewardCash.toLocaleString("zh-CN")}` : "",
+    achievement.rewardPlatformCoins > 0 ? `平台币 ${achievement.rewardPlatformCoins}` : "",
+    achievement.rewardActionPower > 0 ? `行动力 ${achievement.rewardActionPower}` : "",
+    achievement.rewardTitleId !== null ? "称号" : "",
+    achievement.rewardKnowledgeId !== null ? "知识卡" : ""
+  ].filter(Boolean).join("、") || "履历记录"
+});
+
+const toKnowledgeEntryRecord = (unlock: {
+  unlockedAt: Date;
+  knowledge: {
+    id: string;
+    title: string;
+    summary: string;
+    sourceUrl: string;
+    collectedAt: string;
+    contentVersion: string;
+    disclaimer: string;
+    category: { name: string };
+  };
+}): KnowledgeEntryRecord => ({
+  id: unlock.knowledge.id,
+  category: unlock.knowledge.category.name,
+  title: unlock.knowledge.title,
+  summary: unlock.knowledge.summary,
+  sourceUrl: unlock.knowledge.sourceUrl,
+  collectedAt: unlock.knowledge.collectedAt,
+  contentVersion: unlock.knowledge.contentVersion,
+  disclaimer: unlock.knowledge.disclaimer,
+  unlockedAt: unlock.unlockedAt.toISOString()
+});
 
 const toLoanCenterRecord = async (
   prisma: PrismaClient,
@@ -4083,6 +4449,551 @@ export const createPrismaGameRepository = (
     return {
       config: toVipLevelRecord(result.saved),
       auditLogId: result.auditLogId
+    };
+  },
+
+  async getLeaderboards(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const profiles = await prisma.playerProfile.findMany({
+      where: { serverId },
+      include: {
+        products: true,
+        guildMembership: true,
+        titleEquipment: true,
+        playerTitles: { include: { title: true } }
+      }
+    });
+
+    const boards = await Promise.all(leaderboardConfigs.map(async (config) => {
+      const rows = profiles
+        .map((item) => {
+          const productGrowth = item.products.reduce((total, product) => total + product.users + product.monthlyRevenue, 0);
+          const value =
+            config.key === "company-value"
+              ? item.valuation
+              : config.key === "cashflow"
+                ? item.monthlyIncome - item.monthlyExpense
+                : config.key === "product-growth"
+                  ? productGrowth
+                  : item.guildMembership?.contributionScore ?? 0;
+          const equipped = item.playerTitles.find((title) => title.titleId === item.titleEquipment?.titleId);
+          return {
+            rank: 0,
+            profileId: item.id,
+            founderName: item.founderName,
+            companyName: item.companyName,
+            value,
+            valueLabel: formatLeaderboardValue(config.key, value),
+            equippedTitle: equipped?.title.name ?? null
+          };
+        })
+        .sort((left, right) => right.value - left.value)
+        .slice(0, 20)
+        .map((row, index) => ({ ...row, rank: index + 1 }));
+
+      await prisma.leaderboardSnapshot.upsert({
+        where: {
+          serverId_boardKey_snapshotDate: {
+            serverId,
+            boardKey: config.key,
+            snapshotDate: today
+          }
+        },
+        update: {
+          entriesJson: JSON.stringify(rows)
+        },
+        create: {
+          serverId,
+          boardKey: config.key,
+          boardName: config.name,
+          snapshotDate: today,
+          entriesJson: JSON.stringify(rows)
+        }
+      });
+
+      return {
+        key: config.key,
+        name: config.name,
+        scope: "server" as const,
+        isActive: true,
+        rows,
+        snapshotDate: today
+      };
+    }));
+
+    return {
+      boards,
+      activityBoards: []
+    };
+  },
+
+  async settleLeaderboardRewards(accountId, serverId, today) {
+    const leaderboard = await this.getLeaderboards(accountId, serverId, today);
+    if (leaderboard === "PLAYER_NOT_FOUND") {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    let deliveredRewards = 0;
+    for (const board of leaderboard.boards) {
+      for (const row of board.rows.slice(0, 3)) {
+        const rewardPlatformCoins = row.rank === 1 ? 120 : row.rank === 2 ? 80 : 40;
+        const rewardTitleId = board.key === "company-value" && row.rank === 1 ? "server-richest" : null;
+        const existing = await prisma.leaderboardRewardDelivery.findUnique({
+          where: {
+            profileId_boardKey_snapshotDate: {
+              profileId: row.profileId,
+              boardKey: board.key,
+              snapshotDate: today
+            }
+          }
+        });
+        if (existing === null) {
+          await prisma.leaderboardRewardDelivery.create({
+            data: {
+              profileId: row.profileId,
+              serverId,
+              boardKey: board.key,
+              snapshotDate: today,
+              rank: row.rank,
+              rewardPlatformCoins,
+              rewardTitleId,
+              mailSubject: `${board.name} 第 ${row.rank} 名奖励`,
+              mailBody: "排行榜奖励已通过邮件发放，本邮件记录用于防止重复发奖。"
+            }
+          });
+          deliveredRewards += 1;
+        }
+        if (rewardTitleId !== null) {
+          await grantTitle(prisma, row.profileId, rewardTitleId, "leaderboard", new Date(`${today}T00:00:00.000Z`));
+        }
+      }
+    }
+
+    return {
+      leaderboard,
+      deliveredRewards
+    };
+  },
+
+  async listTitles(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    await syncAchievements(prisma, toProfileRecord(profile));
+    const completedAchievements = await prisma.playerAchievement.findMany({
+      where: { profileId: profile.id, completedAt: { not: null } },
+      include: { achievement: true }
+    });
+    for (const achievement of completedAchievements) {
+      if (achievement.achievement.rewardTitleId !== null) {
+        await grantTitle(prisma, profile.id, achievement.achievement.rewardTitleId, "achievement", new Date());
+      }
+    }
+
+    return toTitleCenterRecord(prisma, profile.id, today);
+  },
+
+  async equipTitle(accountId, serverId, titleId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const title = await prisma.playerTitle.findUnique({
+      where: {
+        profileId_titleId: {
+          profileId: profile.id,
+          titleId
+        }
+      }
+    });
+    if (title === null) {
+      return "TITLE_NOT_FOUND";
+    }
+    if (isExpiredAt(title.expiresAt, today)) {
+      return "TITLE_EXPIRED";
+    }
+    await prisma.playerTitleEquipment.upsert({
+      where: { profileId: profile.id },
+      update: {
+        titleId,
+        equippedAt: new Date()
+      },
+      create: {
+        profileId: profile.id,
+        titleId
+      }
+    });
+
+    return toTitleCenterRecord(prisma, profile.id, today);
+  },
+
+  async listAchievements(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    await syncAchievements(prisma, toProfileRecord(profile));
+    const achievements = await prisma.achievementConfig.findMany({
+      include: {
+        progresses: {
+          where: { profileId: profile.id }
+        }
+      },
+      orderBy: [{ sortOrder: "asc" }]
+    });
+
+    return achievements.map((achievement) => {
+      const progress = achievement.progresses[0];
+      return toAchievementRecord({
+        ...achievement,
+        progress: progress?.progress ?? 0,
+        completedAt: progress?.completedAt ?? null,
+        claimedAt: progress?.claimedAt ?? null
+      });
+    }).filter((achievement) => !achievement.isHidden || achievement.isCompleted);
+  },
+
+  async claimAchievement(accountId, serverId, achievementId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    await syncAchievements(prisma, toProfileRecord(profile));
+    const achievement = await prisma.playerAchievement.findUnique({
+      where: {
+        profileId_achievementId: {
+          profileId: profile.id,
+          achievementId
+        }
+      },
+      include: { achievement: true }
+    });
+    if (achievement === null) {
+      return "ACHIEVEMENT_NOT_FOUND";
+    }
+    if (achievement.completedAt === null) {
+      return "ACHIEVEMENT_INCOMPLETE";
+    }
+    if (achievement.claimedAt !== null) {
+      return "ACHIEVEMENT_ALREADY_CLAIMED";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const savedAchievement = await tx.playerAchievement.update({
+        where: { id: achievement.id },
+        data: { claimedAt: new Date() },
+        include: { achievement: true }
+      });
+      let nextPlatformCoins = profile.platformCoins + achievement.achievement.rewardPlatformCoins;
+      if (achievement.achievement.rewardPlatformCoins > 0) {
+        const wallet = await tx.playerPlatformWallet.upsert({
+          where: { profileId: profile.id },
+          update: {},
+          create: {
+            profileId: profile.id,
+            balance: profile.platformCoins,
+            totalSpent: 0,
+            vipExperience: 0
+          }
+        });
+        nextPlatformCoins = wallet.balance + achievement.achievement.rewardPlatformCoins;
+        await tx.playerPlatformWallet.update({
+          where: { id: wallet.id },
+          data: { balance: nextPlatformCoins }
+        });
+        await tx.platformCoinLedger.create({
+          data: {
+            profileId: profile.id,
+            walletId: wallet.id,
+            changeAmount: achievement.achievement.rewardPlatformCoins,
+            balanceAfter: nextPlatformCoins,
+            source: "system_compensation",
+            referenceId: savedAchievement.id,
+            reason: `领取成就奖励：${achievement.achievement.name}`
+          }
+        });
+      }
+      const savedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: achievement.achievement.rewardCash },
+          platformCoins: nextPlatformCoins,
+          actionPower: { increment: achievement.achievement.rewardActionPower }
+        }
+      });
+      if (achievement.achievement.rewardTitleId !== null) {
+        await grantTitle(tx as PrismaClient, profile.id, achievement.achievement.rewardTitleId, "achievement", new Date());
+      }
+      await unlockKnowledge(tx as PrismaClient, profile.id, achievement.achievement.rewardKnowledgeId, "achievement");
+
+      return { savedAchievement, savedProfile };
+    });
+
+    return {
+      achievement: toAchievementRecord({
+        ...result.savedAchievement.achievement,
+        progress: result.savedAchievement.progress,
+        completedAt: result.savedAchievement.completedAt,
+        claimedAt: result.savedAchievement.claimedAt
+      }),
+      profile: toProfileRecord(result.savedProfile),
+      titleCenter: await toTitleCenterRecord(prisma, profile.id, new Date().toISOString().slice(0, 10)),
+      result: `${achievement.achievement.name} 奖励已领取。`
+    };
+  },
+
+  async listKnowledge(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const unlocks = await prisma.playerKnowledgeUnlock.findMany({
+      where: { profileId: profile.id },
+      include: { knowledge: { include: { category: true } } },
+      orderBy: { unlockedAt: "desc" }
+    });
+
+    return unlocks.map(toKnowledgeEntryRecord);
+  },
+
+  async getGuildCenter(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      };
+    }
+    const [guild, members, taskConfigs, progresses, techConfigs, techs, helpRequests] = await Promise.all([
+      prisma.guild.findUnique({ where: { id: member.guildId } }),
+      prisma.guildMember.findMany({ where: { guildId: member.guildId }, include: { profile: true }, orderBy: { contributionScore: "desc" } }),
+      prisma.guildTaskConfig.findMany({ orderBy: { sortOrder: "asc" } }),
+      prisma.guildTaskProgress.findMany({ where: { guildId: member.guildId } }),
+      prisma.guildTechConfig.findMany({ orderBy: { sortOrder: "asc" } }),
+      prisma.guildTechState.findMany({ where: { guildId: member.guildId } }),
+      prisma.guildHelpRequest.findMany({ where: { guildId: member.guildId }, orderBy: { createdAt: "desc" }, take: 10 })
+    ]);
+
+    return {
+      guild: guild === null ? null : {
+        id: guild.id,
+        name: guild.name,
+        level: guild.level,
+        contributionScore: guild.contributionScore
+      },
+      members: members.map((item) => ({
+        profileId: item.profileId,
+        founderName: item.profile.founderName,
+        companyName: item.profile.companyName,
+        role: item.role,
+        contributionScore: item.contributionScore
+      })),
+      tasks: taskConfigs.map((task) => {
+        const progress = progresses.find((item) => item.taskId === task.id);
+        return {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          progress: Math.min(progress?.progress ?? 0, task.target),
+          target: task.target,
+          contributionReward: task.contributionReward,
+          isClaimed: progress?.claimedAt !== null && progress?.claimedAt !== undefined
+        };
+      }),
+      techs: techConfigs.map((tech) => ({
+        id: tech.id,
+        name: tech.name,
+        description: tech.description,
+        level: techs.find((item) => item.techId === tech.id)?.level ?? 0,
+        maxLevel: tech.maxLevel
+      })),
+      helpRequests: helpRequests.map((request) => ({
+        id: request.id,
+        requestType: request.requestType,
+        status: request.status,
+        createdAt: request.createdAt.toISOString()
+      })),
+      leaderboard: members.map((item, index) => ({
+        rank: index + 1,
+        profileId: item.profileId,
+        founderName: item.profile.founderName,
+        companyName: item.profile.companyName,
+        value: item.contributionScore,
+        valueLabel: formatLeaderboardValue("guild", item.contributionScore),
+        equippedTitle: null
+      }))
+    };
+  },
+
+  async joinOrCreateGuild(accountId, serverId, guildName) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const guild = await prisma.guild.upsert({
+      where: {
+        serverId_name: {
+          serverId,
+          name: guildName
+        }
+      },
+      update: {},
+      create: {
+        serverId,
+        name: guildName
+      }
+    });
+    await prisma.guildMember.upsert({
+      where: { profileId: profile.id },
+      update: { guildId: guild.id },
+      create: {
+        guildId: guild.id,
+        profileId: profile.id,
+        role: "leader"
+      }
+    });
+    const guildCenter = await this.getGuildCenter(accountId, serverId);
+
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: `${guildName} 已加入。`
+    };
+  },
+
+  async requestGuildHelp(accountId, serverId, requestType) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    await prisma.guildHelpRequest.create({
+      data: {
+        guildId: member.guildId,
+        profileId: profile.id,
+        requestType
+      }
+    });
+    await prisma.guildMember.update({
+      where: { id: member.id },
+      data: { contributionScore: { increment: 20 } }
+    });
+    await prisma.guild.update({
+      where: { id: member.guildId },
+      data: { contributionScore: { increment: 20 } }
+    });
+    await prisma.guildTaskProgress.upsert({
+      where: {
+        guildId_taskId: {
+          guildId: member.guildId,
+          taskId: "guild-daily-help"
+        }
+      },
+      update: { progress: { increment: 1 } },
+      create: {
+        guildId: member.guildId,
+        taskId: "guild-daily-help",
+        progress: 1
+      }
+    });
+    const guildCenter = await this.getGuildCenter(accountId, serverId);
+
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: "商会互助已发布。"
     };
   },
 

@@ -834,6 +834,155 @@ const vipLevelConfigs = [
   }
 ];
 
+const titleConfigs = [
+  {
+    id: "startup-founder",
+    name: "初创老板",
+    category: "growth",
+    source: "achievement",
+    bonusLabel: "身份展示",
+    durationDays: 0,
+    sortOrder: 1
+  },
+  {
+    id: "cashflow-master",
+    name: "现金流大师",
+    category: "finance",
+    source: "achievement",
+    bonusLabel: "现金流榜展示",
+    durationDays: 0,
+    sortOrder: 2
+  },
+  {
+    id: "server-richest",
+    name: "本服首富",
+    category: "rank",
+    source: "leaderboard",
+    bonusLabel: "排行榜展示",
+    durationDays: 7,
+    sortOrder: 3
+  },
+  {
+    id: "strategic-investor",
+    name: "战略投资人",
+    category: "vip",
+    source: "vip",
+    bonusLabel: "VIP身份展示",
+    durationDays: 0,
+    sortOrder: 4
+  }
+];
+
+const achievementConfigs = [
+  {
+    id: "profile-created",
+    name: "创业开张",
+    category: "growth",
+    description: "完成创始人和公司档案。",
+    conditionKind: "profile_created",
+    conditionValue: 1,
+    rewardCash: 50000,
+    rewardPlatformCoins: 0,
+    rewardActionPower: 20,
+    rewardTitleId: "startup-founder",
+    rewardKnowledgeId: "company-registration-basics",
+    isHidden: false,
+    sortOrder: 1
+  },
+  {
+    id: "positive-cashflow",
+    name: "现金流转正",
+    category: "finance",
+    description: "公司月收入高于月支出。",
+    conditionKind: "positive_cashflow",
+    conditionValue: 1,
+    rewardCash: 80000,
+    rewardPlatformCoins: 0,
+    rewardActionPower: 20,
+    rewardTitleId: "cashflow-master",
+    rewardKnowledgeId: "cashflow-safety-line",
+    isHidden: false,
+    sortOrder: 2
+  },
+  {
+    id: "valuation-ten-million",
+    name: "千万估值",
+    category: "growth",
+    description: "公司估值达到 1000 万。",
+    conditionKind: "valuation",
+    conditionValue: 10000000,
+    rewardCash: 0,
+    rewardPlatformCoins: 120,
+    rewardActionPower: 0,
+    rewardTitleId: null,
+    rewardKnowledgeId: "valuation-method-note",
+    isHidden: true,
+    sortOrder: 3
+  }
+];
+
+const knowledgeCategories = [
+  { id: "startup", name: "创业基础", sortOrder: 1 },
+  { id: "finance", name: "财务合规", sortOrder: 2 }
+];
+
+const knowledgeEntries = [
+  {
+    id: "company-registration-basics",
+    categoryId: "startup",
+    title: "公司档案与主体登记",
+    summary: "游戏中公司档案对应真实创业里的主体信息、经营范围和团队责任边界。",
+    sourceUrl: "https://www.samr.gov.cn/",
+    collectedAt: "2026-05-01",
+    contentVersion: "2026.05",
+    disclaimer: "仅作游戏科普，不构成法律建议",
+    sortOrder: 1
+  },
+  {
+    id: "cashflow-safety-line",
+    categoryId: "finance",
+    title: "现金流安全线",
+    summary: "持续正向现金流比单月利润更能反映早期公司的生存质量。",
+    sourceUrl: "https://www.sba.gov/business-guide/manage-your-business",
+    collectedAt: "2026-05-01",
+    contentVersion: "2026.05",
+    disclaimer: "仅作游戏科普，不构成法律建议",
+    sortOrder: 2
+  },
+  {
+    id: "valuation-method-note",
+    categoryId: "finance",
+    title: "估值只是谈判结果",
+    summary: "估值会受到现金流、增长、债务和市场预期影响，不等同于可立即变现的现金。",
+    sourceUrl: "https://www.sec.gov/education",
+    collectedAt: "2026-05-01",
+    contentVersion: "2026.05",
+    disclaimer: "仅作游戏科普，不构成法律建议",
+    sortOrder: 3
+  }
+];
+
+const guildTaskConfigs = [
+  {
+    id: "guild-daily-help",
+    title: "成员互助",
+    description: "完成一次商会互助，提升商会活跃度。",
+    target: 1,
+    contributionReward: 20,
+    sortOrder: 1
+  }
+];
+
+const guildTechConfigs = [
+  {
+    id: "shared-office",
+    name: "联合办公",
+    description: "提升商会成员的协作效率展示。",
+    maxLevel: 5,
+    sortOrder: 1
+  }
+];
+
 const adminPasswordText = process.env.ADMIN_PASSWORD ?? "admin123";
 
 if (adminPasswordText.length < 6 || adminPasswordText.length > 72) {
@@ -918,6 +1067,54 @@ const seed = async (): Promise<void> => {
       where: { level: vipLevelConfig.level },
       update: vipLevelConfig,
       create: vipLevelConfig
+    });
+  }
+
+  for (const titleConfig of titleConfigs) {
+    await prisma.titleConfig.upsert({
+      where: { id: titleConfig.id },
+      update: titleConfig,
+      create: titleConfig
+    });
+  }
+
+  for (const knowledgeCategory of knowledgeCategories) {
+    await prisma.knowledgeCategory.upsert({
+      where: { id: knowledgeCategory.id },
+      update: knowledgeCategory,
+      create: knowledgeCategory
+    });
+  }
+
+  for (const knowledgeEntry of knowledgeEntries) {
+    await prisma.knowledgeEntry.upsert({
+      where: { id: knowledgeEntry.id },
+      update: knowledgeEntry,
+      create: knowledgeEntry
+    });
+  }
+
+  for (const achievementConfig of achievementConfigs) {
+    await prisma.achievementConfig.upsert({
+      where: { id: achievementConfig.id },
+      update: achievementConfig,
+      create: achievementConfig
+    });
+  }
+
+  for (const guildTaskConfig of guildTaskConfigs) {
+    await prisma.guildTaskConfig.upsert({
+      where: { id: guildTaskConfig.id },
+      update: guildTaskConfig,
+      create: guildTaskConfig
+    });
+  }
+
+  for (const guildTechConfig of guildTechConfigs) {
+    await prisma.guildTechConfig.upsert({
+      where: { id: guildTechConfig.id },
+      update: guildTechConfig,
+      create: guildTechConfig
     });
   }
 
