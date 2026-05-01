@@ -29,8 +29,30 @@ type HealthResponse = {
   dependencies: ApiConfig["dependencies"];
 };
 
+type ReadinessCheck = {
+  key: string;
+  status: "pass" | "fail";
+  message: string;
+};
+
+type ReadinessResponse = {
+  status: "ready" | "blocked";
+  timestamp: string;
+  checks: ReadinessCheck[];
+};
+
 const TRACE_ID_HEADER = "x-trace-id";
 const MAX_BODY_BYTES = 16 * 1024;
+const AUTH_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const AUTH_RATE_LIMIT_MAX_ATTEMPTS = 10;
+
+const externalPaymentProducts = new Map([
+  ["first-charge-starter", { amountCents: 6800, platformCoins: 680 }],
+  ["monthly-card-basic", { amountCents: 12800, platformCoins: 1280 }],
+  ["growth-fund-seed", { amountCents: 19800, platformCoins: 1980 }],
+  ["recruit-ticket-headhunter", { amountCents: 3600, platformCoins: 360 }],
+  ["risk-insurance-trial", { amountCents: 5200, platformCoins: 520 }]
+]);
 
 const readTraceId = (request: IncomingMessage): string => {
   const header = request.headers[TRACE_ID_HEADER];
@@ -69,6 +91,18 @@ const sendOptions = (response: ServerResponse): void => {
     "content-length": "0"
   });
   response.end();
+};
+
+const sendRateLimited = (response: ServerResponse, traceId: string): void => {
+  response.writeHead(429, {
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-origin": "*",
+    "content-type": "application/json; charset=utf-8",
+    "retry-after": String(Math.ceil(AUTH_RATE_LIMIT_WINDOW_MS / 1000)),
+    [TRACE_ID_HEADER]: traceId
+  });
+  response.end(JSON.stringify(failure("RATE_LIMITED", "Too many auth attempts. Please retry later.", traceId)));
 };
 
 const success = <T>(data: T, traceId: string): ApiSuccess<T> => ({
@@ -229,6 +263,76 @@ const readToday = (request: IncomingMessage): string => {
     : new Date().toISOString().slice(0, 10);
 };
 
+const readClientKey = (request: IncomingMessage): string => {
+  const forwardedFor = request.headers["x-forwarded-for"];
+  const forwardedClient = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  return forwardedClient?.split(",")[0]?.trim() || request.socket.remoteAddress || "unknown";
+};
+
+const isAuthPath = (method: string | undefined, pathname: string): boolean =>
+  method === "POST" && (pathname === "/auth/login" || pathname === "/auth/register" || pathname === "/admin/auth/login");
+
+const createAuthRateLimiter = () => {
+  const attempts = new Map<string, { count: number; resetAt: number }>();
+
+  return (request: IncomingMessage, pathname: string): boolean => {
+    if (!isAuthPath(request.method, pathname)) {
+      return false;
+    }
+
+    const now = Date.now();
+    const key = `${pathname}:${readClientKey(request)}`;
+    const current = attempts.get(key);
+    if (current === undefined || current.resetAt <= now) {
+      attempts.set(key, { count: 1, resetAt: now + AUTH_RATE_LIMIT_WINDOW_MS });
+      return false;
+    }
+
+    current.count += 1;
+    return current.count > AUTH_RATE_LIMIT_MAX_ATTEMPTS;
+  };
+};
+
+const readReadiness = (config: ApiConfig): ReadinessResponse => {
+  const checks: ReadinessCheck[] = [
+    {
+      key: "mysql",
+      status: config.dependencies.mysql === "configured" ? "pass" : "fail",
+      message: config.dependencies.mysql === "configured" ? "MySQL connection is configured." : "DATABASE_URL or MySQL connection settings are missing."
+    },
+    {
+      key: "redis",
+      status: config.dependencies.redis === "configured" ? "pass" : "fail",
+      message: config.dependencies.redis === "configured" ? "Redis connection is configured." : "REDIS_URL or Redis connection settings are missing."
+    }
+  ];
+
+  return {
+    status: checks.some((check) => check.status === "fail") ? "blocked" : "ready",
+    timestamp: new Date().toISOString(),
+    checks
+  };
+};
+
+const validateExternalPaymentReservation = (
+  productId: string | null,
+  amountCents: number,
+  platformCoins: number
+): string | undefined => {
+  if (productId === null) {
+    return amountCents >= 100 && platformCoins >= 1 ? undefined : "amountCents and platformCoins must be positive.";
+  }
+
+  const product = externalPaymentProducts.get(productId);
+  if (product === undefined) {
+    return "External payment product is not enabled.";
+  }
+
+  return product.amountCents === amountCents && product.platformCoins === platformCoins
+    ? undefined
+    : "External payment amount does not match product configuration.";
+};
+
 const validateVipLevelConfig = (body: unknown): { config: VipLevelRecord; reason: string } | string => {
   if (!isRecord(body)) {
     return "Request body must be a JSON object.";
@@ -341,6 +445,8 @@ export const createApiServer = (
   config: ApiConfig,
   repository: GameRepository = createPrismaGameRepository()
 ): Server => {
+  const isRateLimited = createAuthRateLimiter();
+
   return createServer(async (request, response) => {
     const startedAt = Date.now();
     const traceId = readTraceId(request);
@@ -352,6 +458,11 @@ export const createApiServer = (
 
     if (request.method === "OPTIONS") {
       sendOptions(response);
+      return;
+    }
+
+    if (isRateLimited(request, url.pathname)) {
+      sendRateLimited(response, traceId);
       return;
     }
 
@@ -369,6 +480,12 @@ export const createApiServer = (
           traceId
         )
       );
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/readiness") {
+      const readiness = readReadiness(config);
+      sendJson(response, readiness.status === "ready" ? 200 : 503, success(readiness, traceId));
       return;
     }
 
@@ -1524,6 +1641,11 @@ export const createApiServer = (
         const platformCoins = readPositiveInteger(body, "platformCoins");
         if (serverId === undefined || amountCents === undefined || platformCoins === undefined) {
           sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, amountCents and platformCoins are required.", traceId));
+          return;
+        }
+        const paymentError = validateExternalPaymentReservation(productId, amountCents, platformCoins);
+        if (paymentError !== undefined) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", paymentError, traceId));
           return;
         }
 

@@ -1378,18 +1378,18 @@ VIP 权益：
 
 开发内容：
 
-- [ ] 生产环境配置。
-- [ ] 静态资源 CDN。
-- [ ] 宝塔面板站点、数据库、定时任务和服务管理配置。
-- [ ] Redis 持久化策略确认。
-- [ ] 灰度发布。
-- [ ] 压测。
-- [ ] 安全检查。
-- [ ] 防刷接口限制。
-- [ ] 平台币安全检查。
-- [ ] 外部支付预留接口安全检查。
-- [ ] 客服处理流程。
-- [ ] 开服流程文档。
+- [x] 生产环境配置。
+- [x] 静态资源 CDN。
+- [x] 宝塔面板站点、数据库、定时任务和服务管理配置。
+- [x] Redis 持久化策略确认。
+- [x] 灰度发布。
+- [x] 压测。
+- [x] 安全检查。
+- [x] 防刷接口限制。
+- [x] 平台币安全检查。
+- [x] 外部支付预留接口安全检查。
+- [x] 客服处理流程。
+- [x] 开服流程文档。
 
 验收标准：
 
@@ -1409,6 +1409,21 @@ VIP 权益：
 - 灰度发布检查。
 - 安全基础检查。
 - 全量 `lint/typecheck/build/test` 通过。
+
+阶段总结：
+
+- 当前阶段：Phase 18 上线准备。
+- 完成内容：新增 `docs/production-readiness.md`，收敛生产环境配置、静态资源 CDN、宝塔面板部署、Redis 持久化、灰度发布、压测口径、安全检查、客服处理和开服流程；后端新增 `GET /readiness` 依赖配置检查、Auth 基础防刷限流、外部支付预留商品金额校验，降低商业测试前的上线风险。
+- 四插件使用证据：
+  - Superpowers：确认当前稳定点 `5d525fc`、Phase 18 成功标准、TDD 主线和最小改动范围，只处理上线准备与安全护栏。
+  - Browser Use：打开本地前台和 API，验收主页可进入、HUD 不被 Phase 18 后端护栏影响，并检查 `/readiness` 可返回依赖状态。
+  - Build Web Apps：检查本阶段无新增前台页面，既有前台仍沿用深色商务手游基线；上线文档要求前台、后台构建产物和 CDN 缓存策略不改变现有 UI 风格。
+  - Game Studio：检查本阶段未改玩法入口、奖励反馈和 HUD 结构；Auth 限流、readiness 和支付预留校验均在后端，不遮挡玩家主流程。
+- 验证命令：`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm test -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`git diff --check`。首次 `db:generate` 因本地 API dev 进程占用 Prisma Windows DLL 失败，停止 API 相关 dev/watch 进程后重跑通过；首次 `db:push` 因当前 shell 未加载 `DATABASE_URL` 失败，按本地 `.env` 注入进程环境后重跑通过。
+- 浏览器/截图验收：Browser Use 打开 `http://127.0.0.1:3001/readiness`，确认返回 `ready` 且 MySQL、Redis 检查为 `pass`；打开 `http://127.0.0.1:5173/`，确认可恢复进入游戏主界面，顶部资源栏、左右悬浮入口、主线任务条和底部导航正常；点击“排行”可打开 Rank 荣誉中心。Console 当前仍有既有 Tailwind CDN warning，历史 `useCallback` 错误来自本阶段前热更新记录，当前页面已正常渲染。
+- 遗留风险：本阶段完成仓库内上线准备和最小安全护栏，不执行真实服务器部署、真实 CDN 配置或真实压测；外部支付仍为预留订单，未接入真实支付回调、验签和自动发货。
+- 下一阶段入口：Phase 19。
+- 是否可作为稳定点：可以。
 
 ### Phase 19：赛季、限时活动、经营残局与长期运营
 

@@ -4816,6 +4816,70 @@ test("phase 17 tracks telemetry and exposes operations analytics dashboard", asy
   });
 });
 
+test("phase 18 reports production readiness gaps", async () => {
+  const repository = createTestRepository();
+  const server = createApiServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      dependencies: {
+        mysql: "configured",
+        redis: "missing"
+      }
+    },
+    repository
+  );
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    assert.equal(typeof address, "object");
+    assert.ok(address);
+    const response = await requestJson<{
+      status: "ready" | "blocked";
+      checks: Array<{ key: string; status: "pass" | "fail"; message: string }>;
+    }>(`http://127.0.0.1:${address.port}`, "/readiness");
+
+    assert.equal(response.status, 503);
+    assert.equal(response.body.data?.status, "blocked");
+    assert.equal(response.body.data?.checks.some((check) => check.key === "redis" && check.status === "fail"), true);
+  } finally {
+    server.close();
+    await once(server, "close");
+    await repository.disconnect();
+  }
+});
+
+test("phase 18 rate limits repeated invalid auth attempts", async () => {
+  await withServer(async (baseUrl) => {
+    let lastStatus = 0;
+    for (let index = 0; index < 11; index += 1) {
+      const response = await requestJson(baseUrl, "/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username: "missing_user", password: "secret12" })
+      });
+      lastStatus = response.status;
+    }
+
+    assert.equal(lastStatus, 429);
+  });
+});
+
+test("phase 18 rejects mismatched external payment reservations", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "paymentguard");
+    const reserved = await requestJson(baseUrl, "/payments/reserve", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", amountCents: 1, platformCoins: 1 })
+    });
+
+    assert.equal(reserved.status, 400);
+    assert.equal(reserved.body.error?.code, "VALIDATION_ERROR");
+  });
+});
+
 test("lists wallet and buys shop products with idempotent platform coin deduction", async () => {
   await withServer(async (baseUrl) => {
     const { token, profile } = await createPlayerSession(baseUrl, "shopbuyer");
