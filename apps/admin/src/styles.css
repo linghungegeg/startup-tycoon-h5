@@ -554,7 +554,7 @@ tbody tr {
 }
 
 .activity-draft-review-filter {
-  grid-template-columns: minmax(260px, 1fr) auto;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.4fr) auto;
   margin-bottom: 0;
   border-width: 1px 0;
   border-radius: 0;

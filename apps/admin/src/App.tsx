@@ -356,7 +356,7 @@ type ActivityDraftValidation = {
   };
 };
 
-type ActivityDraftStatus = "draft" | "pending_review" | "approved" | "rejected";
+type ActivityDraftStatus = "draft" | "pending_review" | "approved" | "rejected" | "published";
 
 type ActivityDraftRecord = {
   id: string;
@@ -390,6 +390,18 @@ type ActivityDraftActionResult = {
   draft: ActivityDraftRecord;
   validation: ActivityDraftValidation;
   auditLogId: string | null;
+};
+
+type ActivityDraftPublishResult = ActivityDraftActionResult & {
+  activity: {
+    id: string;
+    name: string;
+    leaderboardKey: string;
+    rewardCash: number;
+    rewardReputation: number;
+    rewardPoints: number;
+    rewardTitleId: string | null;
+  };
 };
 
 type OperationConfigAlertAction = AuditResult & {
@@ -531,6 +543,7 @@ const activityDraftStatusLabel = (status: ActivityDraftStatus): string => {
   if (status === "draft") return "草稿";
   if (status === "pending_review") return "待审核";
   if (status === "approved") return "已通过";
+  if (status === "published") return "已发布";
   return "已驳回";
 };
 const readDraftInteger = (value: string): number => {
@@ -719,8 +732,9 @@ export default function App() {
   });
   const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
-  const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0 } });
+  const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
   const [activityDraftReviewReason, setActivityDraftReviewReason] = useState("运营复核通过");
+  const [activityDraftPublishReason, setActivityDraftPublishReason] = useState("发布前二次确认：配置、档期、奖励边界均已复核");
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
   const [alertStatus, setAlertStatus] = useState("");
@@ -1038,8 +1052,9 @@ export default function App() {
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
-    setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0 } });
+    setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
     setActivityDraftReviewReason("运营复核通过");
+    setActivityDraftPublishReason("发布前二次确认：配置、档期、奖励边界均已复核");
     setAlertLevel("");
     setAlertType("");
     setAnalytics(null);
@@ -1569,6 +1584,34 @@ export default function App() {
     await refreshActivityDrafts();
     const auditText = result.data.auditLogId === null ? "重复操作未新增审计记录" : `审计记录：${result.data.auditLogId}`;
     setActionMessage(`${result.data.draft.name} 已更新为${activityDraftStatusLabel(result.data.draft.status)}，${auditText}`);
+  };
+
+  const publishActivityDraft = async (draft: ActivityDraftRecord): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const reason = activityDraftPublishReason.trim();
+    if (reason.length < 2 || reason.length > 180) {
+      setError("发布确认说明需要 2-180 个字符。");
+      return;
+    }
+    const result = await apiRequest<ActivityDraftPublishResult>(
+      `/admin/activity-config-drafts/${encodeURIComponent(draft.id)}/publish`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason })
+      },
+      session.token
+    );
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setError("");
+    setActivityDraftValidation(result.data.validation);
+    await refreshActivityDrafts();
+    const auditText = result.data.auditLogId === null ? "重复发布未新增审计记录" : `审计记录：${result.data.auditLogId}`;
+    setActionMessage(`${result.data.activity.name} 已发布到正式活动配置，${auditText}`);
   };
 
   const refreshOperationConfigAlerts = async (): Promise<void> => {
@@ -2521,7 +2564,7 @@ export default function App() {
             <section className="table-section compact-table" aria-label="活动草案校验">
               <div className="table-toolbar">
                 <strong>活动草案审批</strong>
-                <span>共 {activityDrafts.summary.total} 个草案，待审核 {activityDrafts.summary.pending_review} 个</span>
+                <span>共 {activityDrafts.summary.total} 个草案，待审核 {activityDrafts.summary.pending_review} 个，已发布 {activityDrafts.summary.published} 个</span>
               </div>
               <form className="filter-bar activity-draft-filter" onSubmit={(event) => void submitActivityDraftValidation(event)}>
                 <label>
@@ -2624,6 +2667,10 @@ export default function App() {
                   审批说明
                   <input onChange={(event) => setActivityDraftReviewReason(event.target.value)} value={activityDraftReviewReason} />
                 </label>
+                <label>
+                  发布确认
+                  <input onChange={(event) => setActivityDraftPublishReason(event.target.value)} value={activityDraftPublishReason} />
+                </label>
                 <button className="secondary-button" onClick={() => void refreshActivityDrafts()} type="button">刷新草案</button>
               </div>
               <div className="table-wrap">
@@ -2670,7 +2717,10 @@ export default function App() {
                                 <button className="secondary-button" onClick={() => void handleActivityDraftAction(draft, "reject")} type="button">驳回</button>
                               </>
                             )}
-                            {draft.status !== "draft" && draft.status !== "pending_review" && <span>{draft.reviewNote ?? "已完成复核"}</span>}
+                            {draft.status === "approved" && (
+                              <button onClick={() => void publishActivityDraft(draft)} type="button">安全发布</button>
+                            )}
+                            {draft.status !== "draft" && draft.status !== "pending_review" && draft.status !== "approved" && <span>{draft.reviewNote ?? "已完成复核"}</span>}
                           </div>
                         </td>
                       </tr>

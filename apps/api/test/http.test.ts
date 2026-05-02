@@ -1872,7 +1872,7 @@ const createTestRepository = (): GameRepository => {
     rewardReputation: number;
     rewardPoints: number;
     rewardTitleId: string | null;
-    status: "draft" | "pending_review" | "approved" | "rejected";
+    status: "draft" | "pending_review" | "approved" | "rejected" | "published";
     createdByAdminUserId: string;
     updatedByAdminUserId: string;
     submittedAt: Date | null;
@@ -2861,7 +2861,8 @@ const createTestRepository = (): GameRepository => {
           draft: rows.filter((draft) => draft.status === "draft").length,
           pending_review: rows.filter((draft) => draft.status === "pending_review").length,
           approved: rows.filter((draft) => draft.status === "approved").length,
-          rejected: rows.filter((draft) => draft.status === "rejected").length
+          rejected: rows.filter((draft) => draft.status === "rejected").length,
+          published: rows.filter((draft) => draft.status === "published").length
         }
       };
     },
@@ -2960,6 +2961,65 @@ const createTestRepository = (): GameRepository => {
       });
       const record = toAdminActivityConfigDraftRecord(updated, activityConfigs, today);
       return { draft: record, validation: record.validation, auditLogId };
+    },
+    async publishAdminActivityConfigDraft(adminUserId, draftId, reason, today) {
+      const draft = activityDrafts.get(draftId);
+      if (draft === undefined) {
+        return "ACTIVITY_DRAFT_NOT_FOUND";
+      }
+      if (draft.status === "published") {
+        const activity = activityConfigs.find((item) => item.id === draft.id);
+        if (activity === undefined) {
+          return "ACTIVITY_DRAFT_NOT_FOUND";
+        }
+        const currentRecord = toAdminActivityConfigDraftRecord(draft, activityConfigs.filter((item) => item.id !== draft.id), today);
+        return {
+          draft: currentRecord,
+          validation: currentRecord.validation,
+          activity: { ...activity, seasonId: seasonConfig.id, sortOrder: activityConfigs.findIndex((item) => item.id === activity.id) * 10 },
+          auditLogId: null
+        };
+      }
+      if (draft.status !== "approved") {
+        return "ACTIVITY_DRAFT_NOT_APPROVED";
+      }
+      const currentRecord = toAdminActivityConfigDraftRecord(draft, activityConfigs, today);
+      if (!currentRecord.validation.summary.isValid) {
+        return "ACTIVITY_DRAFT_VALIDATION_FAILED";
+      }
+      const now = new Date();
+      const activity = {
+        id: draft.id,
+        name: draft.name,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        leaderboardKey: draft.leaderboardKey,
+        targetScore: draft.targetScore,
+        rewardCash: draft.rewardCash,
+        rewardReputation: draft.rewardReputation,
+        rewardPoints: draft.rewardPoints,
+        rewardTitleId: draft.rewardTitleId
+      };
+      activityConfigs.push(activity);
+      const updated = { ...draft, status: "published" as const, updatedByAdminUserId: adminUserId, updatedAt: now };
+      activityDrafts.set(draftId, updated);
+      const auditLogId = `audit-activity-draft-publish-${adminAuditLogs.length + 1}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_activity_draft_publish",
+        targetType: "activity_config_draft",
+        targetId: draftId,
+        detail: JSON.stringify({ activityId: updated.id, reason, status: updated.status }),
+        createdAt: now.toISOString()
+      });
+      const record = toAdminActivityConfigDraftRecord(updated, activityConfigs.filter((item) => item.id !== draft.id), today);
+      return {
+        draft: record,
+        validation: record.validation,
+        activity: { ...activity, seasonId: seasonConfig.id, sortOrder: (activityConfigs.length - 1) * 10 },
+        auditLogId
+      };
     },
     async getAdminOperationConfigAlerts(today) {
       const rewardEntries = [...leaderboardRewards].map((key) => {
@@ -11072,6 +11132,131 @@ test("phase 24 admin activity drafts persist review workflow without publishing 
     assert.equal(auditLogs.body.data?.rows.filter((log) => log.action === "admin_activity_draft_submit").length, 2);
     assert.equal(auditLogs.body.data?.rows.filter((log) => log.action === "admin_activity_draft_approve").length, 1);
     assert.equal(auditLogs.body.data?.rows.filter((log) => log.action === "admin_activity_draft_reject").length, 1);
+  });
+});
+
+test("phase 24 admin activity draft publish requires approval and is idempotent", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "activitydraftpublish");
+    const playerProfileBefore = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(playerProfileBefore.status, 200, JSON.stringify(playerProfileBefore.body));
+
+    const unauthenticated = await requestJson(baseUrl, "/admin/activity-config-drafts/missing-draft/publish", {
+      method: "POST",
+      body: JSON.stringify({ reason: "发布前二次确认" })
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const configsBefore = await requestJson<{ activities: Array<{ id: string }> }>(baseUrl, "/admin/config-center", {
+      headers: adminHeaders
+    });
+    assert.equal(configsBefore.status, 200, JSON.stringify(configsBefore.body));
+    assert.equal(configsBefore.body.data?.activities.some((activity) => activity.id === "creator-economy-publish"), false);
+
+    const draft = await requestJson<{ draft: { id: string; status: string }; auditLogId: string }>(baseUrl, "/admin/activity-config-drafts", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        id: "creator-economy-publish",
+        name: "创作者经济发布周",
+        startDate: "2026-07-15",
+        endDate: "2026-07-28",
+        leaderboardKey: "activity-creator-economy-publish",
+        targetScore: 260,
+        rewardReputation: 120,
+        rewardPoints: 160,
+        rewardTitleId: "season-creator-builder",
+        rewardCash: 0,
+        rewardPlatformCoins: 0
+      })
+    });
+    assert.equal(draft.status, 200, JSON.stringify(draft.body));
+    assert.equal(draft.body.data?.draft.status, "draft");
+
+    const publishDraftStatus = await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/publish`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "发布前二次确认" })
+    });
+    assert.equal(publishDraftStatus.status, 409);
+    assert.equal(publishDraftStatus.body.error?.code, "ACTIVITY_DRAFT_NOT_APPROVED");
+
+    const submitted = await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/submit`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "提交发布审核" })
+    });
+    assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+    const approved = await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/approve`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "审批通过，等待发布确认" })
+    });
+    assert.equal(approved.status, 200, JSON.stringify(approved.body));
+
+    const published = await requestJson<{
+      draft: { status: string };
+      activity: { id: string; name: string; leaderboardKey: string; rewardCash: number; rewardPoints: number };
+      auditLogId: string | null;
+    }>(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/publish`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "发布前二次确认：配置、档期、奖励边界均已复核" })
+    });
+    assert.equal(published.status, 200, JSON.stringify(published.body));
+    assert.equal(published.body.data?.draft.status, "published");
+    assert.equal(published.body.data?.activity.id, "creator-economy-publish");
+    assert.equal(published.body.data?.activity.rewardCash, 0);
+    assert.equal(published.body.data?.activity.rewardPoints, 160);
+    assert.ok((published.body.data?.auditLogId ?? "").length > 0);
+
+    const publishedAgain = await requestJson<{
+      draft: { status: string };
+      activity: { id: string };
+      auditLogId: string | null;
+    }>(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/publish`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "重复发布幂等确认" })
+    });
+    assert.equal(publishedAgain.status, 200, JSON.stringify(publishedAgain.body));
+    assert.equal(publishedAgain.body.data?.draft.status, "published");
+    assert.equal(publishedAgain.body.data?.activity.id, "creator-economy-publish");
+    assert.equal(publishedAgain.body.data?.auditLogId, null);
+
+    const configsAfter = await requestJson<{ activities: Array<{ id: string; leaderboardKey: string; rewardLabel: string }> }>(baseUrl, "/admin/config-center", {
+      headers: adminHeaders
+    });
+    assert.equal(configsAfter.status, 200, JSON.stringify(configsAfter.body));
+    const publishedActivities = configsAfter.body.data?.activities.filter((activity) => activity.id === "creator-economy-publish") ?? [];
+    assert.equal(publishedActivities.length, 1);
+    assert.equal(publishedActivities[0]?.leaderboardKey, "activity-creator-economy-publish");
+    assert.equal(publishedActivities[0]?.rewardLabel.includes("平台币"), false);
+
+    const playerProfileAfter = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(playerProfileAfter.status, 200, JSON.stringify(playerProfileAfter.body));
+    assert.equal(playerProfileAfter.body.data?.cash, playerProfileBefore.body.data?.cash);
+    assert.equal(playerProfileAfter.body.data?.platformCoins, playerProfileBefore.body.data?.platformCoins);
+
+    const auditLogs = await requestJson<{ rows: Array<{ action: string; targetType: string; targetId: string | null }> }>(
+      baseUrl,
+      "/admin/audit-logs?targetType=activity_config_draft",
+      { headers: adminHeaders }
+    );
+    assert.equal(auditLogs.status, 200, JSON.stringify(auditLogs.body));
+    assert.equal(auditLogs.body.data?.rows.filter((log) => log.action === "admin_activity_draft_publish").length, 1);
   });
 });
 

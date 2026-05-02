@@ -808,7 +808,7 @@ export const createApiServer = (
       return;
     }
 
-    const adminActivityDraftActionMatch = request.method === "POST" ? /^\/admin\/activity-config-drafts\/([^/]+)\/(submit|approve|reject)$/.exec(url.pathname) : null;
+    const adminActivityDraftActionMatch = request.method === "POST" ? /^\/admin\/activity-config-drafts\/([^/]+)\/(submit|approve|reject|publish)$/.exec(url.pathname) : null;
     if (adminActivityDraftActionMatch !== null) {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
@@ -832,7 +832,9 @@ export const createApiServer = (
       const action = adminActivityDraftActionMatch[2];
       const result = action === "submit"
         ? await repository.submitAdminActivityConfigDraft(admin.id, draftId, reason, readToday(request))
-        : await repository.reviewAdminActivityConfigDraft(admin.id, draftId, action === "approve" ? "approved" : "rejected", reason, readToday(request));
+        : action === "publish"
+          ? await repository.publishAdminActivityConfigDraft(admin.id, draftId, reason, readToday(request))
+          : await repository.reviewAdminActivityConfigDraft(admin.id, draftId, action === "approve" ? "approved" : "rejected", reason, readToday(request));
       if (result === "ACTIVITY_DRAFT_NOT_FOUND") {
         sendJson(response, 404, failure("ACTIVITY_DRAFT_NOT_FOUND", "Activity config draft was not found.", traceId));
         return;
@@ -843,6 +845,14 @@ export const createApiServer = (
       }
       if (result === "ACTIVITY_DRAFT_NOT_PENDING") {
         sendJson(response, 409, failure("ACTIVITY_DRAFT_NOT_PENDING", "Activity config draft is not pending review.", traceId));
+        return;
+      }
+      if (result === "ACTIVITY_DRAFT_NOT_APPROVED") {
+        sendJson(response, 409, failure("ACTIVITY_DRAFT_NOT_APPROVED", "Activity config draft is not approved for publish.", traceId));
+        return;
+      }
+      if (result === "ACTIVITY_SEASON_NOT_FOUND") {
+        sendJson(response, 409, failure("ACTIVITY_SEASON_NOT_FOUND", "No season config is available for activity publish.", traceId));
         return;
       }
 
