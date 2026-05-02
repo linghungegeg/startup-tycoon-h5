@@ -2950,6 +2950,28 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/long-term-goals") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const goals = await repository.getLongTermGoals(account.id, serverId, readToday(request));
+      if (goals === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(goals, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/company/growth") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildLongTermGoalsRecord, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -40,6 +40,7 @@ import type {
   LoanActionRecord,
   LoanCenterRecord,
   LoanRecord,
+  LongTermGoalsRecord,
   MarketActionRecord,
   MarketCenterRecord,
   PlayerMarketRecord,
@@ -3766,6 +3767,43 @@ const createTestRepository = (): GameRepository => {
     async getCompanyGrowth(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       return profile === undefined ? "PLAYER_NOT_FOUND" : readCompanyGrowthRecord(profile);
+    },
+    async getLongTermGoals(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild] = await Promise.all([
+        this.getCompanyGrowth(accountId, serverId),
+        this.listTasks(accountId, serverId, today),
+        this.getSeasonCenter(accountId, serverId, today),
+        this.getLeaderboards(accountId, serverId, today),
+        this.getCrossServerCenter(accountId, serverId, today),
+        this.listTitles(accountId, serverId, today),
+        this.listAchievements(accountId, serverId),
+        this.getGuildCenter(accountId, serverId, today)
+      ]);
+      if (
+        growth === "PLAYER_NOT_FOUND" ||
+        tasks === "PLAYER_NOT_FOUND" ||
+        leaderboards === "PLAYER_NOT_FOUND" ||
+        titles === "PLAYER_NOT_FOUND" ||
+        achievements === "PLAYER_NOT_FOUND" ||
+        guild === "PLAYER_NOT_FOUND"
+      ) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return buildLongTermGoalsRecord({
+        profile,
+        growth,
+        tasks,
+        season: season === "PLAYER_NOT_FOUND" || season === "SEASON_NOT_FOUND" ? null : season,
+        leaderboards,
+        crossServer: crossServer === "PLAYER_NOT_FOUND" || crossServer === "CROSS_SERVER_GROUP_NOT_FOUND" ? null : crossServer,
+        titles,
+        achievements,
+        guild
+      });
     },
     async claimFullLevelChest(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -10759,6 +10797,43 @@ test("phase 24 activity content pool rotates multiple startup activities", async
     assert.equal(cashflowConfig?.rewardBoundary, "leaderboard_no_cash_no_platform_coins");
     assert.equal(configs.body.data?.activities.find((activity) => activity.id === "compliance-ops-week")?.status, "upcoming");
     assert.ok(configs.body.data?.activityShopItems.some((item) => item.id === "activity-founder-title-shard" && item.isActive));
+  });
+});
+
+test("phase 25 long-term goals aggregates today week season and long-term targets", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "longtermgoals");
+    const headers = { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-10" };
+
+    const unauthenticated = await requestJson(baseUrl, "/long-term-goals?serverId=s1", {
+      headers: { "x-server-date": "2026-05-10" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const missingServer = await requestJson(baseUrl, "/long-term-goals", { headers });
+    assert.equal(missingServer.status, 400);
+    assert.equal(missingServer.body.error?.code, "VALIDATION_ERROR");
+
+    const goals = await requestJson<LongTermGoalsRecord>(baseUrl, "/long-term-goals?serverId=s1", { headers });
+    assert.equal(goals.status, 200, JSON.stringify(goals.body));
+    assert.deepEqual(
+      goals.body.data?.sections.map((section) => section.key),
+      ["today", "week", "season", "longTerm"]
+    );
+
+    const allGoalIds = new Set(goals.body.data?.sections.flatMap((section) => section.goals.map((goal) => goal.id)));
+    assert.ok(allGoalIds.has("today-daily-task"));
+    assert.ok(allGoalIds.has("week-guild"));
+    assert.ok(allGoalIds.has("season-pass"));
+    assert.ok(allGoalIds.has("long-company-growth"));
+    assert.ok(allGoalIds.has("long-achievements"));
+    assert.ok(allGoalIds.has("long-titles"));
+    assert.equal(goals.body.data?.summaries.guildJoined, false);
+    assert.equal(goals.body.data?.summaries.crossServerRegistered, false);
+    assert.equal(goals.body.data?.profile.companyLevel, 1);
+    assert.equal(goals.body.data?.profile.maxLevel, 80);
+    assert.ok((goals.body.data?.summaries.seasonActiveActivityCount ?? 0) >= 1);
   });
 });
 

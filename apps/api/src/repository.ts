@@ -114,6 +114,58 @@ export type CompanyGrowthRecord = {
   };
 };
 
+export type LongTermGoalRecord = {
+  id: string;
+  title: string;
+  description: string;
+  source:
+    | "task"
+    | "finance"
+    | "seasonTask"
+    | "activity"
+    | "activityShop"
+    | "guild"
+    | "crossServer"
+    | "achievement"
+    | "title"
+    | "companyGrowth";
+  sourceId: string;
+  progress: number;
+  target: number;
+  isCompleted: boolean;
+  isClaimable: boolean;
+  statusLabel: string;
+  rewardLabel: string | null;
+  action: {
+    label: string;
+    href: string;
+  };
+};
+
+export type LongTermGoalsRecord = {
+  profile: {
+    companyLevel: number;
+    maxLevel: number;
+    companyExperience: number;
+    reputation: number;
+  };
+  sections: Array<{
+    key: "today" | "week" | "season" | "longTerm";
+    title: string;
+    summary: string;
+    goals: LongTermGoalRecord[];
+  }>;
+  summaries: {
+    todayClaimableCount: number;
+    seasonActiveActivityCount: number;
+    achievementCompletedCount: number;
+    titleCount: number;
+    guildJoined: boolean;
+    crossServerRegistered: boolean;
+    fullLevelChestClaimableCount: number;
+  };
+};
+
 export type KnowledgeLinkRecord = {
   id: string;
   title: string;
@@ -1756,6 +1808,7 @@ export type GameRepository = {
   getProfile(accountId: string, serverId: string): Promise<PlayerProfileRecord | undefined>;
   createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
   getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
+  getLongTermGoals(accountId: string, serverId: string, today: string): Promise<LongTermGoalsRecord | "PLAYER_NOT_FOUND">;
   claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string, knowledgeId?: string | null): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_KNOWLEDGE_MISMATCH" | "KNOWLEDGE_LOCKED">;
@@ -3481,6 +3534,312 @@ const readCompanyGrowthRecord = (profile: PlayerProfileRecord, fullLevelChestCla
   };
 };
 
+const toGoalStatusLabel = (isCompleted: boolean, isClaimable: boolean): string => {
+  if (isClaimable) return "可领取";
+  return isCompleted ? "已完成" : "推进中";
+};
+
+const createLongTermGoal = (
+  goal: Omit<LongTermGoalRecord, "isCompleted" | "statusLabel"> & { isCompleted?: boolean }
+): LongTermGoalRecord => {
+  const isCompleted = goal.isCompleted ?? goal.progress >= goal.target;
+  return {
+    ...goal,
+    progress: Math.max(0, goal.progress),
+    target: Math.max(1, goal.target),
+    isCompleted,
+    statusLabel: toGoalStatusLabel(isCompleted, goal.isClaimable)
+  };
+};
+
+export const buildLongTermGoalsRecord = (input: {
+  profile: PlayerProfileRecord;
+  growth: CompanyGrowthRecord;
+  tasks: TaskRecord[];
+  season: SeasonCenterRecord | null;
+  leaderboards: LeaderboardCenterRecord | null;
+  crossServer: CrossServerCenterRecord | null;
+  titles: TitleCenterRecord;
+  achievements: AchievementRecord[];
+  guild: GuildCenterRecord | null;
+}): LongTermGoalsRecord => {
+  const dailyTask = input.tasks.find((task) => task.type === "daily" && !task.isClaimed) ?? input.tasks.find((task) => !task.isClaimed) ?? null;
+  const mainTask = input.tasks.find((task) => task.type === "main" && !task.isClaimed) ?? dailyTask;
+  const activeActivities = input.season?.activities.filter((activity) => activity.status === "active") ?? [];
+  const activityGoal = activeActivities.find((activity) => activity.isJoined) ?? activeActivities[0] ?? null;
+  const seasonTask = input.season?.tasks.find((task) => !task.isClaimed) ?? null;
+  const guildTask = input.guild?.tasks.find((task) => !task.isClaimed) ?? null;
+  const completedAchievements = input.achievements.filter((achievement) => achievement.isCompleted).length;
+  const claimableAchievements = input.achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
+  const activeTitleCount = input.titles.titles.filter((title) => !title.isExpired).length;
+
+  return {
+    profile: {
+      companyLevel: input.profile.companyLevel,
+      maxLevel: input.growth.maxLevel,
+      companyExperience: input.profile.companyExperience,
+      reputation: input.profile.reputation
+    },
+    sections: [
+      {
+        key: "today",
+        title: "今日建议",
+        summary: "今天做什么：优先处理可领取任务、现金流巡检、每日经营和活动参与。",
+        goals: [
+          createLongTermGoal({
+            id: "today-daily-task",
+            title: dailyTask?.title ?? "完成每日经营任务",
+            description: dailyTask?.description ?? "完成一次日常经营动作，维持公司节奏。",
+            source: "task",
+            sourceId: dailyTask?.id ?? "daily",
+            progress: dailyTask?.progress ?? 0,
+            target: dailyTask?.target ?? 1,
+            isClaimable: dailyTask?.isClaimable ?? false,
+            rewardLabel: dailyTask?.rewardLabel ?? null,
+            action: { label: dailyTask?.isClaimable ? "领取任务" : "查看任务", href: "#tasks" }
+          }),
+          createLongTermGoal({
+            id: "today-finance",
+            title: "检查财务状态",
+            description: `现金 ${input.profile.cash.toLocaleString("zh-CN")}，债务预警 ${input.profile.debtWarning}。`,
+            source: "finance",
+            sourceId: input.profile.id,
+            progress: input.profile.monthlyIncome,
+            target: Math.max(1, input.profile.monthlyExpense),
+            isClaimable: false,
+            isCompleted: input.profile.monthlyIncome >= input.profile.monthlyExpense,
+            rewardLabel: null,
+            action: { label: "查看财务", href: "#finance" }
+          }),
+          createLongTermGoal({
+            id: "today-main-task",
+            title: mainTask?.title ?? "推进主线履历",
+            description: mainTask?.description ?? "完成主线或支线目标，积累公司经验。",
+            source: "task",
+            sourceId: mainTask?.id ?? "main",
+            progress: mainTask?.progress ?? 0,
+            target: mainTask?.target ?? 1,
+            isClaimable: mainTask?.isClaimable ?? false,
+            rewardLabel: mainTask?.rewardLabel ?? null,
+            action: { label: mainTask?.isClaimable ? "领取主线" : "查看主线", href: "#tasks" }
+          }),
+          createLongTermGoal({
+            id: "today-activity",
+            title: activityGoal?.name ?? "参与赛季活动",
+            description: activityGoal === null ? "赛季活动开放后参与，获取活动积分和荣誉进度。" : `${activityGoal.isJoined ? "已参与" : "待参与"}，目标 ${activityGoal.targetScore} 分。`,
+            source: "activity",
+            sourceId: activityGoal?.id ?? "activity",
+            progress: activityGoal?.score ?? 0,
+            target: activityGoal?.targetScore ?? 1,
+            isClaimable: activityGoal !== null && activityGoal.score >= activityGoal.targetScore && !activityGoal.rewardClaimed,
+            rewardLabel: "活动积分与荣誉",
+            action: { label: "查看活动", href: "#season" }
+          })
+        ]
+      },
+      {
+        key: "week",
+        title: "本周目标",
+        summary: "本周追什么：经营报告、活动榜、商会协作和项目产品推进。",
+        goals: [
+          createLongTermGoal({
+            id: "week-report",
+            title: "经营报告复盘",
+            description: `第 ${input.profile.financeMonth} 月，估值 ${input.profile.valuation.toLocaleString("zh-CN")}。`,
+            source: "finance",
+            sourceId: input.profile.id,
+            progress: input.profile.monthlyIncome,
+            target: Math.max(1, input.profile.monthlyExpense),
+            isClaimable: false,
+            isCompleted: input.profile.monthlyIncome >= input.profile.monthlyExpense,
+            rewardLabel: null,
+            action: { label: "查看报告", href: "#finance" }
+          }),
+          createLongTermGoal({
+            id: "week-activity-board",
+            title: "活动榜追赶",
+            description: `${input.leaderboards?.activityBoards.length ?? 0} 张活动榜进行中。`,
+            source: "activity",
+            sourceId: "activity-boards",
+            progress: input.leaderboards?.activityBoards.length ?? 0,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "榜单荣誉",
+            action: { label: "查看榜单", href: "#leaderboard" }
+          }),
+          createLongTermGoal({
+            id: "week-guild",
+            title: input.guild?.guild === null || input.guild === null ? "加入商会协作" : "商会贡献",
+            description: input.guild?.guild === null || input.guild === null ? "加入商会后参与每日协作和商会项目。" : `今日活跃 ${input.guild.todayActiveMemberCount} 人，协作 ${input.guild.todayCollaborationCount} 次。`,
+            source: "guild",
+            sourceId: input.guild?.guild?.id ?? "guild",
+            progress: guildTask?.progress ?? (input.guild?.todayCollaborationCount ?? 0),
+            target: guildTask?.target ?? 1,
+            isClaimable: guildTask?.isClaimable ?? false,
+            rewardLabel: guildTask === null ? null : `贡献 +${guildTask.contributionReward}`,
+            action: { label: input.guild?.guild === null || input.guild === null ? "前往商会" : "查看商会", href: "#guild" }
+          }),
+          createLongTermGoal({
+            id: "week-business",
+            title: "项目与产品推进",
+            description: "用主线任务承接项目、产品、市场动作，避免经营停滞。",
+            source: "task",
+            sourceId: mainTask?.id ?? "business",
+            progress: mainTask?.progress ?? 0,
+            target: mainTask?.target ?? 1,
+            isClaimable: mainTask?.isClaimable ?? false,
+            rewardLabel: mainTask?.rewardLabel ?? null,
+            action: { label: "查看经营", href: "#business" }
+          })
+        ]
+      },
+      {
+        key: "season",
+        title: "赛季目标",
+        summary: "赛季争什么：通行证进度、活动积分、活动商店和限定称号。",
+        goals: [
+          createLongTermGoal({
+            id: "season-pass",
+            title: "通行证进度",
+            description: input.season?.season.pass.isPurchased ? "通行证已开通，继续完成赛季任务。" : "通行证未开通，仍可查看赛季任务与普通进度。",
+            source: "seasonTask",
+            sourceId: input.season?.season.id ?? "season",
+            progress: input.season?.season.points ?? 0,
+            target: 100,
+            isClaimable: false,
+            rewardLabel: null,
+            action: { label: "查看通行证", href: "#pass" }
+          }),
+          createLongTermGoal({
+            id: "season-activity-points",
+            title: seasonTask?.title ?? "活动积分积累",
+            description: seasonTask?.description ?? "完成赛季任务，累积活动积分。",
+            source: "seasonTask",
+            sourceId: seasonTask?.id ?? "season-task",
+            progress: seasonTask?.progress ?? (input.season?.season.points ?? 0),
+            target: seasonTask?.target ?? 100,
+            isClaimable: false,
+            rewardLabel: seasonTask === null ? "活动积分" : `积分 +${seasonTask.rewardPoints}`,
+            action: { label: "查看赛季", href: "#season" }
+          }),
+          createLongTermGoal({
+            id: "season-activity-shop",
+            title: "活动商店兑换",
+            description: `${input.season?.shopItems.filter((item) => item.isAvailable).length ?? 0} 个商品可兑换。`,
+            source: "activityShop",
+            sourceId: "activity-shop",
+            progress: input.season?.shopItems.filter((item) => item.isAvailable).length ?? 0,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "活动积分兑换",
+            action: { label: "查看商店", href: "#season" }
+          }),
+          createLongTermGoal({
+            id: "season-title",
+            title: "赛季称号",
+            description: input.titles.equippedTitle === null ? "完成活动、成就或榜单目标后解锁称号。" : `已装备：${input.titles.equippedTitle.name}。`,
+            source: "title",
+            sourceId: input.titles.equippedTitle?.id ?? "season-title",
+            progress: activeTitleCount,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "称号荣誉",
+            action: { label: "查看称号", href: "#titles" }
+          })
+        ]
+      },
+      {
+        key: "longTerm",
+        title: "长期目标",
+        summary: "长期收集什么：公司等级、满级宝箱、成就、称号、跨服和商会历史。",
+        goals: [
+          createLongTermGoal({
+            id: "long-company-growth",
+            title: "公司等级成长",
+            description: `LV.${input.profile.companyLevel}/${input.growth.maxLevel}，持续积累公司经验。`,
+            source: "companyGrowth",
+            sourceId: input.profile.id,
+            progress: input.profile.companyLevel,
+            target: input.growth.maxLevel,
+            isClaimable: false,
+            rewardLabel: null,
+            action: { label: "查看成长", href: "#company-growth" }
+          }),
+          createLongTermGoal({
+            id: "long-full-level-chest",
+            title: "满级宝箱",
+            description: `可领取 ${input.growth.fullLevelChest.claimableCount} 个，满级后每 ${input.growth.fullLevelChest.requiredExperience} 经验生成 1 个。`,
+            source: "companyGrowth",
+            sourceId: "full-level-chest",
+            progress: input.growth.fullLevelChest.progressExperience,
+            target: input.growth.fullLevelChest.requiredExperience,
+            isClaimable: input.growth.fullLevelChest.claimableCount > 0,
+            rewardLabel: "声望与行动力",
+            action: { label: "查看宝箱", href: "#company-growth" }
+          }),
+          createLongTermGoal({
+            id: "long-achievements",
+            title: "成就收集",
+            description: `已完成 ${completedAchievements}/${input.achievements.length}，${claimableAchievements} 个待领取。`,
+            source: "achievement",
+            sourceId: "achievements",
+            progress: completedAchievements,
+            target: Math.max(1, input.achievements.length),
+            isClaimable: claimableAchievements > 0,
+            rewardLabel: "成就与知识卡",
+            action: { label: "查看成就", href: "#achievements" }
+          }),
+          createLongTermGoal({
+            id: "long-titles",
+            title: "称号收藏",
+            description: input.titles.equippedTitle === null ? `已拥有 ${activeTitleCount} 个有效称号。` : `已装备：${input.titles.equippedTitle.name}。`,
+            source: "title",
+            sourceId: "titles",
+            progress: activeTitleCount,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "称号加成",
+            action: { label: "管理称号", href: "#titles" }
+          }),
+          createLongTermGoal({
+            id: "long-cross-server",
+            title: "跨服创业履历",
+            description: input.crossServer?.isRegistered ? `${input.crossServer.group.name} 已报名。` : "报名跨服创业大赛后沉淀跨服履历。",
+            source: "crossServer",
+            sourceId: input.crossServer?.group.id ?? "cross-server",
+            progress: input.crossServer?.isRegistered ? 1 : 0,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "跨服荣誉",
+            action: { label: "查看跨服", href: "#cross-server" }
+          }),
+          createLongTermGoal({
+            id: "long-guild-history",
+            title: "商会历史",
+            description: input.guild?.guild === null || input.guild === null ? "加入商会后记录贡献、项目和赛季历史。" : `${input.guild.guild.name} LV.${input.guild.guild.level}，贡献 ${input.guild.guild.contributionScore}。`,
+            source: "guild",
+            sourceId: input.guild?.guild?.id ?? "guild-history",
+            progress: input.guild?.guild === null || input.guild === null ? 0 : input.guild.guild.contributionScore,
+            target: 1,
+            isClaimable: false,
+            rewardLabel: "商会履历",
+            action: { label: "查看商会", href: "#guild" }
+          })
+        ]
+      }
+    ],
+    summaries: {
+      todayClaimableCount: input.tasks.filter((task) => task.isClaimable && !task.isClaimed).length,
+      seasonActiveActivityCount: activeActivities.length,
+      achievementCompletedCount: completedAchievements,
+      titleCount: activeTitleCount,
+      guildJoined: input.guild?.guild !== null && input.guild !== null,
+      crossServerRegistered: input.crossServer?.isRegistered ?? false,
+      fullLevelChestClaimableCount: input.growth.fullLevelChest.claimableCount
+    }
+  };
+};
+
 const readActionPowerRecoveredAt = (profile: { actionPowerRecoveredAt: Date | string }): Date =>
   profile.actionPowerRecoveredAt instanceof Date ? profile.actionPowerRecoveredAt : new Date(profile.actionPowerRecoveredAt);
 
@@ -4819,6 +5178,46 @@ export const createPrismaGameRepository = (
       }
     });
     return readCompanyGrowthRecord(profile, claimedCount);
+  },
+
+  async getLongTermGoals(accountId, serverId, today) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild] = await Promise.all([
+      this.getCompanyGrowth(accountId, serverId),
+      this.listTasks(accountId, serverId, today),
+      this.getSeasonCenter(accountId, serverId, today),
+      this.getLeaderboards(accountId, serverId, today),
+      this.getCrossServerCenter(accountId, serverId, today),
+      this.listTitles(accountId, serverId, today),
+      this.listAchievements(accountId, serverId),
+      this.getGuildCenter(accountId, serverId, today)
+    ]);
+    if (
+      growth === "PLAYER_NOT_FOUND" ||
+      tasks === "PLAYER_NOT_FOUND" ||
+      leaderboards === "PLAYER_NOT_FOUND" ||
+      titles === "PLAYER_NOT_FOUND" ||
+      achievements === "PLAYER_NOT_FOUND" ||
+      guild === "PLAYER_NOT_FOUND"
+    ) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    return buildLongTermGoalsRecord({
+      profile,
+      growth,
+      tasks,
+      season: season === "PLAYER_NOT_FOUND" || season === "SEASON_NOT_FOUND" ? null : season,
+      leaderboards,
+      crossServer: crossServer === "PLAYER_NOT_FOUND" || crossServer === "CROSS_SERVER_GROUP_NOT_FOUND" ? null : crossServer,
+      titles,
+      achievements,
+      guild
+    });
   },
 
   async claimFullLevelChest(accountId, serverId) {

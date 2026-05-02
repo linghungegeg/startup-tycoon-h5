@@ -178,6 +178,48 @@ type CompanyGrowth = {
   };
 };
 
+type LongTermGoal = {
+  id: string;
+  title: string;
+  description: string;
+  source: string;
+  sourceId: string;
+  progress: number;
+  target: number;
+  isCompleted: boolean;
+  isClaimable: boolean;
+  statusLabel: string;
+  rewardLabel: string | null;
+  action: {
+    label: string;
+    href: string;
+  };
+};
+
+type LongTermGoals = {
+  profile: {
+    companyLevel: number;
+    maxLevel: number;
+    companyExperience: number;
+    reputation: number;
+  };
+  sections: Array<{
+    key: "today" | "week" | "season" | "longTerm";
+    title: string;
+    summary: string;
+    goals: LongTermGoal[];
+  }>;
+  summaries: {
+    todayClaimableCount: number;
+    seasonActiveActivityCount: number;
+    achievementCompletedCount: number;
+    titleCount: number;
+    guildJoined: boolean;
+    crossServerRegistered: boolean;
+    fullLevelChestClaimableCount: number;
+  };
+};
+
 type RandomTask = {
   id: string;
   configId: string;
@@ -1572,6 +1614,7 @@ function App() {
   const [claimingTaskId, setClaimingTaskId] = useState("");
   const [activeKnowledgeTask, setActiveKnowledgeTask] = useState<TaskItem | null>(null);
   const [companyGrowth, setCompanyGrowth] = useState<CompanyGrowth | null>(null);
+  const [longTermGoals, setLongTermGoals] = useState<LongTermGoals | null>(null);
   const [randomTaskCenter, setRandomTaskCenter] = useState<RandomTaskCenter | null>(null);
   const [randomTaskError, setRandomTaskError] = useState("");
   const [randomTaskNotice, setRandomTaskNotice] = useState("");
@@ -2533,13 +2576,14 @@ function App() {
   };
 
   const loadPhase14Center = async (token: string, nextServerId: string): Promise<void> => {
-    const [leaderboards, crossServer, titles, achievementList, knowledge, guild, guildHistoryResponse, crossGuildHistoryResponse] = await Promise.all([
+    const [leaderboards, crossServer, titles, achievementList, knowledge, guild, longTermGoalResponse, guildHistoryResponse, crossGuildHistoryResponse] = await Promise.all([
       apiRequest<LeaderboardCenter>(`/leaderboards?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<CrossServerCenter>(`/cross-server?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<TitleCenter>(`/titles?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<AchievementItem[]>(`/achievements?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<KnowledgeEntry[]>(`/knowledge?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<GuildCenter>(`/guild?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<LongTermGoals>(`/long-term-goals?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<GuildHistory>(`/guild/history?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<CrossServerGuildHistory>(`/cross-server/guild/history?serverId=${encodeURIComponent(nextServerId)}`, {}, token)
     ]);
@@ -2566,10 +2610,13 @@ function App() {
     if (guild.success) {
       setGuildCenter(guild.data);
     }
+    if (longTermGoalResponse.success) {
+      setLongTermGoals(longTermGoalResponse.data);
+    }
     setGuildHistory(guildHistoryResponse.success ? guildHistoryResponse.data : null);
     setCrossServerGuildHistory(crossGuildHistoryResponse.success ? crossGuildHistoryResponse.data : null);
 
-    const firstError = [leaderboards, crossServer, titles, achievementList, knowledge, guild].find((response) => !response.success);
+    const firstError = [leaderboards, crossServer, titles, achievementList, knowledge, guild, longTermGoalResponse].find((response) => !response.success);
     setPhase14Error(firstError && !firstError.success ? firstError.error.message : "");
   };
 
@@ -4712,6 +4759,66 @@ function App() {
                   <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
                     {phase14Error || phase14Notice}
                   </p>
+                )}
+                {longTermGoals && (
+                  <section className="glass-panel rounded-3xl p-4" aria-label="长期目标中心">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <strong className="block text-sm text-white font-black">长期目标</strong>
+                        <span className="text-[9px] text-slate-500">今天做什么，本周追什么，赛季争什么，长期收集什么</span>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                        LV.{longTermGoals.profile.companyLevel}/{longTermGoals.profile.maxLevel}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {longTermGoals.sections.map((section) => (
+                        <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3" key={section.key}>
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <strong className="text-xs text-white font-black">{section.title}</strong>
+                            <span className="text-[9px] text-business-gold">{section.goals.filter((goal) => goal.isCompleted || goal.isClaimable).length}/{section.goals.length}</span>
+                          </div>
+                          <p className="mb-3 text-[9px] leading-4 text-slate-500 font-bold">{section.summary}</p>
+                          <div className="space-y-2">
+                            {section.goals.slice(0, 3).map((goal) => (
+                              <div className="rounded-xl bg-slate-950/70 px-3 py-2" key={goal.id}>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="min-w-0 truncate text-[10px] text-slate-200 font-black">{goal.title}</span>
+                                  <span className={`shrink-0 text-[9px] font-black ${goal.isClaimable ? "text-business-gold" : goal.isCompleted ? "text-emerald-300" : "text-slate-500"}`}>
+                                    {goal.statusLabel}
+                                  </span>
+                                </div>
+                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                                  <div
+                                    className="h-full rounded-full bg-business-gold"
+                                    style={{ width: `${Math.min(100, Math.round((goal.progress / Math.max(1, goal.target)) * 100))}%` }}
+                                  />
+                                </div>
+                                <div className="mt-2 flex items-center justify-between gap-2">
+                                  <span className="min-w-0 truncate text-[9px] text-slate-500">{goal.description}</span>
+                                  <span className="shrink-0 text-[9px] text-business-gold">{goal.action.label}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-2xl bg-slate-900/60 p-2">
+                        <strong className="block text-sm text-white">{longTermGoals.summaries.achievementCompletedCount}</strong>
+                        <span className="text-[9px] text-slate-500">成就</span>
+                      </div>
+                      <div className="rounded-2xl bg-slate-900/60 p-2">
+                        <strong className="block text-sm text-white">{longTermGoals.summaries.titleCount}</strong>
+                        <span className="text-[9px] text-slate-500">称号</span>
+                      </div>
+                      <div className="rounded-2xl bg-slate-900/60 p-2">
+                        <strong className="block text-sm text-white">{longTermGoals.summaries.fullLevelChestClaimableCount}</strong>
+                        <span className="text-[9px] text-slate-500">宝箱</span>
+                      </div>
+                    </div>
+                  </section>
                 )}
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
