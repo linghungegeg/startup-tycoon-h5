@@ -44,6 +44,7 @@ import type {
   LoanCenterRecord,
   LoanRecord,
   LongTermGoalsRecord,
+  MailCenterRecord,
   MarketActionRecord,
   MarketCenterRecord,
   PlayerMarketRecord,
@@ -1814,6 +1815,7 @@ const createTestRepository = (): GameRepository => {
   const crossGuildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; groupId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const chatKeywords = defaultChatKeywords();
   const chatMessages: ChatMessageRecord[] = [];
+  const adminMailCompensations: Array<{ id: string; profileId: string; subject: string; body: string; platformCoins: number; reason: string; createdAt: string }> = [];
   const adminAuditLogs: Array<{ id: string; adminUsername: string; action: string; targetType: string; targetId: string | null; detail: string | null; createdAt: string }> = [
     {
       id: "audit-player-ban",
@@ -3724,8 +3726,17 @@ const createTestRepository = (): GameRepository => {
       const wallet = ensureWallet(profile);
       wallet.balance += platformCoins;
       profile.platformCoins = wallet.balance;
-      void body;
-      void reason;
+      profile.unreadMailCount += 1;
+      const mailId = randomUUID();
+      adminMailCompensations.unshift({
+        id: mailId,
+        profileId,
+        subject,
+        body,
+        platformCoins,
+        reason,
+        createdAt: new Date().toISOString()
+      });
 
       return {
         profile,
@@ -3736,7 +3747,7 @@ const createTestRepository = (): GameRepository => {
           ledgers: []
         },
         auditLogId: `${adminUserId}:${profileId}:${subject}`,
-        mailId: randomUUID()
+        mailId
       };
     },
     async updateAdminProfileStatus(adminUserId, profileId, status, reason) {
@@ -4122,6 +4133,64 @@ const createTestRepository = (): GameRepository => {
         achievements,
         guild
       });
+    },
+    async listMails(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const compensationMails = adminMailCompensations
+        .filter((mail) => mail.profileId === profile.id)
+        .map((mail) => ({
+          id: `admin:${mail.id}`,
+          profileId: profile.id,
+          channel: "compensation" as const,
+          subject: mail.subject,
+          body: mail.body,
+          rewardSummary: mail.platformCoins > 0 ? `平台币 +${mail.platformCoins}` : null,
+          platformCoins: mail.platformCoins,
+          createdAt: mail.createdAt,
+          isRead: profile.unreadMailCount === 0
+        }));
+      const rewardMails = [...leaderboardRewards]
+        .map((key) => {
+          const [profileId, boardKey, snapshotDate] = key.split(":");
+          return { profileId, boardKey, snapshotDate };
+        })
+        .filter((mail) => mail.profileId === profile.id)
+        .map((mail) => ({
+          id: `reward:${mail.boardKey}:${mail.snapshotDate}`,
+          profileId: profile.id,
+          channel: "reward" as const,
+          subject: `${mail.boardKey.includes("cross") ? "跨服榜" : "排行榜"}奖励`,
+          body: "奖励邮件记录用于展示投递结果，不在邮件中心重复发奖。",
+          rewardSummary: "荣誉奖励",
+          platformCoins: 0,
+          createdAt: `${mail.snapshotDate}T00:00:00.000Z`,
+          isRead: profile.unreadMailCount === 0
+        }));
+      const mails = [...compensationMails, ...rewardMails].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+      return {
+        summary: {
+          totalCount: mails.length,
+          unreadCount: profile.unreadMailCount
+        },
+        filters: {
+          channels: ["all", "system", "reward", "compensation"]
+        },
+        mails
+      };
+    },
+    async readAllMails(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const updatedCount = profile.unreadMailCount;
+      profile.unreadMailCount = 0;
+      const mailCenter = await this.listMails(accountId, serverId);
+      assert.notEqual(mailCenter, "PLAYER_NOT_FOUND");
+      return { updatedCount, mailCenter };
     },
     async getChatCenter(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -12853,5 +12922,92 @@ test("phase 28 chat channels filter local keyword library and audit admin change
     );
     assert.equal(logs.status, 200, JSON.stringify(logs.body));
     assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_chat_keyword_update"));
+  });
+});
+
+test("phase 28 chat keyword library blocks sensitive names with light normalization", () => {
+  const keywords = defaultChatKeywords();
+
+  const direct = maskChatContent("习近平", keywords);
+  assert.equal(direct.filterAction, "block");
+  assert.ok(direct.matchedKeywords.includes("习近平"));
+
+  const spaced = maskChatContent("习 近 平", keywords);
+  assert.equal(spaced.filterAction, "block");
+
+  const zeroWidth = maskChatContent("习\u200B近\u200B平", keywords);
+  assert.equal(zeroWidth.filterAction, "block");
+});
+
+test("phase 30 mail center aggregates mails and read-all is idempotent", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "phase30mail");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" };
+    const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
+    assert.equal(beforeProfile.status, 200);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const compensation = await requestJson<{ mailId: string }>(baseUrl, "/admin/mail/compensate", {
+      method: "POST",
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` },
+      body: JSON.stringify({
+        profileId: profile.id,
+        subject: "运营补偿",
+        body: "补偿邮件验收",
+        platformCoins: 30,
+        reason: "Phase 30 邮件中心验收"
+      })
+    });
+    assert.equal(compensation.status, 200, JSON.stringify(compensation.body));
+
+    const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/leaderboards/settle", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200);
+
+    const center = await requestJson<MailCenterRecord>(baseUrl, "/mails?serverId=s1", { headers });
+    assert.equal(center.status, 200, JSON.stringify(center.body));
+    assert.equal(center.body.data?.summary.unreadCount, 2);
+    assert.deepEqual(center.body.data?.filters.channels, ["all", "system", "reward", "compensation"]);
+    assert.ok(center.body.data?.mails.some((mail) => mail.channel === "compensation" && mail.subject === "运营补偿"));
+    assert.ok(center.body.data?.mails.some((mail) => mail.channel === "reward" && mail.subject.includes("奖励")));
+    assert.equal(center.body.data?.mails.every((mail) => mail.profileId === profile.id), true);
+
+    const beforeReadAllProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
+    assert.equal(beforeReadAllProfile.status, 200);
+    const unreadBefore = beforeReadAllProfile.body.data?.unreadMailCount ?? -1;
+    assert.equal(unreadBefore, 2);
+
+    const markedAll = await requestJson<{ updatedCount: number; mailCenter: MailCenterRecord }>(baseUrl, "/mails/read-all", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(markedAll.status, 200, JSON.stringify(markedAll.body));
+    assert.equal(markedAll.body.data?.updatedCount, unreadBefore);
+    assert.equal(markedAll.body.data?.mailCenter.summary.unreadCount, 0);
+
+    const markedAgain = await requestJson<{ updatedCount: number; mailCenter: MailCenterRecord }>(baseUrl, "/mails/read-all", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(markedAgain.status, 200);
+    assert.equal(markedAgain.body.data?.updatedCount, 0);
+
+    const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
+    assert.equal(afterProfile.status, 200);
+    assert.equal(afterProfile.body.data?.unreadMailCount, 0);
+    assert.equal(afterProfile.body.data?.cash, beforeReadAllProfile.body.data?.cash);
+    assert.equal(afterProfile.body.data?.platformCoins, beforeReadAllProfile.body.data?.platformCoins);
+    assert.equal(afterProfile.body.data?.reputation, beforeReadAllProfile.body.data?.reputation);
   });
 });

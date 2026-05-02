@@ -43,21 +43,29 @@ test("phase 27 client keeps full-screen inner pages addressable", () => {
   }
 });
 
-test("phase 28 client exposes chat strip and full-screen chat center", () => {
+test("phase 28 client exposes chat shortcut and full-screen chat center", () => {
   for (const copy of [
-    "聊天横条",
     "系统",
     "世界",
     "商会",
     "跨服",
-    "系统频道只读",
-    "发送失败"
+    "系统频道只读"
   ]) {
     assert.ok(source.includes(copy), `missing chat copy or guardrail: ${copy}`);
   }
 
-  assert.match(source, /data-testid="home-chat-strip"/, "home chat strip should stay addressable");
+  assert.match(source, /data-testid="home-social-dock"/, "home social dock should stay addressable");
+  assert.match(source, /data-testid="home-chat-entry"/, "home chat shortcut should stay addressable");
   assert.match(source, /data-testid="native-chat"/, "full-screen chat page should stay addressable");
+  assert.match(source, /data-testid="chat-unified-shell"/, "chat should render as one unified game panel");
+  assert.match(source, /data-testid="chat-close-button"/, "chat close button should stay addressable without a separate top nav");
+  assert.doesNotMatch(source, /\? "可发言" : activeChatChannelConfig\?\.readonlyReason \?\? "系统频道只读"/, "chat status bar should not duplicate send permission copy beside the close button");
+  assert.match(source, /data-testid="chat-channel-rail"/, "chat channels should use a left-side category rail");
+  assert.match(source, /data-testid="chat-content-pane"/, "chat content should stay in the right-side pane");
+  assert.match(source, /data-testid="chat-message-list"/, "chat message list should stay addressable");
+  assert.match(source, /data-testid="chat-input-bar"/, "chat input bar should stay addressable");
+  assert.match(source, /`chat-channel-\$\{channel\.id\}`/, "each chat channel should stay addressable");
+  assert.doesNotMatch(source, /快捷通讯|本地优先词库|发送失败前置校验|已按本地词库替换/, "player chat UI should not expose top-nav, test, or engineering copy");
   assert.match(source, /\/chat\?serverId=/, "client should read chat center from API");
   assert.match(source, /\/chat\/messages/, "client should send chat messages through API");
 });
@@ -78,7 +86,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   }
 
   assert.match(source, /type NativeHomePage = .*"cross-server"/, "cross-server page should be registered as a native page");
-  assert.match(source, /const rightActions = \["活动", "排行", "跨服"/, "home should expose a first-level cross-server entry");
+  assert.doesNotMatch(source, /const rightActions = \[[^\]]*"跨服"/, "cross-server should leave the crowded right action rail");
   assert.match(source, /"跨服": "trophy"/, "home cross-server entry should have an icon mapping");
   assert.match(source, /panelName === "跨服"/, "home panel router should handle the cross-server entry");
   assert.match(source, /setNativeHomePage\("cross-server"\)/, "cross-server entry should open the independent page");
@@ -86,4 +94,41 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /home-cross-server-entry/, "home cross-server entry should stay addressable");
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
   assert.match(source, /data-testid="cross-server-guild-season"/, "guild cross-server season should stay addressable");
+});
+
+test("phase 30 client exposes mail capsule and full-screen mail center", () => {
+  for (const copy of [
+    "邮件",
+    "邮件中心",
+    "全部邮件",
+    "未读邮件",
+    "已读邮件",
+    "系统",
+    "奖励",
+    "补偿",
+    "全部已读",
+    "邮件读取中，请确认 API 服务已启动。"
+  ]) {
+    assert.ok(source.includes(copy), `missing mail center copy: ${copy}`);
+  }
+
+  assert.match(source, /type NativeHomePage = .*"mail"/, "mail page should be registered as a native page");
+  assert.match(source, /data-testid="home-mail-entry"/, "home mail shortcut should stay addressable");
+  assert.match(source, /data-testid="home-mail-unread-count"/, "home unread mail count should stay addressable");
+  assert.match(source, /setNativeHomePage\("mail"\)/, "mail capsule should open full-screen mail center");
+  assert.match(source, /data-testid="native-mail"/, "full-screen mail page should stay addressable");
+  assert.match(source, /data-testid="mail-list"/, "mail list should stay addressable");
+  assert.match(source, /data-testid="mail-detail"/, "mail detail should stay addressable");
+  assert.match(source, /data-testid="mail-mark-all-read"/, "mark all read button should stay addressable");
+  assert.match(source, /\/mails\?serverId=/, "client should load mail center from API");
+  assert.match(source, /\/mails\/read-all/, "client should mark all mails read through API");
+});
+
+test("phase 30 home keeps cross-server chat and mail centered above the main task module", () => {
+  assert.match(source, /data-testid="home-social-dock"/, "social dock should be a single centered shortcut row");
+  assert.match(source, /left-1\/2 bottom-40/, "social dock should sit centered above the main task module");
+  assert.match(source, /data-testid="home-cross-server-entry"/, "cross-server should live in the centered shortcut row");
+  assert.match(source, /data-testid="home-chat-entry"/, "chat should live in the centered shortcut row");
+  assert.match(source, /data-testid="home-mail-entry"/, "mail should live in the centered shortcut row");
+  assert.match(source, /少年三国志式快捷入口/, "layout intent should stay documented in code-native copy");
 });

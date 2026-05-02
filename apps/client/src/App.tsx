@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance" | "chat";
+type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance" | "chat" | "mail";
 
 type ApiSuccess<T> = {
   success: true;
@@ -882,6 +882,32 @@ type ChatCenter = {
   };
 };
 
+type MailChannelId = "system" | "reward" | "compensation";
+type MailStatusFilter = "all" | "unread" | "read";
+
+type MailRecord = {
+  id: string;
+  profileId: string;
+  channel: MailChannelId;
+  subject: string;
+  body: string;
+  rewardSummary: string | null;
+  platformCoins: number;
+  createdAt: string;
+  isRead: boolean;
+};
+
+type MailCenter = {
+  summary: {
+    totalCount: number;
+    unreadCount: number;
+  };
+  filters: {
+    channels: Array<"all" | MailChannelId>;
+  };
+  mails: MailRecord[];
+};
+
 type LeaderboardSettlement = {
   leaderboard: LeaderboardCenter;
   deliveredRewards: number;
@@ -1120,7 +1146,7 @@ const shopCategoryLabels: Record<string, string> = {
 };
 
 const sideActions = ["财务", "融资", "贷款"];
-const rightActions = ["活动", "排行", "跨服", "商业", "特权", "通行证", "专属经理"];
+const rightActions = ["活动", "排行", "商业", "特权", "通行证", "专属经理"];
 const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
@@ -1217,6 +1243,7 @@ const iconPaths: Record<string, string[]> = {
   "layout-dashboard": ["M4 4h7v7H4Z", "M13 4h7v4h-7Z", "M13 10h7v10h-7Z", "M4 13h7v7H4Z"],
   "mail": ["M4 6h16v12H4Z", "m4 7 8 6 8-6"],
   "megaphone": ["M3 11v4h4l10 4V7L7 11Z", "M7 15l2 5"],
+  "message-circle": ["M21 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4.2A8.5 8.5 0 1 1 21 11.5Z", "M8 10h8M8 14h5"],
   "package": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
   "package-open": ["M3 9 12 4l9 5-9 5Z", "M3 9v8l9 5 9-5V9", "M12 14v8"],
   "plus": ["M12 5v14", "M5 12h14"],
@@ -1750,6 +1777,12 @@ function App() {
   const [chatDraft, setChatDraft] = useState("");
   const [chatNotice, setChatNotice] = useState("");
   const [chatError, setChatError] = useState("");
+  const [mailCenter, setMailCenter] = useState<MailCenter | null>(null);
+  const [activeMailChannel, setActiveMailChannel] = useState<"all" | MailChannelId>("all");
+  const [activeMailStatus, setActiveMailStatus] = useState<MailStatusFilter>("all");
+  const [selectedMailId, setSelectedMailId] = useState("");
+  const [mailNotice, setMailNotice] = useState("");
+  const [mailError, setMailError] = useState("");
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
 
@@ -2068,6 +2101,13 @@ function App() {
   );
   const latestChatMessage = chatCenter?.messages.find((message) => message.channel !== "system") ?? chatCenter?.messages[0] ?? null;
   const activeChatChannelConfig = chatCenter?.channels.find((channel) => channel.id === activeChatChannel) ?? null;
+  const visibleMails = useMemo(
+    () => (mailCenter?.mails ?? [])
+      .filter((mail) => activeMailChannel === "all" || mail.channel === activeMailChannel)
+      .filter((mail) => activeMailStatus === "all" || (activeMailStatus === "unread" ? !mail.isRead : mail.isRead)),
+    [activeMailChannel, activeMailStatus, mailCenter?.mails]
+  );
+  const selectedMail = visibleMails.find((mail) => mail.id === selectedMailId) ?? visibleMails[0] ?? null;
   const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
   const canManageGuildMembers = currentGuildMember?.role === "leader";
   const guildRoleLabel = (role: string): string =>
@@ -3556,6 +3596,41 @@ function App() {
     setChatError(response.error.message);
   };
 
+  const loadMailCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<MailCenter>(`/mails?serverId=${encodeURIComponent(nextServerId)}`, {}, token);
+    if (response.success) {
+      setMailCenter(response.data);
+      setSelectedMailId(response.data.mails[0]?.id ?? "");
+      setMailError("");
+      return;
+    }
+    setMailError(response.error.message);
+  };
+
+  const markAllMailsRead = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      setMailError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+    const response = await apiRequest<{ updatedCount: number; mailCenter: MailCenter }>(
+      "/mails/read-all",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+    if (response.success) {
+      setMailCenter(response.data.mailCenter);
+      setProfile((current) => current === null ? current : { ...current, unreadMailCount: 0 });
+      setMailNotice(response.data.updatedCount > 0 ? `已标记 ${response.data.updatedCount} 封邮件为已读。` : "当前没有未读邮件。");
+      setMailError("");
+      return;
+    }
+    setMailNotice("");
+    setMailError(response.error.message || "全部已读失败");
+  };
+
   const sendChatMessage = async (): Promise<void> => {
     if (!account || !selectedServer) {
       setChatError("账号或区服状态缺失，请重新登录。");
@@ -3578,7 +3653,7 @@ function App() {
       setChatCenter(response.data.chat);
       setChatDraft("");
       setChatError("");
-      setChatNotice(response.data.message.filterAction === "mask" ? "已按本地词库替换敏感词。" : "已发送。");
+      setChatNotice(response.data.message.filterAction === "mask" ? "内容已自动处理。" : "已发送。");
       return;
     }
     setChatNotice("");
@@ -3586,6 +3661,15 @@ function App() {
   };
 
   const openHomePanel = (panelName: string): void => {
+    if (panelName === "邮件") {
+      setActivePanel(null);
+      setNativeHomePage("mail");
+      if (account && selectedServer) {
+        void loadMailCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
     if (panelName === "聊天") {
       setActivePanel(null);
       setNativeHomePage("chat");
@@ -4577,17 +4661,28 @@ function App() {
               ))}
             </div>
 
-            <button
-              aria-label="聊天横条"
-              className="absolute bottom-40 left-4 right-24 glass-panel rounded-xl px-3 py-2 flex items-center gap-2 text-left active:scale-95 transition-transform"
-              data-testid="home-chat-strip"
-              type="button"
-              onClick={() => openHomePanel("聊天")}
-            >
-              <span className="rounded-lg bg-business-gold/15 px-2 py-1 text-[10px] font-black text-business-gold">{latestChatMessage?.channel === "system" ? "系统" : latestChatMessage?.channel === "guild" ? "商会" : latestChatMessage?.channel === "cross" ? "跨服" : "世界"}</span>
-              <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-slate-200">{latestChatMessage ? `${latestChatMessage.founderName}：${latestChatMessage.content}` : "聊天横条 · 世界频道消息读取中"}</span>
-              <span className="btn-gold rounded-lg px-2 py-1 text-[10px] font-black text-business-dark">聊</span>
-            </button>
+            <div aria-label="少年三国志式快捷入口" className="absolute left-1/2 bottom-40 z-[70] flex -translate-x-1/2 items-end justify-center gap-3" data-testid="home-social-dock">
+              <button className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-cross-server-entry" type="button" onClick={() => openHomePanel("跨服")}>
+                <span className="red-dot" />
+                <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
+                  <Icon name="trophy" className="h-6 w-6 text-cyan-400" />
+                </span>
+                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg">跨服</span>
+              </button>
+              <button className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-chat-entry" type="button" onClick={() => openHomePanel("聊天")}>
+                <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
+                  <Icon name="message-circle" className="h-6 w-6 text-business-gold" />
+                </span>
+                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg" title={latestChatMessage ? `${latestChatMessage.founderName}：${latestChatMessage.content}` : "聊天"}>聊天</span>
+              </button>
+              <button aria-label={profile.unreadMailCount > 0 ? `邮件 ${profile.unreadMailCount}` : "邮件"} className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-mail-entry" type="button" onClick={() => openHomePanel("邮件")}>
+                {profile.unreadMailCount > 0 && <span className="red-dot" />}
+                <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
+                  <Icon name="mail" className="h-6 w-6 text-business-gold" />
+                </span>
+                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg" data-testid="home-mail-unread-count">{profile.unreadMailCount > 0 ? `邮件 ${profile.unreadMailCount}` : "邮件"}</span>
+              </button>
+            </div>
 
             <button className="absolute bottom-24 left-4 right-24 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer text-left" type="button" onClick={openTaskScreen}>
               <span className="w-12 h-12 bg-business-gold/15 rounded-xl flex items-center justify-center relative border border-business-gold/20">
@@ -4646,77 +4741,162 @@ function App() {
           </nav>
 
           {nativeHomePage === "chat" && (
-            <section className="page-container page-active" aria-label="聊天" data-testid="native-chat">
+            <section className="page-container page-active bg-[radial-gradient(circle_at_top,#5b3a16_0%,#111827_42%,#020617_100%)]" aria-label="聊天" data-testid="native-chat">
+              <div className="flex-1 overflow-hidden px-4 pb-4 pt-9">
+                <div className="relative grid h-full grid-cols-[4.75rem_minmax(0,1fr)] overflow-hidden rounded-2xl border border-business-gold/30 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(0,0,0,0.42)]" data-testid="chat-unified-shell">
+                  <button className="absolute right-2 top-2 z-20 w-8 h-8 bg-slate-950/75 border border-business-gold/25 rounded-full flex items-center justify-center text-slate-200" data-testid="chat-close-button" type="button" aria-label="关闭聊天" onClick={closeNativeHomePage}>
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                  <nav className="flex h-full flex-col border-r border-business-gold/20 bg-slate-950/45 py-3" aria-label="聊天频道" data-testid="chat-channel-rail">
+                    {(chatCenter?.channels ?? [
+                      { id: "system" as const, label: "系统", canSend: false, readonlyReason: "系统频道只读" },
+                      { id: "world" as const, label: "世界", canSend: true, readonlyReason: null },
+                      { id: "guild" as const, label: "商会", canSend: false, readonlyReason: "加入商会后可发言" },
+                      { id: "cross" as const, label: "跨服", canSend: false, readonlyReason: "进入跨服分组后可发言" }
+                    ]).map((channel) => (
+                      <button className={`relative h-14 text-[11px] font-black transition ${activeChatChannel === channel.id ? "bg-business-gold/15 text-business-gold" : "text-slate-300"}`} data-testid={`chat-channel-${channel.id}`} key={channel.id} type="button" onClick={() => setActiveChatChannel(channel.id)}>
+                        {activeChatChannel === channel.id && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-business-gold shadow-[0_0_12px_rgba(245,158,11,0.8)]" />}
+                        <span className="relative">{channel.label}</span>
+                      </button>
+                    ))}
+                  </nav>
+
+                  <div className="min-w-0 flex h-full flex-col overflow-hidden" data-testid="chat-content-pane">
+                    <section className="shrink-0 border-b border-business-gold/15 bg-slate-950/35 px-4 pr-14 py-3" data-testid="chat-channel-status">
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-sm text-white">{activeChatChannelConfig?.label ?? "世界"}频道</strong>
+                      </div>
+                    </section>
+
+                    <section className="min-h-0 flex-1 overflow-y-auto px-4 py-3 scroll-hide" aria-label="聊天消息" data-testid="chat-message-list">
+                      {activeChatMessages.length === 0 && <p className="py-4 text-xs text-slate-400 font-bold">暂无消息。</p>}
+                      {activeChatMessages.map((message) => (
+                        <article className="border-b border-white/5 py-3 last:border-b-0" key={message.id}>
+                          <div className="flex items-center justify-between gap-3">
+                            <strong className="text-xs text-business-gold">{message.founderName}</strong>
+                            <span className="text-[9px] text-slate-500">{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{message.content}</p>
+                          {message.filterAction === "mask" && <span className="mt-2 block text-[9px] text-business-gold">内容已自动处理</span>}
+                        </article>
+                      ))}
+                    </section>
+
+                    {(chatNotice || chatError) && <p className={chatError ? "task-error mx-3 mb-2" : "task-notice mx-3 mb-2"}>{chatError || chatNotice}</p>}
+
+                    <form className="shrink-0 border-t border-business-gold/15 bg-slate-950/45 p-3" data-testid="chat-input-bar" onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendChatMessage();
+                    }}>
+                      <div className="flex items-center gap-2">
+                        <label className="min-w-0 flex-1 text-[0px]">
+                          发言内容
+                          <input
+                            className="w-full rounded-full bg-black/45 border border-business-gold/20 px-4 py-3 text-xs text-white outline-none focus:border-business-gold/60"
+                            disabled={!activeChatChannelConfig?.canSend}
+                            maxLength={120}
+                            onChange={(event) => setChatDraft(event.target.value)}
+                            placeholder={activeChatChannelConfig?.canSend ? "输入消息" : activeChatChannelConfig?.readonlyReason ?? "系统频道只读"}
+                            value={chatDraft}
+                          />
+                        </label>
+                        <button className="btn-gold h-10 w-16 shrink-0 rounded-full text-sm font-black text-business-dark disabled:opacity-50" disabled={!activeChatChannelConfig?.canSend} type="submit">
+                          {activeChatChannel === "system" ? "只读" : "发送"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {nativeHomePage === "mail" && (
+            <section className="page-container page-active" aria-label="邮件" data-testid="native-mail">
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="mail" className="w-7 h-7 text-business-gold" />
                   <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Chat 聊天</h2>
-                    <span className="text-[10px] text-slate-500">系统、世界、商会、跨服四频道</span>
+                    <h2 className="text-xl font-black text-white italic uppercase">Mail 邮件中心</h2>
+                    <span className="text-[10px] text-slate-500">系统通知、奖励邮件和运营补偿</span>
                   </div>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭聊天" onClick={closeNativeHomePage}>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭邮件" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                <nav className="business-tabs" aria-label="聊天频道">
-                  {(chatCenter?.channels ?? [
-                    { id: "system" as const, label: "系统", canSend: false, readonlyReason: "系统频道只读" },
-                    { id: "world" as const, label: "世界", canSend: true, readonlyReason: null },
-                    { id: "guild" as const, label: "商会", canSend: false, readonlyReason: "加入商会后可发言" },
-                    { id: "cross" as const, label: "跨服", canSend: false, readonlyReason: "进入跨服分组后可发言" }
-                  ]).map((channel) => (
-                    <button className={activeChatChannel === channel.id ? "active" : undefined} key={channel.id} type="button" onClick={() => setActiveChatChannel(channel.id)}>
-                      {channel.label}
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-28 scroll-hide">
+                <div className="business-tabs" aria-label="邮件频道">
+                  {[
+                    ["all", "全部"],
+                    ["system", "系统"],
+                    ["reward", "奖励"],
+                    ["compensation", "补偿"]
+                  ].map(([id, label]) => (
+                    <button className={activeMailChannel === id ? "active" : undefined} key={id} type="button" onClick={() => setActiveMailChannel(id as "all" | MailChannelId)}>
+                      {label}
                     </button>
                   ))}
-                </nav>
-
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    ["all", "全部邮件"],
+                    ["unread", "未读邮件"],
+                    ["read", "已读邮件"]
+                  ].map(([id, label]) => (
+                    <button className={`rounded-xl border px-2 py-2 text-[10px] font-black ${activeMailStatus === id ? "border-business-gold bg-business-gold text-business-dark" : "border-white/10 bg-slate-900/70 text-slate-300"}`} key={id} type="button" onClick={() => setActiveMailStatus(id as MailStatusFilter)}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <strong className="text-sm text-white">{activeChatChannelConfig?.label ?? "世界"}频道</strong>
-                    <span className="text-[10px] text-business-gold">{activeChatChannelConfig?.canSend ? "可发言" : activeChatChannelConfig?.readonlyReason ?? "系统频道只读"}</span>
+                    <strong className="text-sm text-white">邮件概览</strong>
+                    <span className="text-[10px] text-business-gold">未读 {mailCenter?.summary.unreadCount ?? profile.unreadMailCount} / 共 {mailCenter?.summary.totalCount ?? 0}</span>
                   </div>
-                  <p className="mt-2 text-[10px] text-slate-500">本地优先词库：{chatCenter?.keywordPolicy.source ?? "公开游戏聊天安全词库"} · {chatCenter?.keywordPolicy.license ?? "CC BY-SA 4.0"}</p>
                 </section>
-
-                <section className="space-y-3" aria-label="聊天消息">
-                  {activeChatMessages.length === 0 && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">暂无消息。</p>}
-                  {activeChatMessages.map((message) => (
-                    <article className="glass-panel rounded-2xl p-4" key={message.id}>
+                {(mailNotice || mailError) && <p className={mailError ? "task-error" : "task-notice"}>{mailError || mailNotice}</p>}
+                <section className="space-y-3" data-testid="mail-list" aria-label="邮件列表">
+                  {mailCenter === null && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">邮件读取中，请确认 API 服务已启动。</p>}
+                  {mailCenter !== null && visibleMails.length === 0 && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">当前筛选下暂无邮件。</p>}
+                  {visibleMails.map((mail) => (
+                    <button
+                      className={`w-full rounded-2xl border p-4 text-left ${mail.id === selectedMail?.id ? "border-business-gold bg-business-gold/10" : mail.isRead ? "border-white/5 bg-slate-900/60" : "border-business-gold/25 bg-slate-900/80"}`}
+                      data-testid={`mail-item-${mail.id}`}
+                      key={mail.id}
+                      type="button"
+                      onClick={() => setSelectedMailId(mail.id)}
+                    >
                       <div className="flex items-center justify-between gap-3">
-                        <strong className="text-xs text-white">{message.founderName}</strong>
-                        <span className="text-[9px] text-slate-500">{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+                        <strong className="min-w-0 truncate text-xs text-white">{mail.subject}</strong>
+                        <span className="shrink-0 text-[9px] text-business-gold">{mail.channel === "reward" ? "奖励" : mail.channel === "compensation" ? "补偿" : "系统"}</span>
                       </div>
-                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{message.content}</p>
-                      {message.filterAction === "mask" && <span className="mt-2 block text-[9px] text-business-gold">已按本地词库替换：{message.matchedKeywords.join("、")}</span>}
-                    </article>
+                      <p className="mt-2 truncate text-[10px] text-slate-400">{mail.body}</p>
+                      {mail.rewardSummary && <span className="mt-2 block text-[9px] font-black text-business-gold">{mail.rewardSummary}</span>}
+                    </button>
                   ))}
                 </section>
-
-                {(chatNotice || chatError) && <p className={chatError ? "task-error" : "task-notice"}>{chatError || chatNotice}</p>}
-
-                <form className="glass-panel rounded-3xl p-4 space-y-3" onSubmit={(event) => {
-                  event.preventDefault();
-                  void sendChatMessage();
-                }}>
-                  <label className="block text-[10px] font-black text-slate-400">
-                    发言内容
-                    <input
-                      className="mt-2 w-full rounded-2xl bg-slate-950/80 border border-white/10 px-3 py-3 text-xs text-white outline-none"
-                      disabled={!activeChatChannelConfig?.canSend}
-                      maxLength={120}
-                      onChange={(event) => setChatDraft(event.target.value)}
-                      value={chatDraft}
-                    />
-                  </label>
-                  <button className="btn-gold w-full rounded-2xl py-3 text-sm font-black text-business-dark" disabled={!activeChatChannelConfig?.canSend} type="submit">
-                    {activeChatChannel === "system" ? "系统频道只读" : "发送"}
-                  </button>
-                  {!activeChatChannelConfig?.canSend && <p className="text-[10px] text-slate-500">发送失败前置校验：{activeChatChannelConfig?.readonlyReason ?? "系统频道只读"}</p>}
-                </form>
+                <section className="glass-panel rounded-3xl p-4" data-testid="mail-detail" aria-label="邮件详情">
+                  {selectedMail === null ? (
+                    <p className="text-xs text-slate-300 font-bold">请选择邮件查看详情。</p>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-sm text-white">{selectedMail.subject}</strong>
+                        <span className="text-[9px] text-slate-500">{new Date(selectedMail.createdAt).toLocaleDateString("zh-CN")}</span>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-slate-300 font-bold">{selectedMail.body}</p>
+                      {selectedMail.rewardSummary && <p className="mt-3 rounded-2xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励摘要：{selectedMail.rewardSummary}</p>}
+                      <p className="mt-3 text-[9px] text-slate-500">首版邮件中心只查看和已读，不做二次领奖，避免破坏奖励幂等。</p>
+                    </>
+                  )}
+                </section>
               </div>
+              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                <button className="btn-gold w-full rounded-2xl py-3 text-sm font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
+                  全部已读
+                </button>
+              </footer>
             </section>
           )}
 

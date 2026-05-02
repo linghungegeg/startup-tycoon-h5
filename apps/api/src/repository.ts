@@ -1031,23 +1031,43 @@ export const defaultChatKeywords = (): AdminChatKeywordRecord[] => {
   return [
     createKeyword("public-cheat-tool", "外挂", "public", "mask"),
     createKeyword("public-private-trade", "私下交易", "public", "block"),
+    createKeyword("public-political-xi-jinping", "习近平", "public", "block"),
+    createKeyword("public-political-li-qiang", "李强", "public", "block"),
+    createKeyword("public-political-zhao-leji", "赵乐际", "public", "block"),
+    createKeyword("public-political-wang-huning", "王沪宁", "public", "block"),
+    createKeyword("public-political-cai-qi", "蔡奇", "public", "block"),
+    createKeyword("public-political-ding-xuexiang", "丁薛祥", "public", "block"),
+    createKeyword("public-political-li-xi", "李希", "public", "block"),
+    createKeyword("public-political-han-zheng", "韩正", "public", "block"),
+    createKeyword("public-political-mao-zedong", "毛泽东", "public", "block"),
+    createKeyword("public-political-deng-xiaoping", "邓小平", "public", "block"),
+    createKeyword("public-political-jiang-zemin", "江泽民", "public", "block"),
+    createKeyword("public-political-hu-jintao", "胡锦涛", "public", "block"),
     createKeyword("custom-ad-spam", "广告群", "custom", "block"),
     createKeyword("whitelist-guild-business", "商会", "whitelist", "allow", "商会")
   ];
 };
+
+const normalizeChatKeywordText = (value: string): string => value.normalize("NFKC").toLowerCase().replace(/[\s\u200B-\u200D\uFEFF\p{P}\p{S}_]+/gu, "");
 
 export const maskChatContent = (
   content: string,
   keywords: AdminChatKeywordRecord[]
 ): { content: string; filterAction: "none" | "mask" | "block"; matchedKeywords: string[] } => {
   const whitelist = keywords.filter((keyword) => keyword.isEnabled && keyword.sourceType === "whitelist");
-  const blockedByWhitelist = (keyword: string): boolean => whitelist.some((item) => item.keyword === keyword);
+  const normalizedContent = normalizeChatKeywordText(content);
+  const blockedByWhitelist = (keyword: string): boolean => {
+    const normalizedKeyword = normalizeChatKeywordText(keyword);
+    return whitelist.some((item) => item.keyword === keyword || normalizeChatKeywordText(item.keyword) === normalizedKeyword);
+  };
   let nextContent = content;
   const matchedKeywords: string[] = [];
   let filterAction: "none" | "mask" | "block" = "none";
 
   for (const keyword of keywords) {
-    if (!keyword.isEnabled || keyword.sourceType === "whitelist" || blockedByWhitelist(keyword.keyword) || !content.includes(keyword.keyword)) {
+    const normalizedKeyword = normalizeChatKeywordText(keyword.keyword);
+    const isMatched = content.includes(keyword.keyword) || (normalizedKeyword.length > 0 && normalizedContent.includes(normalizedKeyword));
+    if (!keyword.isEnabled || keyword.sourceType === "whitelist" || blockedByWhitelist(keyword.keyword) || !isMatched) {
       continue;
     }
 
@@ -1083,6 +1103,26 @@ const listChatKeywords = (
       actions: ["mask", "block", "allow"],
       statuses: ["enabled", "disabled"]
     }
+  };
+};
+
+const buildMailCenterRecord = (
+  profile: { id: string; unreadMailCount: number },
+  mails: MailRecord[]
+): MailCenterRecord => {
+  const sortedMails = [...mails].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  return {
+    summary: {
+      totalCount: sortedMails.length,
+      unreadCount: Math.max(0, profile.unreadMailCount)
+    },
+    filters: {
+      channels: ["all", "system", "reward", "compensation"]
+    },
+    mails: sortedMails.map((mail) => ({
+      ...mail,
+      isRead: profile.unreadMailCount === 0 ? true : mail.isRead
+    }))
   };
 };
 
@@ -1683,6 +1723,36 @@ export type AdminMailCompensationRecord = {
   mailId: string;
 };
 
+export type MailChannel = "system" | "reward" | "compensation";
+
+export type MailRecord = {
+  id: string;
+  profileId: string;
+  channel: MailChannel;
+  subject: string;
+  body: string;
+  rewardSummary: string | null;
+  platformCoins: number;
+  createdAt: string;
+  isRead: boolean;
+};
+
+export type MailCenterRecord = {
+  summary: {
+    totalCount: number;
+    unreadCount: number;
+  };
+  filters: {
+    channels: Array<"all" | MailChannel>;
+  };
+  mails: MailRecord[];
+};
+
+export type MailReadAllRecord = {
+  updatedCount: number;
+  mailCenter: MailCenterRecord;
+};
+
 export type AdminProfileStatusRecord = {
   profileId: string;
   status: string;
@@ -2150,6 +2220,8 @@ export type GameRepository = {
   createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
   getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
   getLongTermGoals(accountId: string, serverId: string, today: string): Promise<LongTermGoalsRecord | "PLAYER_NOT_FOUND">;
+  listMails(accountId: string, serverId: string): Promise<MailCenterRecord | "PLAYER_NOT_FOUND">;
+  readAllMails(accountId: string, serverId: string): Promise<MailReadAllRecord | "PLAYER_NOT_FOUND">;
   getChatCenter(accountId: string, serverId: string, today: string): Promise<ChatCenterRecord | "PLAYER_NOT_FOUND">;
   sendChatMessage(accountId: string, serverId: string, channel: ChatChannelId, content: string, today: string): Promise<{ message: ChatMessageRecord; chat: ChatCenterRecord } | "PLAYER_NOT_FOUND" | "CHAT_CHANNEL_READONLY" | "CHAT_GUILD_REQUIRED" | "CHAT_CROSS_REQUIRED" | "CHAT_CONTENT_BLOCKED">;
   claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
@@ -6074,6 +6146,67 @@ export const createPrismaGameRepository = (
       achievements,
       guild
     });
+  },
+
+  async listMails(accountId, serverId) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const [compensations, deliveries] = await Promise.all([
+      prisma.adminMailCompensation.findMany({
+        where: { profileId: profile.id },
+        orderBy: [{ createdAt: "desc" }]
+      }),
+      prisma.leaderboardRewardDelivery.findMany({
+        where: { profileId: profile.id, serverId },
+        orderBy: [{ deliveredAt: "desc" }]
+      })
+    ]);
+    const mails: MailRecord[] = [
+      ...compensations.map((mail): MailRecord => ({
+        id: `admin:${mail.id}`,
+        profileId: profile.id,
+        channel: "compensation",
+        subject: mail.subject,
+        body: mail.body,
+        rewardSummary: mail.platformCoins > 0 ? `平台币 +${mail.platformCoins}` : null,
+        platformCoins: mail.platformCoins,
+        createdAt: mail.createdAt.toISOString(),
+        isRead: profile.unreadMailCount === 0
+      })),
+      ...deliveries.map((delivery): MailRecord => ({
+        id: `reward:${delivery.id}`,
+        profileId: profile.id,
+        channel: "reward",
+        subject: delivery.mailSubject,
+        body: delivery.mailBody,
+        rewardSummary: delivery.rewardPlatformCoins > 0 ? `平台币 +${delivery.rewardPlatformCoins}` : delivery.rewardTitleId === null ? "荣誉奖励" : `称号 ${delivery.rewardTitleId}`,
+        platformCoins: delivery.rewardPlatformCoins,
+        createdAt: delivery.deliveredAt.toISOString(),
+        isRead: profile.unreadMailCount === 0
+      }))
+    ];
+    return buildMailCenterRecord(profile, mails);
+  },
+
+  async readAllMails(accountId, serverId) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const updatedCount = Math.max(0, profile.unreadMailCount);
+    if (updatedCount > 0) {
+      await prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: { unreadMailCount: 0 }
+      });
+    }
+    const mailCenter = await this.listMails(accountId, serverId);
+    if (mailCenter === "PLAYER_NOT_FOUND") {
+      return "PLAYER_NOT_FOUND";
+    }
+    return { updatedCount, mailCenter };
   },
 
   async getChatCenter(accountId, serverId, today) {
