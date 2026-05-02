@@ -2625,6 +2625,21 @@ const createTestRepository = (): GameRepository => {
       const funded = [...playerFundings.values()].filter((funding) => funding.status === "funded" || funding.status === "failed");
       const employeesAll = [...employees.values()];
       const shopClickCount = [...telemetryEvents.values()].filter((event) => event.eventName === "shop_product_click").length;
+      const countTargets = (eventName: string, keyName: "entry" | "product") => {
+        const counts = new Map<string, number>();
+        for (const event of telemetryEvents.values()) {
+          if (event.eventName !== eventName) {
+            continue;
+          }
+          const target = event.targetId === null || event.targetId.trim() === "" ? "unknown" : event.targetId;
+          counts.set(target, (counts.get(target) ?? 0) + 1);
+        }
+        return [...counts.entries()]
+          .sort(([leftKey, leftCount], [rightKey, rightCount]) => rightCount - leftCount || leftKey.localeCompare(rightKey))
+          .map(([target, count]) => ({ [keyName]: target, count }));
+      };
+      const commercialEntryClicks = countTargets("commercial_entry_click", "entry");
+      const paidProductEntryClicks = countTargets("paid_product_entry_click", "product");
       return {
         overview: {
           totalPlayers: allProfiles.length,
@@ -2660,7 +2675,14 @@ const createTestRepository = (): GameRepository => {
           platformCoinSpentTotal: 0,
           vipLevelDistribution: [{ level: 0, count: allProfiles.length }],
           shopClickCount,
-          shopPurchaseConversionBasisPoints: shopClickCount === 0 ? 0 : Math.round((shopPurchases.size / shopClickCount) * 10000)
+          shopPurchaseConversionBasisPoints: shopClickCount === 0 ? 0 : Math.round((shopPurchases.size / shopClickCount) * 10000),
+          commercialEntryClickTotal: commercialEntryClicks.reduce((total, item) => total + item.count, 0),
+          commercialEntryClicks,
+          paidProductEntryClickTotal: paidProductEntryClicks.reduce((total, item) => total + item.count, 0),
+          paidProductEntryClicks,
+          longTermGoalClickCount: [...telemetryEvents.values()].filter((event) => event.eventName === "long_term_goal_click").length,
+          businessClockBriefingOpenCount: [...telemetryEvents.values()].filter((event) => event.eventName === "business_clock_briefing_open").length,
+          businessClockTodoHandledCount: [...telemetryEvents.values()].filter((event) => event.eventName === "business_clock_todo_handled").length
         },
         alerts: [
           { level: "info", message: "平台币异常变动监控：发放 0，消耗 0", traceId: null },
@@ -8390,6 +8412,72 @@ test("phase 17 tracks telemetry and exposes operations analytics dashboard", asy
     assert.ok((analytics.body.data?.business.taskCompletionRateBasisPoints ?? -1) >= 0);
     assert.ok(analytics.body.data?.business.debtRatioDistribution.some((item) => item.band === "0-30%"));
     assert.equal(analytics.body.data?.alerts.some((alert) => alert.message.includes("平台币")), true);
+  });
+});
+
+test("phase 27 aggregates commercial engagement signals in admin analytics", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "analyticsphase27");
+    const report = async (eventName: string, targetId: string): Promise<void> => {
+      const response = await requestJson<{ eventId: string }>(baseUrl, "/telemetry/events", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          serverId: "s1",
+          eventName,
+          targetId,
+          metadata: {}
+        })
+      });
+      assert.equal(response.status, 201, JSON.stringify(response.body));
+      assert.ok(response.body.data?.eventId);
+    };
+
+    await report("commercial_entry_click", "shop");
+    await report("commercial_entry_click", "privilege");
+    await report("commercial_entry_click", "privilege");
+    await report("long_term_goal_click", "rank-center");
+    await report("paid_product_entry_click", "monthly_card");
+    await report("paid_product_entry_click", "growth_fund");
+    await report("paid_product_entry_click", "season_pass");
+    await report("business_clock_briefing_open", "finance-hud");
+    await report("business_clock_todo_handled", "random-cashflow-warning");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+
+    const analytics = await requestJson<{
+      monetization: {
+        commercialEntryClickTotal: number;
+        commercialEntryClicks: Array<{ entry: string; count: number }>;
+        paidProductEntryClickTotal: number;
+        paidProductEntryClicks: Array<{ product: string; count: number }>;
+        longTermGoalClickCount: number;
+        businessClockBriefingOpenCount: number;
+        businessClockTodoHandledCount: number;
+      };
+    }>(baseUrl, "/admin/analytics", {
+      headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
+    });
+    assert.equal(analytics.status, 200, JSON.stringify(analytics.body));
+    assert.equal(analytics.body.data?.monetization.commercialEntryClickTotal, 3);
+    assert.deepEqual(analytics.body.data?.monetization.commercialEntryClicks, [
+      { entry: "privilege", count: 2 },
+      { entry: "shop", count: 1 }
+    ]);
+    assert.equal(analytics.body.data?.monetization.paidProductEntryClickTotal, 3);
+    assert.deepEqual(analytics.body.data?.monetization.paidProductEntryClicks, [
+      { product: "growth_fund", count: 1 },
+      { product: "monthly_card", count: 1 },
+      { product: "season_pass", count: 1 }
+    ]);
+    assert.equal(analytics.body.data?.monetization.longTermGoalClickCount, 1);
+    assert.equal(analytics.body.data?.monetization.businessClockBriefingOpenCount, 1);
+    assert.equal(analytics.body.data?.monetization.businessClockTodoHandledCount, 1);
   });
 });
 

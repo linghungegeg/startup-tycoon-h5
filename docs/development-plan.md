@@ -2496,6 +2496,20 @@ VIP 权益：
 - 推荐接口扩展或新增 `GET /admin/monetization-analytics`。
 - 验收标准：运营能看到付费入口和长期目标是否被玩家理解与使用。
 
+##### Phase 27 第一实施批次总结：商业化数据看板补齐
+
+- 完成内容：复用既有 `/telemetry/events` 和 `/admin/analytics` 链路，Admin 数据看板新增商业入口点击、付费入口点击、长期目标点击、夜间简报打开和经营时钟待办处理指标。
+- 埋点范围：前台只在已有活动、排行、商业、特权、通行证、专属经理、通行证购买、活动商店兑换、特权商品购买、经营时钟 HUD 和随机待办处理路径上报关键事件；不阻塞主流程，不读取浏览器历史、剪贴板或本地敏感活动记录。
+- 数据边界：本批不接真实支付、不新增独立数据表、不改平台币/VIP/榜单/活动榜结算规则；经营道具使用仍保留在后续经济巡检或道具专题观察中，不强行扩展本批范围。
+- Admin 前台：数据看板沿用现有“商业化与平台币”表格和分布清单，新增商业入口与付费入口点击分布，不新增复杂弹窗或独立页面。
+- 四插件检查：
+  - Superpowers：按 TDD 先补 API 商业化埋点聚合红灯测试和 Admin 静态红灯测试，再做最小实现并转绿；提交前执行验证前检查。
+  - Browser Use：本地浏览器验收前台商业/特权/通行证/Rank/经营时钟 HUD 和 Admin 数据看板新指标，确认 API health 可访问。
+  - Build Web Apps：Admin 保持稳重后台表格结构，前台只复用深色商务手游已有入口和按钮状态，不新增营销式页面。
+  - Game Studio：前台埋点不新增可见层，不遮挡 HUD、右侧入口、底部导航、全覆盖内页和随机任务弹窗主操作。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 27 aggregates commercial engagement|phase 17 tracks telemetry" --import tsx apps/api/test/http.test.ts`、`node --test apps/admin/test/phase27-monetization-analytics.test.mjs apps/client/test/phase27-commercial-telemetry.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 27 第二实施批次“经济异常巡检”。
+
 #### Phase 27 第二实施批次：经济异常巡检
 
 - Admin 新增只读经济巡检，推荐接口 `GET /admin/economy-alerts`。

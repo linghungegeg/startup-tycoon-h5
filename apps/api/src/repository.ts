@@ -1506,6 +1506,13 @@ export type AdminAnalyticsRecord = {
     vipLevelDistribution: Array<{ level: number; count: number }>;
     shopClickCount: number;
     shopPurchaseConversionBasisPoints: number;
+    commercialEntryClickTotal: number;
+    commercialEntryClicks: Array<{ entry: string; count: number }>;
+    paidProductEntryClickTotal: number;
+    paidProductEntryClicks: Array<{ product: string; count: number }>;
+    longTermGoalClickCount: number;
+    businessClockBriefingOpenCount: number;
+    businessClockTodoHandledCount: number;
   };
   alerts: Array<{ level: string; message: string; traceId: string | null }>;
 };
@@ -4516,6 +4523,21 @@ const guildProjectProgressUpdates = (prisma: PrismaClient, guildId: string): Pri
 const rateBasisPoints = (part: number, total: number): number =>
   total <= 0 ? 0 : Math.min(10000, Math.round((part / total) * 10000));
 
+const countTelemetryTargets = <TKey extends string>(
+  events: Array<{ targetId: string | null }>,
+  keyName: TKey
+): Array<Record<TKey, string> & { count: number }> => {
+  const counts = new Map<string, number>();
+  for (const event of events) {
+    const target = event.targetId === null || event.targetId.trim() === "" ? "unknown" : event.targetId;
+    counts.set(target, (counts.get(target) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .sort(([leftKey, leftCount], [rightKey, rightCount]) => rightCount - leftCount || leftKey.localeCompare(rightKey))
+    .map(([target, count]) => ({ [keyName]: target, count }) as Record<TKey, string> & { count: number });
+};
+
 const debtRatioBand = (totalDebt: number, valuation: number): string => {
   const ratio = valuation <= 0 ? 10000 : Math.round((totalDebt / valuation) * 10000);
   if (ratio < 3000) {
@@ -5298,7 +5320,12 @@ export const createPrismaGameRepository = (
       apiErrors,
       slowApis,
       paymentReservedCount,
-      telemetryEvents
+      telemetryEvents,
+      commercialEntryEvents,
+      paidProductEntryEvents,
+      longTermGoalClickCount,
+      businessClockBriefingOpenCount,
+      businessClockTodoHandledCount
     ] = await Promise.all([
       prisma.playerProfile.findMany(),
       prisma.playerTaskProgress.count(),
@@ -5319,7 +5346,12 @@ export const createPrismaGameRepository = (
       prisma.apiRequestLog.count({ where: { statusCode: { gte: 500 } } }),
       prisma.apiRequestLog.count({ where: { durationMs: { gte: 1000 } } }),
       prisma.externalPaymentOrder.count({ where: { status: "reserved" } }),
-      prisma.playerTelemetryEvent.findMany({ where: { eventName: "tutorial_step" }, select: { targetId: true, metadataJson: true } })
+      prisma.playerTelemetryEvent.findMany({ where: { eventName: "tutorial_step" }, select: { targetId: true, metadataJson: true } }),
+      prisma.playerTelemetryEvent.findMany({ where: { eventName: "commercial_entry_click" }, select: { targetId: true } }),
+      prisma.playerTelemetryEvent.findMany({ where: { eventName: "paid_product_entry_click" }, select: { targetId: true } }),
+      prisma.playerTelemetryEvent.count({ where: { eventName: "long_term_goal_click" } }),
+      prisma.playerTelemetryEvent.count({ where: { eventName: "business_clock_briefing_open" } }),
+      prisma.playerTelemetryEvent.count({ where: { eventName: "business_clock_todo_handled" } })
     ]);
 
     const tutorialStepCounts = new Map<string, number>();
@@ -5406,7 +5438,14 @@ export const createPrismaGameRepository = (
         platformCoinSpentTotal,
         vipLevelDistribution: [...vipLevelCounts.entries()].map(([level, count]) => ({ level, count })),
         shopClickCount: shopClicks,
-        shopPurchaseConversionBasisPoints: rateBasisPoints(shopPurchases, shopClicks)
+        shopPurchaseConversionBasisPoints: rateBasisPoints(shopPurchases, shopClicks),
+        commercialEntryClickTotal: commercialEntryEvents.length,
+        commercialEntryClicks: countTelemetryTargets(commercialEntryEvents, "entry"),
+        paidProductEntryClickTotal: paidProductEntryEvents.length,
+        paidProductEntryClicks: countTelemetryTargets(paidProductEntryEvents, "product"),
+        longTermGoalClickCount,
+        businessClockBriefingOpenCount,
+        businessClockTodoHandledCount
       },
       alerts: [
         {

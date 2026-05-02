@@ -1782,6 +1782,12 @@ function App() {
       token
     );
   }, []);
+  const reportCurrentTelemetry = (eventName: string, targetId: string, metadata: Record<string, string | number | boolean | null> = {}): void => {
+    if (!account || !selectedServer) {
+      return;
+    }
+    reportTelemetry(account.token, selectedServer.id, eventName, targetId, metadata);
+  };
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? employees[0],
     [employees, selectedEmployeeId]
@@ -2530,6 +2536,7 @@ function App() {
       return;
     }
 
+    reportCurrentTelemetry("paid_product_entry_click", "season_pass");
     await runSeasonAction<SeasonPassPurchaseResult>(
       "/season/pass/purchase",
       { seasonId: seasonCenter.season.id, requestId: `season-pass-${Date.now()}` },
@@ -2588,6 +2595,7 @@ function App() {
   };
 
   const purchaseActivityShopItem = async (itemId: string): Promise<void> => {
+    reportCurrentTelemetry("paid_product_entry_click", "activity_shop", { itemId });
     await runSeasonAction<ActivityShopPurchaseResult>(
       "/activity-shop/purchase",
       { itemId, requestId: `activity-shop-${Date.now()}` },
@@ -3501,6 +3509,7 @@ function App() {
     }
 
     if (panelName === "活动" || panelName === "限时活动") {
+      reportCurrentTelemetry("commercial_entry_click", "activity");
       setActivePanel(null);
       setNativeHomePage("season");
       if (account && selectedServer) {
@@ -3510,6 +3519,8 @@ function App() {
     }
 
     if (panelName === "排行榜" || panelName === "排行") {
+      reportCurrentTelemetry("commercial_entry_click", "rank");
+      reportCurrentTelemetry("long_term_goal_click", "rank-center");
       setActivePanel(null);
       setNativeHomePage("leaderboard");
       if (account && selectedServer) {
@@ -3519,6 +3530,7 @@ function App() {
     }
 
     if (panelName === "商业" || panelName === "商城" || panelName === "特惠商城") {
+      reportCurrentTelemetry("commercial_entry_click", "shop");
       setActivePanel(null);
       setNativeHomePage("shop");
       if (account && selectedServer) {
@@ -3528,6 +3540,7 @@ function App() {
     }
 
     if (panelName === "特权" || panelName === "月卡" || panelName === "创业基金") {
+      reportCurrentTelemetry("commercial_entry_click", "privilege");
       setActivePanel(null);
       setNativeHomePage("privilege");
       if (account && selectedServer) {
@@ -3538,6 +3551,7 @@ function App() {
     }
 
     if (panelName === "通行证" || panelName === "赛季通行证") {
+      reportCurrentTelemetry("commercial_entry_click", "pass");
       setActivePanel(null);
       setNativeHomePage("pass");
       if (account && selectedServer) {
@@ -3557,6 +3571,7 @@ function App() {
     }
 
     if (panelName === "专属经理") {
+      reportCurrentTelemetry("commercial_entry_click", "manager");
       if (account && selectedServer) {
         void loadRandomTasks(account.token, selectedServer.id);
         void loadEvents(account.token, selectedServer.id);
@@ -3741,6 +3756,7 @@ function App() {
     );
 
     if (response.success) {
+      reportCurrentTelemetry("business_clock_todo_handled", response.data.task.configId, { status: "resolved" });
       setRandomTaskCenter(response.data.center);
       setProfile(response.data.profile);
       setRandomTaskNotice(response.data.task.knowledge === null ? response.data.result : `${response.data.result} · 相关知识卡：${response.data.task.knowledge.title}`);
@@ -4140,6 +4156,11 @@ function App() {
       return;
     }
 
+    const product = shopCenter?.products.find((item) => item.id === productId);
+    if (product?.category === "weekly_card" || product?.category === "monthly_card" || product?.category === "growth_fund") {
+      reportCurrentTelemetry("paid_product_entry_click", product.category, { productId });
+    }
+
     const response = await apiRequest<ShopPurchaseResult>(
       "/shop/purchase",
       {
@@ -4403,7 +4424,10 @@ function App() {
               ))}
             </div>
             {businessClockHint && (
-              <button className="pointer-events-auto inline-flex w-fit items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-slate-950/70 px-3 py-1 text-[10px] font-black text-emerald-200" type="button" onClick={() => openHomePanel("财务")}>
+              <button className="pointer-events-auto inline-flex w-fit items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-slate-950/70 px-3 py-1 text-[10px] font-black text-emerald-200" type="button" onClick={() => {
+                reportCurrentTelemetry("business_clock_briefing_open", "finance-hud");
+                openHomePanel("财务");
+              }}>
                 <Icon name="clock" className="w-3 h-3" />
                 {businessClockHint}
               </button>

@@ -568,6 +568,13 @@ type AnalyticsDashboard = {
     vipLevelDistribution: Array<{ level: number; count: number }>;
     shopClickCount: number;
     shopPurchaseConversionBasisPoints: number;
+    commercialEntryClickTotal: number;
+    commercialEntryClicks: Array<{ entry: string; count: number }>;
+    paidProductEntryClickTotal: number;
+    paidProductEntryClicks: Array<{ product: string; count: number }>;
+    longTermGoalClickCount: number;
+    businessClockBriefingOpenCount: number;
+    businessClockTodoHandledCount: number;
   };
   alerts: Array<{ level: string; message: string; traceId: string | null }>;
 };
@@ -608,6 +615,23 @@ const formatDateTime = (value: string | null): string => {
   return date.toLocaleString("zh-CN", { hour12: false });
 };
 const formatRate = (basisPoints: number): string => `${(basisPoints / 100).toFixed(1)}%`;
+const commercialEntryLabel = (entry: string): string => {
+  if (entry === "shop") return "商业";
+  if (entry === "privilege") return "特权";
+  if (entry === "pass") return "通行证";
+  if (entry === "activity") return "活动";
+  if (entry === "rank") return "排行";
+  if (entry === "manager") return "专属经理";
+  return entry;
+};
+const paidProductLabel = (product: string): string => {
+  if (product === "weekly_card") return "周卡";
+  if (product === "monthly_card") return "月卡";
+  if (product === "growth_fund") return "创业基金";
+  if (product === "season_pass") return "通行证";
+  if (product === "activity_shop") return "活动商店";
+  return product;
+};
 const activityDraftStatusLabel = (status: ActivityDraftStatus): string => {
   if (status === "draft") return "草稿";
   if (status === "pending_review") return "待审核";
@@ -1977,6 +2001,11 @@ export default function App() {
                       <tr><td>平台币消耗</td><td>{formatNumber(analytics?.monetization.platformCoinSpentTotal ?? 0)}</td></tr>
                       <tr><td>商品点击</td><td>{formatNumber(analytics?.monetization.shopClickCount ?? 0)}</td></tr>
                       <tr><td>购买转化率</td><td>{formatRate(analytics?.monetization.shopPurchaseConversionBasisPoints ?? 0)}</td></tr>
+                      <tr><td>商业入口点击</td><td>{formatNumber(analytics?.monetization.commercialEntryClickTotal ?? 0)}</td></tr>
+                      <tr><td>付费入口点击</td><td>{formatNumber(analytics?.monetization.paidProductEntryClickTotal ?? 0)}</td></tr>
+                      <tr><td>长期目标点击</td><td>{formatNumber(analytics?.monetization.longTermGoalClickCount ?? 0)}</td></tr>
+                      <tr><td>夜间简报打开</td><td>{formatNumber(analytics?.monetization.businessClockBriefingOpenCount ?? 0)}</td></tr>
+                      <tr><td>经营待办处理</td><td>{formatNumber(analytics?.monetization.businessClockTodoHandledCount ?? 0)}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2004,6 +2033,22 @@ export default function App() {
                   <p>暂无 VIP 数据。</p>
                 ) : analytics?.monetization.vipLevelDistribution.map((item) => (
                   <p key={item.level}>VIP {item.level}：{formatNumber(item.count)}</p>
+                ))}
+              </div>
+              <div>
+                <h3>商业入口点击</h3>
+                {(analytics?.monetization.commercialEntryClicks.length ?? 0) === 0 ? (
+                  <p>暂无商业入口数据。</p>
+                ) : analytics?.monetization.commercialEntryClicks.map((item) => (
+                  <p key={item.entry}>{commercialEntryLabel(item.entry)}：{formatNumber(item.count)}</p>
+                ))}
+              </div>
+              <div>
+                <h3>付费入口点击</h3>
+                {(analytics?.monetization.paidProductEntryClicks.length ?? 0) === 0 ? (
+                  <p>暂无付费入口数据。</p>
+                ) : analytics?.monetization.paidProductEntryClicks.map((item) => (
+                  <p key={item.product}>{paidProductLabel(item.product)}：{formatNumber(item.count)}</p>
                 ))}
               </div>
               <div>
