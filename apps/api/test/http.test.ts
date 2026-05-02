@@ -6414,6 +6414,54 @@ test("phase 26 company status lazily syncs business clock within safe bounds", a
   });
 });
 
+test("phase 26 company status creates night business briefing without duplicate settlement", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "phase26brief", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "简报验收",
+        companyName: "夜间经营社"
+      })
+    });
+
+    const first = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+    assert.equal(first.status, 200);
+
+    const afterOffline = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:40:00.000Z" }
+    });
+    assert.equal(afterOffline.status, 200);
+    const briefing = afterOffline.body.data?.businessClock?.nightBriefing;
+    assert.ok(briefing);
+    assert.equal(briefing.offlineMinutes, 40);
+    assert.ok(briefing.actionPowerRecovered >= 0);
+    assert.equal(briefing.newTodoCount, 1);
+    assert.equal(briefing.summary, "夜间经营简报：离线 40 分钟，公司经营已完成一次轻量同步。");
+    assert.ok(briefing.cashDelta > 0);
+    assert.ok(briefing.nextAction.length > 0);
+
+    const repeat = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:41:00.000Z" }
+    });
+    assert.equal(repeat.status, 200);
+    assert.equal(repeat.body.data?.cash, afterOffline.body.data?.cash);
+    assert.equal(repeat.body.data?.businessClock?.settledTicks, 0);
+  });
+});
+
 test("picks recruit candidates by configured weight boundaries", () => {
   const pool = [
     { id: "common", recruitWeight: 10 },

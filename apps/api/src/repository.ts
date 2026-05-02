@@ -303,6 +303,20 @@ export type BusinessClockPulseRecord = {
   vipExperienceDelta: 0;
   leaderboardRewardDelta: 0;
   summary: string;
+  nightBriefing: NightBusinessBriefingRecord | null;
+};
+
+export type NightBusinessBriefingRecord = {
+  offlineMinutes: number;
+  actionPowerRecovered: number;
+  cashDelta: number;
+  valuationDelta: number;
+  employeeSatisfactionDelta: number;
+  customerSatisfactionDelta: number;
+  riskTip: string;
+  newTodoCount: number;
+  nextAction: string;
+  summary: string;
 };
 
 export type CompanyFinanceSettlementRecord = CompanyFinanceRecord & {
@@ -3501,6 +3515,7 @@ const BUSINESS_CLOCK_TICK_MS = 5 * 60 * 1000;
 const BUSINESS_CLOCK_MAX_OFFLINE_MINUTES = 8 * 60;
 const BUSINESS_CLOCK_MONTHLY_MINUTES = 30 * 24 * 60;
 const BUSINESS_CLOCK_MAX_CASH_DELTA = 80000;
+const NIGHT_BUSINESS_BRIEFING_MINUTES = 30;
 const RANDOM_TASK_VISIBLE_COUNT = 3;
 const RANDOM_TASK_PASS_VISIBLE_BONUS = 1;
 const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
@@ -3519,7 +3534,7 @@ const VIP3_START_EXPERIENCE = 3000;
 const clampNumber = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
 export const calculateBusinessClockPulse = (
-  profile: Pick<PlayerProfileRecord, "businessClockSyncedAt" | "monthlyIncome" | "monthlyExpense" | "cash" | "valuation" | "employeeSatisfaction" | "customerSatisfaction" | "riskStatus">,
+  profile: Pick<PlayerProfileRecord, "businessClockSyncedAt" | "actionPower" | "actionPowerLimit" | "monthlyIncome" | "monthlyExpense" | "cash" | "valuation" | "employeeSatisfaction" | "customerSatisfaction" | "riskStatus">,
   now: Date
 ): BusinessClockPulseRecord => {
   const previousSyncedAt = profile.businessClockSyncedAt;
@@ -3538,7 +3553,8 @@ export const calculateBusinessClockPulse = (
       platformCoinsDelta: 0,
       vipExperienceDelta: 0,
       leaderboardRewardDelta: 0,
-      summary: "经营时钟已建立，等待下一次经营脉冲。"
+      summary: "经营时钟已建立，等待下一次经营脉冲。",
+      nightBriefing: null
     };
   }
 
@@ -3562,7 +3578,8 @@ export const calculateBusinessClockPulse = (
       platformCoinsDelta: 0,
       vipExperienceDelta: 0,
       leaderboardRewardDelta: 0,
-      summary: "经营时钟冷却中，5 分钟内不重复结算。"
+      summary: "经营时钟冷却中，5 分钟内不重复结算。",
+      nightBriefing: null
     };
   }
 
@@ -3574,6 +3591,28 @@ export const calculateBusinessClockPulse = (
   const employeeSatisfactionDelta = cashDelta >= 0 ? 1 : -1;
   const customerSatisfactionDelta = cashDelta >= 0 ? 1 : -1;
   const signedCash = cashDelta >= 0 ? `+${cashDelta}` : `${cashDelta}`;
+  const actionPowerRecovered = Math.min(
+    Math.max(0, profile.actionPowerLimit - profile.actionPower),
+    Math.floor((settledMinutes * 60 * 1000) / ACTION_POWER_RECOVERY_INTERVAL_MS) * ACTION_POWER_RECOVERY_AMOUNT
+  );
+  const hasNightBriefing = settledMinutes >= NIGHT_BUSINESS_BRIEFING_MINUTES;
+  const riskTip = cashDelta < 0 || profile.riskStatus !== "稳健"
+    ? "经营波动偏高，建议先查看财务风险和专属经理待办。"
+    : "现金流稳定，可以继续推进项目、产品和活动目标。";
+  const nightBriefing: NightBusinessBriefingRecord | null = hasNightBriefing
+    ? {
+        offlineMinutes: settledMinutes,
+        actionPowerRecovered,
+        cashDelta,
+        valuationDelta,
+        employeeSatisfactionDelta,
+        customerSatisfactionDelta,
+        riskTip,
+        newTodoCount: cashDelta < 0 || profile.riskStatus !== "稳健" ? 2 : 1,
+        nextAction: cashDelta < 0 ? "先处理财务风险，再推进项目。" : "查看财务页后继续推进项目或活动。",
+        summary: `夜间经营简报：离线 ${settledMinutes} 分钟，公司经营已完成一次轻量同步。`
+      }
+    : null;
 
   return {
     serverNow: now.toISOString(),
@@ -3589,7 +3628,8 @@ export const calculateBusinessClockPulse = (
     platformCoinsDelta: 0,
     vipExperienceDelta: 0,
     leaderboardRewardDelta: 0,
-    summary: `经营时钟同步 ${settledMinutes} 分钟，现金 ${signedCash}，平台币/VIP/榜单奖励不变。`
+    summary: `经营时钟同步 ${settledMinutes} 分钟，现金 ${signedCash}，平台币/VIP/榜单奖励不变。`,
+    nightBriefing
   };
 };
 

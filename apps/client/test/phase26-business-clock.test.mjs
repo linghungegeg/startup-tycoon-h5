@@ -9,6 +9,9 @@ test("phase 26 finance page exposes business clock pulse summary copy", async ()
     "BusinessClockPulse",
     "经营时钟",
     "最近经营脉冲",
+    "夜间经营简报",
+    "建议动作",
+    "行动力恢复",
     "平台币 / VIP / 榜单不变",
     "离线经营"
   ]) {

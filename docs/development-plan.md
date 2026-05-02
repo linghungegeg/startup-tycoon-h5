@@ -2405,6 +2405,19 @@ VIP 权益：
 - 重复打开简报不重复结算。
 - 验收标准：玩家回归时知道公司在离线期间发生了什么，以及下一步应处理什么。
 
+##### Phase 26 第二实施批次总结：夜间经营简报
+
+- 完成内容：扩展 `GET /company/status` 的 `businessClock.nightBriefing`，离线结算达到 30 分钟后返回夜间经营简报，包含离线时长、行动力恢复展示值、现金变化、估值变化、员工/客户满意度变化、风险提示、新待办数量和建议动作。
+- 幂等边界：夜间简报复用经营时钟懒同步结果，不新增领取接口；重复打开 5 分钟冷却内不重复结算现金、估值和满意度，平台币、VIP 经验和榜单奖励继续保持 0。
+- 前台接入：只在现有财务页“最近经营脉冲”卡片下展示“夜间经营简报”，不新增主页入口、不新增回归弹窗、不改变 HUD 和底部导航结构。
+- 四插件检查：
+  - Superpowers：按 TDD 先补 API 夜间简报红灯测试和前台简报文案红灯检查，再做最小实现并验证转绿。
+  - Browser Use：本地浏览器验收前台主页、财务页“最近经营脉冲”、底部导航、Admin 首页和 API health；前台/Admin fresh console error 为 0。
+  - Build Web Apps：简报沿用深色商务手游财务面板层级，作为只读信息块承接，不做营销式弹窗和额外入口。
+  - Game Studio：夜间简报不占用 HUD，不遮挡主页任务条、左右入口、底部导航和财务页滚动区域。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 26 company status|loads and settles company finance|platform coin spending upgrades VIP|phase 25 long-term goals|phase 25 admin monetization boundaries" --import tsx apps/api/test/http.test.ts`、`node --test apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 26 第三实施批次“经营脉冲生成专属经理待办”。
+
 #### Phase 26 第三实施批次：经营脉冲生成专属经理待办
 
 - 高负债、负现金流、员工满意度下降、客户满意度下降、风险状态恶化时，有概率生成专属经理待办。

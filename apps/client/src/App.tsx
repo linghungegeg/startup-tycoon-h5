@@ -280,6 +280,20 @@ type BusinessClockPulse = {
   vipExperienceDelta: 0;
   leaderboardRewardDelta: 0;
   summary: string;
+  nightBriefing: NightBusinessBriefing | null;
+};
+
+type NightBusinessBriefing = {
+  offlineMinutes: number;
+  actionPowerRecovered: number;
+  cashDelta: number;
+  valuationDelta: number;
+  employeeSatisfactionDelta: number;
+  customerSatisfactionDelta: number;
+  riskTip: string;
+  newTodoCount: number;
+  nextAction: string;
+  summary: string;
 };
 
 type CompanyFinance = {
@@ -4552,6 +4566,28 @@ function App() {
                             </div>
                           ))}
                         </div>
+                        {companyFinance.businessClock.nightBriefing && (
+                          <article className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3" aria-label="夜间经营简报">
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="text-xs text-emerald-100 font-black">夜间经营简报</strong>
+                              <span className="text-[10px] text-emerald-200 font-black">{companyFinance.businessClock.nightBriefing.offlineMinutes} 分钟</span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-200 font-bold leading-5">{companyFinance.businessClock.nightBriefing.summary}</p>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              {[
+                                ["行动力恢复", `+${companyFinance.businessClock.nightBriefing.actionPowerRecovered}`],
+                                ["新待办", `${companyFinance.businessClock.nightBriefing.newTodoCount} 个`]
+                              ].map(([label, value]) => (
+                                <div className="rounded-xl bg-slate-950/40 border border-white/5 p-2" key={label}>
+                                  <div className="text-[10px] text-slate-500 font-bold">{label}</div>
+                                  <div className="mt-1 text-sm text-white font-black">{value}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="mt-3 text-[10px] text-slate-300 font-bold leading-5">{companyFinance.businessClock.nightBriefing.riskTip}</p>
+                            <p className="mt-1 text-[10px] text-business-gold font-black">建议动作：{companyFinance.businessClock.nightBriefing.nextAction}</p>
+                          </article>
+                        )}
                       </section>
                     )}
 
