@@ -2400,6 +2400,11 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody>
+                    {activities.length === 0 && (
+                      <tr>
+                        <td colSpan={6}>暂无活动配置</td>
+                      </tr>
+                    )}
                     {activities.map((activity) => (
                       <tr
                         className={activity.id === selectedActivity?.id ? "selected-row" : undefined}
@@ -2844,12 +2849,12 @@ export default function App() {
                 </div>
                 <div>
                   <h3>档期窗口</h3>
+                  {activitySchedule.windows.filter((window) => window.activeCount > 0).length === 0 && <p>暂无活动档期</p>}
                   {activitySchedule.windows.filter((window) => window.activeCount > 0).slice(0, 8).map((window) => (
                     <p key={window.date}>
                       {window.date}：{window.activeCount} 个 / {window.status === "crowded" ? "拥挤" : "正常"} / {window.activeActivityNames.slice(0, 3).join("、")}
                     </p>
                   ))}
-                  {activitySchedule.windows.length === 0 && <p>暂无活动档期</p>}
                 </div>
                 <div>
                   <h3>运营提示</h3>

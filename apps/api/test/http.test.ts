@@ -11427,6 +11427,260 @@ test("phase 24 admin activity publish observations are read-only after release",
   });
 });
 
+test("phase 24 activity operation release chain regresses publish observe settle and audit idempotently", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await createPlayerSession(baseUrl, "activitychainfirst");
+    const second = await createPlayerSession(baseUrl, "activitychainsecond");
+    const firstHeaders = { authorization: `Bearer ${first.token}` };
+    const secondHeaders = { authorization: `Bearer ${second.token}` };
+
+    const firstProfileBefore = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: firstHeaders
+    });
+    const secondProfileBefore = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: secondHeaders
+    });
+    assert.equal(firstProfileBefore.status, 200, JSON.stringify(firstProfileBefore.body));
+    assert.equal(secondProfileBefore.status, 200, JSON.stringify(secondProfileBefore.body));
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const draftPayload = {
+      id: "phase24-release-regression",
+      name: "发布链路回归周",
+      startDate: "2026-07-01",
+      endDate: "2026-07-05",
+      leaderboardKey: "activity-phase24-release-regression",
+      targetScore: 220,
+      rewardReputation: 90,
+      rewardPoints: 130,
+      rewardTitleId: "season-phase24-regression",
+      rewardCash: 0,
+      rewardPlatformCoins: 0
+    };
+
+    const validated = await requestJson<{
+      summary: { isValid: boolean; riskCount: number };
+      preview: { id: string; status: string; leaderboardKey: string };
+    }>(baseUrl, "/admin/activity-config-drafts/validate", {
+      method: "POST",
+      headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+      body: JSON.stringify(draftPayload)
+    });
+    assert.equal(validated.status, 200, JSON.stringify(validated.body));
+    assert.equal(validated.body.data?.summary.isValid, true);
+    assert.equal(validated.body.data?.summary.riskCount, 0);
+    assert.equal(validated.body.data?.preview.status, "upcoming");
+
+    const saved = await requestJson<{ draft: { id: string; status: string; activityId: string }; auditLogId: string }>(
+      baseUrl,
+      "/admin/activity-config-drafts",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+        body: JSON.stringify(draftPayload)
+      }
+    );
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.data?.draft.status, "draft");
+    assert.equal(saved.body.data?.draft.activityId, draftPayload.id);
+    assert.ok((saved.body.data?.auditLogId ?? "").length > 0);
+    const draftId = saved.body.data?.draft.id ?? "";
+
+    const submitted = await requestJson<{ draft: { status: string }; auditLogId: string }>(
+      baseUrl,
+      `/admin/activity-config-drafts/${encodeURIComponent(draftId)}/submit`,
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+        body: JSON.stringify({ reason: "第十三批完整链路提交审核" })
+      }
+    );
+    assert.equal(submitted.status, 200, JSON.stringify(submitted.body));
+    assert.equal(submitted.body.data?.draft.status, "pending_review");
+
+    const approved = await requestJson<{ draft: { status: string }; auditLogId: string }>(
+      baseUrl,
+      `/admin/activity-config-drafts/${encodeURIComponent(draftId)}/approve`,
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+        body: JSON.stringify({ reason: "第十三批审批通过" })
+      }
+    );
+    assert.equal(approved.status, 200, JSON.stringify(approved.body));
+    assert.equal(approved.body.data?.draft.status, "approved");
+
+    const published = await requestJson<{
+      draft: { status: string };
+      activity: { id: string; leaderboardKey: string; rewardCash: number; rewardPoints: number };
+      auditLogId: string | null;
+    }>(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draftId)}/publish`, {
+      method: "POST",
+      headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ reason: "第十三批安全发布确认" })
+    });
+    assert.equal(published.status, 200, JSON.stringify(published.body));
+    assert.equal(published.body.data?.draft.status, "published");
+    assert.equal(published.body.data?.activity.id, draftPayload.id);
+    assert.equal(published.body.data?.activity.leaderboardKey, draftPayload.leaderboardKey);
+    assert.equal(published.body.data?.activity.rewardCash, 0);
+    assert.equal(published.body.data?.activity.rewardPoints, 130);
+    assert.ok((published.body.data?.auditLogId ?? "").length > 0);
+    const publishAuditLogId = published.body.data?.auditLogId ?? "";
+
+    const publishedAgain = await requestJson<{ auditLogId: string | null; activity: { id: string } }>(
+      baseUrl,
+      `/admin/activity-config-drafts/${encodeURIComponent(draftId)}/publish`,
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-10" },
+        body: JSON.stringify({ reason: "第十三批重复发布幂等" })
+      }
+    );
+    assert.equal(publishedAgain.status, 200, JSON.stringify(publishedAgain.body));
+    assert.equal(publishedAgain.body.data?.activity.id, draftPayload.id);
+    assert.equal(publishedAgain.body.data?.auditLogId, null);
+
+    const configsAfterPublish = await requestJson<{ activities: Array<{ id: string; leaderboardKey: string; rewardLabel: string }> }>(
+      baseUrl,
+      "/admin/config-center",
+      { headers: { ...adminHeaders, "x-server-date": "2026-05-10" } }
+    );
+    assert.equal(configsAfterPublish.status, 200, JSON.stringify(configsAfterPublish.body));
+    const publishedActivities = configsAfterPublish.body.data?.activities.filter((activity) => activity.id === draftPayload.id) ?? [];
+    assert.equal(publishedActivities.length, 1);
+    assert.equal(publishedActivities[0]?.leaderboardKey, draftPayload.leaderboardKey);
+    assert.equal(publishedActivities[0]?.rewardLabel.includes("平台币"), false);
+
+    await requestJson(baseUrl, `/${"activities"}/${draftPayload.id}/join`, {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-07-02" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, `/${"activities"}/${draftPayload.id}/join`, {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-07-02" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, `/${"activities"}/${draftPayload.id}/progress`, {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-07-02" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 120 })
+    });
+    await requestJson(baseUrl, `/${"activities"}/${draftPayload.id}/progress`, {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-07-02" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 180 })
+    });
+
+    const observationBeforeSettle = await requestJson<{
+      summary: { unsettledEndedCount: number; rewardRiskCount: number };
+      rows: Array<{ activityId: string; status: string; participantCount: number; totalScore: number; isSettled: boolean; deliveredRewards: number; publishAuditLogId: string | null; publishReason: string | null }>;
+    }>(baseUrl, "/admin/activity-publish-observations", {
+      headers: { ...adminHeaders, "x-server-date": "2026-07-06" }
+    });
+    assert.equal(observationBeforeSettle.status, 200, JSON.stringify(observationBeforeSettle.body));
+    assert.equal(observationBeforeSettle.body.data?.summary.rewardRiskCount, 0);
+    assert.equal(observationBeforeSettle.body.data?.summary.unsettledEndedCount, 1);
+    const observationRow = observationBeforeSettle.body.data?.rows.find((row) => row.activityId === draftPayload.id);
+    assert.ok(observationRow);
+    assert.equal(observationRow.status, "ended");
+    assert.equal(observationRow.participantCount, 2);
+    assert.equal(observationRow.totalScore, 300);
+    assert.equal(observationRow.isSettled, false);
+    assert.equal(observationRow.deliveredRewards, 0);
+    assert.equal(observationRow.publishAuditLogId, publishAuditLogId);
+    assert.equal(observationRow.publishReason, "第十三批安全发布确认");
+
+    const settled = await requestJson<{ deliveredRewards: number; auditLogId: string }>(
+      baseUrl,
+      `/admin/activities/${draftPayload.id}/leaderboard/settle`,
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-07-06" },
+        body: JSON.stringify({ reason: "第十三批活动榜收口结算" })
+      }
+    );
+    assert.equal(settled.status, 200, JSON.stringify(settled.body));
+    assert.equal(settled.body.data?.deliveredRewards, 2);
+    assert.ok((settled.body.data?.auditLogId ?? "").length > 0);
+
+    const settledAgain = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      `/admin/activities/${draftPayload.id}/leaderboard/settle`,
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-07-06" },
+        body: JSON.stringify({ reason: "第十三批活动榜幂等重试" })
+      }
+    );
+    assert.equal(settledAgain.status, 200, JSON.stringify(settledAgain.body));
+    assert.equal(settledAgain.body.data?.deliveredRewards, 0);
+
+    const observationAfterSettle = await requestJson<{
+      summary: { unsettledEndedCount: number };
+      rows: Array<{ activityId: string; isSettled: boolean; deliveredRewards: number }>;
+    }>(baseUrl, "/admin/activity-publish-observations", {
+      headers: { ...adminHeaders, "x-server-date": "2026-07-06" }
+    });
+    assert.equal(observationAfterSettle.status, 200, JSON.stringify(observationAfterSettle.body));
+    assert.equal(observationAfterSettle.body.data?.summary.unsettledEndedCount, 0);
+    const settledObservationRow = observationAfterSettle.body.data?.rows.find((row) => row.activityId === draftPayload.id);
+    assert.ok(settledObservationRow);
+    assert.equal(settledObservationRow.isSettled, true);
+    assert.equal(settledObservationRow.deliveredRewards, 2);
+
+    const firstProfileAfter = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: firstHeaders
+    });
+    const secondProfileAfter = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: secondHeaders
+    });
+    assert.equal(firstProfileAfter.body.data?.cash, firstProfileBefore.body.data?.cash);
+    assert.equal(firstProfileAfter.body.data?.platformCoins, firstProfileBefore.body.data?.platformCoins);
+    assert.equal(secondProfileAfter.body.data?.cash, secondProfileBefore.body.data?.cash);
+    assert.equal(secondProfileAfter.body.data?.platformCoins, secondProfileBefore.body.data?.platformCoins);
+    assert.ok((firstProfileAfter.body.data?.reputation ?? 0) > (firstProfileBefore.body.data?.reputation ?? 0));
+    assert.ok((secondProfileAfter.body.data?.reputation ?? 0) > (secondProfileBefore.body.data?.reputation ?? 0));
+
+    const draftAuditLogs = await requestJson<{
+      rows: Array<{ action: string; targetId: string | null; detailJson: { activityId?: string; reason?: string; status?: string } | null }>;
+      total: number;
+    }>(
+      baseUrl,
+      `/admin/audit-logs?targetType=activity_config_draft&targetId=${encodeURIComponent(draftId)}&admin=admin`,
+      { headers: adminHeaders }
+    );
+    assert.equal(draftAuditLogs.status, 200, JSON.stringify(draftAuditLogs.body));
+    assert.equal(draftAuditLogs.body.data?.total, 4);
+    assert.ok(draftAuditLogs.body.data?.rows.some((log) => log.action === "admin_activity_draft_save" && log.detailJson?.activityId === draftPayload.id));
+    assert.ok(draftAuditLogs.body.data?.rows.some((log) => log.action === "admin_activity_draft_submit" && log.detailJson?.reason === "第十三批完整链路提交审核"));
+    assert.ok(draftAuditLogs.body.data?.rows.some((log) => log.action === "admin_activity_draft_approve" && log.detailJson?.status === "approved"));
+    assert.ok(draftAuditLogs.body.data?.rows.some((log) => log.action === "admin_activity_draft_publish" && log.detailJson?.reason === "第十三批安全发布确认"));
+
+    const settlementAuditLogs = await requestJson<{
+      rows: Array<{ action: string; targetId: string | null; detailJson: { activityId?: string; deliveredRewards?: number; isRetry?: boolean } | null }>;
+      total: number;
+    }>(
+      baseUrl,
+      `/admin/audit-logs?action=admin_activity_leaderboard_settle&targetType=activity_leaderboard&targetId=${encodeURIComponent(draftPayload.id)}&admin=admin`,
+      { headers: adminHeaders }
+    );
+    assert.equal(settlementAuditLogs.status, 200, JSON.stringify(settlementAuditLogs.body));
+    assert.equal(settlementAuditLogs.body.data?.total, 2);
+    assert.equal(settlementAuditLogs.body.data?.rows[0]?.detailJson?.isRetry, true);
+    assert.equal(settlementAuditLogs.body.data?.rows[0]?.detailJson?.deliveredRewards, 0);
+    assert.equal(settlementAuditLogs.body.data?.rows[1]?.detailJson?.isRetry, false);
+    assert.equal(settlementAuditLogs.body.data?.rows[1]?.detailJson?.deliveredRewards, 2);
+  });
+});
+
 test("phase 24 operation config alerts support audited handling without rewards", async () => {
   await withServer(async (baseUrl) => {
     const alertId = "reward-boundary:ai-agent-growth:cash";

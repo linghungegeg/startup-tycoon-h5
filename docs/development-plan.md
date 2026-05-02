@@ -2191,7 +2191,7 @@ VIP 权益：
 
 ### Phase 24 第十三实施批次完整开发计划：活动运营发布链路收口回归与阶段总结
 
-- 当前稳定点：`edafc7c feat: add activity publish observations`。
+- 当前稳定点：`2f795c2 docs: require four-plugin phase checks`。
 - 阶段目标：不新增活动玩法，完整收口 Phase 24 已完成的活动运营能力，确认活动配置草案、校验、审批、安全发布、发布观察、活动榜、活动回顾、活动商店、Admin 配置清单和审计日志形成稳定闭环。
 - 后端收口：
   - 补全活动运营链路回归测试，覆盖草案校验、草案保存、提交审核、审批通过、驳回、安全发布、重复发布幂等、发布后观察、活动榜手动结算和审计日志追溯。
@@ -2224,6 +2224,20 @@ VIP 权益：
   - 执行既有禁用词扫描命令，确认 `apps` 和 `docs/development-plan.md` 无命中。
   - Browser Use 验收 `http://127.0.0.1:5174/` Admin 配置清单完整链路和 `http://127.0.0.1:5173/` 前台活动页、Rank 荣誉中心。
   - Game Studio 检查前台 HUD、底部导航、活动页、Rank 页和滚动区域无回归遮挡。
+
+### Phase 24 第十三实施批次阶段总结：活动运营发布链路收口回归
+
+- 完成内容：本批不新增活动玩法，补齐活动运营发布链路的单条完整回归测试，覆盖草案校验、保存、提交审核、审批通过、安全发布、重复发布幂等、发布观察、活动期报名/积分、活动榜结束后结算、重复结算幂等、草案审计和活动榜审计追溯。
+- 后端收口：新增 `phase 24 activity operation release chain regresses publish observe settle and audit idempotently` 回归用例，确认草案发布生成的正式活动不会重复写入正式配置，重复发布不再写审计，活动榜重复结算发放 0 条，结算链路不增加现金和平台币，玩家仅获得声望类榜单奖励。
+- Admin 收口：活动运营列表补充无活动空态；配置清单的活动轮换节奏按有活动的档期窗口显示空态；运营配置巡检筛选网格适配等级、处理状态、告警类型、关键字和操作按钮，保持稳重后台表格结构，不新增弹窗或自动修复。
+- 玩家前台收口：本批未改玩家侧玩法语义；通过浏览器验收回归赛季活动页、Rank 荣誉中心、HUD、右侧入口、底部导航和滚动区域，确认新增后台收口信息不遮挡玩家主操作。
+- 四插件执行证据：
+  - Superpowers：按当前稳定点 `2f795c2` 维护最小改动范围；先补收口回归测试并执行红绿验证，红灯阶段暴露审计日期过滤断言范围过宽，收敛后确认生产 API 无需改动。
+  - Browser Use：打开本地 Admin 与前台页面，验收配置清单、活动运营、赛季活动页和 Rank 荣誉中心的真实浏览器状态。
+  - Build Web Apps：检查 Admin 活动运营和配置清单维持后台表格、筛选、状态标签和页内说明结构；未引入营销式卡片或复杂弹窗。
+  - Game Studio：检查前台 HUD、活动页、Rank 页、底部导航和滚动容器，确认全覆盖内页滚动和主操作区域未被遮挡。
+- 验证结果：`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`git diff --check` 均通过；禁用词扫描无新增命中。
+- Phase 24 活动运营深化完成；下一阶段入口：Phase 25 第一实施批次“长期目标中心”。
 
 ### Phase 25 完整开发计划：玩家长期目标与商业化体验收口
 

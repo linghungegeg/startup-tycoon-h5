@@ -566,7 +566,7 @@ tbody tr {
 }
 
 .alert-filter {
-  grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) auto;
+  grid-template-columns: repeat(3, minmax(160px, 1fr)) minmax(220px, 1.2fr) auto;
   margin-bottom: 0;
   border-width: 0 0 1px;
   border-radius: 0;
