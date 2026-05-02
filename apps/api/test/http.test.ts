@@ -2794,6 +2794,155 @@ const createTestRepository = (): GameRepository => {
         auditLogId: `${adminUserId}:${groupId}:${serverId}:${reason}`
       };
     },
+    async listAdminGuilds(filters, today) {
+      const rows = [...guilds.values()]
+        .filter((guild) => (filters.serverId === "" ? true : guild.serverId === filters.serverId))
+        .filter((guild) => (filters.keyword === "" ? true : guild.name.includes(filters.keyword)))
+        .map((guild) => {
+          const group = crossServerGroups.find((item) => item.serverIds.includes(guild.serverId));
+          const activities = [...guildActivityLogs.values()].filter((activity) => activity.guildId === guild.id && activity.createdAt.slice(0, 10) === today);
+          const row = {
+            id: guild.id,
+            serverId: guild.serverId,
+            name: guild.name,
+            level: guild.level,
+            contributionScore: guild.contributionScore,
+            memberCount: [...guildMembers.values()].filter((member) => member.guildId === guild.id).length,
+            todayActiveMemberCount: new Set(activities.map((activity) => activity.profileId)).size,
+            helpRequestCount: [...guildHelpRequests.values()].filter((request) => request.guildId === guild.id).length,
+            projectCount: [...guildProjectProgresses.values()].filter((project) => project.guildId === guild.id).length,
+            crossServerRegistered: group === undefined ? false : crossServerGuildSignups.has(`${guild.id}|${group.id}`),
+            crossServerGroupName: group?.name ?? null,
+            createdAt: new Date().toISOString()
+          };
+          return row;
+        })
+        .filter((guild) => {
+          if (filters.crossRegistered === "registered" && !guild.crossServerRegistered) return false;
+          if (filters.crossRegistered === "unregistered" && guild.crossServerRegistered) return false;
+          if (filters.activeStatus === "active" && guild.todayActiveMemberCount <= 0) return false;
+          if (filters.activeStatus === "inactive" && guild.todayActiveMemberCount > 0) return false;
+          return true;
+        });
+
+      return { rows };
+    },
+    async getAdminGuildDetail(guildId) {
+      const guild = guilds.get(guildId);
+      if (guild === undefined) {
+        return "GUILD_NOT_FOUND";
+      }
+      const group = crossServerGroups.find((item) => item.serverIds.includes(guild.serverId));
+      const members = [...guildMembers.values()].filter((member) => member.guildId === guild.id);
+      return {
+        guild: {
+          id: guild.id,
+          serverId: guild.serverId,
+          name: guild.name,
+          level: guild.level,
+          contributionScore: guild.contributionScore,
+          announcement: guild.announcement,
+          collaborationRules: guild.collaborationRules,
+          createdAt: new Date().toISOString()
+        },
+        members: members.map((member) => {
+          const profile = [...profiles.values()].find((item) => item.id === member.profileId);
+          return {
+            profileId: member.profileId,
+            founderName: profile?.founderName ?? "",
+            companyName: profile?.companyName ?? "",
+            role: member.role,
+            contributionScore: member.contributionScore,
+            joinedAt: new Date().toISOString()
+          };
+        }),
+        techs: [
+          { id: "guild-tech-efficiency", name: "协作效率", level: guildTechStates.get(`${guild.id}:guild-tech-efficiency`)?.level ?? 0, maxLevel: 5 }
+        ],
+        helpRequests: [...guildHelpRequests.values()]
+          .filter((request) => request.guildId === guild.id)
+          .map((request) => {
+            const profile = [...profiles.values()].find((item) => item.id === request.profileId);
+            return {
+              id: request.id,
+              profileId: request.profileId,
+              founderName: profile?.founderName ?? "",
+              requestType: request.requestType,
+              status: request.status,
+              createdAt: request.createdAt,
+              fulfilledAt: request.fulfilledAt
+            };
+          }),
+        projects: ["joint-roadshow", "risk-review-week", "market-co-creation"].map((projectId, index) => {
+          const progress = guildProjectProgresses.get(`${guild.id}:${projectId}`);
+          return {
+            id: projectId,
+            name: ["联合路演", "风险复核周", "市场共创"][index] ?? projectId,
+            progress: progress?.progress ?? 0,
+            target: [3, 6, 8][index] ?? 1,
+            claimedAt: progress?.claimedAt ?? null
+          };
+        }),
+        crossServer: {
+          isRegistered: group === undefined ? false : crossServerGuildSignups.has(`${guild.id}|${group.id}`),
+          groupId: group?.id ?? null,
+          groupName: group?.name ?? null,
+          signupDate: group === undefined || !crossServerGuildSignups.has(`${guild.id}|${group.id}`) ? null : new Date().toISOString().slice(0, 10)
+        }
+      };
+    },
+    async settleAdminGuildLeaderboard(adminUserId, guildId, today, reason) {
+      const member = [...guildMembers.values()].find((item) => item.guildId === guildId);
+      if (member === undefined) {
+        return "GUILD_NOT_FOUND";
+      }
+      const profile = [...profiles.values()].find((item) => item.id === member.profileId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const settlement = await this.settleGuildLeaderboard(profile.accountId, profile.serverId, today);
+      if (settlement === "PLAYER_NOT_FOUND" || settlement === "GUILD_NOT_JOINED") {
+        return "PLAYER_NOT_FOUND";
+      }
+      const auditLogId = `${adminUserId}:${guildId}:${reason}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_guild_leaderboard_settle",
+        targetType: "guild",
+        targetId: guildId,
+        detail: reason,
+        createdAt: new Date().toISOString()
+      });
+      return { ...settlement, auditLogId };
+    },
+    async settleAdminCrossServerGuild(adminUserId, serverId, today, reason) {
+      const member = [...guildMembers.values()]
+        .map((guildMember) => [...profiles.values()].find((profile) => profile.id === guildMember.profileId))
+        .find((profile) => profile?.serverId === serverId);
+      if (member === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const settlement = await this.settleCrossServerGuildRewards(member.accountId, serverId, today);
+      if (
+        settlement === "PLAYER_NOT_FOUND" ||
+        settlement === "CROSS_SERVER_GROUP_NOT_FOUND" ||
+        settlement === "GUILD_NOT_JOINED"
+      ) {
+        return settlement;
+      }
+      const auditLogId = `${adminUserId}:${serverId}:${reason}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_cross_guild_season_settle",
+        targetType: "cross_server_guild",
+        targetId: serverId,
+        detail: reason,
+        createdAt: new Date().toISOString()
+      });
+      return { ...settlement, auditLogId };
+    },
     async listServers() {
       return servers;
     },
@@ -8856,5 +9005,172 @@ test("cross-server guild season gates registration ranks guilds and settles repu
     });
     assert.equal(duplicate.status, 200, JSON.stringify(duplicate.body));
     assert.equal(duplicate.body.data?.deliveredRewards, 0);
+  });
+});
+
+test("admin guild operations lists details and settles guild rewards idempotently", async () => {
+  await withServer(async (baseUrl) => {
+    const leader = await createPlayerSession(baseUrl, "adminguildleader");
+    const member = await createPlayerSession(baseUrl, "adminguildmember");
+    const leaderHeaders = { authorization: `Bearer ${leader.token}` };
+    const memberHeaders = { authorization: `Bearer ${member.token}` };
+
+    const blocked = await requestJson(baseUrl, "/admin/guilds");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "后台运营会" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "后台运营会" })
+    });
+    const guildCenter = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    const memberRequestId = guildCenter.body.data?.joinRequests.find((request) => request.profileId === member.profile.id)?.id ?? "";
+    assert.ok(memberRequestId);
+    await requestJson<GuildActionRecord>(baseUrl, `/guild/applications/${encodeURIComponent(memberRequestId)}/review`, {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+
+    const help = await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    const helpId = help.body.data?.guildCenter.helpRequests[0]?.id ?? "";
+    await requestJson<GuildActionRecord>(baseUrl, `/guild/help/${encodeURIComponent(helpId)}/fulfill`, {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/guild/register", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const guilds = await requestJson<{
+      rows: Array<{
+        id: string;
+        name: string;
+        serverId: string;
+        memberCount: number;
+        todayActiveMemberCount: number;
+        crossServerRegistered: boolean;
+      }>;
+    }>(baseUrl, "/admin/guilds?keyword=后台&serverId=s1&crossRegistered=registered&activeStatus=active", {
+      headers: adminHeaders
+    });
+    assert.equal(guilds.status, 200, JSON.stringify(guilds.body));
+    assert.equal(guilds.body.data?.rows.length, 1);
+    const guildId = guilds.body.data?.rows[0]?.id ?? "";
+    assert.ok(guildId);
+    assert.equal(guilds.body.data?.rows[0]?.name, "后台运营会");
+    assert.equal(guilds.body.data?.rows[0]?.memberCount, 2);
+    assert.equal(guilds.body.data?.rows[0]?.todayActiveMemberCount, 2);
+    assert.equal(guilds.body.data?.rows[0]?.crossServerRegistered, true);
+
+    const detail = await requestJson<{
+      guild: { id: string; name: string; contributionScore: number };
+      members: Array<{ profileId: string; role: string; contributionScore: number }>;
+      techs: Array<{ id: string; level: number }>;
+      helpRequests: Array<{ id: string; status: string; requestType: string }>;
+      projects: Array<{ id: string; progress: number; target: number }>;
+      crossServer: { isRegistered: boolean; groupName: string | null };
+    }>(baseUrl, `/admin/guilds/${encodeURIComponent(guildId)}`, {
+      headers: adminHeaders
+    });
+    assert.equal(detail.status, 200, JSON.stringify(detail.body));
+    assert.equal(detail.body.data?.guild.name, "后台运营会");
+    assert.deepEqual(detail.body.data?.members.map((item) => item.role).sort(), ["leader", "member"]);
+    assert.ok(detail.body.data?.techs.length);
+    assert.ok(detail.body.data?.helpRequests.some((item) => item.status === "fulfilled" && item.requestType === "project-advice"));
+    assert.ok(detail.body.data?.projects.some((item) => item.progress > 0 && item.target > 0));
+    assert.equal(detail.body.data?.crossServer.isRegistered, true);
+    assert.equal(detail.body.data?.crossServer.groupName, "开服成长池");
+
+    const beforeLeader = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: leaderHeaders
+    });
+    const guildSettlement = await requestJson<{ deliveredRewards: number; auditLogId: string }>(
+      baseUrl,
+      `/admin/guilds/${encodeURIComponent(guildId)}/leaderboard/settle`,
+      {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ reason: "阶段23第七批商会榜结算" })
+      }
+    );
+    assert.equal(guildSettlement.status, 200, JSON.stringify(guildSettlement.body));
+    assert.equal(guildSettlement.body.data?.deliveredRewards, 2);
+    assert.ok(guildSettlement.body.data?.auditLogId);
+    const guildSettlementDuplicate = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      `/admin/guilds/${encodeURIComponent(guildId)}/leaderboard/settle`,
+      {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ reason: "阶段23第七批商会榜结算重试" })
+      }
+    );
+    assert.equal(guildSettlementDuplicate.status, 200, JSON.stringify(guildSettlementDuplicate.body));
+    assert.equal(guildSettlementDuplicate.body.data?.deliveredRewards, 0);
+
+    const crossSettlement = await requestJson<{ deliveredRewards: number; auditLogId: string }>(
+      baseUrl,
+      "/admin/cross-server/guild/settle",
+      {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ serverId: "s1", reason: "阶段23第七批跨服商会结算" })
+      }
+    );
+    assert.equal(crossSettlement.status, 200, JSON.stringify(crossSettlement.body));
+    assert.equal(crossSettlement.body.data?.deliveredRewards, 1);
+    assert.ok(crossSettlement.body.data?.auditLogId);
+    const crossSettlementDuplicate = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/cross-server/guild/settle",
+      {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ serverId: "s1", reason: "阶段23第七批跨服商会结算重试" })
+      }
+    );
+    assert.equal(crossSettlementDuplicate.status, 200, JSON.stringify(crossSettlementDuplicate.body));
+    assert.equal(crossSettlementDuplicate.body.data?.deliveredRewards, 0);
+
+    const afterLeader = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(afterLeader.body.data?.cash, beforeLeader.body.data?.cash);
+    assert.equal(afterLeader.body.data?.platformCoins, beforeLeader.body.data?.platformCoins);
+
+    const logs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+      headers: adminHeaders
+    });
+    assert.equal(logs.status, 200);
+    assert.ok(logs.body.data?.some((log) => log.action === "admin_guild_leaderboard_settle"));
+    assert.ok(logs.body.data?.some((log) => log.action === "admin_cross_guild_season_settle"));
   });
 });

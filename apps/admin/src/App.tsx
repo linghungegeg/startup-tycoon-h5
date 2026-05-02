@@ -97,6 +97,63 @@ type CrossServerGroupList = {
   groups: CrossServerGroup[];
 };
 
+type AdminGuildRow = {
+  id: string;
+  serverId: string;
+  name: string;
+  level: number;
+  contributionScore: number;
+  memberCount: number;
+  todayActiveMemberCount: number;
+  helpRequestCount: number;
+  projectCount: number;
+  crossServerRegistered: boolean;
+  crossServerGroupName: string | null;
+  createdAt: string;
+};
+
+type AdminGuildList = {
+  rows: AdminGuildRow[];
+};
+
+type AdminGuildDetail = {
+  guild: {
+    id: string;
+    serverId: string;
+    name: string;
+    level: number;
+    contributionScore: number;
+    announcement: string;
+    collaborationRules: string;
+    createdAt: string;
+  };
+  members: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    role: string;
+    contributionScore: number;
+    joinedAt: string;
+  }>;
+  techs: Array<{ id: string; name: string; level: number; maxLevel: number }>;
+  helpRequests: Array<{
+    id: string;
+    profileId: string;
+    founderName: string;
+    requestType: string;
+    status: string;
+    createdAt: string;
+    fulfilledAt: string | null;
+  }>;
+  projects: Array<{ id: string; name: string; progress: number; target: number; claimedAt: string | null }>;
+  crossServer: {
+    isRegistered: boolean;
+    groupId: string | null;
+    groupName: string | null;
+    signupDate: string | null;
+  };
+};
+
 type WalletAdjustment = {
   wallet: {
     balance: number;
@@ -228,7 +285,7 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "configs" | "knowledge" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "analytics", label: "数据看板" },
@@ -236,6 +293,7 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "wallet", label: "平台币 / VIP" },
   { id: "titles", label: "称号 / 补偿" },
   { id: "cross", label: "跨服分组" },
+  { id: "guilds", label: "商会运营" },
   { id: "configs", label: "配置清单" },
   { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
@@ -353,6 +411,16 @@ export default function App() {
   const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
   const [vipConfigs, setVipConfigs] = useState<VipConfig[]>([]);
   const [crossGroups, setCrossGroups] = useState<CrossServerGroup[]>([]);
+  const [guilds, setGuilds] = useState<AdminGuildRow[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState("");
+  const [selectedGuildDetail, setSelectedGuildDetail] = useState<AdminGuildDetail | null>(null);
+  const [guildKeyword, setGuildKeyword] = useState("");
+  const [guildServerId, setGuildServerId] = useState("");
+  const [guildCrossRegistered, setGuildCrossRegistered] = useState("");
+  const [guildActiveStatus, setGuildActiveStatus] = useState("");
+  const [guildSettleReason, setGuildSettleReason] = useState("运营手动结算商会贡献榜");
+  const [crossGuildSettleServerId, setCrossGuildSettleServerId] = useState("s1");
+  const [crossGuildSettleReason, setCrossGuildSettleReason] = useState("运营手动结算跨服商会赛季");
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeList>({ rows: [], total: 0, categories: [] });
   const [configCenter, setConfigCenter] = useState<ConfigCenter>({
     titles: [],
@@ -402,6 +470,10 @@ export default function App() {
     () => knowledgeList.rows.find((knowledge) => knowledge.id === selectedKnowledgeId) ?? knowledgeList.rows[0] ?? null,
     [knowledgeList.rows, selectedKnowledgeId]
   );
+  const selectedGuild = useMemo(
+    () => guilds.find((guild) => guild.id === selectedGuildId) ?? guilds[0] ?? null,
+    [guilds, selectedGuildId]
+  );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
     setKnowledgeList(data);
@@ -416,10 +488,25 @@ export default function App() {
     setIsLoading(true);
     setError("");
     try {
-      const [playerList, vipList, groupList] = await Promise.all([
+      const guildParams = new URLSearchParams();
+      if (guildKeyword.trim() !== "") {
+        guildParams.set("keyword", guildKeyword.trim());
+      }
+      if (guildServerId.trim() !== "") {
+        guildParams.set("serverId", guildServerId.trim());
+      }
+      if (guildCrossRegistered !== "") {
+        guildParams.set("crossRegistered", guildCrossRegistered);
+      }
+      if (guildActiveStatus !== "") {
+        guildParams.set("activeStatus", guildActiveStatus);
+      }
+
+      const [playerList, vipList, groupList, guildList] = await Promise.all([
         apiRequest<AdminPlayerList>(`/admin/players?keyword=${encodeURIComponent(searchKeyword.trim())}`, {}, token),
         apiRequest<VipConfig[]>("/admin/vip/configs", {}, token),
-        apiRequest<CrossServerGroupList>("/admin/cross-server/groups", {}, token)
+        apiRequest<CrossServerGroupList>("/admin/cross-server/groups", {}, token),
+        apiRequest<AdminGuildList>(`/admin/guilds?${guildParams.toString()}`, {}, token)
       ]);
 
       if (!playerList.success) {
@@ -434,12 +521,20 @@ export default function App() {
         setError(groupList.error.message);
         return;
       }
+      if (!guildList.success) {
+        setError(guildList.error.message);
+        return;
+      }
 
       setPlayers(playerList.data.rows);
       setVipConfigs(vipList.data);
       setCrossGroups(groupList.data.groups);
+      setGuilds(guildList.data.rows);
+      const firstGuildId = guildList.data.rows[0]?.id ?? "";
+      setSelectedGuildId((current) => guildList.data.rows.some((guild) => guild.id === current) ? current : firstGuildId);
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
+      setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
       const [configs, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<AuditLog[]>("/admin/audit-logs", {}, token),
@@ -471,12 +566,20 @@ export default function App() {
         setSelectedProfileId((current) => current || (playerList.data.rows[0]?.profileId ?? ""));
         setAssignServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       }
+      if (firstGuildId !== "") {
+        const detail = await apiRequest<AdminGuildDetail>(`/admin/guilds/${encodeURIComponent(firstGuildId)}`, {}, token);
+        if (detail.success) {
+          setSelectedGuildDetail(detail.data);
+        }
+      } else {
+        setSelectedGuildDetail(null);
+      }
     } catch {
       setError("无法连接后台服务，请确认 API 服务和数据库已启动。");
     } finally {
       setIsLoading(false);
     }
-  }, [keyword]);
+  }, [guildActiveStatus, guildCrossRegistered, guildKeyword, guildServerId, keyword]);
 
   useEffect(() => {
     if (initialSession === null) {
@@ -572,6 +675,9 @@ export default function App() {
     setPlayers([]);
     setVipConfigs([]);
     setCrossGroups([]);
+    setGuilds([]);
+    setSelectedGuildId("");
+    setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
     setAnalytics(null);
@@ -614,6 +720,86 @@ export default function App() {
     setKnowledgeForm(emptyKnowledgeForm());
     applyKnowledgeList(response.data);
     setActionMessage(`已刷新知识卡：${response.data.total} 条`);
+  };
+
+  const loadGuildDetail = async (guildId: string): Promise<void> => {
+    if (session === null || guildId === "") {
+      return;
+    }
+    const detail = await apiRequest<AdminGuildDetail>(`/admin/guilds/${encodeURIComponent(guildId)}`, {}, session.token);
+    if (!detail.success) {
+      setError(detail.error.message);
+      return;
+    }
+    setSelectedGuildId(guildId);
+    setSelectedGuildDetail(detail.data);
+  };
+
+  const submitGuildSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+    await loadAdminData(session.token, keyword);
+    setActionMessage("已刷新商会运营数据。");
+  };
+
+  const submitGuildLeaderboardSettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedGuild === null) {
+      return;
+    }
+    if (guildSettleReason.trim().length < 2) {
+      setError("请输入商会榜结算原因。");
+      return;
+    }
+    if (!window.confirm(`确认手动结算 ${selectedGuild.name} 商会贡献榜？`)) {
+      return;
+    }
+
+    const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
+      `/admin/guilds/${encodeURIComponent(selectedGuild.id)}/leaderboard/settle`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason: guildSettleReason.trim() })
+      },
+      session.token
+    );
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`商会贡献榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+    await loadGuildDetail(selectedGuild.id);
+  };
+
+  const submitCrossGuildSettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+    if (crossGuildSettleServerId.trim() === "" || crossGuildSettleReason.trim().length < 2) {
+      setError("请输入区服 ID 和跨服商会结算原因。");
+      return;
+    }
+    if (!window.confirm(`确认手动结算 ${crossGuildSettleServerId} 跨服商会赛季？`)) {
+      return;
+    }
+
+    const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/guild/settle", {
+      method: "POST",
+      body: JSON.stringify({
+        serverId: crossGuildSettleServerId.trim(),
+        reason: crossGuildSettleReason.trim()
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`跨服商会赛季结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
   };
 
   const selectKnowledge = (knowledge: KnowledgeEntry): void => {
@@ -955,7 +1141,7 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p>Phase 17 商业化调优</p>
+            <p>Phase 23 运营收口</p>
             <h1>{menuItems.find((item) => item.id === activeSection)?.label}</h1>
           </div>
           <div className="operator-bar">
@@ -1322,6 +1508,160 @@ export default function App() {
                 </table>
               </div>
             </section>
+          </section>
+        )}
+
+        {activeSection === "guilds" && (
+          <section className="stacked-sections" aria-label="商会运营">
+            <form className="filter-bar" aria-label="商会筛选" onSubmit={(event) => void submitGuildSearch(event)}>
+              <label>
+                商会关键词
+                <input onChange={(event) => setGuildKeyword(event.target.value)} value={guildKeyword} />
+              </label>
+              <label>
+                区服 ID
+                <input onChange={(event) => setGuildServerId(event.target.value)} value={guildServerId} />
+              </label>
+              <label>
+                跨服报名
+                <select onChange={(event) => setGuildCrossRegistered(event.target.value)} value={guildCrossRegistered}>
+                  <option value="">全部</option>
+                  <option value="registered">已报名</option>
+                  <option value="unregistered">未报名</option>
+                </select>
+              </label>
+              <label>
+                今日活跃
+                <select onChange={(event) => setGuildActiveStatus(event.target.value)} value={guildActiveStatus}>
+                  <option value="">全部</option>
+                  <option value="active">有活跃</option>
+                  <option value="inactive">无活跃</option>
+                </select>
+              </label>
+              <button type="submit">查询商会</button>
+            </form>
+
+            <section className="operation-grid" aria-label="商会运营操作">
+              <form className="operation-panel" onSubmit={(event) => void submitGuildLeaderboardSettlement(event)}>
+                <h2>商会贡献榜结算</h2>
+                <p className="panel-note">
+                  当前商会：{selectedGuild === null ? "暂无商会" : `${selectedGuild.name}，贡献 ${formatNumber(selectedGuild.contributionScore)}`}
+                </p>
+                <label>
+                  结算原因
+                  <input onChange={(event) => setGuildSettleReason(event.target.value)} value={guildSettleReason} />
+                </label>
+                <button disabled={selectedGuild === null} type="submit">二次确认后结算</button>
+              </form>
+
+              <form className="operation-panel" onSubmit={(event) => void submitCrossGuildSettlement(event)}>
+                <h2>跨服商会赛季结算</h2>
+                <label>
+                  区服 ID
+                  <input onChange={(event) => setCrossGuildSettleServerId(event.target.value)} value={crossGuildSettleServerId} />
+                </label>
+                <label>
+                  结算原因
+                  <input onChange={(event) => setCrossGuildSettleReason(event.target.value)} value={crossGuildSettleReason} />
+                </label>
+                <button type="submit">二次确认后结算</button>
+              </form>
+            </section>
+
+            <section className="table-section" aria-label="商会列表">
+              <div className="table-toolbar">
+                <strong>商会运营列表</strong>
+                <span>共 {guilds.length} 个商会</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>商会</th>
+                      <th>区服</th>
+                      <th>等级 / 贡献</th>
+                      <th>成员 / 活跃</th>
+                      <th>互助 / 项目</th>
+                      <th>跨服赛季</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guilds.map((guild) => (
+                      <tr key={guild.id}>
+                        <td>{guild.name}</td>
+                        <td>{guild.serverId}</td>
+                        <td>Lv.{guild.level} / {formatNumber(guild.contributionScore)}</td>
+                        <td>{guild.memberCount} / {guild.todayActiveMemberCount}</td>
+                        <td>{guild.helpRequestCount} / {guild.projectCount}</td>
+                        <td>{guild.crossServerRegistered ? `已报名 ${guild.crossServerGroupName ?? ""}` : "未报名"}</td>
+                        <td>
+                          <button className="table-action" type="button" onClick={() => void loadGuildDetail(guild.id)}>
+                            查看详情
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            {selectedGuildDetail !== null && (
+              <section className="operation-grid" aria-label="商会详情">
+                <section className="table-section compact-table">
+                  <div className="table-toolbar">
+                    <strong>{selectedGuildDetail.guild.name} 详情</strong>
+                    <span>{selectedGuildDetail.crossServer.isRegistered ? `跨服已报名：${selectedGuildDetail.crossServer.groupName ?? ""}` : "跨服未报名"}</span>
+                  </div>
+                  <div className="config-grid">
+                    <div>
+                      <h3>公告</h3>
+                      <p>{selectedGuildDetail.guild.announcement || "暂无公告"}</p>
+                    </div>
+                    <div>
+                      <h3>协作规则</h3>
+                      <p>{selectedGuildDetail.guild.collaborationRules || "暂无规则"}</p>
+                    </div>
+                    <div>
+                      <h3>科技</h3>
+                      {selectedGuildDetail.techs.map((tech) => (
+                        <p key={tech.id}>{tech.name}：{tech.level}/{tech.maxLevel}</p>
+                      ))}
+                    </div>
+                    <div>
+                      <h3>协作项目</h3>
+                      {selectedGuildDetail.projects.map((project) => (
+                        <p key={project.id}>{project.name}：{project.progress}/{project.target}{project.claimedAt === null ? "" : " / 已领奖"}</p>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+
+                <section className="table-section compact-table">
+                  <div className="table-toolbar">
+                    <strong>成员与互助</strong>
+                    <span>{selectedGuildDetail.members.length} 名成员，最近 {selectedGuildDetail.helpRequests.length} 条互助</span>
+                  </div>
+                  <div className="config-grid">
+                    <div>
+                      <h3>成员</h3>
+                      {selectedGuildDetail.members.map((member) => (
+                        <p key={member.profileId}>{member.companyName} / {member.role} / 贡献 {formatNumber(member.contributionScore)}</p>
+                      ))}
+                    </div>
+                    <div>
+                      <h3>互助</h3>
+                      {selectedGuildDetail.helpRequests.length === 0 ? (
+                        <p>暂无互助请求。</p>
+                      ) : selectedGuildDetail.helpRequests.map((request) => (
+                        <p key={request.id}>{request.founderName}：{request.requestType} / {request.status}</p>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              </section>
+            )}
           </section>
         )}
 

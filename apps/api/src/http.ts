@@ -991,6 +991,125 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/guilds") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const filters = {
+        keyword: url.searchParams.get("keyword")?.trim() ?? "",
+        serverId: url.searchParams.get("serverId")?.trim() ?? "",
+        crossRegistered: url.searchParams.get("crossRegistered")?.trim() ?? "",
+        activeStatus: url.searchParams.get("activeStatus")?.trim() ?? ""
+      };
+      sendJson(response, 200, success(await repository.listAdminGuilds(filters, readToday(request)), traceId));
+      return;
+    }
+
+    const adminGuildDetailMatch = request.method === "GET" ? /^\/admin\/guilds\/([^/]+)$/.exec(url.pathname) : null;
+    if (adminGuildDetailMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const result = await repository.getAdminGuildDetail(decodeURIComponent(adminGuildDetailMatch[1] ?? ""), readToday(request));
+      if (result === "GUILD_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_NOT_FOUND", "Guild not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const adminGuildSettleMatch = request.method === "POST" ? /^\/admin\/guilds\/([^/]+)\/leaderboard\/settle$/.exec(url.pathname) : null;
+    if (adminGuildSettleMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const reason = readString(body, "reason");
+        if (reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "reason is required.", traceId));
+          return;
+        }
+
+        const result = await repository.settleAdminGuildLeaderboard(admin.id, decodeURIComponent(adminGuildSettleMatch[1] ?? ""), readToday(request), reason);
+        if (result === "GUILD_NOT_FOUND") {
+          sendJson(response, 404, failure("GUILD_NOT_FOUND", "Guild not found.", traceId));
+          return;
+        }
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "No guild member profile found.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/cross-server/guild/settle") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readString(body, "serverId");
+        const reason = readString(body, "reason");
+        if (serverId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.settleAdminCrossServerGuild(admin.id, serverId, readToday(request), reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "No guild member profile found in this server.", traceId));
+          return;
+        }
+        if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+          sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross server group not found.", traceId));
+          return;
+        }
+        if (result === "GUILD_NOT_JOINED") {
+          sendJson(response, 409, failure("GUILD_NOT_JOINED", "No guild membership available for settlement.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/admin/cross-server/groups/assign") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
