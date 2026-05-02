@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const developmentPlan = readFileSync(new URL("../../../docs/development-plan.md", import.meta.url), "utf8");
 
 test("phase 27 client preserves pre-launch player main flow coverage", () => {
   for (const text of [
@@ -26,6 +27,7 @@ test("phase 27 client preserves pre-launch player main flow coverage", () => {
   ]) {
     assert.ok(source.includes(text), `missing main flow copy or label: ${text}`);
   }
+  assert.doesNotMatch(source, /请确认 API 服务已启动/, "player client source should not expose API startup wording");
 });
 
 test("phase 27 client keeps full-screen inner pages addressable", () => {
@@ -57,7 +59,7 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
   assert.match(source, /data-testid="home-social-dock"/, "home social dock should stay addressable");
   assert.match(source, /data-testid="home-chat-entry"/, "home chat shortcut should stay addressable");
   assert.match(source, /data-testid="native-chat"/, "full-screen chat page should stay addressable");
-  assert.match(source, /data-testid="chat-unified-shell"/, "chat should render as one unified game panel");
+  assert.match(source, /data-testid="chat-content-pane"/, "chat content pane should stay addressable");
   assert.match(source, /data-testid="chat-close-button"/, "chat close button should stay addressable without a separate top nav");
   assert.doesNotMatch(source, /\? "可发言" : activeChatChannelConfig\?\.readonlyReason \?\? "系统频道只读"/, "chat status bar should not duplicate send permission copy beside the close button");
   assert.match(source, /data-testid="chat-channel-rail"/, "chat channels should use a left-side category rail");
@@ -72,15 +74,21 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
 
 test("phase 29 client promotes cross-server into an independent full-screen center", () => {
   for (const copy of [
-    "跨服中心",
+    "跨服创业赛",
+    "今日跨服目标",
+    "赛季进度",
+    "冲榜助力",
+    "参与奖励",
+    "阶段奖励",
+    "排名奖励",
+    "赛季",
+    "榜单",
     "创业大赛",
     "跨服商会",
-    "跨服历史",
-    "奖励规则",
+    "历史",
     "我的排名",
-    "奖励预览",
     "前往跨服",
-    "跨服数据读取中，请确认 API 服务已启动。"
+    "暂无跨服数据"
   ]) {
     assert.ok(source.includes(copy), `missing cross-server independent UI copy: ${copy}`);
   }
@@ -91,9 +99,22 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /panelName === "跨服"/, "home panel router should handle the cross-server entry");
   assert.match(source, /setNativeHomePage\("cross-server"\)/, "cross-server entry should open the independent page");
   assert.match(source, /data-testid="native-cross-server"/, "independent cross-server page should stay addressable");
+  assert.match(source, /data-testid="cross-server-unified-shell"/, "cross-server should render as one unified game panel");
+  assert.match(source, /data-testid="cross-server-close-button"/, "cross-server close button should stay addressable without a separate top nav");
+  assert.match(source, /data-testid="cross-server-mode-rail"/, "cross-server modes should use a left-side rail");
+  assert.match(source, /data-testid="cross-server-content-pane"/, "cross-server content should stay in the right-side pane");
+  assert.match(source, /activeCrossServerMode !== "season"/, "cross-server season overview should be controlled by the left rail");
+  assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should be controlled by the left rail");
+  assert.match(source, /activeCrossServerMode !== "guild"/, "cross-server guild content should be controlled by the left rail");
+  assert.match(source, /activeCrossServerMode !== "rewards"/, "cross-server rewards content should be controlled by the left rail");
+  assert.match(source, /activeCrossServerMode !== "history"/, "cross-server history content should be controlled by the left rail");
+  assert.doesNotMatch(source, /business-tabs mt-3/, "cross-server should not keep a second category tab row inside the content pane");
   assert.match(source, /home-cross-server-entry/, "home cross-server entry should stay addressable");
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
   assert.match(source, /data-testid="cross-server-guild-season"/, "guild cross-server season should stay addressable");
+  assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");
+  assert.doesNotMatch(source, /跨服数据读取中，请确认 API 服务已启动。/, "player cross-server empty copy should avoid engineering wording");
+  assert.doesNotMatch(source, /不改变跨服结算算法|奖励预览：|长期目标：/, "cross-server player UI should avoid backend-rule or long explanatory copy");
 });
 
 test("phase 30 client exposes mail capsule and full-screen mail center", () => {
@@ -116,7 +137,6 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.match(source, /data-testid="home-mail-unread-count"/, "home unread mail count should stay addressable");
   assert.match(source, /setNativeHomePage\("mail"\)/, "mail capsule should open full-screen mail center");
   assert.match(source, /data-testid="native-mail"/, "full-screen mail page should stay addressable");
-  assert.match(source, /data-testid="mail-unified-shell"/, "mail should render as one unified game panel");
   assert.match(source, /data-testid="mail-close-button"/, "mail close button should stay addressable without a separate top nav");
   assert.match(source, /data-testid="mail-channel-rail"/, "mail categories should use a left-side rail");
   assert.match(source, /data-testid="mail-content-pane"/, "mail content should stay in the right-side pane");
@@ -127,6 +147,13 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.doesNotMatch(source, /邮件读取中，请确认 API 服务已启动。/, "player mail empty/loading copy should avoid engineering wording");
   assert.match(source, /\/mails\?serverId=/, "client should load mail center from API");
   assert.match(source, /\/mails\/read-all/, "client should mark all mails read through API");
+});
+
+test("phase 28-30 plan requires researched differentiated full-screen layouts", () => {
+  assert.match(developmentPlan, /统一安全底座/, "full-screen rules should define a shared safety base rather than one visual template");
+  assert.match(developmentPlan, /按功能差异化布局/, "full-screen rules should require function-specific layouts");
+  assert.match(developmentPlan, /布局前联网参考/, "full-screen changes should require external layout research before implementation");
+  assert.doesNotMatch(developmentPlan, /优先使用“单一统一壳层 \+ 内嵌关闭按钮 \+ 左侧分类轨 \+ 右侧内容区”的结构/, "plan should not force every feature page into the same left-rail layout");
 });
 
 test("phase 30 home keeps cross-server chat and mail centered above the main task module", () => {

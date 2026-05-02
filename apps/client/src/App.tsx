@@ -884,6 +884,7 @@ type ChatCenter = {
 
 type MailChannelId = "system" | "reward" | "compensation";
 type MailStatusFilter = "all" | "unread" | "read";
+type CrossServerMode = "season" | "board" | "guild" | "rewards" | "history";
 
 type MailRecord = {
   id: string;
@@ -1783,6 +1784,7 @@ function App() {
   const [selectedMailId, setSelectedMailId] = useState("");
   const [mailNotice, setMailNotice] = useState("");
   const [mailError, setMailError] = useState("");
+  const [activeCrossServerMode, setActiveCrossServerMode] = useState<CrossServerMode>("season");
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
 
@@ -2091,9 +2093,12 @@ function App() {
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
+  const personalCrossRank = profile === null ? "-" : primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-";
   const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
   const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
   const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
+  const todayGoalSection = longTermGoals?.sections.find((section) => section.key === "today") ?? null;
+  const seasonGoalSection = longTermGoals?.sections.find((section) => section.key === "season") ?? null;
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
   const activeChatMessages = useMemo(
     () => chatCenter?.messages.filter((message) => message.channel === activeChatChannel) ?? [],
@@ -3475,7 +3480,7 @@ function App() {
 
       setStep("profile");
     } catch {
-      setError("无法连接游戏服务器，请确认 API 服务已启动。");
+      setError("暂时无法连接游戏服务器。");
     } finally {
       setIsBusy(false);
     }
@@ -3567,7 +3572,7 @@ function App() {
       reportTelemetry(account.token, selectedServer.id, "tutorial_step", "profile-created", { step: "profile_created" });
       enterGame(account, selectedServer, selectedAvatar, created.data);
     } catch {
-      setError("创建角色失败，请确认 API 服务已启动。");
+      setError("创建角色失败，请稍后重试。");
     } finally {
       setIsBusy(false);
     }
@@ -4697,7 +4702,7 @@ function App() {
                 <strong className="block text-xs font-black truncate text-white">{highlightedTask ? highlightedTask.title : "任务配置读取中"}</strong>
                 <span className="flex items-center gap-2 mt-1">
                   <span className="flex items-center gap-1 text-[9px] text-emerald-400 font-bold truncate">
-                    <Icon name="gem" className="w-2.5 h-2.5" /> {highlightedTask ? highlightedTask.rewardLabel : "请确认 API 服务已启动"}
+                    <Icon name="gem" className="w-2.5 h-2.5" /> {highlightedTask ? highlightedTask.rewardLabel : "暂无奖励"}
                   </span>
                 </span>
               </span>
@@ -5024,7 +5029,7 @@ function App() {
                   </>
                 ) : (
                   <section className="glass-panel rounded-3xl p-5">
-                    <p className="text-xs text-slate-300 font-bold leading-5">{financeError || "财务数据读取中，请确认 API 服务已启动。"}</p>
+                    <p className="text-xs text-slate-300 font-bold leading-5">{financeError || "财务数据暂未同步。"}</p>
                     <button
                       className="mt-4 btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark"
                       type="button"
@@ -5237,7 +5242,7 @@ function App() {
                     </button>
                   </div>
                 </section>
-                {!seasonCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">赛季活动读取中，请确认 API 服务已启动。</p>}
+                {!seasonCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无赛季活动。</p>}
               </div>
             </section>
           )}
@@ -5436,7 +5441,7 @@ function App() {
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <strong className="block text-sm text-white font-black">跨服摘要</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服数据读取中，请确认 API 服务已启动。"}</span>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "暂无跨服数据"}</span>
                     </div>
                     <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
                       {crossServerCenter?.isRegistered ? "已报名" : "未报名"}
@@ -5712,7 +5717,7 @@ function App() {
                     <button className="w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void joinGuild()}>加入本服商会</button>
                   )}
                 </section>
-                {!leaderboardCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">排行榜读取中，请确认 API 服务已启动。</p>}
+                {!leaderboardCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无排行榜数据。</p>}
               </div>
               <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-4 px-2">
@@ -5732,30 +5737,95 @@ function App() {
 
           {nativeHomePage === "cross-server" && (
             <section className="page-container page-active" aria-label="跨服" data-testid="native-cross-server">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="trophy" className="w-7 h-7 text-business-gold" />
-                  <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Cross 跨服中心</h2>
-                    <span className="text-[10px] text-slate-500">{crossServerCenter?.group.name ?? "跨服分组读取中"} · {crossServerCenter?.isRegistered ? "已报名" : "未报名"} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</span>
-                  </div>
-                </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
-                </button>
-              </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-28 scroll-hide">
+              <div className="flex-1 px-4 pb-5 pt-10 overflow-hidden">
+                <div className="relative grid h-full grid-cols-[4.8rem_minmax(0,1fr)] overflow-hidden rounded-[1.7rem] border border-business-gold/30 bg-[#121722]/95 shadow-[0_18px_45px_rgba(0,0,0,0.55)]" data-testid="cross-server-unified-shell">
+                  <button className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-business-gold/30 bg-slate-950/80 text-slate-200" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
+                    <Icon name="x" className="h-5 w-5" />
+                  </button>
+                  <nav className="flex flex-col gap-2 border-r border-business-gold/20 bg-slate-950/55 px-2 py-5 pt-14" data-testid="cross-server-mode-rail" aria-label="跨服分类">
+                    {[
+                      ["season", "赛季"],
+                      ["board", "榜单"],
+                      ["guild", "商会"],
+                      ["rewards", "奖励"],
+                      ["history", "历史"]
+                    ].map(([mode, label]) => (
+                      <button
+                        className={`rounded-xl px-1 py-3 text-[11px] font-black transition-colors ${activeCrossServerMode === mode ? "bg-business-gold text-business-dark shadow-[0_8px_18px_rgba(245,158,11,0.22)]" : "text-slate-300 hover:bg-white/5"}`}
+                        key={mode}
+                        type="button"
+                        onClick={() => setActiveCrossServerMode(mode as CrossServerMode)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="flex min-w-0 flex-col overflow-hidden" data-testid="cross-server-content-pane">
+                    <div className="border-b border-business-gold/20 px-4 pb-3 pt-5">
+                      <div className="flex items-start justify-between gap-10">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 text-business-gold">
+                            <Icon name="trophy" className="h-5 w-5" />
+                            <span className="text-[10px] font-black">跨服中心</span>
+                          </div>
+                          <h2 className="mt-1 text-xl font-black text-white">跨服创业赛</h2>
+                          <p className="mt-1 truncate text-[10px] leading-5 text-slate-400">{crossServerCenter?.group.name ?? "暂无跨服数据"} · {crossServerCenter?.isRegistered ? "已报名" : "未报名"} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</p>
+                        </div>
+                        <div className="shrink-0 pr-14 text-right">
+                          <strong className="block text-lg text-business-gold">{personalCrossRank}</strong>
+                          <span className="text-[9px] font-bold text-slate-500">我的排名</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-hide">
                 {(phase14Notice || phase14Error) && (
                   <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
                     {phase14Error || phase14Notice}
                   </p>
                 )}
 
-                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board">
+                <div className="space-y-3" hidden={activeCrossServerMode !== "season"}>
+                <section className="rounded-2xl border border-business-gold/25 bg-slate-950/40 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">今日跨服目标</strong>
+                      <span className="text-[9px] text-slate-500">{todayGoalSection?.summary ?? "报名、查看榜单、推进任务提升估值"}</span>
+                    </div>
+                    <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.isRegistered ? "已报名" : "待报名"}</strong><span className="text-[9px] text-slate-500">参赛状态</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{todayGoalSection?.goals[0]?.statusLabel ?? "推进中"}</strong><span className="text-[9px] text-slate-500">今日任务</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{longTermGoals?.summaries.todayClaimableCount ?? 0}</strong><span className="text-[9px] text-slate-500">可领取</span></div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-white font-black">赛季进度</strong>
+                    <span className="text-[9px] text-business-gold">{seasonCenter?.season.name ?? "赛季"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonCenter?.season.points ?? 0}</strong><span className="text-[9px] text-slate-500">积分</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonCenter?.season.pass.isPurchased ? "已开通" : "普通"}</strong><span className="text-[9px] text-slate-500">通行证</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonGoalSection?.goals.length ?? 0}</strong><span className="text-[9px] text-slate-500">赛季目标</span></div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-business-gold/20 bg-business-gold/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-sm text-white font-black">冲榜助力</strong>
+                    <span className="text-[9px] text-business-gold">{guildCenter?.todayCollaborationCount ?? 0} 次协作</span>
+                  </div>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-300 font-bold">前往跨服查看榜单，结合商会任务、项目协作和长期目标提升估值。</p>
+                </section>
+                </div>
+
+                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board" hidden={activeCrossServerMode !== "board"}>
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服分组读取中"}</span>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "暂无跨服数据"}</span>
                     </div>
                     <span className="text-[10px] text-business-gold">{crossServerCenter?.isRegistered ? "已报名" : "未报名"}</span>
                   </div>
@@ -5773,13 +5843,6 @@ function App() {
                       <span className="text-[9px] text-slate-500">报名状态</span>
                     </div>
                   </div>
-                  <nav className="business-tabs mt-3" aria-label="跨服频道">
-                    {["创业大赛", "跨服商会", "跨服历史", "奖励规则"].map((tabName) => (
-                      <button className={tabName === "创业大赛" ? "active" : undefined} key={tabName} type="button">
-                        {tabName}
-                      </button>
-                    ))}
-                  </nav>
                   <div className="mt-3 space-y-2">
                     {(primaryCrossLeaderboard?.rows ?? []).slice(0, 3).map((row) => (
                       <article className={`rounded-2xl border p-3 flex items-center gap-3 ${row.rank === 1 ? "border-business-gold/30 bg-business-gold/10" : "border-white/5 bg-slate-900/60"}`} key={row.profileId}>
@@ -5791,14 +5854,14 @@ function App() {
                         <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
                       </article>
                     ))}
-                    {(primaryCrossLeaderboard?.rows.length ?? 0) === 0 && <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">跨服数据读取中，请确认 API 服务已启动。</p>}
+                    {(primaryCrossLeaderboard?.rows.length ?? 0) === 0 && <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无跨服数据。</p>}
                   </div>
                   <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
-                    奖励预览：跨服榜奖励通过邮件幂等发放，称号和声望用于长期荣誉展示。
+                    奖励通过邮件发放。
                   </p>
                 </section>
 
-                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-guild-season">
+                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-guild-season" hidden={activeCrossServerMode !== "guild"}>
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
                       <strong className="block text-sm text-white font-black">跨服商会赛季</strong>
@@ -5823,7 +5886,7 @@ function App() {
                     </div>
                   </div>
                   <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
-                    奖励预览：{crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
+                    {crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
                   </p>
                   <div className="mt-3 space-y-2">
                     {(crossServerCenter?.guildBoard.rows ?? []).slice(0, 3).map((row) => (
@@ -5842,7 +5905,7 @@ function App() {
                   </div>
                 </section>
 
-                <section className="glass-panel rounded-3xl p-4" aria-label="跨服历史">
+                <section className="glass-panel rounded-3xl p-4" aria-label="跨服历史" hidden={activeCrossServerMode !== "history"}>
                   <div className="flex items-center justify-between gap-3">
                     <strong className="text-sm text-white font-black">跨服历史</strong>
                     <span className="text-[9px] text-business-gold">{crossServerGuildHistory?.isRegistered ? "已报名" : "未报名"}</span>
@@ -5858,12 +5921,17 @@ function App() {
                   )}
                 </section>
 
-                <section className="glass-panel rounded-3xl p-4" aria-label="奖励规则">
+                <section className="glass-panel rounded-3xl p-4" aria-label="奖励规则" hidden={activeCrossServerMode !== "rewards"}>
                   <strong className="text-sm text-white font-black">奖励规则</strong>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">不改变跨服结算算法、不新增奖励、不改变称号规则；报名、结算和跨服商会赛季继续复用既有幂等接口。</p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">参与奖励</strong><span className="text-[9px] text-slate-500">报名参赛</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">阶段奖励</strong><span className="text-[9px] text-slate-500">赛季目标</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">排名奖励</strong><span className="text-[9px] text-slate-500">榜单结算</span></div>
+                  </div>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">奖励通过邮件发放，结算后查看邮件。</p>
                 </section>
-              </div>
-              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                    </div>
+                    <div className="border-t border-business-gold/20 bg-slate-950/55 p-3" data-testid="cross-server-action-bar">
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
@@ -5887,7 +5955,10 @@ function App() {
                     {crossServerCenter?.guildSeason.isRegistered ? "商会已报名" : "报名商会赛季"}
                   </button>
                 </div>
-              </footer>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
           )}
 
@@ -6214,7 +6285,7 @@ function App() {
                     {phase14Error || phase14Notice}
                   </p>
                 )}
-                {!guildCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商会配置读取中，请确认 API 服务已启动。</p>}
+                {!guildCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无商会数据。</p>}
               </div>
             </section>
           )}
@@ -6325,7 +6396,7 @@ function App() {
                   </section>
                 )}
                 {!shopCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城配置读取中，请确认 API 服务已启动。</p>
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无商城配置。</p>
                 )}
               </div>
             </section>
@@ -6430,7 +6501,7 @@ function App() {
                   </section>
                 )}
                 {!shopCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">特权配置读取中，请确认 API 服务已启动。</p>
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无特权配置。</p>
                 )}
               </div>
             </section>
@@ -6563,7 +6634,7 @@ function App() {
                   </div>
                 </section>
                 {!seasonCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">赛季通行证读取中，请确认 API 服务已启动。</p>
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无通行证配置。</p>
                 )}
               </div>
             </section>
@@ -6778,7 +6849,7 @@ function App() {
                       </div>
                       <strong className="block text-sm font-black text-white truncate">{highlightedTask ? highlightedTask.title : "任务配置读取中"}</strong>
                       <p className="mt-2 text-[10px] text-slate-400 font-medium">
-                        {highlightedTask ? highlightedTask.rewardLabel : "请确认 API 服务已启动"}
+                        {highlightedTask ? highlightedTask.rewardLabel : "暂无奖励"}
                       </p>
                     </div>
                   </div>
@@ -7156,7 +7227,7 @@ function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="funding-empty">产品配置读取中，请确认 API 服务已启动。</div>
+                    <div className="funding-empty">暂无产品配置。</div>
                   )}
                 </article>
               </section>
@@ -7281,7 +7352,7 @@ function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="funding-empty">市场配置读取中，请确认 API 服务已启动。</div>
+                    <div className="funding-empty">暂无市场配置。</div>
                   )}
                 </article>
               </section>
@@ -7392,7 +7463,7 @@ function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="funding-empty">投资人配置读取中，请确认 API 服务已启动。</div>
+                    <div className="funding-empty">暂无投资人配置。</div>
                   )}
                 </article>
               </section>
@@ -7509,7 +7580,7 @@ function App() {
                       </div>
                     </>
                   ) : (
-                    <div className="loan-empty">贷款配置读取中，请确认 API 服务已启动。</div>
+                    <div className="loan-empty">暂无贷款配置。</div>
                   )}
                 </article>
               </section>
