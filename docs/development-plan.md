@@ -2558,6 +2558,19 @@ VIP 权益：
 - 验收标准：
   - 筛选、表格、详情、刷新、手动结算、审计入口稳定；不新增复杂弹窗；不把 Admin 做成卡片堆叠页。
 
+##### Phase 27 第四实施批次总结：Admin 主流程上线前回归
+
+- 完成内容：新增 Admin 主流程回归测试，锁定后台登录、数据看板、玩家查询、平台币 / VIP、称号 / 补偿、跨服分组、商会运营、活动运营、经营时钟、经济巡检、配置清单、知识审核和审计日志入口。
+- 运营区域：回归锁定商业化数据看板、长期目标点击、玩家账号与公司档案、平台币/VIP 审计提示、跨服分组管理、商会运营列表、活动榜手动结算、活动草案审批、活动发布观察、经营时钟只读观测、经济巡检只读边界、付费价值边界、赛季 / 活动运营配置总览、知识审核字段和操作审计日志。
+- 边界：本批不改业务接口、不改资产、不改结算、不新增 Admin 操作入口；只补上线前 Admin 回归锁定和浏览器验收。
+- 四插件检查：
+  - Superpowers：按 Phase 27 第四批目标收敛为 Admin 主流程回归，先补静态测试确认现有页面覆盖后不做多余实现。
+  - Browser Use：本地浏览器需验收 Admin 登录后各菜单可见、数据看板/玩家查询/活动运营/配置清单/经营时钟/经济巡检/审计日志可访问，并确认 API health 和前台主页不回归。
+  - Build Web Apps：Admin 保持稳重后台表格、摘要、表单和详情结构，不新增营销式页面、不做卡片堆叠。
+  - Game Studio：本批不改前台玩法层；确认前台 HUD、底部导航、活动/Rank/商业/专属经理入口不受 Admin 回归影响。
+- 验证命令：`node --test apps/admin/test/phase27-admin-main-flow-regression.test.mjs`、`node --test apps/admin/test/phase27-admin-main-flow-regression.test.mjs apps/admin/test/phase27-economy-alerts.test.mjs apps/admin/test/phase27-monetization-analytics.test.mjs apps/admin/test/phase26-business-clock-observations.test.mjs`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`git diff --check`。
+- 下一批入口：Phase 27 第五实施批次“Readiness 与生产前质量收口”。
+
 #### Phase 27 第五实施批次：Readiness 与生产前质量收口
 
 - 后端检查：
