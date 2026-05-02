@@ -245,6 +245,21 @@ type ConfigCenter = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+type MonetizationBoundaries = {
+  summary: {
+    platformCoinSourceCount: number;
+    platformCoinSpendCount: number;
+    vipExperienceSourceCount: number;
+    paidProductCount: number;
+    riskCount: number;
+  };
+  walletPolicies: Array<{ id: string; flow: string; vipExperiencePolicy: string; boundaryLabel: string }>;
+  paidProductBoundaries: Array<{ id: string; name: string; category: string; pricePlatformCoins: number; rewardType: string; vipExperiencePolicy: string; leaderboardRewardPolicy: string }>;
+  seasonPassBoundary: { seasonId: string; pricePlatformCoins: number; vipExperiencePolicy: string; leaderboardRewardPolicy: string };
+  activityShopBoundary: { itemCount: number; platformCoinRewardItemCount: number; rewardPolicy: string };
+  riskItems: Array<{ id: string; level: string; message: string; suggestion: string }>;
+};
+
 type OperationConfigAlert = {
   id: string;
   level: string;
@@ -752,6 +767,14 @@ export default function App() {
     filters: { levels: [], types: [], targetTypes: [], statuses: [] },
     alerts: []
   });
+  const [monetizationBoundaries, setMonetizationBoundaries] = useState<MonetizationBoundaries>({
+    summary: { platformCoinSourceCount: 0, platformCoinSpendCount: 0, vipExperienceSourceCount: 0, paidProductCount: 0, riskCount: 0 },
+    walletPolicies: [],
+    paidProductBoundaries: [],
+    seasonPassBoundary: { seasonId: "", pricePlatformCoins: 0, vipExperiencePolicy: "", leaderboardRewardPolicy: "" },
+    activityShopBoundary: { itemCount: 0, platformCoinRewardItemCount: 0, rewardPolicy: "" },
+    riskItems: []
+  });
   const [activitySchedule, setActivitySchedule] = useState<ActivitySchedule>({
     summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 },
     windows: [],
@@ -912,9 +935,10 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, scheduleResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
+        apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
         apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
@@ -928,6 +952,10 @@ export default function App() {
       }
       if (!configAlerts.success) {
         setError(configAlerts.error.message);
+        return;
+      }
+      if (!boundaryResponse.success) {
+        setError(boundaryResponse.error.message);
         return;
       }
       if (!scheduleResponse.success) {
@@ -956,6 +984,7 @@ export default function App() {
       }
       setConfigCenter(configs.data);
       setOperationConfigAlerts(configAlerts.data);
+      setMonetizationBoundaries(boundaryResponse.data);
       setActivitySchedule(scheduleResponse.data);
       setActivityDrafts(draftResponse.data);
       setActivityPublishObservations(publishObservationResponse.data);
@@ -1084,6 +1113,14 @@ export default function App() {
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
     setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [], statuses: [] }, alerts: [] });
+    setMonetizationBoundaries({
+      summary: { platformCoinSourceCount: 0, platformCoinSpendCount: 0, vipExperienceSourceCount: 0, paidProductCount: 0, riskCount: 0 },
+      walletPolicies: [],
+      paidProductBoundaries: [],
+      seasonPassBoundary: { seasonId: "", pricePlatformCoins: 0, vipExperiencePolicy: "", leaderboardRewardPolicy: "" },
+      activityShopBoundary: { itemCount: 0, platformCoinRewardItemCount: 0, rewardPolicy: "" },
+      riskItems: []
+    });
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
@@ -2540,6 +2577,70 @@ export default function App() {
                             )}
                           </div>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="付费价值边界">
+              <div className="table-toolbar">
+                <strong>付费价值边界</strong>
+                <span>
+                  来源 {monetizationBoundaries.summary.platformCoinSourceCount}，消耗 {monetizationBoundaries.summary.platformCoinSpendCount}，VIP 来源 {monetizationBoundaries.summary.vipExperienceSourceCount}，风险 {monetizationBoundaries.summary.riskCount}
+                </span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>平台币与 VIP</h3>
+                  {monetizationBoundaries.walletPolicies.map((policy) => (
+                    <p key={policy.id}>{policy.id}：{policy.flow === "source" ? "来源" : "消耗"} / {policy.vipExperiencePolicy} / {policy.boundaryLabel}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>通行证边界</h3>
+                  <p>{monetizationBoundaries.seasonPassBoundary.seasonId || "-"}：{formatNumber(monetizationBoundaries.seasonPassBoundary.pricePlatformCoins)} 平台币</p>
+                  <p>{monetizationBoundaries.seasonPassBoundary.vipExperiencePolicy || "暂无通行证边界"}</p>
+                  <p>{monetizationBoundaries.seasonPassBoundary.leaderboardRewardPolicy || "不改变排行榜结算奖励。"}</p>
+                </div>
+                <div>
+                  <h3>活动商店边界</h3>
+                  <p>商品 {monetizationBoundaries.activityShopBoundary.itemCount} 个 / 平台币奖励 {monetizationBoundaries.activityShopBoundary.platformCoinRewardItemCount} 项</p>
+                  <p>{monetizationBoundaries.activityShopBoundary.rewardPolicy || "活动商店不产出平台币。"}</p>
+                </div>
+                <div>
+                  <h3>风险项</h3>
+                  {monetizationBoundaries.riskItems.length === 0 && <p>暂无付费价值边界风险。</p>}
+                  {monetizationBoundaries.riskItems.map((risk) => (
+                    <p key={risk.id}>{risk.level}：{risk.message} {risk.suggestion}</p>
+                  ))}
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>商品</th>
+                      <th>类别</th>
+                      <th>价格</th>
+                      <th>奖励类型</th>
+                      <th>VIP 边界</th>
+                      <th>排行榜边界</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monetizationBoundaries.paidProductBoundaries.slice(0, 8).map((product) => (
+                      <tr key={product.id}>
+                        <td className="stacked-cell">
+                          <strong>{product.name}</strong>
+                          <span>{product.id}</span>
+                        </td>
+                        <td>{product.category}</td>
+                        <td>{formatNumber(product.pricePlatformCoins)} 平台币</td>
+                        <td>{product.rewardType}</td>
+                        <td>{product.vipExperiencePolicy}</td>
+                        <td>{product.leaderboardRewardPolicy}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -2305,6 +2305,18 @@ VIP 权益：
 - Admin 推荐新增 `GET /admin/monetization-boundaries`，只读展示平台币来源、平台币消耗、VIP 经验来源、付费商品奖励类型和风险项。
 - 验收标准：商业化配置不会破坏现金、平台币、VIP、排行榜和活动榜边界。
 
+##### Phase 25 第三实施批次总结：付费价值边界检查
+
+- 完成内容：新增 `GET /admin/monetization-boundaries` 只读接口，集中展示平台币来源、平台币消耗、VIP 经验来源、付费商品奖励类型、通行证边界、活动商店边界和风险项。
+- Admin 接入：在“配置与排行榜”页新增“付费价值边界”面板，复用现有后台表格、配置网格和深色稳重结构，不新增写入动作、不新增审批入口。
+- 边界检查：本批只读检查商业化配置，不修改平台币购买、后台发币、VIP 经验调整、通行证购买、活动商店购买、支付预留、排行榜结算和活动榜结算链路。
+- 四插件检查：
+  - Superpowers：按 TDD 先写 `/admin/monetization-boundaries` 回归测试，红灯为 404，绿灯后保留测试。
+  - Browser Use：本地浏览器验收 Admin 付费价值边界面板、前台活动页、Rank 荣誉中心、HUD 和底部导航不回归。
+  - Build Web Apps：Admin 面板沿用现有后台信息层级、表格和配置网格，保持紧凑、可扫描、移动端可滚动。
+  - Game Studio：本批不新增前台玩法入口；验收重点为前台 HUD、底部导航、全覆盖内页滚动区和主操作不被遮挡。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 25 admin monetization boundaries" --import tsx apps/api/test/http.test.ts`、商业化边界相关 API 回归、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`。
+
 #### Phase 25 第四实施批次：长期荣誉展示收口
 
 - 前台统一展示玩家长期荣誉：

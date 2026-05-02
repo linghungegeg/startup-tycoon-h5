@@ -2844,6 +2844,100 @@ const createTestRepository = (): GameRepository => {
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
     },
+    async getAdminMonetizationBoundaries() {
+      const walletPolicies = [
+        {
+          id: "reserved_payment",
+          flow: "source" as const,
+          vipExperiencePolicy: "外部支付只生成待核销订单，不自动计入 VIP 经验。",
+          boundaryLabel: "现金支付与平台币入账分离"
+        },
+        {
+          id: "admin_grant",
+          flow: "source" as const,
+          vipExperiencePolicy: "后台发放平台币不自动计入 VIP 经验。",
+          boundaryLabel: "后台发放只记平台币账本和审计"
+        },
+        {
+          id: "system_compensation",
+          flow: "source" as const,
+          vipExperiencePolicy: "系统补偿不自动计入 VIP 经验。",
+          boundaryLabel: "补偿平台币不放大付费等级"
+        },
+        {
+          id: "shop_purchase",
+          flow: "spend" as const,
+          vipExperiencePolicy: "平台币消费计入 VIP 经验。",
+          boundaryLabel: "平台币消费进入商品发放链路"
+        },
+        {
+          id: "season_pass_purchase",
+          flow: "spend" as const,
+          vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验。",
+          boundaryLabel: "通行证只解锁赛季高级奖励轨"
+        }
+      ];
+      const rewardType = (product: (typeof shopProducts)[number]) => [
+        product.durationDays > 0 && (product.category === "monthly_card" || product.category === "weekly_card") ? "长期权益" : "",
+        product.category === "growth_fund" ? "成长返还" : "",
+        product.rewardCash > 0 ? "经营现金" : "",
+        product.rewardActionPower > 0 ? "行动力" : "",
+        product.rewardReputation > 0 ? "声望" : "",
+        product.rewardItemId !== undefined && product.rewardItemQuantity > 0 ? "经营道具" : ""
+      ].filter(Boolean).join(" / ") || "经营权益";
+      const paidProductBoundaries = shopProducts.map((product) => ({
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        pricePlatformCoins: product.pricePlatformCoins,
+        rewardType: rewardType(product),
+        vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验，后台发放不补记。",
+        leaderboardRewardPolicy: "不改变排行榜结算奖励。"
+      }));
+      const riskItems = [
+        ...shopProducts.filter((product) => product.pricePlatformCoins < 0).map((product) => ({
+          id: `shop-price:${product.id}`,
+          level: "critical" as const,
+          message: `商品 ${product.name} 的平台币价格小于 0。`,
+          suggestion: "修正商品平台币价格，避免破坏平台币消耗边界。"
+        })),
+        ...(seasonConfig.passPricePlatformCoins < 0 ? [{
+          id: `season-pass-price:${seasonConfig.id}`,
+          level: "critical" as const,
+          message: `赛季 ${seasonConfig.name} 的通行证价格小于 0。`,
+          suggestion: "修正通行证平台币价格，保持付费消耗为非负数。"
+        }] : []),
+        ...activityShopItems.filter((item) => item.costPoints < 0 || item.purchaseLimit < 0).map((item) => ({
+          id: `activity-shop-invalid:${item.id}`,
+          level: "critical" as const,
+          message: `活动商店 ${item.name} 的积分或限购小于 0。`,
+          suggestion: "修正活动商店积分消耗与限购，避免活动积分兑换链路失真。"
+        }))
+      ];
+      return {
+        summary: {
+          platformCoinSourceCount: walletPolicies.filter((policy) => policy.flow === "source").length,
+          platformCoinSpendCount: walletPolicies.filter((policy) => policy.flow === "spend").length,
+          vipExperienceSourceCount: walletPolicies.filter((policy) => policy.vipExperiencePolicy.includes("计入 VIP 经验") && !policy.vipExperiencePolicy.includes("不自动")).length,
+          paidProductCount: paidProductBoundaries.length,
+          riskCount: riskItems.length
+        },
+        walletPolicies,
+        paidProductBoundaries,
+        seasonPassBoundary: {
+          seasonId: seasonConfig.id,
+          pricePlatformCoins: seasonConfig.passPricePlatformCoins,
+          vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验，通行证本身不直接发放 VIP 经验。",
+          leaderboardRewardPolicy: "不改变排行榜结算奖励。"
+        },
+        activityShopBoundary: {
+          itemCount: activityShopItems.length,
+          platformCoinRewardItemCount: 0,
+          rewardPolicy: "活动商店只消耗活动积分，不产出平台币；经营道具只缓解风险，不免除经营判断。"
+        },
+        riskItems
+      };
+    },
     async getAdminActivitySchedule(today) {
       return buildAdminActivitySchedule(activityConfigs, today, new Set());
     },
@@ -10693,6 +10787,89 @@ test("phase 24 operation config alerts expose read-only admin inspections", asyn
     assert.equal(afterSettle.status, 200);
     assert.equal(afterSettle.body.data?.summary.unsettledActivityCount, 0);
     assert.equal(afterSettle.body.data?.alerts.some((alert) => alert.type === "activity_ended_unsettled" && alert.targetId === "ai-agent-growth"), false);
+  });
+});
+
+test("phase 25 admin monetization boundaries expose paid value limits read-only", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, "/admin/monetization-boundaries", {
+      headers: { "x-server-date": "2026-05-21" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const boundaries = await requestJson<{
+      summary: {
+        platformCoinSourceCount: number;
+        platformCoinSpendCount: number;
+        vipExperienceSourceCount: number;
+        paidProductCount: number;
+        riskCount: number;
+      };
+      walletPolicies: Array<{
+        id: string;
+        flow: string;
+        vipExperiencePolicy: string;
+        boundaryLabel: string;
+      }>;
+      paidProductBoundaries: Array<{
+        id: string;
+        category: string;
+        rewardType: string;
+        leaderboardRewardPolicy: string;
+      }>;
+      seasonPassBoundary: {
+        pricePlatformCoins: number;
+        vipExperiencePolicy: string;
+        leaderboardRewardPolicy: string;
+      };
+      activityShopBoundary: {
+        itemCount: number;
+        platformCoinRewardItemCount: number;
+        rewardPolicy: string;
+      };
+      riskItems: Array<{ id: string; level: string; message: string; suggestion: string }>;
+    }>(baseUrl, "/admin/monetization-boundaries", {
+      headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(boundaries.status, 200, JSON.stringify(boundaries.body));
+    assert.ok((boundaries.body.data?.summary.platformCoinSourceCount ?? 0) >= 2);
+    assert.ok((boundaries.body.data?.summary.platformCoinSpendCount ?? 0) >= 2);
+    assert.ok((boundaries.body.data?.summary.vipExperienceSourceCount ?? 0) >= 1);
+    assert.ok((boundaries.body.data?.summary.paidProductCount ?? 0) >= 3);
+    assert.ok(boundaries.body.data?.walletPolicies.some((policy) =>
+      policy.id === "shop_purchase" &&
+      policy.flow === "spend" &&
+      policy.vipExperiencePolicy.includes("计入 VIP 经验") &&
+      policy.boundaryLabel.includes("平台币消费")
+    ));
+    assert.ok(boundaries.body.data?.walletPolicies.some((policy) =>
+      policy.id === "admin_grant" &&
+      policy.flow === "source" &&
+      policy.vipExperiencePolicy.includes("不自动计入 VIP 经验") &&
+      policy.boundaryLabel.includes("后台发放")
+    ));
+    assert.ok(boundaries.body.data?.paidProductBoundaries.some((product) =>
+      product.category === "monthly_card" &&
+      product.rewardType.includes("长期权益") &&
+      product.leaderboardRewardPolicy.includes("不改变排行榜")
+    ));
+    assert.ok(boundaries.body.data?.paidProductBoundaries.some((product) =>
+      product.category === "growth_fund" &&
+      product.rewardType.includes("成长返还") &&
+      product.leaderboardRewardPolicy.includes("不改变排行榜")
+    ));
+    assert.ok(boundaries.body.data?.seasonPassBoundary.pricePlatformCoins > 0);
+    assert.ok(boundaries.body.data?.seasonPassBoundary.vipExperiencePolicy.includes("购买消耗平台币时计入"));
+    assert.ok(boundaries.body.data?.seasonPassBoundary.leaderboardRewardPolicy.includes("不改变排行榜结算奖励"));
+    assert.equal(boundaries.body.data?.activityShopBoundary.platformCoinRewardItemCount, 0);
+    assert.ok(boundaries.body.data?.activityShopBoundary.rewardPolicy.includes("不产出平台币"));
+    assert.equal(boundaries.body.data?.summary.riskCount, boundaries.body.data?.riskItems.length);
   });
 });
 

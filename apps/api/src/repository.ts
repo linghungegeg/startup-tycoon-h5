@@ -1059,6 +1059,48 @@ export type AdminConfigCenterRecord = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+export type AdminMonetizationBoundaryRecord = {
+  summary: {
+    platformCoinSourceCount: number;
+    platformCoinSpendCount: number;
+    vipExperienceSourceCount: number;
+    paidProductCount: number;
+    riskCount: number;
+  };
+  walletPolicies: Array<{
+    id: string;
+    flow: "source" | "spend";
+    vipExperiencePolicy: string;
+    boundaryLabel: string;
+  }>;
+  paidProductBoundaries: Array<{
+    id: string;
+    name: string;
+    category: string;
+    pricePlatformCoins: number;
+    rewardType: string;
+    vipExperiencePolicy: string;
+    leaderboardRewardPolicy: string;
+  }>;
+  seasonPassBoundary: {
+    seasonId: string;
+    pricePlatformCoins: number;
+    vipExperiencePolicy: string;
+    leaderboardRewardPolicy: string;
+  };
+  activityShopBoundary: {
+    itemCount: number;
+    platformCoinRewardItemCount: number;
+    rewardPolicy: string;
+  };
+  riskItems: Array<{
+    id: string;
+    level: AdminOperationConfigAlertLevel;
+    message: string;
+    suggestion: string;
+  }>;
+};
+
 export type AdminActivityScheduleRecord = {
   summary: {
     totalActivities: number;
@@ -1863,6 +1905,7 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
+  getAdminMonetizationBoundaries(today: string): Promise<AdminMonetizationBoundaryRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
   validateAdminActivityConfigDraft(draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftValidationRecord>;
   listAdminActivityConfigDrafts(status: string, today: string): Promise<AdminActivityConfigDraftListRecord>;
@@ -8372,6 +8415,121 @@ export const createPrismaGameRepository = (
         name: scenario.name,
         rewardTitleId: scenario.rewardTitleId
       }))
+    };
+  },
+
+  async getAdminMonetizationBoundaries(today) {
+    const [shopProducts, seasons, activityShopItems] = await Promise.all([
+      prisma.shopProductConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.seasonConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.activityShopItemConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] })
+    ]);
+    const walletPolicies: AdminMonetizationBoundaryRecord["walletPolicies"] = [
+      {
+        id: "reserved_payment",
+        flow: "source",
+        vipExperiencePolicy: "外部支付只生成待核销订单，不自动计入 VIP 经验。",
+        boundaryLabel: "现金支付与平台币入账分离"
+      },
+      {
+        id: "admin_grant",
+        flow: "source",
+        vipExperiencePolicy: "后台发放平台币不自动计入 VIP 经验。",
+        boundaryLabel: "后台发放只记平台币账本和审计"
+      },
+      {
+        id: "system_compensation",
+        flow: "source",
+        vipExperiencePolicy: "系统补偿不自动计入 VIP 经验。",
+        boundaryLabel: "补偿平台币不放大付费等级"
+      },
+      {
+        id: "shop_purchase",
+        flow: "spend",
+        vipExperiencePolicy: "平台币消费计入 VIP 经验。",
+        boundaryLabel: "平台币消费进入商品发放链路"
+      },
+      {
+        id: "season_pass_purchase",
+        flow: "spend",
+        vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验。",
+        boundaryLabel: "通行证只解锁赛季高级奖励轨"
+      }
+    ];
+    const rewardType = (product: (typeof shopProducts)[number]) => {
+      const rewards = [
+        product.durationDays > 0 && (product.category === "monthly_card" || product.category === "weekly_card") ? "长期权益" : "",
+        product.category === "growth_fund" ? "成长返还" : "",
+        product.rewardCash > 0 ? "经营现金" : "",
+        product.rewardActionPower > 0 ? "行动力" : "",
+        product.rewardReputation > 0 ? "声望" : "",
+        product.rewardItemId !== null && product.rewardItemQuantity > 0 ? "经营道具" : ""
+      ].filter(Boolean);
+      return rewards.join(" / ") || "经营权益";
+    };
+    const paidProductBoundaries = shopProducts.map((product) => ({
+      id: product.id,
+      name: product.name,
+      category: product.category,
+      pricePlatformCoins: product.pricePlatformCoins,
+      rewardType: rewardType(product),
+      vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验，后台发放不补记。",
+      leaderboardRewardPolicy: "不改变排行榜结算奖励。"
+    }));
+    const activeSeason = seasons.find((season) => readSeasonStatus(season.startDate, season.endDate, today) === "active") ?? seasons[0] ?? null;
+    const riskItems: AdminMonetizationBoundaryRecord["riskItems"] = [];
+    for (const product of shopProducts) {
+      if (product.pricePlatformCoins < 0) {
+        riskItems.push({
+          id: `shop-price:${product.id}`,
+          level: "critical",
+          message: `商品 ${product.name} 的平台币价格小于 0。`,
+          suggestion: "修正商品平台币价格，避免破坏平台币消耗边界。"
+        });
+      }
+    }
+    for (const season of seasons) {
+      if (season.passPricePlatformCoins < 0) {
+        riskItems.push({
+          id: `season-pass-price:${season.id}`,
+          level: "critical",
+          message: `赛季 ${season.name} 的通行证价格小于 0。`,
+          suggestion: "修正通行证平台币价格，保持付费消耗为非负数。"
+        });
+      }
+    }
+    for (const item of activityShopItems) {
+      if (item.costPoints < 0 || item.purchaseLimit < 0) {
+        riskItems.push({
+          id: `activity-shop-invalid:${item.id}`,
+          level: "critical",
+          message: `活动商店 ${item.name} 的积分或限购小于 0。`,
+          suggestion: "修正活动商店积分消耗与限购，避免活动积分兑换链路失真。"
+        });
+      }
+    }
+    return {
+      summary: {
+        platformCoinSourceCount: walletPolicies.filter((policy) => policy.flow === "source").length,
+        platformCoinSpendCount: walletPolicies.filter((policy) => policy.flow === "spend").length,
+        vipExperienceSourceCount: walletPolicies.filter((policy) => policy.vipExperiencePolicy.includes("计入 VIP 经验") && !policy.vipExperiencePolicy.includes("不自动")).length,
+        paidProductCount: paidProductBoundaries.length,
+        riskCount: riskItems.length
+      },
+      walletPolicies,
+      paidProductBoundaries,
+      seasonPassBoundary: {
+        seasonId: activeSeason?.id ?? "",
+        pricePlatformCoins: activeSeason?.passPricePlatformCoins ?? 0,
+        vipExperiencePolicy: "购买消耗平台币时计入 VIP 经验，通行证本身不直接发放 VIP 经验。",
+        leaderboardRewardPolicy: "不改变排行榜结算奖励。"
+      },
+      activityShopBoundary: {
+        itemCount: activityShopItems.length,
+        platformCoinRewardItemCount: 0,
+        rewardPolicy: "活动商店只消耗活动积分，不产出平台币；经营道具只缓解风险，不免除经营判断。"
+      },
+      riskItems
     };
   },
 
