@@ -2539,6 +2539,18 @@ VIP 权益：
   - 竖屏主流程不被遮挡，全覆盖内页滚动正常，底部导航稳定，右侧入口不拥挤，数字变化提示不干扰主线任务条。
 - 验收标准：玩家主流程可连续跑通，不出现入口遮挡、主操作不可点或关键状态不同步。
 
+##### Phase 27 第三实施批次总结：玩家主流程上线前回归
+
+- 完成内容：新增前台主流程回归测试，锁定玩家登录、恢复登录、创建档案、首页 HUD、底部导航、财务、员工、业务、市场、商会、跨服创业大赛、活动、Rank、商业、特权、通行证、背包和专属经理入口。
+- UI 边界：本批不改前台布局、不新增入口、不调整数值和结算，只确认既有深色商务手游主流程、全覆盖内页和底部导航可回归。
+- 四插件检查：
+  - Superpowers：按 Phase 27 第三批目标收敛为玩家主流程回归锁定；先补测试，确认现有页面满足后不做多余实现。
+  - Browser Use：本地浏览器需验收前台主页、Rank 荣誉中心、财务页、活动页、商业/特权/通行证/背包/专属经理入口和 API health。
+  - Build Web Apps：检查前台保持深色商务手游 HUD、左右入口、底部导航和全覆盖内页结构，不改成营销式页面。
+  - Game Studio：检查竖屏主流程不被遮挡，内页滚动区、弹窗层级和主操作按钮不遮挡玩家操作。
+- 验证命令：`node --test apps/client/test/phase27-main-flow-regression.test.mjs`、`node --test apps/client/test/phase27-main-flow-regression.test.mjs apps/client/test/phase27-commercial-telemetry.test.mjs apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 27 第四实施批次“Admin 主流程上线前回归”。
+
 #### Phase 27 第四实施批次：Admin 主流程上线前回归
 
 - 回归路径：
