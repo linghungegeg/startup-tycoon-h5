@@ -1510,6 +1510,33 @@ export type AdminAnalyticsRecord = {
   alerts: Array<{ level: string; message: string; traceId: string | null }>;
 };
 
+export type AdminBusinessClockObservationRecord = {
+  profileId: string;
+  serverId: string;
+  companyName: string;
+  lastSyncedAt: string | null;
+  offlineMinutes: number;
+  settledMinutes: number;
+  cashDelta: number;
+  riskStatus: string;
+  managerTodoCount: number;
+  anomaly: string | null;
+};
+
+export type AdminBusinessClockObservationListRecord = {
+  summary: {
+    totalPlayers: number;
+    syncedPlayers: number;
+    staleSyncCount: number;
+    riskPulseCount: number;
+    managerTodoCount: number;
+    anomalyCount: number;
+  };
+  offlineMinuteBands: Array<{ band: string; count: number }>;
+  cashDeltaBands: Array<{ band: string; count: number }>;
+  rows: AdminBusinessClockObservationRecord[];
+};
+
 export type LeaderboardRowRecord = {
   rank: number;
   profileId: string;
@@ -1875,6 +1902,7 @@ export type GameRepository = {
   getAccountBySessionToken(token: string): Promise<AccountRecord | undefined>;
   recordTelemetryEvent(event: TelemetryEventInput): Promise<TelemetryEventRecord | "PLAYER_NOT_FOUND">;
   getAdminAnalytics(today: string): Promise<AdminAnalyticsRecord>;
+  getAdminBusinessClockObservations(today: string): Promise<AdminBusinessClockObservationListRecord>;
   recordApiRequestLog(input: ApiRequestLogInput): Promise<void>;
   findAdminByUsername(username: string): Promise<AdminUserRecord | undefined>;
   createAdminSession(adminUserId: string, token: string): Promise<void>;
@@ -3534,6 +3562,13 @@ const VIP3_START_EXPERIENCE = 3000;
 
 const clampNumber = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 
+const BUSINESS_CLOCK_MANAGER_TASK_CONFIG_IDS = [
+  "random-loan-rate-review",
+  "random-cashflow-warning",
+  "random-employee-burnout",
+  "random-market-counter"
+] as const;
+
 export const calculateBusinessClockPulse = (
   profile: Pick<PlayerProfileRecord, "businessClockSyncedAt" | "actionPower" | "actionPowerLimit" | "monthlyIncome" | "monthlyExpense" | "cash" | "valuation" | "employeeSatisfaction" | "customerSatisfaction" | "riskStatus">,
   now: Date
@@ -3657,6 +3692,54 @@ const resolveBusinessClockManagerTaskConfigId = (
   }
 
   return null;
+};
+
+const parseBusinessClockPulse = (summaryJson: string | null): BusinessClockPulseRecord | null => {
+  if (summaryJson === null) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(summaryJson) as Partial<BusinessClockPulseRecord>;
+    if (typeof parsed.syncedAt !== "string" || typeof parsed.settledMinutes !== "number" || typeof parsed.cashDelta !== "number") {
+      return null;
+    }
+    return parsed as BusinessClockPulseRecord;
+  } catch {
+    return null;
+  }
+};
+
+const businessClockOfflineBand = (lastSyncedAt: string | null, offlineMinutes: number): string => {
+  if (lastSyncedAt === null) {
+    return "unsynced";
+  }
+  if (offlineMinutes < 30) {
+    return "0-30";
+  }
+  if (offlineMinutes < 60) {
+    return "30-60";
+  }
+  if (offlineMinutes < 240) {
+    return "60-240";
+  }
+  return "240+";
+};
+
+const businessClockCashDeltaBand = (pulse: BusinessClockPulseRecord | null): string => {
+  if (pulse === null) {
+    return "none";
+  }
+  if (pulse.cashDelta > 0) {
+    return "positive";
+  }
+  if (pulse.cashDelta < 0) {
+    return "negative";
+  }
+  return "zero";
+};
+
+const incrementBand = (bands: Map<string, number>, band: string): void => {
+  bands.set(band, (bands.get(band) ?? 0) + 1);
 };
 
 const createBusinessClockManagerTodo = async (
@@ -5337,6 +5420,84 @@ export const createPrismaGameRepository = (
           traceId: null
         }
       ]
+    };
+  },
+
+  async getAdminBusinessClockObservations(today) {
+    const profiles = await prisma.playerProfile.findMany({
+      orderBy: [{ createdAt: "desc" }],
+      take: 50,
+      include: {
+        randomTasks: {
+          where: {
+            dailyDate: today,
+            configId: { in: [...BUSINESS_CLOCK_MANAGER_TASK_CONFIG_IDS] }
+          },
+          select: { id: true }
+        }
+      }
+    });
+    const now = new Date(`${today}T23:59:59.000Z`);
+    const offlineBands = new Map<string, number>([
+      ["unsynced", 0],
+      ["0-30", 0],
+      ["30-60", 0],
+      ["60-240", 0],
+      ["240+", 0]
+    ]);
+    const cashDeltaBands = new Map<string, number>([
+      ["none", 0],
+      ["negative", 0],
+      ["zero", 0],
+      ["positive", 0]
+    ]);
+
+    const rows = profiles.map((profile) => {
+      const record = toProfileRecord(profile);
+      const pulse = parseBusinessClockPulse(record.lastBusinessPulseSummaryJson);
+      const offlineMinutes = pulse?.elapsedMinutes ?? (
+        record.businessClockSyncedAt === null
+          ? 0
+          : Math.max(0, Math.floor((now.getTime() - new Date(record.businessClockSyncedAt).getTime()) / 60000))
+      );
+      const managerTodoCount = profile.randomTasks.length;
+      const anomaly = record.businessClockSyncedAt === null
+        ? "未建立经营时钟"
+        : pulse === null
+          ? "经营脉冲摘要缺失"
+          : offlineMinutes >= 1440
+            ? "同步超过 24 小时未刷新"
+            : null;
+
+      incrementBand(offlineBands, businessClockOfflineBand(record.businessClockSyncedAt, offlineMinutes));
+      incrementBand(cashDeltaBands, businessClockCashDeltaBand(pulse));
+
+      return {
+        profileId: record.id,
+        serverId: record.serverId,
+        companyName: record.companyName,
+        lastSyncedAt: record.businessClockSyncedAt,
+        offlineMinutes,
+        settledMinutes: pulse?.settledMinutes ?? 0,
+        cashDelta: pulse?.cashDelta ?? 0,
+        riskStatus: record.riskStatus,
+        managerTodoCount,
+        anomaly
+      };
+    });
+
+    return {
+      summary: {
+        totalPlayers: rows.length,
+        syncedPlayers: rows.filter((row) => row.lastSyncedAt !== null).length,
+        staleSyncCount: rows.filter((row) => row.lastSyncedAt !== null && row.offlineMinutes >= 240).length,
+        riskPulseCount: rows.filter((row) => row.cashDelta < 0 || row.riskStatus !== "稳健" || row.managerTodoCount > 0).length,
+        managerTodoCount: rows.reduce((total, row) => total + row.managerTodoCount, 0),
+        anomalyCount: rows.filter((row) => row.anomaly !== null).length
+      },
+      offlineMinuteBands: [...offlineBands.entries()].map(([band, count]) => ({ band, count })),
+      cashDeltaBands: [...cashDeltaBands.entries()].map(([band, count]) => ({ band, count })),
+      rows
     };
   },
 

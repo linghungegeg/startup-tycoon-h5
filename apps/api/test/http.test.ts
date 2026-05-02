@@ -2668,6 +2668,85 @@ const createTestRepository = (): GameRepository => {
         ]
       };
     },
+    async getAdminBusinessClockObservations(today) {
+      const now = new Date(`${today}T23:59:59.000Z`);
+      const offlineBands = new Map<string, number>([
+        ["unsynced", 0],
+        ["0-30", 0],
+        ["30-60", 0],
+        ["60-240", 0],
+        ["240+", 0]
+      ]);
+      const cashDeltaBands = new Map<string, number>([
+        ["none", 0],
+        ["negative", 0],
+        ["zero", 0],
+        ["positive", 0]
+      ]);
+      const readPulse = (profile: PlayerProfileRecord) => {
+        if (profile.lastBusinessPulseSummaryJson === null) {
+          return null;
+        }
+        try {
+          return JSON.parse(profile.lastBusinessPulseSummaryJson) as { elapsedMinutes: number; settledMinutes: number; cashDelta: number };
+        } catch {
+          return null;
+        }
+      };
+      const addBand = (bands: Map<string, number>, band: string): void => {
+        bands.set(band, (bands.get(band) ?? 0) + 1);
+      };
+      const rows = [...profiles.values()].map((profile) => {
+        const pulse = readPulse(profile);
+        const offlineMinutes = pulse?.elapsedMinutes ?? (
+          profile.businessClockSyncedAt === null
+            ? 0
+            : Math.max(0, Math.floor((now.getTime() - new Date(profile.businessClockSyncedAt).getTime()) / 60000))
+        );
+        const managerTodoCount = [...playerRandomTasks.values()]
+          .filter((task) => task.id.startsWith(`${profile.id}:${today}:`))
+          .filter((task) => ["random-loan-rate-review", "random-cashflow-warning", "random-employee-burnout", "random-market-counter"].includes(task.configId))
+          .length;
+        const offlineBand = profile.businessClockSyncedAt === null
+          ? "unsynced"
+          : offlineMinutes < 30
+            ? "0-30"
+            : offlineMinutes < 60
+              ? "30-60"
+              : offlineMinutes < 240
+                ? "60-240"
+                : "240+";
+        const cashDeltaBand = pulse === null ? "none" : pulse.cashDelta > 0 ? "positive" : pulse.cashDelta < 0 ? "negative" : "zero";
+        addBand(offlineBands, offlineBand);
+        addBand(cashDeltaBands, cashDeltaBand);
+        return {
+          profileId: profile.id,
+          serverId: profile.serverId,
+          companyName: profile.companyName,
+          lastSyncedAt: profile.businessClockSyncedAt,
+          offlineMinutes,
+          settledMinutes: pulse?.settledMinutes ?? 0,
+          cashDelta: pulse?.cashDelta ?? 0,
+          riskStatus: profile.riskStatus,
+          managerTodoCount,
+          anomaly: profile.businessClockSyncedAt === null ? "未建立经营时钟" : pulse === null ? "经营脉冲摘要缺失" : null
+        };
+      });
+
+      return {
+        summary: {
+          totalPlayers: rows.length,
+          syncedPlayers: rows.filter((row) => row.lastSyncedAt !== null).length,
+          staleSyncCount: rows.filter((row) => row.lastSyncedAt !== null && row.offlineMinutes >= 240).length,
+          riskPulseCount: rows.filter((row) => row.cashDelta < 0 || row.riskStatus !== "稳健" || row.managerTodoCount > 0).length,
+          managerTodoCount: rows.reduce((total, row) => total + row.managerTodoCount, 0),
+          anomalyCount: rows.filter((row) => row.anomaly !== null).length
+        },
+        offlineMinuteBands: [...offlineBands.entries()].map(([band, count]) => ({ band, count })),
+        cashDeltaBands: [...cashDeltaBands.entries()].map(([band, count]) => ({ band, count })),
+        rows
+      };
+    },
     async recordApiRequestLog(input) {
       apiRequestLogs.push(input);
     },
@@ -6535,6 +6614,71 @@ test("phase 26 business clock creates manager todo without duplicate random task
     });
     assert.equal(repeatedCenter.status, 200);
     assert.equal(repeatedCenter.body.data?.tasks.filter((task) => task.configId === "random-loan-rate-review").length, 1);
+  });
+});
+
+test("phase 26 admin business clock observations are read-only", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, "/admin/business-clock-observations", {
+      headers: { "x-server-date": "2026-05-02" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const player = await createPlayerSession(baseUrl, "clockobserve");
+    await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: { authorization: `Bearer ${player.token}` },
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}`, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+    await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}`, "x-server-now": "2026-05-02T00:40:00.000Z" }
+    });
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+
+    const observations = await requestJson<{
+      summary: {
+        totalPlayers: number;
+        syncedPlayers: number;
+        staleSyncCount: number;
+        riskPulseCount: number;
+        managerTodoCount: number;
+        anomalyCount: number;
+      };
+      offlineMinuteBands: Array<{ band: string; count: number }>;
+      cashDeltaBands: Array<{ band: string; count: number }>;
+      rows: Array<{
+        profileId: string;
+        companyName: string;
+        lastSyncedAt: string | null;
+        settledMinutes: number;
+        cashDelta: number;
+        managerTodoCount: number;
+        anomaly: string | null;
+      }>;
+    }>(baseUrl, "/admin/business-clock-observations", {
+      headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-02" }
+    });
+    assert.equal(observations.status, 200, JSON.stringify(observations.body));
+    assert.ok((observations.body.data?.summary.totalPlayers ?? 0) >= 1);
+    assert.ok((observations.body.data?.summary.syncedPlayers ?? 0) >= 1);
+    assert.ok((observations.body.data?.summary.riskPulseCount ?? 0) >= 1);
+    assert.ok((observations.body.data?.summary.managerTodoCount ?? 0) >= 1);
+    assert.ok(observations.body.data?.offlineMinuteBands.some((band) => band.band === "30-60" && band.count >= 1));
+    assert.ok(observations.body.data?.cashDeltaBands.some((band) => band.band === "positive" && band.count >= 1));
+    const observedPlayer = observations.body.data?.rows.find((row) => row.profileId === player.profile.id);
+    assert.ok(observedPlayer);
+    assert.equal(observedPlayer.settledMinutes, 40);
+    assert.ok(observedPlayer.cashDelta > 0);
+    assert.equal(observedPlayer.managerTodoCount, 1);
   });
 });
 

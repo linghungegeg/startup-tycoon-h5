@@ -334,6 +334,31 @@ type ActivitySchedule = {
   }>;
 };
 
+type BusinessClockObservations = {
+  summary: {
+    totalPlayers: number;
+    syncedPlayers: number;
+    staleSyncCount: number;
+    riskPulseCount: number;
+    managerTodoCount: number;
+    anomalyCount: number;
+  };
+  offlineMinuteBands: Array<{ band: string; count: number }>;
+  cashDeltaBands: Array<{ band: string; count: number }>;
+  rows: Array<{
+    profileId: string;
+    serverId: string;
+    companyName: string;
+    lastSyncedAt: string | null;
+    offlineMinutes: number;
+    settledMinutes: number;
+    cashDelta: number;
+    riskStatus: string;
+    managerTodoCount: number;
+    anomaly: string | null;
+  }>;
+};
+
 type ActivityDraftForm = {
   id: string;
   name: string;
@@ -559,7 +584,7 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "configs" | "knowledge" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "businessClock" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "analytics", label: "数据看板" },
@@ -569,6 +594,7 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "cross", label: "跨服分组" },
   { id: "guilds", label: "商会运营" },
   { id: "activities", label: "活动运营" },
+  { id: "businessClock", label: "经营时钟" },
   { id: "configs", label: "配置清单" },
   { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
@@ -781,6 +807,12 @@ export default function App() {
     activities: [],
     alerts: []
   });
+  const [businessClockObservations, setBusinessClockObservations] = useState<BusinessClockObservations>({
+    summary: { totalPlayers: 0, syncedPlayers: 0, staleSyncCount: 0, riskPulseCount: 0, managerTodoCount: 0, anomalyCount: 0 },
+    offlineMinuteBands: [],
+    cashDeltaBands: [],
+    rows: []
+  });
   const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
   const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
@@ -935,11 +967,12 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, boundaryResponse, scheduleResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
         apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
+        apiRequest<BusinessClockObservations>("/admin/business-clock-observations", {}, token),
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
@@ -960,6 +993,10 @@ export default function App() {
       }
       if (!scheduleResponse.success) {
         setError(scheduleResponse.error.message);
+        return;
+      }
+      if (!clockResponse.success) {
+        setError(clockResponse.error.message);
         return;
       }
       if (!draftResponse.success) {
@@ -986,6 +1023,7 @@ export default function App() {
       setOperationConfigAlerts(configAlerts.data);
       setMonetizationBoundaries(boundaryResponse.data);
       setActivitySchedule(scheduleResponse.data);
+      setBusinessClockObservations(clockResponse.data);
       setActivityDrafts(draftResponse.data);
       setActivityPublishObservations(publishObservationResponse.data);
       applyAuditList(logs.data);
@@ -1122,6 +1160,7 @@ export default function App() {
       riskItems: []
     });
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
+    setBusinessClockObservations({ summary: { totalPlayers: 0, syncedPlayers: 0, staleSyncCount: 0, riskPulseCount: 0, managerTodoCount: 0, anomalyCount: 0 }, offlineMinuteBands: [], cashDeltaBands: [], rows: [] });
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
     setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
@@ -2454,6 +2493,87 @@ export default function App() {
                         <td>{activity.participantCount} / {formatNumber(activity.totalScore)}</td>
                         <td>{activity.leaderboardKey}</td>
                         <td>{activity.isSettled ? "已结算" : "未结算"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeSection === "businessClock" && (
+          <section className="stacked-sections" aria-label="经营时钟观测">
+            <section className="table-section compact-table" aria-label="经营时钟观测清单">
+              <div className="table-toolbar">
+                <strong>经营时钟观测</strong>
+                <span>只读观测，不自动修复、不触发玩家侧同步。</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>同步摘要</h3>
+                  <p>玩家总数：{formatNumber(businessClockObservations.summary.totalPlayers)}</p>
+                  <p>已同步：{formatNumber(businessClockObservations.summary.syncedPlayers)}</p>
+                  <p>超时同步：{formatNumber(businessClockObservations.summary.staleSyncCount)}</p>
+                </div>
+                <div>
+                  <h3>风险与待办</h3>
+                  <p>风险脉冲：{formatNumber(businessClockObservations.summary.riskPulseCount)}</p>
+                  <p>待办生成：{formatNumber(businessClockObservations.summary.managerTodoCount)}</p>
+                  <p>异常提示：{formatNumber(businessClockObservations.summary.anomalyCount)}</p>
+                </div>
+                <div>
+                  <h3>离线时长分布</h3>
+                  {businessClockObservations.offlineMinuteBands.map((band) => (
+                    <p key={band.band}>{band.band}：{formatNumber(band.count)}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>现金变化分布</h3>
+                  {businessClockObservations.cashDeltaBands.map((band) => (
+                    <p key={band.band}>{band.band}：{formatNumber(band.count)}</p>
+                  ))}
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>公司</th>
+                      <th>区服</th>
+                      <th>最近同步</th>
+                      <th>离线分钟</th>
+                      <th>结算分钟</th>
+                      <th>现金变化</th>
+                      <th>风险状态</th>
+                      <th>待办</th>
+                      <th>异常</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {businessClockObservations.rows.length === 0 && (
+                      <tr>
+                        <td colSpan={9}>暂无经营时钟观测数据。</td>
+                      </tr>
+                    )}
+                    {businessClockObservations.rows.map((row) => (
+                      <tr key={row.profileId}>
+                        <td className="stacked-cell">
+                          <strong>{row.companyName}</strong>
+                          <span>{row.profileId}</span>
+                        </td>
+                        <td>{row.serverId}</td>
+                        <td>{formatDateTime(row.lastSyncedAt)}</td>
+                        <td>{formatNumber(row.offlineMinutes)}</td>
+                        <td>{formatNumber(row.settledMinutes)}</td>
+                        <td>{formatNumber(row.cashDelta)}</td>
+                        <td>{row.riskStatus}</td>
+                        <td>{formatNumber(row.managerTodoCount)}</td>
+                        <td>
+                          <span className={`status-tag ${row.anomaly === null ? "status-info" : "status-warning"}`}>
+                            {row.anomaly ?? "正常"}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

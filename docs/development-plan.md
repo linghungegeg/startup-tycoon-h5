@@ -2447,6 +2447,19 @@ VIP 权益：
 - Admin 页面保持表格、筛选和页内摘要结构，不新增自动修复。
 - 验收标准：运营能判断经营时钟是否正常，不需要直接改玩家资产。
 
+##### Phase 26 第四实施批次总结：Admin 经营时钟观测
+
+- 完成内容：新增 `GET /admin/business-clock-observations`，Admin 登录后可只读查看经营时钟观测摘要、离线时长分布、现金变化分布、风险脉冲数量、待办生成数量、异常同步提示和玩家明细。
+- 只读边界：接口只读取 `PlayerProfile.lastBusinessPulseSummaryJson`、`businessClockSyncedAt` 和当天经营时钟专属经理待办数量；不触发 `GET /company/status` 懒同步，不修改玩家资产，不自动修复异常同步。
+- Admin 前台：新增“经营时钟”菜单，页面使用后台表格、页内摘要和分布清单，展示最近同步、离线分钟、结算分钟、现金变化、风险状态、待办和异常状态；不新增弹窗、不改变配置清单和活动运营操作链路。
+- 四插件检查：
+  - Superpowers：按 TDD 先补 API 鉴权/观测红灯测试和 Admin 静态红灯检查，再实现最小只读仓库方法、路由和页面。
+  - Browser Use：本地浏览器验收 `http://127.0.0.1:5174/` Admin 新入口和观测页，确认 5174 当前页面无新增 console error；同时验收 `http://127.0.0.1:5173/` 前台 HUD、底部导航和 Rank 荣誉中心仍可见。
+  - Build Web Apps：Admin 页面保持稳重后台结构、紧凑摘要和表格密度，不做营销式页面或卡片堆叠。
+  - Game Studio：前台 Rank、HUD、底部导航、活动入口和全覆盖内页未因 Admin 观测页改动发生遮挡回归。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 26 admin business clock observations|phase 26 company status|phase 26 business clock creates manager todo|phase 25 admin monetization boundaries|phase 24 operation config alerts" --import tsx apps/api/test/http.test.ts`、`node --test apps/admin/test/phase26-business-clock-observations.test.mjs apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 26 第五实施批次“阶段收口”，重点全量回归经营时钟不破坏平台币、VIP、排行榜、活动榜、项目结算、财务月报和商会/跨服结算。
+
 #### Phase 26 第五实施批次：阶段收口
 
 - 全量验证经营时钟不破坏平台币、VIP、排行榜、活动榜、项目结算、财务月报和商会/跨服结算。
