@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, buildLongTermGoalsRecord, calculateBusinessClockPulse, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildChatCenterRecord, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -34,6 +34,9 @@ import type {
   GuildHistoryRecord,
   CrossServerCenterRecord,
   CrossServerGuildHistoryRecord,
+  ChatCenterRecord,
+  ChatMessageRecord,
+  AdminChatKeywordListRecord,
   KnowledgeEntryRecord,
   LeaderboardCenterRecord,
   LeaderboardSettlementRecord,
@@ -1809,6 +1812,8 @@ const createTestRepository = (): GameRepository => {
   const leaderboardRewards = new Set<string>();
   const guildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const crossGuildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; groupId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
+  const chatKeywords = defaultChatKeywords();
+  const chatMessages: ChatMessageRecord[] = [];
   const adminAuditLogs: Array<{ id: string; adminUsername: string; action: string; targetType: string; targetId: string | null; detail: string | null; createdAt: string }> = [
     {
       id: "audit-player-ban",
@@ -2963,6 +2968,16 @@ const createTestRepository = (): GameRepository => {
         })),
         leaderboardSnapshots: [],
         mailCompensations: [],
+        chatKeywords: chatKeywords.map((keyword) => ({
+          id: keyword.id,
+          keyword: keyword.keyword,
+          sourceType: keyword.sourceType,
+          action: keyword.action,
+          isEnabled: keyword.isEnabled,
+          license: keyword.license,
+          sourceHash: keyword.sourceHash,
+          importBatch: keyword.importBatch
+        })),
         seasons: [{
           id: seasonConfig.id,
           name: seasonConfig.name,
@@ -3013,6 +3028,45 @@ const createTestRepository = (): GameRepository => {
         leaderboardSettlements: [...settlementMap.values()],
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
+    },
+    async listAdminChatKeywords(filters) {
+      const rows = chatKeywords
+        .filter((keyword) => filters.keyword === "" || keyword.keyword.includes(filters.keyword) || keyword.id.includes(filters.keyword))
+        .filter((keyword) => filters.sourceType === "" || keyword.sourceType === filters.sourceType)
+        .filter((keyword) => filters.action === "" || keyword.action === filters.action)
+        .filter((keyword) => filters.status === "" || (filters.status === "enabled" ? keyword.isEnabled : !keyword.isEnabled));
+      return {
+        rows,
+        total: rows.length,
+        filters: {
+          sourceTypes: ["public", "custom", "whitelist"],
+          actions: ["mask", "block", "allow"],
+          statuses: ["enabled", "disabled"]
+        }
+      };
+    },
+    async updateAdminChatKeyword(_adminUserId, keywordId, input) {
+      const keyword = chatKeywords.find((item) => item.id === keywordId);
+      if (keyword === undefined) {
+        return "CHAT_KEYWORD_NOT_FOUND";
+      }
+      Object.assign(keyword, {
+        action: input.action,
+        isEnabled: input.isEnabled,
+        replacement: input.replacement || keyword.replacement,
+        updatedAt: new Date().toISOString()
+      });
+      const auditLogId = `audit-chat-keyword-${adminAuditLogs.length + 1}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_chat_keyword_update",
+        targetType: "chat_keyword",
+        targetId: keyword.id,
+        detail: JSON.stringify({ keyword: keyword.keyword, action: keyword.action, isEnabled: keyword.isEnabled, reason: input.reason }),
+        createdAt: new Date().toISOString()
+      });
+      return { keyword, auditLogId };
     },
     async getAdminMonetizationBoundaries() {
       const walletPolicies = [
@@ -4068,6 +4122,49 @@ const createTestRepository = (): GameRepository => {
         achievements,
         guild
       });
+    },
+    async getChatCenter(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return buildChatCenterRecord(profile, chatMessages, chatKeywords, today, findGuildMembership(profile.id) !== undefined, crossServerRegistrations.has(`${profile.id}:${serverId}`));
+    },
+    async sendChatMessage(accountId, serverId, channel, content, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      if (channel === "system") {
+        return "CHAT_CHANNEL_READONLY";
+      }
+      if (channel === "guild" && findGuildMembership(profile.id) === undefined) {
+        return "CHAT_GUILD_REQUIRED";
+      }
+      if (channel === "cross" && !crossServerRegistrations.has(`${profile.id}:${serverId}`)) {
+        return "CHAT_CROSS_REQUIRED";
+      }
+      const filtered = maskChatContent(content, chatKeywords);
+      if (filtered.filterAction === "block") {
+        return "CHAT_CONTENT_BLOCKED";
+      }
+      const message: ChatMessageRecord = {
+        id: randomUUID(),
+        channel,
+        serverId,
+        profileId: profile.id,
+        founderName: profile.founderName,
+        content: filtered.content,
+        originalContent: content,
+        filterAction: filtered.filterAction,
+        matchedKeywords: filtered.matchedKeywords,
+        createdAt: `${today}T12:00:00.000Z`
+      };
+      chatMessages.unshift(message);
+      return {
+        message,
+        chat: buildChatCenterRecord(profile, chatMessages, chatKeywords, today, findGuildMembership(profile.id) !== undefined, crossServerRegistrations.has(`${profile.id}:${serverId}`))
+      };
     },
     async claimFullLevelChest(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -12680,5 +12777,81 @@ test("phase 24 operation config alerts support audited handling without rewards"
     assert.equal(afterProfile.status, 200);
     assert.equal(afterProfile.body.data?.cash, beforeProfile.body.data?.cash);
     assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
+  });
+});
+
+test("phase 28 chat channels filter local keyword library and audit admin changes", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "phase28chat");
+    const headers = { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-22" };
+
+    const initial = await requestJson<ChatCenterRecord>(baseUrl, "/chat?serverId=s1", { headers });
+    assert.equal(initial.status, 200, JSON.stringify(initial.body));
+    assert.deepEqual(initial.body.data?.channels.map((channel) => channel.id), ["system", "world", "guild", "cross"]);
+    assert.equal(initial.body.data?.channels.find((channel) => channel.id === "system")?.canSend, false);
+    assert.equal(initial.body.data?.channels.find((channel) => channel.id === "world")?.canSend, true);
+
+    const systemBlocked = await requestJson(baseUrl, "/chat/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", channel: "system", content: "系统频道玩家发言" })
+    });
+    assert.equal(systemBlocked.status, 409);
+    assert.equal(systemBlocked.body.error?.code, "CHAT_CHANNEL_READONLY");
+
+    const masked = await requestJson<{ message: { content: string; filterAction: string; matchedKeywords: string[] } }>(baseUrl, "/chat/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", channel: "world", content: "今天有人宣传外挂但我会举报" })
+    });
+    assert.equal(masked.status, 201, JSON.stringify(masked.body));
+    assert.equal(masked.body.data?.message.filterAction, "mask");
+    assert.equal(masked.body.data?.message.content.includes("外挂"), false);
+    assert.ok(masked.body.data?.message.matchedKeywords.includes("外挂"));
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}`, "x-server-date": "2026-05-22" };
+
+    const keywordList = await requestJson<AdminChatKeywordListRecord>(baseUrl, "/admin/chat-keywords?keyword=外挂", { headers: adminHeaders });
+    assert.equal(keywordList.status, 200, JSON.stringify(keywordList.body));
+    const keyword = keywordList.body.data?.rows.find((row) => row.keyword === "外挂");
+    assert.ok(keyword);
+    assert.equal(keyword.sourceType, "public");
+    assert.equal(keyword.license, "CC BY-SA 4.0");
+    assert.ok(keyword.sourceHash.length >= 12);
+
+    const blockedRule = await requestJson<{ auditLogId: string; keyword: { action: string; isEnabled: boolean } }>(
+      baseUrl,
+      `/admin/chat-keywords/${encodeURIComponent(keyword.id)}`,
+      {
+        method: "POST",
+        headers: adminHeaders,
+        body: JSON.stringify({ action: "block", isEnabled: true, reason: "Phase 28 阻断公开词测试" })
+      }
+    );
+    assert.equal(blockedRule.status, 200, JSON.stringify(blockedRule.body));
+    assert.equal(blockedRule.body.data?.keyword.action, "block");
+    assert.equal(blockedRule.body.data?.keyword.isEnabled, true);
+    assert.ok((blockedRule.body.data?.auditLogId ?? "").length > 0);
+
+    const blocked = await requestJson(baseUrl, "/chat/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", channel: "world", content: "外挂广告不应发出" })
+    });
+    assert.equal(blocked.status, 409, JSON.stringify(blocked.body));
+    assert.equal(blocked.body.error?.code, "CHAT_CONTENT_BLOCKED");
+
+    const logs = await requestJson<{ rows: Array<{ action: string; targetType: string; targetId: string | null }> }>(
+      baseUrl,
+      `/admin/audit-logs?targetType=chat_keyword&targetId=${encodeURIComponent(keyword.id)}`,
+      { headers: adminHeaders }
+    );
+    assert.equal(logs.status, 200, JSON.stringify(logs.body));
+    assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_chat_keyword_update"));
   });
 });

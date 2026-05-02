@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance";
+type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance" | "chat";
 
 type ApiSuccess<T> = {
   success: true;
@@ -848,6 +848,40 @@ type CrossServerCenter = {
   };
 };
 
+type ChatChannelId = "system" | "world" | "guild" | "cross";
+
+type ChatMessage = {
+  id: string;
+  channel: ChatChannelId;
+  serverId: string;
+  profileId: string | null;
+  founderName: string;
+  content: string;
+  originalContent: string;
+  filterAction: "none" | "mask" | "block";
+  matchedKeywords: string[];
+  createdAt: string;
+};
+
+type ChatCenter = {
+  channels: Array<{
+    id: ChatChannelId;
+    label: string;
+    description: string;
+    canSend: boolean;
+    readonlyReason: string | null;
+    unreadCount: number;
+  }>;
+  messages: ChatMessage[];
+  keywordPolicy: {
+    mode: "local_first";
+    source: string;
+    license: string;
+    sourceHash: string;
+    importBatch: string;
+  };
+};
+
 type LeaderboardSettlement = {
   leaderboard: LeaderboardCenter;
   deliveredRewards: number;
@@ -1086,7 +1120,7 @@ const shopCategoryLabels: Record<string, string> = {
 };
 
 const sideActions = ["财务", "融资", "贷款"];
-const rightActions = ["活动", "排行", "商业", "特权", "通行证", "专属经理"];
+const rightActions = ["活动", "排行", "跨服", "商业", "特权", "通行证", "专属经理"];
 const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
@@ -1100,6 +1134,7 @@ const homeActionIcons: Record<string, string> = {
   "礼包": "package-open",
   "活动": "calendar",
   "排行": "trophy",
+  "跨服": "trophy",
   "商业": "shopping-bag",
   "特权": "award",
   "通行证": "ticket",
@@ -1132,6 +1167,7 @@ const homeActionIconClasses: Record<string, string> = {
   "礼包": "text-pink-400",
   "活动": "text-blue-400",
   "排行": "text-amber-400",
+  "跨服": "text-cyan-400",
   "商业": "text-business-gold",
   "特权": "text-business-gold",
   "通行证": "text-emerald-400",
@@ -1709,6 +1745,11 @@ function App() {
   const [guildHistory, setGuildHistory] = useState<GuildHistory | null>(null);
   const [guildAnnouncementDraft, setGuildAnnouncementDraft] = useState("");
   const [guildRulesDraft, setGuildRulesDraft] = useState("");
+  const [chatCenter, setChatCenter] = useState<ChatCenter | null>(null);
+  const [activeChatChannel, setActiveChatChannel] = useState<ChatChannelId>("world");
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatNotice, setChatNotice] = useState("");
+  const [chatError, setChatError] = useState("");
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
 
@@ -2021,6 +2062,12 @@ function App() {
   const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
   const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
+  const activeChatMessages = useMemo(
+    () => chatCenter?.messages.filter((message) => message.channel === activeChatChannel) ?? [],
+    [activeChatChannel, chatCenter?.messages]
+  );
+  const latestChatMessage = chatCenter?.messages.find((message) => message.channel !== "system") ?? chatCenter?.messages[0] ?? null;
+  const activeChatChannelConfig = chatCenter?.channels.find((channel) => channel.id === activeChatChannel) ?? null;
   const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
   const canManageGuildMembers = currentGuildMember?.role === "leader";
   const guildRoleLabel = (role: string): string =>
@@ -3162,6 +3209,7 @@ function App() {
     setCompanyName(nextProfile.companyName);
     setProfile(nextProfile);
     setStep("game");
+    void loadChatCenter(nextAccount.token, nextServer.id);
   };
 
   useEffect(() => {
@@ -3498,7 +3546,55 @@ function App() {
     setStep("auth");
   };
 
+  const loadChatCenter = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<ChatCenter>(`/chat?serverId=${encodeURIComponent(nextServerId)}`, {}, token);
+    if (response.success) {
+      setChatCenter(response.data);
+      setChatError("");
+      return;
+    }
+    setChatError(response.error.message);
+  };
+
+  const sendChatMessage = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      setChatError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+    const content = chatDraft.trim();
+    if (content === "") {
+      setChatError("请输入聊天内容。");
+      return;
+    }
+    const response = await apiRequest<{ message: ChatMessage; chat: ChatCenter }>(
+      "/chat/messages",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, channel: activeChatChannel, content })
+      },
+      account.token
+    );
+    if (response.success) {
+      setChatCenter(response.data.chat);
+      setChatDraft("");
+      setChatError("");
+      setChatNotice(response.data.message.filterAction === "mask" ? "已按本地词库替换敏感词。" : "已发送。");
+      return;
+    }
+    setChatNotice("");
+    setChatError(response.error.message || "发送失败");
+  };
+
   const openHomePanel = (panelName: string): void => {
+    if (panelName === "聊天") {
+      setActivePanel(null);
+      setNativeHomePage("chat");
+      if (account && selectedServer) {
+        void loadChatCenter(account.token, selectedServer.id);
+      }
+      return;
+    }
+
     if (panelName === "财务") {
       setActivePanel(null);
       setNativeHomePage("finance");
@@ -3523,6 +3619,16 @@ function App() {
       reportCurrentTelemetry("long_term_goal_click", "rank-center");
       setActivePanel(null);
       setNativeHomePage("leaderboard");
+      if (account && selectedServer) {
+        void loadPhase14Center(account.token, selectedServer.id);
+      }
+      return;
+    }
+
+    if (panelName === "跨服") {
+      reportCurrentTelemetry("long_term_goal_click", "cross-server-center");
+      setActivePanel(null);
+      setNativeHomePage("cross-server");
       if (account && selectedServer) {
         void loadPhase14Center(account.token, selectedServer.id);
       }
@@ -4455,7 +4561,13 @@ function App() {
 
             <div className="absolute right-4 top-28 space-y-4">
               {rightActions.map((item, index) => (
-                <button className="flex flex-col items-center gap-1 group relative" type="button" key={item} onClick={() => openHomePanel(item)}>
+                <button
+                  className="flex flex-col items-center gap-1 group relative"
+                  data-testid={item === "跨服" ? "home-cross-server-entry" : undefined}
+                  type="button"
+                  key={item}
+                  onClick={() => openHomePanel(item)}
+                >
                   {[0, 3, 4].includes(index) && <span className="red-dot" />}
                   <span className="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Icon name={homeActionIcons[item] ?? "box"} className={`w-6 h-6 ${homeActionIconClasses[item] ?? ""}`} />
@@ -4464,6 +4576,18 @@ function App() {
                 </button>
               ))}
             </div>
+
+            <button
+              aria-label="聊天横条"
+              className="absolute bottom-40 left-4 right-24 glass-panel rounded-xl px-3 py-2 flex items-center gap-2 text-left active:scale-95 transition-transform"
+              data-testid="home-chat-strip"
+              type="button"
+              onClick={() => openHomePanel("聊天")}
+            >
+              <span className="rounded-lg bg-business-gold/15 px-2 py-1 text-[10px] font-black text-business-gold">{latestChatMessage?.channel === "system" ? "系统" : latestChatMessage?.channel === "guild" ? "商会" : latestChatMessage?.channel === "cross" ? "跨服" : "世界"}</span>
+              <span className="min-w-0 flex-1 truncate text-[10px] font-bold text-slate-200">{latestChatMessage ? `${latestChatMessage.founderName}：${latestChatMessage.content}` : "聊天横条 · 世界频道消息读取中"}</span>
+              <span className="btn-gold rounded-lg px-2 py-1 text-[10px] font-black text-business-dark">聊</span>
+            </button>
 
             <button className="absolute bottom-24 left-4 right-24 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer text-left" type="button" onClick={openTaskScreen}>
               <span className="w-12 h-12 bg-business-gold/15 rounded-xl flex items-center justify-center relative border border-business-gold/20">
@@ -4520,6 +4644,81 @@ function App() {
               </button>
             ))}
           </nav>
+
+          {nativeHomePage === "chat" && (
+            <section className="page-container page-active" aria-label="聊天" data-testid="native-chat">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="mail" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Chat 聊天</h2>
+                    <span className="text-[10px] text-slate-500">系统、世界、商会、跨服四频道</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭聊天" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <nav className="business-tabs" aria-label="聊天频道">
+                  {(chatCenter?.channels ?? [
+                    { id: "system" as const, label: "系统", canSend: false, readonlyReason: "系统频道只读" },
+                    { id: "world" as const, label: "世界", canSend: true, readonlyReason: null },
+                    { id: "guild" as const, label: "商会", canSend: false, readonlyReason: "加入商会后可发言" },
+                    { id: "cross" as const, label: "跨服", canSend: false, readonlyReason: "进入跨服分组后可发言" }
+                  ]).map((channel) => (
+                    <button className={activeChatChannel === channel.id ? "active" : undefined} key={channel.id} type="button" onClick={() => setActiveChatChannel(channel.id)}>
+                      {channel.label}
+                    </button>
+                  ))}
+                </nav>
+
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-sm text-white">{activeChatChannelConfig?.label ?? "世界"}频道</strong>
+                    <span className="text-[10px] text-business-gold">{activeChatChannelConfig?.canSend ? "可发言" : activeChatChannelConfig?.readonlyReason ?? "系统频道只读"}</span>
+                  </div>
+                  <p className="mt-2 text-[10px] text-slate-500">本地优先词库：{chatCenter?.keywordPolicy.source ?? "公开游戏聊天安全词库"} · {chatCenter?.keywordPolicy.license ?? "CC BY-SA 4.0"}</p>
+                </section>
+
+                <section className="space-y-3" aria-label="聊天消息">
+                  {activeChatMessages.length === 0 && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">暂无消息。</p>}
+                  {activeChatMessages.map((message) => (
+                    <article className="glass-panel rounded-2xl p-4" key={message.id}>
+                      <div className="flex items-center justify-between gap-3">
+                        <strong className="text-xs text-white">{message.founderName}</strong>
+                        <span className="text-[9px] text-slate-500">{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{message.content}</p>
+                      {message.filterAction === "mask" && <span className="mt-2 block text-[9px] text-business-gold">已按本地词库替换：{message.matchedKeywords.join("、")}</span>}
+                    </article>
+                  ))}
+                </section>
+
+                {(chatNotice || chatError) && <p className={chatError ? "task-error" : "task-notice"}>{chatError || chatNotice}</p>}
+
+                <form className="glass-panel rounded-3xl p-4 space-y-3" onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendChatMessage();
+                }}>
+                  <label className="block text-[10px] font-black text-slate-400">
+                    发言内容
+                    <input
+                      className="mt-2 w-full rounded-2xl bg-slate-950/80 border border-white/10 px-3 py-3 text-xs text-white outline-none"
+                      disabled={!activeChatChannelConfig?.canSend}
+                      maxLength={120}
+                      onChange={(event) => setChatDraft(event.target.value)}
+                      value={chatDraft}
+                    />
+                  </label>
+                  <button className="btn-gold w-full rounded-2xl py-3 text-sm font-black text-business-dark" disabled={!activeChatChannelConfig?.canSend} type="submit">
+                    {activeChatChannel === "system" ? "系统频道只读" : "发送"}
+                  </button>
+                  {!activeChatChannelConfig?.canSend && <p className="text-[10px] text-slate-500">发送失败前置校验：{activeChatChannelConfig?.readonlyReason ?? "系统频道只读"}</p>}
+                </form>
+              </div>
+            </section>
+          )}
 
           {nativeHomePage === "finance" && (
             <section className="page-container page-active" aria-label="财务" data-testid="native-finance">
@@ -5052,7 +5251,35 @@ function App() {
                     </div>
                   </section>
                 )}
-                <section className="glass-panel rounded-3xl p-4">
+                <section className="glass-panel rounded-3xl p-4" aria-label="跨服摘要">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block text-sm text-white font-black">跨服摘要</strong>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服数据读取中，请确认 API 服务已启动。"}</span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                      {crossServerCenter?.isRegistered ? "已报名" : "未报名"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</strong>
+                      <span className="text-[9px] text-slate-500">我的排名</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{currentCrossGuildRank}</strong>
+                      <span className="text-[9px] text-slate-500">商会排名</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.statusLabel ?? "读取中"}</strong>
+                      <span className="text-[9px] text-slate-500">商会赛季</span>
+                    </div>
+                  </div>
+                  <button className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => setNativeHomePage("cross-server")}>
+                    前往跨服
+                  </button>
+                </section>
+                <section className="hidden">
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
@@ -5094,7 +5321,7 @@ function App() {
                     </button>
                   </div>
                 </section>
-                <section className="glass-panel rounded-3xl p-4">
+                <section className="hidden">
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
                       <strong className="block text-sm text-white font-black">跨服商会赛季</strong>
@@ -5317,6 +5544,167 @@ function App() {
                     <div className="text-[9px] text-slate-400 italic">{titleCenter?.equippedTitle?.name ?? "创业履历收集中"}</div>
                   </div>
                   <div className="text-xs font-black text-business-gold">{compactNumber(profile.valuation)}</div>
+                </div>
+              </footer>
+            </section>
+          )}
+
+          {nativeHomePage === "cross-server" && (
+            <section className="page-container page-active" aria-label="跨服" data-testid="native-cross-server">
+              <header className="p-6 pt-10 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Icon name="trophy" className="w-7 h-7 text-business-gold" />
+                  <div>
+                    <h2 className="text-xl font-black text-white italic uppercase">Cross 跨服中心</h2>
+                    <span className="text-[10px] text-slate-500">{crossServerCenter?.group.name ?? "跨服分组读取中"} · {crossServerCenter?.isRegistered ? "已报名" : "未报名"} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</span>
+                  </div>
+                </div>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-28 scroll-hide">
+                {(phase14Notice || phase14Error) && (
+                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                    {phase14Error || phase14Notice}
+                  </p>
+                )}
+
+                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服分组读取中"}</span>
+                    </div>
+                    <span className="text-[10px] text-business-gold">{crossServerCenter?.isRegistered ? "已报名" : "未报名"}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</strong>
+                      <span className="text-[9px] text-slate-500">我的排名</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block truncate text-sm text-white">{crossServerCenter?.group.name ?? "-"}</strong>
+                      <span className="text-[9px] text-slate-500">跨服分组</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block truncate text-sm text-white">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</strong>
+                      <span className="text-[9px] text-slate-500">报名状态</span>
+                    </div>
+                  </div>
+                  <nav className="business-tabs mt-3" aria-label="跨服频道">
+                    {["创业大赛", "跨服商会", "跨服历史", "奖励规则"].map((tabName) => (
+                      <button className={tabName === "创业大赛" ? "active" : undefined} key={tabName} type="button">
+                        {tabName}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="mt-3 space-y-2">
+                    {(primaryCrossLeaderboard?.rows ?? []).slice(0, 3).map((row) => (
+                      <article className={`rounded-2xl border p-3 flex items-center gap-3 ${row.rank === 1 ? "border-business-gold/30 bg-business-gold/10" : "border-white/5 bg-slate-900/60"}`} key={row.profileId}>
+                        <span className="w-7 text-center text-business-gold font-black italic">{row.rank}</span>
+                        <div className="flex-1 min-w-0">
+                          <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                          <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "跨服称号待争夺"}</span>
+                        </div>
+                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                      </article>
+                    ))}
+                    {(primaryCrossLeaderboard?.rows.length ?? 0) === 0 && <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">跨服数据读取中，请确认 API 服务已启动。</p>}
+                  </div>
+                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
+                    奖励预览：跨服榜奖励通过邮件幂等发放，称号和声望用于长期荣誉展示。
+                  </p>
+                </section>
+
+                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-guild-season">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">跨服商会赛季</strong>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.guildSeason.guildName ?? "加入商会后参与"}</span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                      {crossServerCenter?.guildSeason.statusLabel ?? "读取中"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.memberCount ?? 0}/{crossServerCenter?.guildSeason.minMembers ?? 2}</strong>
+                      <span className="text-[9px] text-slate-500">成员</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.todayActiveMemberCount ?? 0}/{crossServerCenter?.guildSeason.minTodayActiveMembers ?? 2}</strong>
+                      <span className="text-[9px] text-slate-500">活跃</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{currentCrossGuildRank}</strong>
+                      <span className="text-[9px] text-slate-500">排名</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
+                    奖励预览：{crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {(crossServerCenter?.guildBoard.rows ?? []).slice(0, 3).map((row) => (
+                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.guildId}>
+                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                        <div className="flex-1 min-w-0">
+                          <strong className="block text-xs text-white font-black truncate">{row.guildName}</strong>
+                          <span className="text-[9px] text-slate-500">会长 {row.leaderFounderName} · {row.memberCount} 人</span>
+                        </div>
+                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                      </article>
+                    ))}
+                    {(crossServerCenter?.guildBoard.rows.length ?? 0) === 0 && (
+                      <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无已报名商会。</p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="glass-panel rounded-3xl p-4" aria-label="跨服历史">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong className="text-sm text-white font-black">跨服历史</strong>
+                    <span className="text-[9px] text-business-gold">{crossServerGuildHistory?.isRegistered ? "已报名" : "未报名"}</span>
+                  </div>
+                  {latestCrossGuildSettlement === null ? (
+                    <p className="mt-3 text-[10px] leading-5 text-slate-500 font-bold">跨服商会赛季结算后生成回顾。</p>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.finalRank ?? "-"}</strong><span className="text-[9px] text-slate-500">最终名次</span></div>
+                      <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.deliveredRewards}</strong><span className="text-[9px] text-slate-500">发放</span></div>
+                      <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.snapshotDate.slice(5)}</strong><span className="text-[9px] text-slate-500">赛季日</span></div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="glass-panel rounded-3xl p-4" aria-label="奖励规则">
+                  <strong className="text-sm text-white font-black">奖励规则</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">不改变跨服结算算法、不新增奖励、不改变称号规则；报名、结算和跨服商会赛季继续复用既有幂等接口。</p>
+                </section>
+              </div>
+              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
+                    data-testid="cross-server-register-button"
+                    disabled={crossServerCenter?.isRegistered}
+                    type="button"
+                    onClick={() => void registerCrossServer()}
+                  >
+                    {crossServerCenter?.isRegistered ? "已报名" : "报名跨服"}
+                  </button>
+                  <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => void settleCrossServer()}>
+                    结算跨服
+                  </button>
+                  <button
+                    className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45"
+                    data-testid="cross-server-guild-register-button"
+                    disabled={!crossServerCenter?.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
+                    type="button"
+                    onClick={() => void registerCrossServerGuild()}
+                  >
+                    {crossServerCenter?.guildSeason.isRegistered ? "商会已报名" : "报名商会赛季"}
+                  </button>
                 </div>
               </footer>
             </section>

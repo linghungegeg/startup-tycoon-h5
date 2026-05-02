@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { ApiConfig } from "./config.js";
 import { createPasswordRecord, verifyPassword } from "./password.js";
-import { createPrismaGameRepository, type AccountRecord, type AdminActivityConfigDraftInput, type AdminKnowledgeUpdateInput, type AdminOperationConfigAlertStatus, type GameRepository, type VipLevelRecord } from "./repository.js";
+import { createPrismaGameRepository, type AccountRecord, type AdminActivityConfigDraftInput, type AdminChatKeywordUpdateInput, type AdminKnowledgeUpdateInput, type AdminOperationConfigAlertStatus, type ChatChannelId, type GameRepository, type VipLevelRecord } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -270,6 +270,36 @@ const readTelemetryMetadata = (body: Record<string, unknown>): Record<string, st
   }
 
   return metadata;
+};
+
+const readChatChannel = (value: string): ChatChannelId | null => {
+  if (value === "system" || value === "world" || value === "guild" || value === "cross") {
+    return value;
+  }
+  return null;
+};
+
+const validateAdminChatKeywordUpdate = (body: unknown): AdminChatKeywordUpdateInput | string => {
+  if (!isRecord(body)) {
+    return "Request body must be a JSON object.";
+  }
+  const action = readString(body, "action");
+  if (action !== "mask" && action !== "block" && action !== "allow") {
+    return "Chat keyword action must be mask, block, or allow.";
+  }
+  if (typeof body.isEnabled !== "boolean") {
+    return "Chat keyword enabled status is required.";
+  }
+  const reason = readString(body, "reason");
+  if (reason.length < 2 || reason.length > 180) {
+    return "Chat keyword reason must be 2 to 180 characters.";
+  }
+  return {
+    action,
+    isEnabled: body.isEnabled,
+    replacement: readString(body, "replacement") || "***",
+    reason
+  };
 };
 
 const readToday = (request: IncomingMessage): string => {
@@ -687,6 +717,67 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/chat") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+      const result = await repository.getChatCenter(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/chat/messages") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const serverId = readString(body, "serverId");
+      const channel = readChatChannel(readString(body, "channel"));
+      const content = readString(body, "content").trim();
+      if (serverId === "" || channel === null || content.length < 1 || content.length > 120) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, valid channel, and 1-120 character content are required.", traceId));
+        return;
+      }
+      const result = await repository.sendChatMessage(account.id, serverId, channel, content, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CHAT_CHANNEL_READONLY") {
+        sendJson(response, 409, failure("CHAT_CHANNEL_READONLY", "System channel is read-only.", traceId));
+        return;
+      }
+      if (result === "CHAT_GUILD_REQUIRED") {
+        sendJson(response, 409, failure("CHAT_GUILD_REQUIRED", "Join a guild before sending guild chat.", traceId));
+        return;
+      }
+      if (result === "CHAT_CROSS_REQUIRED") {
+        sendJson(response, 409, failure("CHAT_CROSS_REQUIRED", "Enter cross-server group before sending cross chat.", traceId));
+        return;
+      }
+      if (result === "CHAT_CONTENT_BLOCKED") {
+        sendJson(response, 409, failure("CHAT_CONTENT_BLOCKED", "Message blocked by local chat keyword library.", traceId));
+        return;
+      }
+      sendJson(response, 201, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/auth/session") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
@@ -756,6 +847,46 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(await repository.getAdminConfigCenter(readToday(request)), traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/chat-keywords") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminChatKeywords({
+        keyword: url.searchParams.get("keyword")?.trim() ?? "",
+        sourceType: url.searchParams.get("sourceType")?.trim() ?? "",
+        action: url.searchParams.get("action")?.trim() ?? "",
+        status: url.searchParams.get("status")?.trim() ?? ""
+      }), traceId));
+      return;
+    }
+
+    const adminChatKeywordUpdateMatch = request.method === "POST" ? /^\/admin\/chat-keywords\/([^/]+)$/.exec(url.pathname) : null;
+    if (adminChatKeywordUpdateMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const input = validateAdminChatKeywordUpdate(await readBody(request));
+      if (typeof input === "string") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", input, traceId));
+        return;
+      }
+      const result = await repository.updateAdminChatKeyword(admin.id, decodeURIComponent(adminChatKeywordUpdateMatch[1] ?? ""), input);
+      if (result === "CHAT_KEYWORD_NOT_FOUND") {
+        sendJson(response, 404, failure("CHAT_KEYWORD_NOT_FOUND", "Chat keyword was not found.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
       return;
     }
 

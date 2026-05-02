@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { Prisma, PrismaClient } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
@@ -930,6 +930,200 @@ export type AdminAuditLogListRecord = {
   };
 };
 
+export type ChatChannelId = "system" | "world" | "guild" | "cross";
+
+export type ChatKeywordAction = "mask" | "block" | "allow";
+
+export type ChatKeywordSourceType = "public" | "custom" | "whitelist";
+
+export type ChatMessageRecord = {
+  id: string;
+  channel: ChatChannelId;
+  serverId: string;
+  profileId: string | null;
+  founderName: string;
+  content: string;
+  originalContent: string;
+  filterAction: "none" | "mask" | "block";
+  matchedKeywords: string[];
+  createdAt: string;
+};
+
+export type ChatCenterRecord = {
+  channels: Array<{
+    id: ChatChannelId;
+    label: string;
+    description: string;
+    canSend: boolean;
+    readonlyReason: string | null;
+    unreadCount: number;
+  }>;
+  messages: ChatMessageRecord[];
+  keywordPolicy: {
+    mode: "local_first";
+    source: string;
+    license: string;
+    sourceHash: string;
+    importBatch: string;
+  };
+};
+
+export type AdminChatKeywordRecord = {
+  id: string;
+  keyword: string;
+  replacement: string;
+  action: ChatKeywordAction;
+  sourceType: ChatKeywordSourceType;
+  sourceName: string;
+  license: string;
+  sourceHash: string;
+  importBatch: string;
+  isEnabled: boolean;
+  updatedAt: string;
+};
+
+export type AdminChatKeywordListRecord = {
+  rows: AdminChatKeywordRecord[];
+  total: number;
+  filters: {
+    sourceTypes: ChatKeywordSourceType[];
+    actions: ChatKeywordAction[];
+    statuses: string[];
+  };
+};
+
+export type AdminChatKeywordUpdateInput = {
+  action: ChatKeywordAction;
+  isEnabled: boolean;
+  replacement: string;
+  reason: string;
+};
+
+export type AdminChatKeywordUpdateRecord = {
+  keyword: AdminChatKeywordRecord;
+  auditLogId: string;
+};
+
+export const defaultChatKeywords = (): AdminChatKeywordRecord[] => {
+  const batch = "phase28-public-game-chat-20260522";
+  const sourceName = "公开游戏聊天安全词库";
+  const license = "CC BY-SA 4.0";
+  const createKeyword = (
+    id: string,
+    keyword: string,
+    sourceType: ChatKeywordSourceType,
+    action: ChatKeywordAction,
+    replacement = "***"
+  ): AdminChatKeywordRecord => ({
+    id,
+    keyword,
+    replacement,
+    action,
+    sourceType,
+    sourceName,
+    license,
+    sourceHash: createHash("sha256").update(`${batch}:${keyword}:${sourceType}`).digest("hex"),
+    importBatch: batch,
+    isEnabled: true,
+    updatedAt: "2026-05-22T00:00:00.000Z"
+  });
+
+  return [
+    createKeyword("public-cheat-tool", "外挂", "public", "mask"),
+    createKeyword("public-private-trade", "私下交易", "public", "block"),
+    createKeyword("custom-ad-spam", "广告群", "custom", "block"),
+    createKeyword("whitelist-guild-business", "商会", "whitelist", "allow", "商会")
+  ];
+};
+
+export const maskChatContent = (
+  content: string,
+  keywords: AdminChatKeywordRecord[]
+): { content: string; filterAction: "none" | "mask" | "block"; matchedKeywords: string[] } => {
+  const whitelist = keywords.filter((keyword) => keyword.isEnabled && keyword.sourceType === "whitelist");
+  const blockedByWhitelist = (keyword: string): boolean => whitelist.some((item) => item.keyword === keyword);
+  let nextContent = content;
+  const matchedKeywords: string[] = [];
+  let filterAction: "none" | "mask" | "block" = "none";
+
+  for (const keyword of keywords) {
+    if (!keyword.isEnabled || keyword.sourceType === "whitelist" || blockedByWhitelist(keyword.keyword) || !content.includes(keyword.keyword)) {
+      continue;
+    }
+
+    matchedKeywords.push(keyword.keyword);
+    if (keyword.action === "block") {
+      filterAction = "block";
+      continue;
+    }
+    if (keyword.action === "mask" && filterAction !== "block") {
+      filterAction = "mask";
+      nextContent = nextContent.split(keyword.keyword).join(keyword.replacement || "***");
+    }
+  }
+
+  return { content: nextContent, filterAction, matchedKeywords };
+};
+
+const listChatKeywords = (
+  keywords: AdminChatKeywordRecord[],
+  filters: { keyword: string; sourceType: string; action: string; status: string }
+): AdminChatKeywordListRecord => {
+  const rows = keywords
+    .filter((keyword) => filters.keyword === "" || keyword.keyword.includes(filters.keyword) || keyword.id.includes(filters.keyword))
+    .filter((keyword) => filters.sourceType === "" || keyword.sourceType === filters.sourceType)
+    .filter((keyword) => filters.action === "" || keyword.action === filters.action)
+    .filter((keyword) => filters.status === "" || (filters.status === "enabled" ? keyword.isEnabled : !keyword.isEnabled));
+
+  return {
+    rows,
+    total: rows.length,
+    filters: {
+      sourceTypes: ["public", "custom", "whitelist"],
+      actions: ["mask", "block", "allow"],
+      statuses: ["enabled", "disabled"]
+    }
+  };
+};
+
+export const buildChatCenterRecord = (
+  profile: PlayerProfileRecord,
+  messages: ChatMessageRecord[],
+  keywords: AdminChatKeywordRecord[],
+  today: string,
+  canUseGuild: boolean,
+  canUseCross: boolean
+): ChatCenterRecord => ({
+  channels: [
+    { id: "system", label: "系统", description: "系统公告与奖励提醒，只读。", canSend: false, readonlyReason: "系统频道只读", unreadCount: 0 },
+    { id: "world", label: "世界", description: "本区玩家交流。", canSend: true, readonlyReason: null, unreadCount: 0 },
+    { id: "guild", label: "商会", description: "加入商会后解锁。", canSend: canUseGuild, readonlyReason: canUseGuild ? null : "加入商会后可发言", unreadCount: 0 },
+    { id: "cross", label: "跨服", description: "进入跨服分组后解锁。", canSend: canUseCross, readonlyReason: canUseCross ? null : "进入跨服分组后可发言", unreadCount: 0 }
+  ],
+  messages: [
+    {
+      id: `system-${profile.serverId}-${today}`,
+      channel: "system",
+      serverId: profile.serverId,
+      profileId: null,
+      founderName: "系统",
+      content: "经营时钟已同步，邮件奖励待查看。",
+      originalContent: "经营时钟已同步，邮件奖励待查看。",
+      filterAction: "none",
+      matchedKeywords: [],
+      createdAt: `${today}T08:00:00.000Z`
+    },
+    ...messages.filter((message) => message.serverId === profile.serverId || message.channel === "cross").slice(0, 40)
+  ],
+  keywordPolicy: {
+    mode: "local_first",
+    source: "公开游戏聊天安全词库",
+    license: "CC BY-SA 4.0",
+    sourceHash: createHash("sha256").update(keywords.map((keyword) => `${keyword.id}:${keyword.sourceHash}`).join("|")).digest("hex"),
+    importBatch: keywords[0]?.importBatch ?? "phase28-public-game-chat-20260522"
+  }
+});
+
 const parseAdminAuditDetail = (detail: string | null): Record<string, string | number | boolean | null> | null => {
   if (detail === null) {
     return null;
@@ -1039,6 +1233,16 @@ export type AdminConfigCenterRecord = {
     platformCoins: number;
     reason: string;
     createdAt: string;
+  }>;
+  chatKeywords: Array<{
+    id: string;
+    keyword: string;
+    sourceType: ChatKeywordSourceType;
+    action: ChatKeywordAction;
+    isEnabled: boolean;
+    license: string;
+    sourceHash: string;
+    importBatch: string;
   }>;
   seasons: Array<{
     id: string;
@@ -1946,6 +2150,8 @@ export type GameRepository = {
   createProfile(profile: CreatePlayerProfileInput): Promise<PlayerProfileRecord | "PLAYER_EXISTS">;
   getCompanyGrowth(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND">;
   getLongTermGoals(accountId: string, serverId: string, today: string): Promise<LongTermGoalsRecord | "PLAYER_NOT_FOUND">;
+  getChatCenter(accountId: string, serverId: string, today: string): Promise<ChatCenterRecord | "PLAYER_NOT_FOUND">;
+  sendChatMessage(accountId: string, serverId: string, channel: ChatChannelId, content: string, today: string): Promise<{ message: ChatMessageRecord; chat: ChatCenterRecord } | "PLAYER_NOT_FOUND" | "CHAT_CHANNEL_READONLY" | "CHAT_GUILD_REQUIRED" | "CHAT_CROSS_REQUIRED" | "CHAT_CONTENT_BLOCKED">;
   claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
   listTasks(accountId: string, serverId: string, today: string): Promise<TaskRecord[] | "PLAYER_NOT_FOUND">;
   advanceTask(accountId: string, serverId: string, taskId: string, today: string, knowledgeId?: string | null): Promise<TaskRecord | "PLAYER_NOT_FOUND" | "TASK_NOT_FOUND" | "TASK_KNOWLEDGE_MISMATCH" | "KNOWLEDGE_LOCKED">;
@@ -2000,6 +2206,8 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
+  listAdminChatKeywords(filters: { keyword: string; sourceType: string; action: string; status: string }): Promise<AdminChatKeywordListRecord>;
+  updateAdminChatKeyword(adminUserId: string, keywordId: string, input: AdminChatKeywordUpdateInput): Promise<AdminChatKeywordUpdateRecord | "CHAT_KEYWORD_NOT_FOUND">;
   getAdminMonetizationBoundaries(today: string): Promise<AdminMonetizationBoundaryRecord>;
   getAdminEconomyAlerts(today: string): Promise<AdminEconomyAlertListRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
@@ -5263,6 +5471,9 @@ const applyFinanceAdvisor = (
   };
 };
 
+const runtimeChatKeywords = defaultChatKeywords();
+const runtimeChatMessages: ChatMessageRecord[] = [];
+
 export const createPrismaGameRepository = (
   prisma = new PrismaClient()
 ): GameRepository => ({
@@ -5863,6 +6074,59 @@ export const createPrismaGameRepository = (
       achievements,
       guild
     });
+  },
+
+  async getChatCenter(accountId, serverId, today) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const [guild, crossServer] = await Promise.all([
+      prisma.guildMember.findUnique({ where: { profileId: profile.id } }),
+      prisma.crossServerSignup.findFirst({ where: { profileId: profile.id, serverId, status: "active" } })
+    ]);
+    return buildChatCenterRecord(profile, runtimeChatMessages, runtimeChatKeywords, today, guild !== null, crossServer !== null);
+  },
+
+  async sendChatMessage(accountId, serverId, channel, content, today) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    if (channel === "system") {
+      return "CHAT_CHANNEL_READONLY";
+    }
+    const [guild, crossServer] = await Promise.all([
+      prisma.guildMember.findUnique({ where: { profileId: profile.id } }),
+      prisma.crossServerSignup.findFirst({ where: { profileId: profile.id, serverId, status: "active" } })
+    ]);
+    if (channel === "guild" && guild === null) {
+      return "CHAT_GUILD_REQUIRED";
+    }
+    if (channel === "cross" && crossServer === null) {
+      return "CHAT_CROSS_REQUIRED";
+    }
+    const filtered = maskChatContent(content, runtimeChatKeywords);
+    if (filtered.filterAction === "block") {
+      return "CHAT_CONTENT_BLOCKED";
+    }
+    const message: ChatMessageRecord = {
+      id: randomUUID(),
+      channel,
+      serverId,
+      profileId: profile.id,
+      founderName: profile.founderName,
+      content: filtered.content,
+      originalContent: content,
+      filterAction: filtered.filterAction,
+      matchedKeywords: filtered.matchedKeywords,
+      createdAt: new Date().toISOString()
+    };
+    runtimeChatMessages.unshift(message);
+    return {
+      message,
+      chat: buildChatCenterRecord(profile, runtimeChatMessages, runtimeChatKeywords, today, guild !== null, crossServer !== null)
+    };
   },
 
   async claimFullLevelChest(accountId, serverId) {
@@ -8997,6 +9261,16 @@ export const createPrismaGameRepository = (
         reason: mail.reason,
         createdAt: mail.createdAt.toISOString()
       })),
+      chatKeywords: runtimeChatKeywords.map((keyword) => ({
+        id: keyword.id,
+        keyword: keyword.keyword,
+        sourceType: keyword.sourceType,
+        action: keyword.action,
+        isEnabled: keyword.isEnabled,
+        license: keyword.license,
+        sourceHash: keyword.sourceHash,
+        importBatch: keyword.importBatch
+      })),
       seasons: seasons.map((season) => ({
         id: season.id,
         name: season.name,
@@ -9050,6 +9324,33 @@ export const createPrismaGameRepository = (
         rewardTitleId: scenario.rewardTitleId
       }))
     };
+  },
+
+  async listAdminChatKeywords(filters) {
+    return listChatKeywords(runtimeChatKeywords, filters);
+  },
+
+  async updateAdminChatKeyword(adminUserId, keywordId, input) {
+    const keyword = runtimeChatKeywords.find((item) => item.id === keywordId);
+    if (keyword === undefined) {
+      return "CHAT_KEYWORD_NOT_FOUND";
+    }
+    Object.assign(keyword, {
+      action: input.action,
+      isEnabled: input.isEnabled,
+      replacement: input.replacement || keyword.replacement,
+      updatedAt: new Date().toISOString()
+    });
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "admin_chat_keyword_update",
+        targetType: "chat_keyword",
+        targetId: keyword.id,
+        detail: JSON.stringify({ keyword: keyword.keyword, action: keyword.action, isEnabled: keyword.isEnabled, reason: input.reason })
+      }
+    });
+    return { keyword, auditLogId: audit.id };
   },
 
   async getAdminMonetizationBoundaries(today) {

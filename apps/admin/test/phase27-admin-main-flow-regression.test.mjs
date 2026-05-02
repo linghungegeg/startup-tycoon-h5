@@ -48,3 +48,22 @@ test("phase 27 admin keeps operational sections and guardrail copy visible", () 
     assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${copy} should stay visible in admin operations`);
   }
 });
+
+test("phase 28 admin exposes chat keyword library controls and audit flow", () => {
+  for (const copy of [
+    "聊天关键词库",
+    "公开词库",
+    "自定义词库",
+    "白名单",
+    "替换",
+    "阻断",
+    "启用",
+    "停用",
+    "保存并记录审计"
+  ]) {
+    assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${copy} should stay visible for chat keyword operations`);
+  }
+
+  assert.match(source, /\/admin\/chat-keywords/, "admin should load chat keyword library from API");
+  assert.match(source, /\/admin\/chat-keywords\//, "admin should update chat keyword entries through API");
+});

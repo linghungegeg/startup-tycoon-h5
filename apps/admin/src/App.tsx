@@ -237,12 +237,37 @@ type ConfigCenter = {
   shopProducts: Array<{ id: string; name: string; category: string; pricePlatformCoins: number; purchaseLimit: number; isActive: boolean }>;
   leaderboardSnapshots: Array<{ id: string; serverId: string; boardName: string; snapshotDate: string; createdAt: string }>;
   mailCompensations: Array<{ id: string; profileId: string; subject: string; platformCoins: number; reason: string; createdAt: string }>;
+  chatKeywords: Array<{ id: string; keyword: string; sourceType: string; action: string; isEnabled: boolean; license: string; sourceHash: string; importBatch: string }>;
   seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string; passPricePlatformCoins: number; taskCount: number; activityCount: number; passPurchaseCount: number }>;
   activities: Array<{ id: string; seasonId: string; name: string; status: string; startDate: string; endDate: string; leaderboardKey: string; targetScore: number; participantCount: number; totalScore: number; isSettled: boolean; deliveredRewards: number; rewardLabel: string; rewardBoundary: string }>;
   activityShopItems: Array<{ id: string; seasonId: string; name: string; costPoints: number; purchaseLimit: number; purchaseCount: number; rewardLabel: string; isActive: boolean }>;
   seasonPass: Array<{ seasonId: string; pricePlatformCoins: number; purchaseCount: number; rewardLabel: string }>;
   leaderboardSettlements: Array<{ boardKey: string; snapshotDate: string; deliveredRewards: number; rewardPlatformCoinsTotal: number; rewardBoundary: string }>;
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
+};
+
+type ChatKeyword = {
+  id: string;
+  keyword: string;
+  replacement: string;
+  action: "mask" | "block" | "allow";
+  sourceType: "public" | "custom" | "whitelist";
+  sourceName: string;
+  license: string;
+  sourceHash: string;
+  importBatch: string;
+  isEnabled: boolean;
+  updatedAt: string;
+};
+
+type ChatKeywordList = {
+  rows: ChatKeyword[];
+  total: number;
+  filters: {
+    sourceTypes: string[];
+    actions: string[];
+    statuses: string[];
+  };
 };
 
 type MonetizationBoundaries = {
@@ -830,6 +855,7 @@ export default function App() {
     shopProducts: [],
     leaderboardSnapshots: [],
     mailCompensations: [],
+    chatKeywords: [],
     seasons: [],
     activities: [],
     activityShopItems: [],
@@ -873,6 +899,12 @@ export default function App() {
   const [activityPublishObservations, setActivityPublishObservations] = useState<ActivityPublishObservationList>({ summary: { total: 0, published: 0, rewardRiskCount: 0, unsettledEndedCount: 0 }, rows: [] });
   const [activityDraftReviewReason, setActivityDraftReviewReason] = useState("运营复核通过");
   const [activityDraftPublishReason, setActivityDraftPublishReason] = useState("发布前二次确认：配置、档期、奖励边界均已复核");
+  const [chatKeywordList, setChatKeywordList] = useState<ChatKeywordList>({ rows: [], total: 0, filters: { sourceTypes: [], actions: [], statuses: [] } });
+  const [chatKeywordSearch, setChatKeywordSearch] = useState("");
+  const [chatKeywordSourceType, setChatKeywordSourceType] = useState("");
+  const [chatKeywordAction, setChatKeywordAction] = useState("");
+  const [chatKeywordStatus, setChatKeywordStatus] = useState("");
+  const [chatKeywordReason, setChatKeywordReason] = useState("聊天关键词库运营调整");
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
   const [alertStatus, setAlertStatus] = useState("");
@@ -1021,7 +1053,7 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse, chatKeywordsResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
@@ -1032,7 +1064,8 @@ export default function App() {
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
-        apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
+        apiRequest<KnowledgeList>("/admin/knowledge", {}, token),
+        apiRequest<ChatKeywordList>("/admin/chat-keywords", {}, token)
       ]);
       if (!configs.success) {
         setError(configs.error.message);
@@ -1078,6 +1111,10 @@ export default function App() {
         setError(knowledgeResponse.error.message);
         return;
       }
+      if (!chatKeywordsResponse.success) {
+        setError(chatKeywordsResponse.error.message);
+        return;
+      }
       setConfigCenter(configs.data);
       setOperationConfigAlerts(configAlerts.data);
       setMonetizationBoundaries(boundaryResponse.data);
@@ -1089,6 +1126,7 @@ export default function App() {
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
+      setChatKeywordList(chatKeywordsResponse.data);
       setSelectedTitleId((current) => current || (configs.data.titles[0]?.id ?? ""));
       if (playerList.data.rows.length > 0) {
         setSelectedProfileId((current) => current || (playerList.data.rows[0]?.profileId ?? ""));
@@ -1209,7 +1247,7 @@ export default function App() {
     setSelectedActivityId("");
     setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
-    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
+    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], chatKeywords: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
     setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [], statuses: [] }, alerts: [] });
     setMonetizationBoundaries({
       summary: { platformCoinSourceCount: 0, platformCoinSpendCount: 0, vipExperienceSourceCount: 0, paidProductCount: 0, riskCount: 0 },
@@ -1273,6 +1311,48 @@ export default function App() {
     setKnowledgeForm(emptyKnowledgeForm());
     applyKnowledgeList(response.data);
     setActionMessage(`已刷新知识卡：${response.data.total} 条`);
+  };
+
+  const submitChatKeywordSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+    const params = new URLSearchParams();
+    if (chatKeywordSearch.trim() !== "") params.set("keyword", chatKeywordSearch.trim());
+    if (chatKeywordSourceType !== "") params.set("sourceType", chatKeywordSourceType);
+    if (chatKeywordAction !== "") params.set("action", chatKeywordAction);
+    if (chatKeywordStatus !== "") params.set("status", chatKeywordStatus);
+    const response = await apiRequest<ChatKeywordList>(`/admin/chat-keywords?${params.toString()}`, {}, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+    setChatKeywordList(response.data);
+    setActionMessage(`已刷新聊天关键词库：${response.data.total} 条`);
+  };
+
+  const updateChatKeyword = async (keyword: ChatKeyword, action: ChatKeyword["action"], isEnabled: boolean): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const response = await apiRequest<{ keyword: ChatKeyword; auditLogId: string }>(`/admin/chat-keywords/${encodeURIComponent(keyword.id)}`, {
+      method: "POST",
+      body: JSON.stringify({ action, isEnabled, replacement: keyword.replacement, reason: chatKeywordReason })
+    }, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+    setChatKeywordList((current) => ({
+      ...current,
+      rows: current.rows.map((row) => row.id === response.data.keyword.id ? response.data.keyword : row)
+    }));
+    setActionMessage(`聊天关键词库已保存并记录审计：${response.data.auditLogId}`);
+    const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
+    if (logs.success) {
+      applyAuditList(logs.data);
+    }
   };
 
   const loadGuildDetail = async (guildId: string): Promise<void> => {
@@ -2852,6 +2932,75 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="聊天关键词库">
+              <form className="filter-bar" onSubmit={(event) => void submitChatKeywordSearch(event)}>
+                <label>关键词<input onChange={(event) => setChatKeywordSearch(event.target.value)} value={chatKeywordSearch} /></label>
+                <label>
+                  来源
+                  <select onChange={(event) => setChatKeywordSourceType(event.target.value)} value={chatKeywordSourceType}>
+                    <option value="">全部来源</option>
+                    <option value="public">公开词库</option>
+                    <option value="custom">自定义词库</option>
+                    <option value="whitelist">白名单</option>
+                  </select>
+                </label>
+                <label>
+                  处置
+                  <select onChange={(event) => setChatKeywordAction(event.target.value)} value={chatKeywordAction}>
+                    <option value="">全部处置</option>
+                    <option value="mask">替换</option>
+                    <option value="block">阻断</option>
+                    <option value="allow">放行</option>
+                  </select>
+                </label>
+                <label>
+                  状态
+                  <select onChange={(event) => setChatKeywordStatus(event.target.value)} value={chatKeywordStatus}>
+                    <option value="">全部状态</option>
+                    <option value="enabled">启用</option>
+                    <option value="disabled">停用</option>
+                  </select>
+                </label>
+                <button type="submit">筛选</button>
+              </form>
+              <div className="table-toolbar">
+                <strong>聊天关键词库</strong>
+                <span>{chatKeywordList.total} 条，配置清单摘要 {configCenter.chatKeywords.length} 条</span>
+              </div>
+              <label className="panel-note">审计原因<input onChange={(event) => setChatKeywordReason(event.target.value)} value={chatKeywordReason} /></label>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>关键词</th>
+                      <th>来源</th>
+                      <th>许可证 / Hash</th>
+                      <th>处置</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chatKeywordList.rows.map((keyword) => (
+                      <tr key={keyword.id}>
+                        <td className="stacked-cell"><strong>{keyword.keyword}</strong><span>{keyword.importBatch}</span></td>
+                        <td>{keyword.sourceType === "public" ? "公开词库" : keyword.sourceType === "custom" ? "自定义词库" : "白名单"}</td>
+                        <td className="stacked-cell"><span>{keyword.license}</span><span>{keyword.sourceHash.slice(0, 16)}</span></td>
+                        <td>{keyword.action === "mask" ? "替换" : keyword.action === "block" ? "阻断" : "放行"}</td>
+                        <td>{keyword.isEnabled ? "启用" : "停用"}</td>
+                        <td className="action-cell">
+                          <button type="button" onClick={() => void updateChatKeyword(keyword, "mask", true)}>改为替换</button>
+                          <button type="button" onClick={() => void updateChatKeyword(keyword, "block", true)}>改为阻断</button>
+                          <button type="button" onClick={() => void updateChatKeyword(keyword, keyword.action, !keyword.isEnabled)}>{keyword.isEnabled ? "停用" : "启用"}</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="panel-note">保存并记录审计；白名单优先级最高，避免误伤正常游戏经营、商会、跨服和商业词。</p>
             </section>
 
             <section className="table-section compact-table" aria-label="付费价值边界">
