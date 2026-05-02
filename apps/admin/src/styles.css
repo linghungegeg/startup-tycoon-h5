@@ -541,6 +541,13 @@ tbody tr {
   border-radius: 0;
 }
 
+.activity-draft-filter {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  margin-bottom: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
+}
+
 .audit-filter {
   grid-template-columns: repeat(4, minmax(150px, 1fr)) repeat(2, minmax(140px, 160px)) auto auto;
   margin-bottom: 0;

@@ -3,6 +3,19 @@ import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const ADMIN_SESSION_KEY = "wenziyouxi.admin.session";
 const ADMIN_SESSION_VERSION = 1;
+const defaultActivityDraftForm = (): ActivityDraftForm => ({
+  id: "creator-economy-week",
+  name: "创作者经济周",
+  startDate: "2026-07-01",
+  endDate: "2026-07-14",
+  leaderboardKey: "activity-creator-economy-week",
+  targetScore: "220",
+  rewardReputation: "90",
+  rewardPoints: "130",
+  rewardTitleId: "season-creator-builder",
+  rewardCash: "0",
+  rewardPlatformCoins: "0"
+});
 
 type AdminSession = {
   version: typeof ADMIN_SESSION_VERSION;
@@ -304,6 +317,43 @@ type ActivitySchedule = {
     message: string;
     suggestion: string;
   }>;
+};
+
+type ActivityDraftForm = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  targetScore: string;
+  rewardReputation: string;
+  rewardPoints: string;
+  rewardTitleId: string;
+  rewardCash: string;
+  rewardPlatformCoins: string;
+};
+
+type ActivityDraftValidation = {
+  summary: {
+    isValid: boolean;
+    errorCount: number;
+    warningCount: number;
+    riskCount: number;
+  };
+  errors: Array<{ type: string; field: string; message: string }>;
+  warnings: Array<{ type: string; field: string | null; message: string; suggestion: string }>;
+  riskLabels: string[];
+  preview: {
+    id: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    targetScore: number;
+    rewardLabel: string;
+    concurrentActiveCount: number;
+  };
 };
 
 type OperationConfigAlertAction = AuditResult & {
@@ -615,6 +665,8 @@ export default function App() {
     activities: [],
     alerts: []
   });
+  const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
+  const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
   const [alertStatus, setAlertStatus] = useState("");
@@ -924,6 +976,8 @@ export default function App() {
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
     setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [], statuses: [] }, alerts: [] });
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
+    setActivityDraftForm(defaultActivityDraftForm());
+    setActivityDraftValidation(null);
     setAlertLevel("");
     setAlertType("");
     setAnalytics(null);
@@ -1356,6 +1410,47 @@ export default function App() {
     }
     setActionMessage(`排行榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
     await loadAdminData(session.token, keyword);
+  };
+
+  const updateActivityDraftForm = (field: keyof ActivityDraftForm, value: string): void => {
+    setActivityDraftForm((current) => ({ ...current, [field]: value }));
+    setActivityDraftValidation(null);
+  };
+
+  const submitActivityDraftValidation = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+
+    const readDraftInteger = (value: string): number => {
+      const numberValue = Number.parseInt(value, 10);
+      return Number.isFinite(numberValue) ? numberValue : 0;
+    };
+    const result = await apiRequest<ActivityDraftValidation>("/admin/activity-config-drafts/validate", {
+      method: "POST",
+      body: JSON.stringify({
+        id: activityDraftForm.id.trim(),
+        name: activityDraftForm.name.trim(),
+        startDate: activityDraftForm.startDate.trim(),
+        endDate: activityDraftForm.endDate.trim(),
+        leaderboardKey: activityDraftForm.leaderboardKey.trim(),
+        targetScore: readDraftInteger(activityDraftForm.targetScore),
+        rewardReputation: readDraftInteger(activityDraftForm.rewardReputation),
+        rewardPoints: readDraftInteger(activityDraftForm.rewardPoints),
+        rewardTitleId: activityDraftForm.rewardTitleId.trim() || null,
+        rewardCash: readDraftInteger(activityDraftForm.rewardCash),
+        rewardPlatformCoins: readDraftInteger(activityDraftForm.rewardPlatformCoins)
+      })
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+
+    setError("");
+    setActivityDraftValidation(result.data);
+    setActionMessage(result.data.summary.isValid ? "活动草案通过预检，可进入人工复核。" : "活动草案存在阻断错误或奖励边界风险。");
   };
 
   const refreshOperationConfigAlerts = async (): Promise<void> => {
@@ -2303,6 +2398,108 @@ export default function App() {
                   ))}
                 </div>
               </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="活动草案校验">
+              <div className="table-toolbar">
+                <strong>活动草案校验</strong>
+                <span>只读预检，不写入正式配置</span>
+              </div>
+              <form className="filter-bar activity-draft-filter" onSubmit={(event) => void submitActivityDraftValidation(event)}>
+                <label>
+                  活动 ID
+                  <input onChange={(event) => updateActivityDraftForm("id", event.target.value)} value={activityDraftForm.id} />
+                </label>
+                <label>
+                  活动名称
+                  <input onChange={(event) => updateActivityDraftForm("name", event.target.value)} value={activityDraftForm.name} />
+                </label>
+                <label>
+                  开始日期
+                  <input onChange={(event) => updateActivityDraftForm("startDate", event.target.value)} type="date" value={activityDraftForm.startDate} />
+                </label>
+                <label>
+                  结束日期
+                  <input onChange={(event) => updateActivityDraftForm("endDate", event.target.value)} type="date" value={activityDraftForm.endDate} />
+                </label>
+                <label>
+                  活动榜 key
+                  <input onChange={(event) => updateActivityDraftForm("leaderboardKey", event.target.value)} value={activityDraftForm.leaderboardKey} />
+                </label>
+                <label>
+                  目标分
+                  <input onChange={(event) => updateActivityDraftForm("targetScore", event.target.value)} type="number" value={activityDraftForm.targetScore} />
+                </label>
+                <label>
+                  声望奖励
+                  <input onChange={(event) => updateActivityDraftForm("rewardReputation", event.target.value)} type="number" value={activityDraftForm.rewardReputation} />
+                </label>
+                <label>
+                  活动积分
+                  <input onChange={(event) => updateActivityDraftForm("rewardPoints", event.target.value)} type="number" value={activityDraftForm.rewardPoints} />
+                </label>
+                <label>
+                  称号 ID
+                  <input onChange={(event) => updateActivityDraftForm("rewardTitleId", event.target.value)} value={activityDraftForm.rewardTitleId} />
+                </label>
+                <label>
+                  现金奖励
+                  <input onChange={(event) => updateActivityDraftForm("rewardCash", event.target.value)} type="number" value={activityDraftForm.rewardCash} />
+                </label>
+                <label>
+                  平台币奖励
+                  <input onChange={(event) => updateActivityDraftForm("rewardPlatformCoins", event.target.value)} type="number" value={activityDraftForm.rewardPlatformCoins} />
+                </label>
+                <div className="button-row">
+                  <button type="submit">校验草案</button>
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      setActivityDraftForm(defaultActivityDraftForm());
+                      setActivityDraftValidation(null);
+                    }}
+                    type="button"
+                  >
+                    重置
+                  </button>
+                </div>
+              </form>
+              {activityDraftValidation !== null && (
+                <div className="config-grid">
+                  <div>
+                    <h3>校验摘要</h3>
+                    <p>状态：{activityDraftValidation.summary.isValid ? "通过" : "需修正"}</p>
+                    <p>阻断错误：{activityDraftValidation.summary.errorCount}</p>
+                    <p>提示告警：{activityDraftValidation.summary.warningCount}</p>
+                    <p>奖励风险：{activityDraftValidation.summary.riskCount}</p>
+                  </div>
+                  <div>
+                    <h3>上线预览</h3>
+                    <p>{activityDraftValidation.preview.name}：{activityDraftValidation.preview.status}</p>
+                    <p>{activityDraftValidation.preview.startDate} - {activityDraftValidation.preview.endDate}</p>
+                    <p>{activityDraftValidation.preview.leaderboardKey} / 目标 {formatNumber(activityDraftValidation.preview.targetScore)}</p>
+                    <p>同期活动峰值：{activityDraftValidation.preview.concurrentActiveCount}</p>
+                    <p>{activityDraftValidation.preview.rewardLabel}</p>
+                  </div>
+                  <div>
+                    <h3>阻断错误</h3>
+                    {activityDraftValidation.errors.length === 0 && <p>无阻断错误</p>}
+                    {activityDraftValidation.errors.map((item) => (
+                      <p key={`${item.type}:${item.field}`}>{item.field}：{item.message}</p>
+                    ))}
+                  </div>
+                  <div>
+                    <h3>告警与边界</h3>
+                    {activityDraftValidation.warnings.length === 0 && activityDraftValidation.riskLabels.length === 0 && <p>暂无告警和奖励边界风险</p>}
+                    {activityDraftValidation.warnings.map((item) => (
+                      <p key={`${item.type}:${item.field ?? "global"}`}>{item.message} {item.suggestion}</p>
+                    ))}
+                    {activityDraftValidation.riskLabels.map((label) => (
+                      <p key={label}>风险标签：{label}</p>
+                    ))}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="table-section compact-table" aria-label="活动轮换节奏">

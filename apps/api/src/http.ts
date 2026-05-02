@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { ApiConfig } from "./config.js";
 import { createPasswordRecord, verifyPassword } from "./password.js";
-import { createPrismaGameRepository, type AccountRecord, type AdminKnowledgeUpdateInput, type AdminOperationConfigAlertStatus, type GameRepository, type VipLevelRecord } from "./repository.js";
+import { createPrismaGameRepository, type AccountRecord, type AdminActivityConfigDraftInput, type AdminKnowledgeUpdateInput, type AdminOperationConfigAlertStatus, type GameRepository, type VipLevelRecord } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -731,6 +731,37 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(await repository.getAdminActivitySchedule(readToday(request)), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/activity-config-drafts/validate") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("INVALID_ACTIVITY_DRAFT", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const draft: AdminActivityConfigDraftInput = {
+        id: readString(body, "id"),
+        name: readString(body, "name"),
+        startDate: readString(body, "startDate"),
+        endDate: readString(body, "endDate"),
+        leaderboardKey: readString(body, "leaderboardKey"),
+        targetScore: readInteger(body, "targetScore") ?? 0,
+        rewardReputation: readInteger(body, "rewardReputation") ?? 0,
+        rewardPoints: readInteger(body, "rewardPoints") ?? 0,
+        rewardTitleId: readString(body, "rewardTitleId") || null,
+        rewardCash: readInteger(body, "rewardCash") ?? 0,
+        rewardPlatformCoins: readInteger(body, "rewardPlatformCoins") ?? 0
+      };
+
+      sendJson(response, 200, success(await repository.validateAdminActivityConfigDraft(draft, readToday(request)), traceId));
       return;
     }
 

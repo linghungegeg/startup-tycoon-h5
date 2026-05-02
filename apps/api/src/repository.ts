@@ -1045,6 +1045,52 @@ export type AdminActivityScheduleRecord = {
   }>;
 };
 
+export type AdminActivityConfigDraftInput = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  targetScore: number;
+  rewardReputation: number;
+  rewardPoints: number;
+  rewardTitleId: string | null;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+};
+
+export type AdminActivityConfigDraftValidationRecord = {
+  summary: {
+    isValid: boolean;
+    errorCount: number;
+    warningCount: number;
+    riskCount: number;
+  };
+  errors: Array<{
+    type: string;
+    field: string;
+    message: string;
+  }>;
+  warnings: Array<{
+    type: string;
+    field: string | null;
+    message: string;
+    suggestion: string;
+  }>;
+  riskLabels: string[];
+  preview: {
+    id: string;
+    name: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    targetScore: number;
+    rewardLabel: string;
+    concurrentActiveCount: number;
+  };
+};
+
 export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
 export type AdminOperationConfigAlertStatus = "pending" | "acknowledged" | "ignored";
 
@@ -1678,6 +1724,7 @@ export type GameRepository = {
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
+  validateAdminActivityConfigDraft(draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftValidationRecord>;
   getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
   handleAdminOperationConfigAlert(adminUserId: string, alertId: string, status: AdminOperationConfigAlertStatus, note: string, today: string): Promise<AdminOperationConfigAlertActionRecord | "ALERT_NOT_FOUND">;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
@@ -2608,6 +2655,10 @@ type ActivityScheduleConfigLike = {
   rewardTitleId: string | null;
 };
 
+type ActivityDraftExistingConfigLike = ActivityScheduleConfigLike & {
+  targetScore: number;
+};
+
 const addUtcDays = (date: Date, days: number): Date => {
   const next = new Date(date);
   next.setUTCDate(next.getUTCDate() + days);
@@ -2719,6 +2770,116 @@ export const buildAdminActivitySchedule = (
     windows,
     activities: activityRecords,
     alerts
+  };
+};
+
+const isDateString = (value: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && formatUtcDate(date) === value;
+};
+
+export const validateAdminActivityConfigDraft = (
+  draft: AdminActivityConfigDraftInput,
+  existingActivities: ActivityDraftExistingConfigLike[],
+  today: string
+): AdminActivityConfigDraftValidationRecord => {
+  const errors: AdminActivityConfigDraftValidationRecord["errors"] = [];
+  const warnings: AdminActivityConfigDraftValidationRecord["warnings"] = [];
+  const riskLabels = [
+    draft.rewardCash > 0 ? "cash_reward_configured" : "",
+    draft.rewardPlatformCoins > 0 ? "platform_coin_reward_configured" : ""
+  ].filter(Boolean);
+  const pushError = (type: string, field: string, message: string) => {
+    errors.push({ type, field, message });
+  };
+  const pushWarning = (type: string, field: string | null, message: string, suggestion: string) => {
+    warnings.push({ type, field, message, suggestion });
+  };
+
+  if (!/^[a-z0-9-]{3,64}$/.test(draft.id)) {
+    pushError("invalid_activity_id", "id", "活动 ID 只能使用小写字母、数字和短横线，长度 3 到 64。");
+  }
+  if (existingActivities.some((activity) => activity.id === draft.id)) {
+    pushError("activity_id_exists", "id", "活动 ID 已存在。");
+  }
+  if (draft.name.trim() === "") {
+    pushError("missing_name", "name", "活动名称不能为空。");
+  }
+  if (!isDateString(draft.startDate)) {
+    pushError("invalid_start_date", "startDate", "开始日期必须是 YYYY-MM-DD。");
+  }
+  if (!isDateString(draft.endDate)) {
+    pushError("invalid_end_date", "endDate", "结束日期必须是 YYYY-MM-DD。");
+  }
+  if (isDateString(draft.startDate) && isDateString(draft.endDate) && draft.startDate > draft.endDate) {
+    pushError("invalid_date_range", "endDate", "结束日期不能早于开始日期。");
+  }
+  if (draft.leaderboardKey.trim() === "") {
+    pushError("missing_leaderboard_key", "leaderboardKey", "活动榜 key 不能为空。");
+  }
+  if (draft.leaderboardKey.trim() !== "" && existingActivities.some((activity) => activity.leaderboardKey === draft.leaderboardKey)) {
+    pushError("leaderboard_key_exists", "leaderboardKey", "活动榜 key 已存在。");
+  }
+  if (!Number.isInteger(draft.targetScore) || draft.targetScore <= 0) {
+    pushError("invalid_target_score", "targetScore", "目标分必须是大于 0 的整数。");
+  }
+  if (draft.rewardReputation < 0 || draft.rewardPoints < 0) {
+    pushError("invalid_reward_amount", "rewardReputation", "声望和活动积分奖励必须为非负数。");
+  }
+  if (draft.rewardCash > 0) {
+    pushWarning("reward_boundary_risk", "rewardCash", "草案包含现金奖励。", "活动奖励应保持声望、活动积分、称号、外观券或碎片。");
+  }
+  if (draft.rewardPlatformCoins > 0) {
+    pushWarning("reward_boundary_risk", "rewardPlatformCoins", "草案包含平台币奖励。", "活动奖励不应进入平台币链路。");
+  }
+
+  let concurrentActiveCount = 0;
+  if (isDateString(draft.startDate) && isDateString(draft.endDate) && draft.startDate <= draft.endDate) {
+    for (let date = new Date(`${draft.startDate}T00:00:00.000Z`); formatUtcDate(date) <= draft.endDate; date = addUtcDays(date, 1)) {
+      const currentDate = formatUtcDate(date);
+      const activeCount = existingActivities.filter((activity) => activity.startDate <= currentDate && currentDate <= activity.endDate).length + 1;
+      concurrentActiveCount = Math.max(concurrentActiveCount, activeCount);
+    }
+    if (concurrentActiveCount > ACTIVITY_SCHEDULE_MAX_RECOMMENDED_ACTIVE) {
+      pushWarning(
+        "activity_schedule_crowded",
+        null,
+        `草案上线后最多会有 ${concurrentActiveCount} 个活动同期开启。`,
+        "建议错峰排期，保持同时进行活动数量不超过 3 个。"
+      );
+    }
+  }
+
+  const rewardLabel = [
+    draft.rewardReputation > 0 ? `声望 +${draft.rewardReputation}` : "",
+    draft.rewardPoints > 0 ? `活动积分 +${draft.rewardPoints}` : "",
+    draft.rewardTitleId !== null && draft.rewardTitleId.trim() !== "" ? `称号 ${draft.rewardTitleId}` : ""
+  ].filter(Boolean).join(" / ") || "荣誉奖励";
+
+  return {
+    summary: {
+      isValid: errors.length === 0 && riskLabels.length === 0,
+      errorCount: errors.length,
+      warningCount: warnings.length,
+      riskCount: riskLabels.length
+    },
+    errors,
+    warnings,
+    riskLabels,
+    preview: {
+      id: draft.id,
+      name: draft.name,
+      status: readSeasonStatus(draft.startDate, draft.endDate, today),
+      startDate: draft.startDate,
+      endDate: draft.endDate,
+      leaderboardKey: draft.leaderboardKey,
+      targetScore: draft.targetScore,
+      rewardLabel,
+      concurrentActiveCount
+    }
   };
 };
 
@@ -7631,6 +7792,14 @@ export const createPrismaGameRepository = (
     );
 
     return buildAdminActivitySchedule(activities, today, platformCoinRewardBoardKeys);
+  },
+
+  async validateAdminActivityConfigDraft(draft, today) {
+    const activities = await prisma.activityConfig.findMany({
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+    });
+
+    return validateAdminActivityConfigDraft(draft, activities, today);
   },
 
   async getAdminOperationConfigAlerts(today) {

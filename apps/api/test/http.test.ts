@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress } from "../src/repository.js";
+import { buildAdminActivitySchedule, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -2822,6 +2822,9 @@ const createTestRepository = (): GameRepository => {
     },
     async getAdminActivitySchedule(today) {
       return buildAdminActivitySchedule(activityConfigs, today, new Set());
+    },
+    async validateAdminActivityConfigDraft(draft, today) {
+      return validateAdminActivityConfigDraft(draft, activityConfigs, today);
     },
     async getAdminOperationConfigAlerts(today) {
       const rewardEntries = [...leaderboardRewards].map((key) => {
@@ -10565,6 +10568,146 @@ test("phase 24 admin activity schedule reports rotation cadence and reward bound
     assert.equal(afterAllActivities.body.data?.summary.upcomingCount, 0);
     assert.ok((afterAllActivities.body.data?.summary.endedCount ?? 0) >= 6);
     assert.ok(afterAllActivities.body.data?.alerts.some((alert) => alert.type === "activity_no_upcoming" && alert.level === "info"));
+  });
+});
+
+test("phase 24 admin activity draft validation previews safety without changing live config", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "activitydraftsafe");
+    const playerProfileBefore = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-10" }
+    });
+    assert.equal(playerProfileBefore.status, 200, JSON.stringify(playerProfileBefore.body));
+
+    const unauthenticated = await requestJson(baseUrl, "/admin/activity-config-drafts/validate", {
+      method: "POST",
+      headers: { "x-server-date": "2026-05-10" },
+      body: JSON.stringify({
+        id: "creator-economy-week",
+        name: "创作者经济周",
+        startDate: "2026-07-01",
+        endDate: "2026-07-14",
+        leaderboardKey: "activity-creator-economy-week",
+        targetScore: 220,
+        rewardReputation: 90,
+        rewardPoints: 130,
+        rewardTitleId: "season-creator-builder"
+      })
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-10" };
+
+    const configsBefore = await requestJson<{ activities: Array<{ id: string; leaderboardKey: string }> }>(baseUrl, "/admin/config-center", {
+      headers: adminHeaders
+    });
+    assert.equal(configsBefore.status, 200, JSON.stringify(configsBefore.body));
+    const liveActivityCount = configsBefore.body.data?.activities.length ?? 0;
+
+    const validDraft = await requestJson<{
+      summary: { isValid: boolean; errorCount: number; warningCount: number; riskCount: number };
+      errors: Array<{ type: string; field: string }>;
+      warnings: Array<{ type: string; message: string }>;
+      riskLabels: string[];
+      preview: { id: string; status: string; leaderboardKey: string; rewardLabel: string; concurrentActiveCount: number };
+    }>(baseUrl, "/admin/activity-config-drafts/validate", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        id: "creator-economy-week",
+        name: "创作者经济周",
+        startDate: "2026-07-01",
+        endDate: "2026-07-14",
+        leaderboardKey: "activity-creator-economy-week",
+        targetScore: 220,
+        rewardReputation: 90,
+        rewardPoints: 130,
+        rewardTitleId: "season-creator-builder"
+      })
+    });
+    assert.equal(validDraft.status, 200, JSON.stringify(validDraft.body));
+    assert.equal(validDraft.body.data?.summary.isValid, true);
+    assert.equal(validDraft.body.data?.summary.errorCount, 0);
+    assert.equal(validDraft.body.data?.summary.riskCount, 0);
+    assert.equal(validDraft.body.data?.preview.status, "upcoming");
+    assert.equal(validDraft.body.data?.preview.rewardLabel, "声望 +90 / 活动积分 +130 / 称号 season-creator-builder");
+
+    const duplicateAndMissingBoard = await requestJson<{
+      summary: { isValid: boolean; errorCount: number };
+      errors: Array<{ type: string; field: string }>;
+    }>(baseUrl, "/admin/activity-config-drafts/validate", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        id: "ai-agent-growth",
+        name: "重复活动",
+        startDate: "2026-05-03",
+        endDate: "2026-05-01",
+        leaderboardKey: "",
+        targetScore: 0,
+        rewardReputation: 50,
+        rewardPoints: 50,
+        rewardTitleId: null
+      })
+    });
+    assert.equal(duplicateAndMissingBoard.status, 200, JSON.stringify(duplicateAndMissingBoard.body));
+    assert.equal(duplicateAndMissingBoard.body.data?.summary.isValid, false);
+    assert.ok((duplicateAndMissingBoard.body.data?.summary.errorCount ?? 0) >= 4);
+    assert.ok(duplicateAndMissingBoard.body.data?.errors.some((error) => error.type === "activity_id_exists" && error.field === "id"));
+    assert.ok(duplicateAndMissingBoard.body.data?.errors.some((error) => error.type === "missing_leaderboard_key" && error.field === "leaderboardKey"));
+    assert.ok(duplicateAndMissingBoard.body.data?.errors.some((error) => error.type === "invalid_date_range" && error.field === "endDate"));
+    assert.ok(duplicateAndMissingBoard.body.data?.errors.some((error) => error.type === "invalid_target_score" && error.field === "targetScore"));
+
+    const riskyDraft = await requestJson<{
+      summary: { isValid: boolean; warningCount: number; riskCount: number };
+      warnings: Array<{ type: string; field: string | null }>;
+      riskLabels: string[];
+      preview: { concurrentActiveCount: number };
+    }>(baseUrl, "/admin/activity-config-drafts/validate", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        id: "ai-tools-crowded-week",
+        name: "AI 工具拥挤周",
+        startDate: "2026-05-10",
+        endDate: "2026-05-16",
+        leaderboardKey: "activity-ai-tools-crowded-week",
+        targetScore: 240,
+        rewardReputation: 80,
+        rewardPoints: 100,
+        rewardTitleId: "season-ai-tools",
+        rewardCash: 1000,
+        rewardPlatformCoins: 50
+      })
+    });
+    assert.equal(riskyDraft.status, 200, JSON.stringify(riskyDraft.body));
+    assert.equal(riskyDraft.body.data?.summary.isValid, false);
+    assert.ok((riskyDraft.body.data?.summary.warningCount ?? 0) >= 1);
+    assert.equal(riskyDraft.body.data?.summary.riskCount, 2);
+    assert.ok(riskyDraft.body.data?.riskLabels.includes("cash_reward_configured"));
+    assert.ok(riskyDraft.body.data?.riskLabels.includes("platform_coin_reward_configured"));
+    assert.ok(riskyDraft.body.data?.warnings.some((warning) => warning.type === "activity_schedule_crowded"));
+    assert.ok((riskyDraft.body.data?.preview.concurrentActiveCount ?? 0) > 3);
+
+    const configsAfter = await requestJson<{ activities: Array<{ id: string; leaderboardKey: string }> }>(baseUrl, "/admin/config-center", {
+      headers: adminHeaders
+    });
+    assert.equal(configsAfter.status, 200, JSON.stringify(configsAfter.body));
+    assert.equal(configsAfter.body.data?.activities.length, liveActivityCount);
+    assert.equal(configsAfter.body.data?.activities.some((activity) => activity.id === "creator-economy-week"), false);
+
+    const playerProfileAfter = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-10" }
+    });
+    assert.equal(playerProfileAfter.status, 200, JSON.stringify(playerProfileAfter.body));
+    assert.equal(playerProfileAfter.body.data?.cash, playerProfileBefore.body.data?.cash);
+    assert.equal(playerProfileAfter.body.data?.platformCoins, playerProfileBefore.body.data?.platformCoins);
   });
 });
 
