@@ -5501,6 +5501,17 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
+                <section className="glass-panel rounded-3xl p-4" aria-label="商业入口导航">
+                  <strong className="block text-sm text-white font-black">商业入口导航</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
+                    普通商品用于缓解经营压力；周卡、月卡和成长基金用于提高效率；赛季通行证承接赛季奖励线；背包保存已获得的道具和材料。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
+                  </div>
+                </section>
                 <div className="grid grid-cols-2 gap-4">
                   {commerceProducts.map((product) => (
                     <article
@@ -5608,6 +5619,17 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
+                <section className="glass-panel rounded-3xl p-4" aria-label="特权入口导航">
+                  <strong className="block text-sm text-white font-black">特权入口导航</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
+                    周卡、月卡和成长基金用于提高效率，普通商品留在商业，赛季奖励线留在通行证，已获得道具回到背包查看。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
+                  </div>
+                </section>
                 <div className="grid grid-cols-1 gap-3">
                   {privilegeProducts.map((product) => (
                     <article className="glass-panel rounded-3xl p-4 border-business-gold/20" key={product.id}>
@@ -5764,6 +5786,17 @@ function App() {
                     </p>
                   </article>
                 </section>
+                <section className="glass-panel rounded-3xl p-4" aria-label="通行证入口导航">
+                  <strong className="block text-sm text-white font-black">通行证入口导航</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
+                    赛季通行证承接赛季奖励线和赛季任务，活动材料进入背包；普通补给去商业，周卡和成长基金去特权。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
+                  </div>
+                </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <strong className="text-sm text-white font-black">赛季任务线</strong>
@@ -5863,6 +5896,18 @@ function App() {
                     </div>
                   ))}
                 </section>
+                <section className="glass-panel rounded-3xl p-4" aria-label="VIP入口导航">
+                  <strong className="block text-sm text-white font-black">VIP入口导航</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
+                    VIP 提供身份、每日礼包和便利权益，帮助提高经营效率；普通补给去商业，长期效率权益去特权，赛季奖励线去通行证，已获得道具回到背包查看。
+                  </p>
+                  <div className="mt-3 grid grid-cols-4 gap-2">
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
+                  </div>
+                </section>
                 <p className="text-[10px] leading-5 text-slate-500 font-bold px-1">
                   VIP 权益只提供便利、身份和轻量效率，不直接清空负债、免除经营风险或改变排行榜名次。
                 </p>
@@ -5900,6 +5945,17 @@ function App() {
                     </span>
                   </div>
                   {inventoryError && <p className="mt-3 text-xs font-bold text-red-300">{inventoryError}</p>}
+                </section>
+                <section className="glass-panel rounded-3xl p-4 mb-4" aria-label="背包入口导航">
+                  <strong className="block text-sm text-white font-black">背包入口导航</strong>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
+                    背包保存已获得的道具和材料；需要普通补给去商业，需要效率权益去特权，需要赛季奖励线去通行证。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
+                  </div>
                 </section>
                 <div className="grid grid-cols-4 gap-3">
                   {(inventoryCenter?.items ?? []).map((item) => (
