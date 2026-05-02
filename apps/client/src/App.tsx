@@ -1985,6 +1985,10 @@ function App() {
   ].filter((group) => group.activities.length > 0);
   const activeActivityBoards = seasonCenter?.activityBoards ?? [];
   const latestActivityRecaps = seasonCenter?.activityRecaps.slice(0, 2) ?? [];
+  const activeTitleCount = titleCenter?.titles.filter((title) => !title.isExpired).length ?? 0;
+  const completedAchievementCount = achievements.filter((achievement) => achievement.isCompleted).length;
+  const claimableAchievementCount = achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
+  const bestActivityRecap = seasonCenter?.activityRecaps.find((recap) => recap.personalRank !== null) ?? seasonCenter?.activityRecaps[0] ?? null;
   const activityShopItems = seasonCenter?.shopItems ?? [];
   const primaryScenario = seasonCenter?.scenarios[0] ?? null;
   const activeTaskTip =
@@ -4820,6 +4824,54 @@ function App() {
                     </div>
                   </section>
                 )}
+                <section className="glass-panel rounded-3xl p-4" aria-label="我的荣誉">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <strong className="block text-sm text-white font-black">我的荣誉</strong>
+                      <span className="text-[9px] text-slate-500">称号、成就、赛季、活动、商会和跨服历史集中回顾</span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                      {activeTitleCount} 称号
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">当前装备</span>
+                      <strong className="mt-1 block truncate text-xs text-white font-black">{titleCenter?.equippedTitle?.name ?? "未装备称号"}</strong>
+                      <span className="mt-1 block truncate text-[9px] text-business-gold">{titleCenter?.equippedTitle?.bonusLabel ?? "完成榜单、活动或成就后装备"}</span>
+                    </article>
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">已获得称号</span>
+                      <strong className="mt-1 block text-xs text-white font-black">{activeTitleCount}/{titleCenter?.titles.length ?? 0}</strong>
+                      <span className="mt-1 block truncate text-[9px] text-business-gold">{(titleCenter?.titles ?? [])[0]?.name ?? "暂无称号"}</span>
+                    </article>
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">成就进度</span>
+                      <strong className="mt-1 block text-xs text-white font-black">{completedAchievementCount}/{achievements.length}</strong>
+                      <span className="mt-1 block text-[9px] text-business-gold">{claimableAchievementCount > 0 ? `${claimableAchievementCount} 个可领取` : "继续推进经营目标"}</span>
+                    </article>
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">赛季荣誉</span>
+                      <strong className="mt-1 block truncate text-xs text-white font-black">{seasonCenter?.season.name ?? "赛季读取中"}</strong>
+                      <span className="mt-1 block text-[9px] text-business-gold">{seasonCenter?.season.points ?? 0} 积分 / {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : "普通进度"}</span>
+                    </article>
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">活动回顾</span>
+                      <strong className="mt-1 block truncate text-xs text-white font-black">{bestActivityRecap?.name ?? "暂无已结束活动"}</strong>
+                      <span className="mt-1 block text-[9px] text-business-gold">{bestActivityRecap?.personalRank === null || bestActivityRecap === null ? "活动结算后生成排名" : `第 ${bestActivityRecap.personalRank} 名 / ${bestActivityRecap.personalScore} 分`}</span>
+                    </article>
+                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">商会历史</span>
+                      <strong className="mt-1 block truncate text-xs text-white font-black">{guildHistory?.guild?.name ?? guildCenter?.guild?.name ?? "未加入商会"}</strong>
+                      <span className="mt-1 block text-[9px] text-business-gold">{latestGuildSettlement === null ? "贡献榜结算后生成" : `${latestGuildSettlement.snapshotDate} / 发放 ${latestGuildSettlement.deliveredRewards}`}</span>
+                    </article>
+                    <article className="col-span-2 rounded-2xl border border-white/5 bg-slate-900/60 p-3">
+                      <span className="block text-[9px] text-slate-500 font-black">跨服历史</span>
+                      <strong className="mt-1 block truncate text-xs text-white font-black">{crossServerGuildHistory?.guild.name ?? crossServerCenter?.guildSeason.guildName ?? "跨服报名后生成"}</strong>
+                      <span className="mt-1 block text-[9px] text-business-gold">{latestCrossGuildSettlement === null ? "跨服商会赛季结算后回顾" : `${latestCrossGuildSettlement.snapshotDate} / 最终名次 ${latestCrossGuildSettlement.finalRank ?? "-"}`}</span>
+                    </article>
+                  </div>
+                </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <strong className="text-sm text-white font-black">{primaryLeaderboard?.name ?? "公司估值榜"}</strong>

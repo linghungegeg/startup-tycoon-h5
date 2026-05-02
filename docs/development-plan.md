@@ -2325,6 +2325,18 @@ VIP 权益：
 - 后端优先复用现有称号、成就、活动回顾、商会历史、跨服历史接口；只在聚合确有必要时扩展轻量返回。
 - 验收标准：玩家能看到自己过去做过什么、赢过什么、还差什么。
 
+##### Phase 25 第四实施批次总结：长期荣誉展示收口
+
+- 完成内容：Rank 荣誉中心新增“我的荣誉”区域，聚合当前装备称号、已获得称号、成就进度、赛季荣誉、活动回顾、商会历史和跨服历史。
+- 前台接入：复用已加载的 `titleCenter`、`achievements`、`seasonCenter.activityRecaps`、`guildHistory` 和 `crossServerGuildHistory`，不新增主页入口、不新增弹窗、不新增后端接口。
+- 边界检查：本批只做只读荣誉展示，不修改称号装备、成就领取、赛季任务、活动榜、商会结算、跨服结算和长期目标接口行为。
+- 四插件检查：
+  - Superpowers：按 TDD 先写 Rank 荣誉中心文案静态回归，红灯缺失“我的荣誉”，绿灯后保留测试。
+  - Browser Use：本地浏览器验收 Rank 荣誉中心“我的荣誉”、长期目标、活动页、HUD 和底部导航不回归。
+  - Build Web Apps：新区域沿用现有深色商务手游 UI、玻璃面板、紧凑统计卡和滚动区信息层级。
+  - Game Studio：新区域仅在 Rank 全覆盖内页滚动区展示，不遮挡主页 HUD、资源条、主线任务条和底部导航。
+- 验证命令：`node --test apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`。
+
 #### Phase 25 第五实施批次：阶段收口
 
 - 全量回归长期目标、商业入口、通行证、活动商店、VIP、特权、背包、称号、成就、商会和跨服历史。
