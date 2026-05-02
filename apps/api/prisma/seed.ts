@@ -2526,7 +2526,7 @@ const guildTaskConfigs = [
   {
     id: "guild-daily-help",
     title: "成员互助",
-    description: "完成一次商会互助，提升商会活跃度。",
+    description: "发布或完成一次商会协作，提升商会活跃度。",
     target: 1,
     contributionReward: 20,
     sortOrder: 1

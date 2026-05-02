@@ -826,9 +826,14 @@ type GuildCenter = {
   }>;
   helpRequests: Array<{
     id: string;
+    profileId: string;
+    founderName: string;
+    companyName: string;
     requestType: string;
     status: string;
     createdAt: string;
+    fulfilledAt: string | null;
+    canFulfill?: boolean;
   }>;
   leaderboard: LeaderboardRow[];
 };
@@ -843,6 +848,17 @@ type AchievementClaimResult = {
 type GuildActionResult = {
   guildCenter: GuildCenter;
   result: string;
+};
+
+type GuildLeaderboardSettlement = GuildActionResult & {
+  deliveredRewards: number;
+  rewards: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    rank: number;
+    reputationReward: number;
+  }>;
 };
 
 const productStageLabels: Record<ProductStage, string> = {
@@ -2592,6 +2608,54 @@ function App() {
 
     const response = await apiRequest<GuildActionResult>(
       `/guild/techs/${encodeURIComponent(techId)}/upgrade`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const fulfillGuildHelp = async (requestId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/help/${encodeURIComponent(requestId)}/fulfill`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const settleGuildLeaderboard = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildLeaderboardSettlement>(
+      "/guild/leaderboard/settle",
       {
         method: "POST",
         body: JSON.stringify({ serverId: selectedServer.id })
@@ -4470,20 +4534,61 @@ function App() {
                 {guildCenter?.guild ? (
                   <>
                     <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-3">
                         <div>
                           <div className="text-[10px] text-business-gold font-black uppercase">本服商会</div>
                           <h3 className="mt-1 text-2xl font-black text-white">{guildCenter.guild.name}</h3>
                           <p className="mt-1 text-xs text-slate-400 font-bold">成员互助 · 任务贡献 · 科技加成</p>
                         </div>
-                        <button className="btn-gold px-4 py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void requestGuildHelp()}>
-                          发布互助
-                        </button>
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <button className="btn-gold px-4 py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void requestGuildHelp()}>
+                            发布互助
+                          </button>
+                          <button className="rounded-xl bg-slate-900/80 border border-business-gold/30 px-4 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleGuildLeaderboard()}>
+                            结算贡献榜
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-5 grid grid-cols-3 gap-2 text-center">
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.level}</strong><span className="text-[9px] text-slate-500">等级</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.members.length}</strong><span className="text-[9px] text-slate-500">成员</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.contributionScore}</strong><span className="text-[9px] text-slate-500">贡献</span></div>
+                      </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">互助请求</strong>
+                        <span className="text-[10px] text-slate-500">{guildCenter.helpRequests.length} 条</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.helpRequests.length === 0 && (
+                          <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无互助请求。</p>
+                        )}
+                        {guildCenter.helpRequests.slice(0, 5).map((request) => {
+                          const requestTypeLabel = request.requestType === "project-advice"
+                            ? "项目建议"
+                            : request.requestType === "risk-review"
+                              ? "风险复核"
+                              : "经营协作";
+                          const statusLabel = request.status === "fulfilled" ? "已完成" : request.canFulfill ? "可协助" : "等待成员协助";
+                          return (
+                            <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={request.id}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block text-xs text-white font-black">{requestTypeLabel}</strong>
+                                  <span className="mt-1 block text-[9px] text-slate-500 truncate">{request.founderName} · {request.companyName}</span>
+                                  <span className="mt-1 block text-[9px] text-slate-600">{request.createdAt.slice(0, 10)}</span>
+                                </div>
+                                <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black ${request.status === "fulfilled" ? "bg-emerald-500/15 text-emerald-200" : "bg-business-gold/15 text-business-gold"}`}>{statusLabel}</span>
+                              </div>
+                              {request.status === "open" && request.canFulfill && (
+                                <button className="mt-3 w-full btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark" type="button" onClick={() => void fulfillGuildHelp(request.id)}>
+                                  协助
+                                </button>
+                              )}
+                            </article>
+                          );
+                        })}
                       </div>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">

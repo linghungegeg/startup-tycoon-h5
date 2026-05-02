@@ -1509,6 +1509,78 @@ export const createApiServer = (
       return;
     }
 
+    const guildHelpFulfillMatch = url.pathname.match(/^\/guild\/help\/([^/]+)\/fulfill$/);
+    if (request.method === "POST" && guildHelpFulfillMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const requestId = guildHelpFulfillMatch[1];
+      if (requestId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "requestId is required.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.fulfillGuildHelp(account.id, serverId, decodeURIComponent(requestId), readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before fulfilling help.", traceId));
+        return;
+      }
+      if (result === "GUILD_HELP_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_HELP_NOT_FOUND", "Guild help request not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_HELP_SELF_FULFILL_FORBIDDEN") {
+        sendJson(response, 409, failure("GUILD_HELP_SELF_FULFILL_FORBIDDEN", "Cannot fulfill your own guild help request.", traceId));
+        return;
+      }
+      if (result === "GUILD_HELP_ALREADY_FULFILLED") {
+        sendJson(response, 409, failure("GUILD_HELP_ALREADY_FULFILLED", "Guild help request is already fulfilled.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/guild/leaderboard/settle") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleGuildLeaderboard(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before settling guild leaderboard.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     const guildTaskClaimMatch = url.pathname.match(/^\/guild\/tasks\/([^/]+)\/claim$/);
     if (request.method === "POST" && guildTaskClaimMatch !== null) {
       if (account === undefined) {

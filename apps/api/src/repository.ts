@@ -1071,9 +1071,14 @@ export type GuildCenterRecord = {
   }>;
   helpRequests: Array<{
     id: string;
+    profileId: string;
+    founderName: string;
+    companyName: string;
     requestType: string;
     status: string;
     createdAt: string;
+    fulfilledAt: string | null;
+    canFulfill?: boolean;
   }>;
   leaderboard: LeaderboardRowRecord[];
 };
@@ -1081,6 +1086,17 @@ export type GuildCenterRecord = {
 export type GuildActionRecord = {
   guildCenter: GuildCenterRecord;
   result: string;
+};
+
+export type GuildLeaderboardSettlementRecord = GuildActionRecord & {
+  deliveredRewards: number;
+  rewards: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    rank: number;
+    reputationReward: number;
+  }>;
 };
 
 export type GameRepository = {
@@ -1185,8 +1201,10 @@ export type GameRepository = {
   getGuildCenter(accountId: string, serverId: string, today: string): Promise<GuildCenterRecord | "PLAYER_NOT_FOUND">;
   joinOrCreateGuild(accountId: string, serverId: string, guildName: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND">;
   requestGuildHelp(accountId: string, serverId: string, requestType: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
+  fulfillGuildHelp(accountId: string, serverId: string, requestId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_HELP_NOT_FOUND" | "GUILD_HELP_ALREADY_FULFILLED" | "GUILD_HELP_SELF_FULFILL_FORBIDDEN">;
   claimGuildTask(accountId: string, serverId: string, taskId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_TASK_NOT_FOUND" | "GUILD_TASK_NOT_READY" | "GUILD_TASK_ALREADY_CLAIMED">;
   upgradeGuildTech(accountId: string, serverId: string, techId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_TECH_NOT_FOUND" | "GUILD_TECH_MAXED" | "GUILD_CONTRIBUTION_NOT_ENOUGH">;
+  settleGuildLeaderboard(accountId: string, serverId: string, today: string): Promise<GuildLeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
   disconnect(): Promise<void>;
 };
 
@@ -7752,8 +7770,16 @@ export const createPrismaGameRepository = (
       prisma.guildTaskProgress.findMany({ where: { guildId: member.guildId } }),
       prisma.guildTechConfig.findMany({ orderBy: { sortOrder: "asc" } }),
       prisma.guildTechState.findMany({ where: { guildId: member.guildId } }),
-      prisma.guildHelpRequest.findMany({ where: { guildId: member.guildId }, orderBy: { createdAt: "desc" }, take: 10 }),
-      prisma.guildHelpRequest.count({ where: { guildId: member.guildId, createdAt: { gte: dayStart, lte: dayEnd } } })
+      prisma.guildHelpRequest.findMany({ where: { guildId: member.guildId }, include: { profile: true }, orderBy: { createdAt: "desc" }, take: 10 }),
+      prisma.guildHelpRequest.count({
+        where: {
+          guildId: member.guildId,
+          OR: [
+            { createdAt: { gte: dayStart, lte: dayEnd } },
+            { fulfilledAt: { gte: dayStart, lte: dayEnd } }
+          ]
+        }
+      })
     ]);
 
     return {
@@ -7801,9 +7827,14 @@ export const createPrismaGameRepository = (
       }),
       helpRequests: helpRequests.map((request) => ({
         id: request.id,
+        profileId: request.profileId,
+        founderName: request.profile.founderName,
+        companyName: request.profile.companyName,
         requestType: request.requestType,
         status: request.status,
-        createdAt: request.createdAt.toISOString()
+        createdAt: request.createdAt.toISOString(),
+        fulfilledAt: request.fulfilledAt?.toISOString() ?? null,
+        canFulfill: request.status === "open" && request.profileId !== profile.id
       })),
       leaderboard: members.map((item, index) => ({
         rank: index + 1,
@@ -7927,6 +7958,80 @@ export const createPrismaGameRepository = (
     };
   },
 
+  async fulfillGuildHelp(accountId, serverId, requestId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    const helpRequest = await prisma.guildHelpRequest.findUnique({ where: { id: requestId } });
+    if (helpRequest === null || helpRequest.guildId !== member.guildId) {
+      return "GUILD_HELP_NOT_FOUND";
+    }
+    if (helpRequest.profileId === profile.id) {
+      return "GUILD_HELP_SELF_FULFILL_FORBIDDEN";
+    }
+    if (helpRequest.status !== "open" || helpRequest.fulfilledAt !== null) {
+      return "GUILD_HELP_ALREADY_FULFILLED";
+    }
+
+    const fulfilledAt = new Date(`${today}T12:00:00.000Z`);
+    await prisma.$transaction([
+      prisma.guildHelpRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "fulfilled",
+          fulfilledAt
+        }
+      }),
+      prisma.guildMember.update({
+        where: { id: member.id },
+        data: { contributionScore: { increment: 15 } }
+      }),
+      prisma.guild.update({
+        where: { id: member.guildId },
+        data: { contributionScore: { increment: 15 } }
+      }),
+      prisma.guildTaskProgress.upsert({
+        where: {
+          guildId_taskId: {
+            guildId: member.guildId,
+            taskId: "guild-daily-help"
+          }
+        },
+        update: { progress: { increment: 1 } },
+        create: {
+          guildId: member.guildId,
+          taskId: "guild-daily-help",
+          progress: 1
+        }
+      })
+    ]);
+
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: "商会协作已完成，贡献 +15。"
+    };
+  },
+
   async claimGuildTask(accountId, serverId, taskId, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
@@ -7958,14 +8063,16 @@ export const createPrismaGameRepository = (
     if (progress?.claimedAt?.toISOString().slice(0, 10) === today) {
       return "GUILD_TASK_ALREADY_CLAIMED";
     }
+    const dayStart = new Date(`${today}T00:00:00.000Z`);
+    const dayEnd = new Date(`${today}T23:59:59.999Z`);
     const currentProgress = taskId === "guild-daily-help"
       ? await prisma.guildHelpRequest.count({
         where: {
           guildId: member.guildId,
-          createdAt: {
-            gte: new Date(`${today}T00:00:00.000Z`),
-            lte: new Date(`${today}T23:59:59.999Z`)
-          }
+          OR: [
+            { createdAt: { gte: dayStart, lte: dayEnd } },
+            { fulfilledAt: { gte: dayStart, lte: dayEnd } }
+          ]
         }
       })
       : progress?.progress ?? 0;
@@ -8096,6 +8203,99 @@ export const createPrismaGameRepository = (
         leaderboard: []
       } : guildCenter,
       result: `${tech.name} 已升级到 Lv.${nextLevel}。`
+    };
+  },
+
+  async settleGuildLeaderboard(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    const guildSettlementMarker = `guild:${member.guildId}`;
+    const existingSettlement = await prisma.leaderboardRewardDelivery.findFirst({
+      where: {
+        serverId,
+        boardKey: "guild-contribution",
+        snapshotDate: today,
+        mailBody: guildSettlementMarker
+      }
+    });
+    if (existingSettlement !== null) {
+      const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+      return {
+        guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+          guild: null,
+          members: [],
+          tasks: [],
+          techs: [],
+          helpRequests: [],
+          leaderboard: []
+        } : guildCenter,
+        result: "今日商会贡献榜已结算。",
+        deliveredRewards: 0,
+        rewards: []
+      };
+    }
+
+    const rankedMembers = await prisma.guildMember.findMany({
+      where: { guildId: member.guildId },
+      include: { profile: true },
+      orderBy: { contributionScore: "desc" },
+      take: 3
+    });
+    const rewardValues = [120, 80, 50];
+    const rewards = rankedMembers.map((rankedMember, index) => ({
+      profileId: rankedMember.profileId,
+      founderName: rankedMember.profile.founderName,
+      companyName: rankedMember.profile.companyName,
+      rank: index + 1,
+      reputationReward: rewardValues[index] ?? 0
+    })).filter((reward) => reward.reputationReward > 0);
+
+    await prisma.$transaction(rewards.flatMap((reward) => [
+      prisma.playerProfile.update({
+        where: { id: reward.profileId },
+        data: { reputation: { increment: reward.reputationReward } }
+      }),
+      prisma.leaderboardRewardDelivery.create({
+        data: {
+          profileId: reward.profileId,
+          serverId,
+          boardKey: "guild-contribution",
+          snapshotDate: today,
+          rank: reward.rank,
+          rewardPlatformCoins: 0,
+          rewardTitleId: null,
+          mailSubject: `商会贡献榜第 ${reward.rank} 名奖励`,
+          mailBody: guildSettlementMarker
+        }
+      })
+    ]));
+
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        leaderboard: []
+      } : guildCenter,
+      result: `商会贡献榜已结算，发放 ${rewards.length} 份声望奖励。`,
+      deliveredRewards: rewards.length,
+      rewards
     };
   },
 
