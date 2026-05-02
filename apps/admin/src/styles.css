@@ -318,6 +318,11 @@ td {
   white-space: nowrap;
 }
 
+.stacked-cell strong,
+.stacked-cell span {
+  display: block;
+}
+
 th {
   color: #475569;
   background: #f8fafc;
@@ -545,6 +550,13 @@ tbody tr {
   grid-template-columns: repeat(4, minmax(150px, 1fr));
   margin-bottom: 0;
   border-width: 0 0 1px;
+  border-radius: 0;
+}
+
+.activity-draft-review-filter {
+  grid-template-columns: minmax(260px, 1fr) auto;
+  margin-bottom: 0;
+  border-width: 1px 0;
   border-radius: 0;
 }
 

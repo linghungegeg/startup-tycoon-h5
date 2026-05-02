@@ -2142,8 +2142,23 @@ VIP 权益：
   - Superpowers：按 TDD 先写未登录、合规草案、阻断错误、奖励风险、档期拥挤和只读不落库测试，再实现接口与 Admin 页面。
   - Browser Use：需打开 `http://127.0.0.1:5174/` 验收 Admin 草案校验通过与风险提示，并打开 `http://127.0.0.1:5173/` 验收前台 Rank、赛季活动页、HUD 和底部导航无回归。
   - Build Web Apps：Admin 页面继续采用稳重运营后台结构，使用筛选式表单和配置摘要区，不做卡片堆叠或营销式页面。
-  - Game Studio：检查新增 Admin 工具不影响前台赛季活动页、Rank 页、HUD、底部导航和滚动区域。
+- Game Studio：检查新增 Admin 工具不影响前台赛季活动页、Rank 页、HUD、底部导航和滚动区域。
 - 下一阶段入口：Phase 24 第十实施批次建议进入“活动配置草案持久化与审批流”，在当前只读预检稳定后，再单独做草案保存、审核、审计和发布前二次确认；不与自动发布混做。
+
+### Phase 24 第十实施批次阶段总结：活动配置草案持久化与审批流
+
+- 当前稳定点：`af9172a feat: add activity draft validation`。
+- 完成内容：在草案只读预检稳定后，新增活动配置草案持久化和人工审批闭环；运营可保存草案、提交审核、通过或驳回，审批动作幂等记录，不发布到正式活动配置。
+- 后端接口：新增 `GET /admin/activity-config-drafts`、`POST /admin/activity-config-drafts`、`POST /admin/activity-config-drafts/:draftId/submit`、`POST /admin/activity-config-drafts/:draftId/approve`、`POST /admin/activity-config-drafts/:draftId/reject`；全部走既有 Admin 鉴权。
+- 数据与审计：新增 `ActivityConfigDraft` 草案表，保存草案状态、提交时间、复核时间、复核说明和操作人；保存、提交、通过、驳回统一写入 `activity_config_draft` 审计日志，重复提交或重复复核不重复写审计。
+- 校验与边界：提交审核前复用第九批草案校验；现金、平台币或阻断错误草案不能进入待审核；通过/驳回不改变正式活动表、不改变玩家现金和平台币。
+- Admin 前台：配置清单页“活动草案审批”区域支持校验、保存、刷新、提交审核、通过和驳回；使用表格和页内提示展示状态、校验摘要、奖励说明和审批结果，不新增复杂弹窗。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写保存、提交、审核、驳回、幂等、审计和资产不变测试，再实现后端与 Admin 前台。
+  - Browser Use：需打开 `http://127.0.0.1:5174/` 验收 Admin 草案保存、提交审核、通过/驳回和结果提示，并打开 `http://127.0.0.1:5173/` 验收前台无回归。
+  - Build Web Apps：Admin 页面继续采用筛选式表单、表格和页内状态提示，保持稳重运营后台结构。
+  - Game Studio：检查前台赛季活动页、Rank 页、HUD、底部导航和滚动区域不被本批 Admin 改动影响。
+- 下一阶段入口：Phase 24 第十一实施批次建议进入“活动草案发布前二次确认与安全发布”，只在审批流稳定后做正式发布与回滚观察，不与新活动扩容混做。
 
 ### Phase 23 后续完整开发计划：商会与跨服深度闭环
 

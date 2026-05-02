@@ -410,6 +410,32 @@ model ActivityConfig {
   @@index([seasonId, startDate, endDate])
 }
 
+model ActivityConfigDraft {
+  id          String   @id @default(uuid()) @db.VarChar(36)
+  activityId  String   @unique @db.VarChar(48)
+  name        String   @db.VarChar(64)
+  startDate   String   @db.VarChar(10)
+  endDate     String   @db.VarChar(10)
+  leaderboardKey String @db.VarChar(48)
+  targetScore Int
+  rewardCash  Int      @default(0)
+  rewardPlatformCoins Int @default(0)
+  rewardReputation Int @default(0)
+  rewardPoints Int     @default(0)
+  rewardTitleId String? @db.VarChar(40)
+  status      String   @db.VarChar(24)
+  createdByAdminUserId String @db.VarChar(36)
+  updatedByAdminUserId String @db.VarChar(36)
+  submittedAt DateTime?
+  reviewedAt DateTime?
+  reviewedByAdminUserId String? @db.VarChar(36)
+  reviewNote  String?  @db.VarChar(180)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, updatedAt])
+}
+
 model PlayerActivityState {
   id          String   @id @default(uuid()) @db.VarChar(36)
   profileId   String   @db.VarChar(36)

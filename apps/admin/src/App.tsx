@@ -356,6 +356,42 @@ type ActivityDraftValidation = {
   };
 };
 
+type ActivityDraftStatus = "draft" | "pending_review" | "approved" | "rejected";
+
+type ActivityDraftRecord = {
+  id: string;
+  activityId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  targetScore: number;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+  rewardReputation: number;
+  rewardPoints: number;
+  rewardTitleId: string | null;
+  status: ActivityDraftStatus;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByAdminUserId: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  validation: ActivityDraftValidation;
+};
+
+type ActivityDraftList = {
+  rows: ActivityDraftRecord[];
+  summary: Record<ActivityDraftStatus | "total", number>;
+};
+
+type ActivityDraftActionResult = {
+  draft: ActivityDraftRecord;
+  validation: ActivityDraftValidation;
+  auditLogId: string | null;
+};
+
 type OperationConfigAlertAction = AuditResult & {
   alert: OperationConfigAlert;
 };
@@ -484,7 +520,23 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
 ];
 
 const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
+const formatDateTime = (value: string | null): string => {
+  if (value === null || value === "") return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN", { hour12: false });
+};
 const formatRate = (basisPoints: number): string => `${(basisPoints / 100).toFixed(1)}%`;
+const activityDraftStatusLabel = (status: ActivityDraftStatus): string => {
+  if (status === "draft") return "草稿";
+  if (status === "pending_review") return "待审核";
+  if (status === "approved") return "已通过";
+  return "已驳回";
+};
+const readDraftInteger = (value: string): number => {
+  const numberValue = Number.parseInt(value, 10);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+};
 const alertLevelLabel = (level: string): string => {
   if (level === "critical") return "严重";
   if (level === "warning") return "警告";
@@ -667,6 +719,8 @@ export default function App() {
   });
   const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
+  const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0 } });
+  const [activityDraftReviewReason, setActivityDraftReviewReason] = useState("运营复核通过");
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
   const [alertStatus, setAlertStatus] = useState("");
@@ -815,10 +869,11 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, scheduleResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, scheduleResponse, draftResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
+        apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
@@ -833,6 +888,10 @@ export default function App() {
       }
       if (!scheduleResponse.success) {
         setError(scheduleResponse.error.message);
+        return;
+      }
+      if (!draftResponse.success) {
+        setError(draftResponse.error.message);
         return;
       }
       if (!logs.success) {
@@ -850,6 +909,7 @@ export default function App() {
       setConfigCenter(configs.data);
       setOperationConfigAlerts(configAlerts.data);
       setActivitySchedule(scheduleResponse.data);
+      setActivityDrafts(draftResponse.data);
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
@@ -978,6 +1038,8 @@ export default function App() {
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
+    setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0 } });
+    setActivityDraftReviewReason("运营复核通过");
     setAlertLevel("");
     setAlertType("");
     setAnalytics(null);
@@ -1417,31 +1479,41 @@ export default function App() {
     setActivityDraftValidation(null);
   };
 
+  const buildActivityDraftPayload = (): Record<string, string | number | null> => ({
+    id: activityDraftForm.id.trim(),
+    name: activityDraftForm.name.trim(),
+    startDate: activityDraftForm.startDate.trim(),
+    endDate: activityDraftForm.endDate.trim(),
+    leaderboardKey: activityDraftForm.leaderboardKey.trim(),
+    targetScore: readDraftInteger(activityDraftForm.targetScore),
+    rewardReputation: readDraftInteger(activityDraftForm.rewardReputation),
+    rewardPoints: readDraftInteger(activityDraftForm.rewardPoints),
+    rewardTitleId: activityDraftForm.rewardTitleId.trim() || null,
+    rewardCash: readDraftInteger(activityDraftForm.rewardCash),
+    rewardPlatformCoins: readDraftInteger(activityDraftForm.rewardPlatformCoins)
+  });
+
+  const refreshActivityDrafts = async (): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const result = await apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActivityDrafts(result.data);
+  };
+
   const submitActivityDraftValidation = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (session === null) {
       return;
     }
 
-    const readDraftInteger = (value: string): number => {
-      const numberValue = Number.parseInt(value, 10);
-      return Number.isFinite(numberValue) ? numberValue : 0;
-    };
     const result = await apiRequest<ActivityDraftValidation>("/admin/activity-config-drafts/validate", {
       method: "POST",
-      body: JSON.stringify({
-        id: activityDraftForm.id.trim(),
-        name: activityDraftForm.name.trim(),
-        startDate: activityDraftForm.startDate.trim(),
-        endDate: activityDraftForm.endDate.trim(),
-        leaderboardKey: activityDraftForm.leaderboardKey.trim(),
-        targetScore: readDraftInteger(activityDraftForm.targetScore),
-        rewardReputation: readDraftInteger(activityDraftForm.rewardReputation),
-        rewardPoints: readDraftInteger(activityDraftForm.rewardPoints),
-        rewardTitleId: activityDraftForm.rewardTitleId.trim() || null,
-        rewardCash: readDraftInteger(activityDraftForm.rewardCash),
-        rewardPlatformCoins: readDraftInteger(activityDraftForm.rewardPlatformCoins)
-      })
+      body: JSON.stringify(buildActivityDraftPayload())
     }, session.token);
     if (!result.success) {
       setError(result.error.message);
@@ -1451,6 +1523,52 @@ export default function App() {
     setError("");
     setActivityDraftValidation(result.data);
     setActionMessage(result.data.summary.isValid ? "活动草案通过预检，可进入人工复核。" : "活动草案存在阻断错误或奖励边界风险。");
+  };
+
+  const saveActivityDraft = async (): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const result = await apiRequest<ActivityDraftActionResult>("/admin/activity-config-drafts", {
+      method: "POST",
+      body: JSON.stringify(buildActivityDraftPayload())
+    }, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setError("");
+    setActivityDraftValidation(result.data.validation);
+    await refreshActivityDrafts();
+    setActionMessage(`活动草案已保存为${activityDraftStatusLabel(result.data.draft.status)}，审计记录：${result.data.auditLogId}`);
+  };
+
+  const handleActivityDraftAction = async (draft: ActivityDraftRecord, action: "submit" | "approve" | "reject"): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const reason = action === "submit" ? "提交人工复核" : activityDraftReviewReason.trim();
+    if (reason.length < 2 || reason.length > 180) {
+      setError("审批说明需要 2-180 个字符。");
+      return;
+    }
+    const result = await apiRequest<ActivityDraftActionResult>(
+      `/admin/activity-config-drafts/${encodeURIComponent(draft.id)}/${action}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason })
+      },
+      session.token
+    );
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setError("");
+    setActivityDraftValidation(result.data.validation);
+    await refreshActivityDrafts();
+    const auditText = result.data.auditLogId === null ? "重复操作未新增审计记录" : `审计记录：${result.data.auditLogId}`;
+    setActionMessage(`${result.data.draft.name} 已更新为${activityDraftStatusLabel(result.data.draft.status)}，${auditText}`);
   };
 
   const refreshOperationConfigAlerts = async (): Promise<void> => {
@@ -2402,8 +2520,8 @@ export default function App() {
 
             <section className="table-section compact-table" aria-label="活动草案校验">
               <div className="table-toolbar">
-                <strong>活动草案校验</strong>
-                <span>只读预检，不写入正式配置</span>
+                <strong>活动草案审批</strong>
+                <span>共 {activityDrafts.summary.total} 个草案，待审核 {activityDrafts.summary.pending_review} 个</span>
               </div>
               <form className="filter-bar activity-draft-filter" onSubmit={(event) => void submitActivityDraftValidation(event)}>
                 <label>
@@ -2452,6 +2570,7 @@ export default function App() {
                 </label>
                 <div className="button-row">
                   <button type="submit">校验草案</button>
+                  <button onClick={() => void saveActivityDraft()} type="button">保存草案</button>
                   <button
                     className="secondary-button"
                     onClick={() => {
@@ -2500,6 +2619,65 @@ export default function App() {
                   </div>
                 </div>
               )}
+              <div className="filter-bar activity-draft-review-filter">
+                <label>
+                  审批说明
+                  <input onChange={(event) => setActivityDraftReviewReason(event.target.value)} value={activityDraftReviewReason} />
+                </label>
+                <button className="secondary-button" onClick={() => void refreshActivityDrafts()} type="button">刷新草案</button>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>活动</th>
+                      <th>状态</th>
+                      <th>档期</th>
+                      <th>奖励</th>
+                      <th>校验</th>
+                      <th>更新时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityDrafts.rows.length === 0 && (
+                      <tr>
+                        <td colSpan={7}>暂无活动配置草案</td>
+                      </tr>
+                    )}
+                    {activityDrafts.rows.map((draft) => (
+                      <tr key={draft.id}>
+                        <td className="stacked-cell">
+                          <strong>{draft.name}</strong>
+                          <span>{draft.activityId}</span>
+                        </td>
+                        <td>{activityDraftStatusLabel(draft.status)}</td>
+                        <td>{draft.startDate} - {draft.endDate}</td>
+                        <td>{draft.validation.preview.rewardLabel}</td>
+                        <td>
+                          {draft.validation.summary.isValid ? "通过" : `需修正 ${draft.validation.summary.errorCount} 项`}
+                          {draft.validation.summary.riskCount > 0 ? ` / 风险 ${draft.validation.summary.riskCount}` : ""}
+                        </td>
+                        <td>{formatDateTime(draft.updatedAt)}</td>
+                        <td>
+                          <div className="button-row">
+                            {draft.status === "draft" && (
+                              <button onClick={() => void handleActivityDraftAction(draft, "submit")} type="button">提交审核</button>
+                            )}
+                            {draft.status === "pending_review" && (
+                              <>
+                                <button onClick={() => void handleActivityDraftAction(draft, "approve")} type="button">通过</button>
+                                <button className="secondary-button" onClick={() => void handleActivityDraftAction(draft, "reject")} type="button">驳回</button>
+                              </>
+                            )}
+                            {draft.status !== "draft" && draft.status !== "pending_review" && <span>{draft.reviewNote ?? "已完成复核"}</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </section>
 
             <section className="table-section compact-table" aria-label="活动轮换节奏">

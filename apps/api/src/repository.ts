@@ -1059,6 +1059,8 @@ export type AdminActivityConfigDraftInput = {
   rewardPlatformCoins: number;
 };
 
+export type AdminActivityConfigDraftStatus = "draft" | "pending_review" | "approved" | "rejected";
+
 export type AdminActivityConfigDraftValidationRecord = {
   summary: {
     isValid: boolean;
@@ -1089,6 +1091,42 @@ export type AdminActivityConfigDraftValidationRecord = {
     rewardLabel: string;
     concurrentActiveCount: number;
   };
+};
+
+export type AdminActivityConfigDraftRecord = {
+  id: string;
+  activityId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  targetScore: number;
+  rewardCash: number;
+  rewardPlatformCoins: number;
+  rewardReputation: number;
+  rewardPoints: number;
+  rewardTitleId: string | null;
+  status: AdminActivityConfigDraftStatus;
+  createdByAdminUserId: string;
+  updatedByAdminUserId: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewedByAdminUserId: string | null;
+  reviewNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  validation: AdminActivityConfigDraftValidationRecord;
+};
+
+export type AdminActivityConfigDraftActionRecord = {
+  draft: AdminActivityConfigDraftRecord;
+  validation: AdminActivityConfigDraftValidationRecord;
+  auditLogId: string | null;
+};
+
+export type AdminActivityConfigDraftListRecord = {
+  rows: AdminActivityConfigDraftRecord[];
+  summary: Record<AdminActivityConfigDraftStatus | "total", number>;
 };
 
 export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
@@ -1725,6 +1763,10 @@ export type GameRepository = {
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
   validateAdminActivityConfigDraft(draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftValidationRecord>;
+  listAdminActivityConfigDrafts(status: string, today: string): Promise<AdminActivityConfigDraftListRecord>;
+  saveAdminActivityConfigDraft(adminUserId: string, draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftActionRecord>;
+  submitAdminActivityConfigDraft(adminUserId: string, draftId: string, reason: string, today: string): Promise<AdminActivityConfigDraftActionRecord | "ACTIVITY_DRAFT_NOT_FOUND" | "ACTIVITY_DRAFT_VALIDATION_FAILED">;
+  reviewAdminActivityConfigDraft(adminUserId: string, draftId: string, status: "approved" | "rejected", reason: string, today: string): Promise<AdminActivityConfigDraftActionRecord | "ACTIVITY_DRAFT_NOT_FOUND" | "ACTIVITY_DRAFT_NOT_PENDING">;
   getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
   handleAdminOperationConfigAlert(adminUserId: string, alertId: string, status: AdminOperationConfigAlertStatus, note: string, today: string): Promise<AdminOperationConfigAlertActionRecord | "ALERT_NOT_FOUND">;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
@@ -2659,6 +2701,19 @@ type ActivityDraftExistingConfigLike = ActivityScheduleConfigLike & {
   targetScore: number;
 };
 
+type ActivityConfigDraftSource = AdminActivityConfigDraftInput & {
+  draftId: string;
+  status: AdminActivityConfigDraftStatus;
+  createdByAdminUserId: string;
+  updatedByAdminUserId: string;
+  submittedAt: Date | null;
+  reviewedAt: Date | null;
+  reviewedByAdminUserId: string | null;
+  reviewNote: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 const addUtcDays = (date: Date, days: number): Date => {
   const next = new Date(date);
   next.setUTCDate(next.getUTCDate() + days);
@@ -2882,6 +2937,49 @@ export const validateAdminActivityConfigDraft = (
     }
   };
 };
+
+const toAdminActivityConfigDraftInput = (draft: ActivityConfigDraftSource): AdminActivityConfigDraftInput => ({
+  id: draft.id,
+  name: draft.name,
+  startDate: draft.startDate,
+  endDate: draft.endDate,
+  leaderboardKey: draft.leaderboardKey,
+  targetScore: draft.targetScore,
+  rewardReputation: draft.rewardReputation,
+  rewardPoints: draft.rewardPoints,
+  rewardTitleId: draft.rewardTitleId,
+  rewardCash: draft.rewardCash,
+  rewardPlatformCoins: draft.rewardPlatformCoins
+});
+
+export const toAdminActivityConfigDraftRecord = (
+  draft: ActivityConfigDraftSource,
+  existingActivities: ActivityDraftExistingConfigLike[],
+  today: string
+): AdminActivityConfigDraftRecord => ({
+  id: draft.draftId,
+  activityId: draft.id,
+  name: draft.name,
+  startDate: draft.startDate,
+  endDate: draft.endDate,
+  leaderboardKey: draft.leaderboardKey,
+  targetScore: draft.targetScore,
+  rewardCash: draft.rewardCash,
+  rewardPlatformCoins: draft.rewardPlatformCoins,
+  rewardReputation: draft.rewardReputation,
+  rewardPoints: draft.rewardPoints,
+  rewardTitleId: draft.rewardTitleId,
+  status: draft.status,
+  createdByAdminUserId: draft.createdByAdminUserId,
+  updatedByAdminUserId: draft.updatedByAdminUserId,
+  submittedAt: draft.submittedAt?.toISOString() ?? null,
+  reviewedAt: draft.reviewedAt?.toISOString() ?? null,
+  reviewedByAdminUserId: draft.reviewedByAdminUserId,
+  reviewNote: draft.reviewNote,
+  createdAt: draft.createdAt.toISOString(),
+  updatedAt: draft.updatedAt.toISOString(),
+  validation: validateAdminActivityConfigDraft(toAdminActivityConfigDraftInput(draft), existingActivities, today)
+});
 
 type ActivityLeaderboardConfigLike = {
   id: string;
@@ -7800,6 +7898,197 @@ export const createPrismaGameRepository = (
     });
 
     return validateAdminActivityConfigDraft(draft, activities, today);
+  },
+
+  async listAdminActivityConfigDrafts(status, today) {
+    const [activities, drafts] = await Promise.all([
+      prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.activityConfigDraft.findMany({
+        where: ["draft", "pending_review", "approved", "rejected"].includes(status) ? { status } : undefined,
+        orderBy: [{ updatedAt: "desc" }, { activityId: "asc" }]
+      })
+    ]);
+    const rows = drafts.map((draft) => toAdminActivityConfigDraftRecord({
+      ...draft,
+      draftId: draft.id,
+      id: draft.activityId,
+      status: draft.status as AdminActivityConfigDraftStatus
+    }, activities, today));
+
+    return {
+      rows,
+      summary: {
+        total: rows.length,
+        draft: rows.filter((draft) => draft.status === "draft").length,
+        pending_review: rows.filter((draft) => draft.status === "pending_review").length,
+        approved: rows.filter((draft) => draft.status === "approved").length,
+        rejected: rows.filter((draft) => draft.status === "rejected").length
+      }
+    };
+  },
+
+  async saveAdminActivityConfigDraft(adminUserId, draft, today) {
+    const [activities, result] = await prisma.$transaction(async (tx) => {
+      const saved = await tx.activityConfigDraft.upsert({
+        where: { activityId: draft.id },
+        update: {
+          name: draft.name,
+          startDate: draft.startDate,
+          endDate: draft.endDate,
+          leaderboardKey: draft.leaderboardKey,
+          targetScore: draft.targetScore,
+          rewardCash: draft.rewardCash,
+          rewardPlatformCoins: draft.rewardPlatformCoins,
+          rewardReputation: draft.rewardReputation,
+          rewardPoints: draft.rewardPoints,
+          rewardTitleId: draft.rewardTitleId,
+          status: "draft",
+          updatedByAdminUserId: adminUserId,
+          submittedAt: null,
+          reviewedAt: null,
+          reviewedByAdminUserId: null,
+          reviewNote: null
+        },
+        create: {
+          activityId: draft.id,
+          name: draft.name,
+          startDate: draft.startDate,
+          endDate: draft.endDate,
+          leaderboardKey: draft.leaderboardKey,
+          targetScore: draft.targetScore,
+          rewardCash: draft.rewardCash,
+          rewardPlatformCoins: draft.rewardPlatformCoins,
+          rewardReputation: draft.rewardReputation,
+          rewardPoints: draft.rewardPoints,
+          rewardTitleId: draft.rewardTitleId,
+          status: "draft",
+          createdByAdminUserId: adminUserId,
+          updatedByAdminUserId: adminUserId
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_activity_draft_save",
+          targetType: "activity_config_draft",
+          targetId: saved.id,
+          detail: JSON.stringify({ activityId: saved.activityId, status: saved.status })
+        }
+      });
+      const configs = await tx.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
+      return [configs, { saved, audit }] as const;
+    });
+    const record = toAdminActivityConfigDraftRecord({
+      ...result.saved,
+      draftId: result.saved.id,
+      id: result.saved.activityId,
+      status: result.saved.status as AdminActivityConfigDraftStatus
+    }, activities, today);
+
+    return { draft: record, validation: record.validation, auditLogId: result.audit.id };
+  },
+
+  async submitAdminActivityConfigDraft(adminUserId, draftId, reason, today) {
+    const current = await prisma.activityConfigDraft.findUnique({ where: { id: draftId } });
+    if (current === null) {
+      return "ACTIVITY_DRAFT_NOT_FOUND";
+    }
+    const activities = await prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
+    const currentRecord = toAdminActivityConfigDraftRecord({
+      ...current,
+      draftId: current.id,
+      id: current.activityId,
+      status: current.status as AdminActivityConfigDraftStatus
+    }, activities, today);
+    if (!currentRecord.validation.summary.isValid) {
+      return "ACTIVITY_DRAFT_VALIDATION_FAILED";
+    }
+    if (current.status === "pending_review") {
+      return { draft: currentRecord, validation: currentRecord.validation, auditLogId: null };
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const saved = await tx.activityConfigDraft.update({
+        where: { id: draftId },
+        data: {
+          status: "pending_review",
+          updatedByAdminUserId: adminUserId,
+          submittedAt: new Date(),
+          reviewedAt: null,
+          reviewedByAdminUserId: null,
+          reviewNote: null
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: "admin_activity_draft_submit",
+          targetType: "activity_config_draft",
+          targetId: saved.id,
+          detail: JSON.stringify({ activityId: saved.activityId, reason, status: saved.status })
+        }
+      });
+      return { saved, audit };
+    });
+    const record = toAdminActivityConfigDraftRecord({
+      ...result.saved,
+      draftId: result.saved.id,
+      id: result.saved.activityId,
+      status: result.saved.status as AdminActivityConfigDraftStatus
+    }, activities, today);
+
+    return { draft: record, validation: record.validation, auditLogId: result.audit.id };
+  },
+
+  async reviewAdminActivityConfigDraft(adminUserId, draftId, status, reason, today) {
+    const current = await prisma.activityConfigDraft.findUnique({ where: { id: draftId } });
+    if (current === null) {
+      return "ACTIVITY_DRAFT_NOT_FOUND";
+    }
+    const activities = await prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
+    const currentRecord = toAdminActivityConfigDraftRecord({
+      ...current,
+      draftId: current.id,
+      id: current.activityId,
+      status: current.status as AdminActivityConfigDraftStatus
+    }, activities, today);
+    if (current.status === status) {
+      return { draft: currentRecord, validation: currentRecord.validation, auditLogId: null };
+    }
+    if (current.status !== "pending_review") {
+      return "ACTIVITY_DRAFT_NOT_PENDING";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const saved = await tx.activityConfigDraft.update({
+        where: { id: draftId },
+        data: {
+          status,
+          updatedByAdminUserId: adminUserId,
+          reviewedAt: new Date(),
+          reviewedByAdminUserId: adminUserId,
+          reviewNote: reason
+        }
+      });
+      const audit = await tx.adminAuditLog.create({
+        data: {
+          adminUserId,
+          action: status === "approved" ? "admin_activity_draft_approve" : "admin_activity_draft_reject",
+          targetType: "activity_config_draft",
+          targetId: saved.id,
+          detail: JSON.stringify({ activityId: saved.activityId, reason, status: saved.status })
+        }
+      });
+      return { saved, audit };
+    });
+    const record = toAdminActivityConfigDraftRecord({
+      ...result.saved,
+      draftId: result.saved.id,
+      id: result.saved.activityId,
+      status: result.saved.status as AdminActivityConfigDraftStatus
+    }, activities, today);
+
+    return { draft: record, validation: record.validation, auditLogId: result.audit.id };
   },
 
   async getAdminOperationConfigAlerts(today) {

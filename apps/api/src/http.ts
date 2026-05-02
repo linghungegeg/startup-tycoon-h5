@@ -765,6 +765,91 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/activity-config-drafts") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminActivityConfigDrafts(url.searchParams.get("status") ?? "", readToday(request)), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/activity-config-drafts") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("INVALID_ACTIVITY_DRAFT", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const draft: AdminActivityConfigDraftInput = {
+        id: readString(body, "id"),
+        name: readString(body, "name"),
+        startDate: readString(body, "startDate"),
+        endDate: readString(body, "endDate"),
+        leaderboardKey: readString(body, "leaderboardKey"),
+        targetScore: readInteger(body, "targetScore") ?? 0,
+        rewardReputation: readInteger(body, "rewardReputation") ?? 0,
+        rewardPoints: readInteger(body, "rewardPoints") ?? 0,
+        rewardTitleId: readString(body, "rewardTitleId") || null,
+        rewardCash: readInteger(body, "rewardCash") ?? 0,
+        rewardPlatformCoins: readInteger(body, "rewardPlatformCoins") ?? 0
+      };
+
+      sendJson(response, 200, success(await repository.saveAdminActivityConfigDraft(admin.id, draft, readToday(request)), traceId));
+      return;
+    }
+
+    const adminActivityDraftActionMatch = request.method === "POST" ? /^\/admin\/activity-config-drafts\/([^/]+)\/(submit|approve|reject)$/.exec(url.pathname) : null;
+    if (adminActivityDraftActionMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("INVALID_ACTIVITY_DRAFT_REASON", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const reason = readString(body, "reason");
+      if (reason.length < 2 || reason.length > 180) {
+        sendJson(response, 400, failure("INVALID_ACTIVITY_DRAFT_REASON", "Activity draft reason must be 2 to 180 characters.", traceId));
+        return;
+      }
+
+      const draftId = decodeURIComponent(adminActivityDraftActionMatch[1] ?? "");
+      const action = adminActivityDraftActionMatch[2];
+      const result = action === "submit"
+        ? await repository.submitAdminActivityConfigDraft(admin.id, draftId, reason, readToday(request))
+        : await repository.reviewAdminActivityConfigDraft(admin.id, draftId, action === "approve" ? "approved" : "rejected", reason, readToday(request));
+      if (result === "ACTIVITY_DRAFT_NOT_FOUND") {
+        sendJson(response, 404, failure("ACTIVITY_DRAFT_NOT_FOUND", "Activity config draft was not found.", traceId));
+        return;
+      }
+      if (result === "ACTIVITY_DRAFT_VALIDATION_FAILED") {
+        sendJson(response, 409, failure("ACTIVITY_DRAFT_VALIDATION_FAILED", "Activity config draft has blocking validation errors or reward risks.", traceId));
+        return;
+      }
+      if (result === "ACTIVITY_DRAFT_NOT_PENDING") {
+        sendJson(response, 409, failure("ACTIVITY_DRAFT_NOT_PENDING", "Activity config draft is not pending review.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/operation-config-alerts") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
