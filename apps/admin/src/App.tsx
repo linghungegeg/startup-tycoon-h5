@@ -262,7 +262,19 @@ type AuditLog = {
   targetType: string;
   targetId: string | null;
   detail: string | null;
+  detailJson: Record<string, string | number | boolean | null> | null;
+  summary: string;
   createdAt: string;
+};
+
+type AuditLogList = {
+  rows: AuditLog[];
+  total: number;
+  filters: {
+    actions: string[];
+    targetTypes: string[];
+    admins: string[];
+  };
 };
 
 type AuditResult = {
@@ -356,6 +368,25 @@ const knowledgeToForm = (knowledge: KnowledgeEntry): KnowledgeForm => ({
   reviewStatus: knowledge.reviewStatus,
   reason: "知识卡审核更新"
 });
+
+const buildAuditQuery = (filters: {
+  action: string;
+  targetType: string;
+  targetId: string;
+  admin: string;
+  from: string;
+  to: string;
+}): string => {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    const trimmed = value.trim();
+    if (trimmed !== "") {
+      params.set(key, trimmed);
+    }
+  });
+  const query = params.toString();
+  return query === "" ? "/admin/audit-logs" : `/admin/audit-logs?${query}`;
+};
 
 const isAdminSession = (value: unknown): value is AdminSession => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -466,6 +497,19 @@ export default function App() {
   });
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditFilterOptions, setAuditFilterOptions] = useState<AuditLogList["filters"]>({
+    actions: [],
+    targetTypes: [],
+    admins: []
+  });
+  const [auditAction, setAuditAction] = useState("");
+  const [auditTargetType, setAuditTargetType] = useState("");
+  const [auditTargetId, setAuditTargetId] = useState("");
+  const [auditAdmin, setAuditAdmin] = useState("");
+  const [auditFrom, setAuditFrom] = useState("");
+  const [auditTo, setAuditTo] = useState("");
+  const [selectedAuditId, setSelectedAuditId] = useState("");
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [coinAmount, setCoinAmount] = useState("100");
   const [coinSource, setCoinSource] = useState("admin_grant");
@@ -509,6 +553,10 @@ export default function App() {
     () => activities.find((activity) => activity.id === selectedActivityId) ?? activities[0] ?? null,
     [activities, selectedActivityId]
   );
+  const selectedAuditLog = useMemo(
+    () => auditLogs.find((log) => log.id === selectedAuditId) ?? auditLogs[0] ?? null,
+    [auditLogs, selectedAuditId]
+  );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
     setKnowledgeList(data);
@@ -517,6 +565,13 @@ export default function App() {
     if (first !== null) {
       setKnowledgeForm((current) => current.summary === "" ? knowledgeToForm(first) : current);
     }
+  };
+
+  const applyAuditList = (data: AuditLogList): void => {
+    setAuditLogs(data.rows);
+    setAuditTotal(data.total);
+    setAuditFilterOptions(data.filters);
+    setSelectedAuditId((current) => data.rows.some((log) => log.id === current) ? current : data.rows[0]?.id ?? "");
   };
 
   const loadAdminData = useCallback(async (token: string, searchKeyword = keyword): Promise<void> => {
@@ -579,7 +634,7 @@ export default function App() {
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
       const [configs, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
-        apiRequest<AuditLog[]>("/admin/audit-logs", {}, token),
+        apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
       ]);
@@ -600,7 +655,7 @@ export default function App() {
         return;
       }
       setConfigCenter(configs.data);
-      setAuditLogs(logs.data);
+      applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
       setSelectedTitleId((current) => current || (configs.data.titles[0]?.id ?? ""));
@@ -726,6 +781,9 @@ export default function App() {
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
     setAnalytics(null);
     setAuditLogs([]);
+    setAuditTotal(0);
+    setAuditFilterOptions({ actions: [], targetTypes: [], admins: [] });
+    setSelectedAuditId("");
     setSelectedKnowledgeId("");
     setKnowledgeForm(emptyKnowledgeForm());
   };
@@ -915,10 +973,33 @@ export default function App() {
     }));
     setKnowledgeForm(knowledgeToForm(response.data));
     setActionMessage(`知识卡已更新，审计记录：${response.data.auditLogId}`);
-    const logs = await apiRequest<AuditLog[]>("/admin/audit-logs", {}, session.token);
+    const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
     if (logs.success) {
-      setAuditLogs(logs.data);
+      applyAuditList(logs.data);
     }
+  };
+
+  const submitAuditSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null) {
+      return;
+    }
+
+    const response = await apiRequest<AuditLogList>(buildAuditQuery({
+      action: auditAction,
+      targetType: auditTargetType,
+      targetId: auditTargetId,
+      admin: auditAdmin,
+      from: auditFrom,
+      to: auditTo
+    }), {}, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+
+    setError("");
+    applyAuditList(response.data);
   };
 
   const submitCoinAdjustment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -2062,35 +2143,128 @@ export default function App() {
         )}
 
         {activeSection === "audit" && (
-          <section className="table-section" aria-label="操作审计日志">
-            <div className="table-toolbar">
-              <strong>操作审计日志</strong>
-              <span>最近 {auditLogs.length} 条</span>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>管理员</th>
-                    <th>动作</th>
-                    <th>对象</th>
-                    <th>详情</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td>{new Date(log.createdAt).toLocaleString("zh-CN")}</td>
-                      <td>{log.adminUsername}</td>
-                      <td>{log.action}</td>
-                      <td>{log.targetType} / {log.targetId ?? "-"}</td>
-                      <td>{log.detail ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <section className="stacked-sections" aria-label="操作审计日志">
+            <form className="filter-bar audit-filter" onSubmit={(event) => void submitAuditSearch(event)}>
+              <label>
+                动作
+                <select onChange={(event) => setAuditAction(event.target.value)} value={auditAction}>
+                  <option value="">全部动作</option>
+                  {auditFilterOptions.actions.map((action) => <option key={action} value={action}>{action}</option>)}
+                </select>
+              </label>
+              <label>
+                对象类型
+                <select onChange={(event) => setAuditTargetType(event.target.value)} value={auditTargetType}>
+                  <option value="">全部对象</option>
+                  {auditFilterOptions.targetTypes.map((targetType) => <option key={targetType} value={targetType}>{targetType}</option>)}
+                </select>
+              </label>
+              <label>
+                对象 ID
+                <input onChange={(event) => setAuditTargetId(event.target.value)} placeholder="精确对象 ID" value={auditTargetId} />
+              </label>
+              <label>
+                管理员
+                <select onChange={(event) => setAuditAdmin(event.target.value)} value={auditAdmin}>
+                  <option value="">全部管理员</option>
+                  {auditFilterOptions.admins.map((admin) => <option key={admin} value={admin}>{admin}</option>)}
+                </select>
+              </label>
+              <label>
+                起始日期
+                <input onChange={(event) => setAuditFrom(event.target.value)} type="date" value={auditFrom} />
+              </label>
+              <label>
+                结束日期
+                <input onChange={(event) => setAuditTo(event.target.value)} type="date" value={auditTo} />
+              </label>
+              <button disabled={isLoading} type="submit">查询审计</button>
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  setAuditAction("");
+                  setAuditTargetType("");
+                  setAuditTargetId("");
+                  setAuditAdmin("");
+                  setAuditFrom("");
+                  setAuditTo("");
+                  if (session !== null) {
+                    void apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token).then((response) => {
+                      if (response.success) {
+                        applyAuditList(response.data);
+                      }
+                    });
+                  }
+                }}
+              >
+                重置
+              </button>
+            </form>
+
+            <section className="operation-grid audit-grid" aria-label="审计列表与详情">
+              <section className="table-section" aria-label="审计日志列表">
+                <div className="table-toolbar">
+                  <strong>操作审计日志</strong>
+                  <span>命中 {auditTotal} 条，显示 {auditLogs.length} 条</span>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th>管理员</th>
+                        <th>动作</th>
+                        <th>对象</th>
+                        <th>摘要</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLogs.map((log) => (
+                        <tr
+                          className={selectedAuditLog?.id === log.id ? "selected-row" : undefined}
+                          key={log.id}
+                          onClick={() => setSelectedAuditId(log.id)}
+                        >
+                          <td>{new Date(log.createdAt).toLocaleString("zh-CN")}</td>
+                          <td>{log.adminUsername}</td>
+                          <td>{log.action}</td>
+                          <td>{log.targetType} / {log.targetId ?? "-"}</td>
+                          <td>{log.summary}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="operation-panel audit-detail" aria-label="审计详情">
+                <h2>审计详情</h2>
+                {selectedAuditLog === null ? (
+                  <p className="panel-note">暂无审计记录。</p>
+                ) : (
+                  <>
+                    <p className="panel-note">{selectedAuditLog.summary}</p>
+                    <div className="audit-detail-grid">
+                      <span>时间</span><strong>{new Date(selectedAuditLog.createdAt).toLocaleString("zh-CN")}</strong>
+                      <span>管理员</span><strong>{selectedAuditLog.adminUsername}</strong>
+                      <span>动作</span><strong>{selectedAuditLog.action}</strong>
+                      <span>对象</span><strong>{selectedAuditLog.targetType} / {selectedAuditLog.targetId ?? "-"}</strong>
+                    </div>
+                    <div className="audit-json">
+                      <strong>结构化明细</strong>
+                      {selectedAuditLog.detailJson === null ? (
+                        <p>{selectedAuditLog.detail ?? "-"}</p>
+                      ) : (
+                        Object.entries(selectedAuditLog.detailJson).map(([key, value]) => (
+                          <p key={key}><span>{key}</span><b>{String(value)}</b></p>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            </section>
           </section>
         )}
       </section>

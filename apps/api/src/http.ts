@@ -730,7 +730,14 @@ export const createApiServer = (
         return;
       }
 
-      sendJson(response, 200, success(await repository.listAdminAuditLogs(), traceId));
+      sendJson(response, 200, success(await repository.listAdminAuditLogs({
+        action: url.searchParams.get("action")?.trim() ?? "",
+        targetType: url.searchParams.get("targetType")?.trim() ?? "",
+        targetId: url.searchParams.get("targetId")?.trim() ?? "",
+        admin: url.searchParams.get("admin")?.trim() ?? "",
+        from: url.searchParams.get("from")?.trim() ?? "",
+        to: url.searchParams.get("to")?.trim() ?? ""
+      }), traceId));
       return;
     }
 

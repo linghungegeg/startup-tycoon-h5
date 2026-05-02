@@ -816,7 +816,89 @@ export type AdminAuditLogRecord = {
   targetType: string;
   targetId: string | null;
   detail: string | null;
+  detailJson: Record<string, string | number | boolean | null> | null;
+  summary: string;
   createdAt: string;
+};
+
+export type AdminAuditLogFilters = {
+  action: string;
+  targetType: string;
+  targetId: string;
+  admin: string;
+  from: string;
+  to: string;
+};
+
+export type AdminAuditLogListRecord = {
+  rows: AdminAuditLogRecord[];
+  total: number;
+  filters: {
+    actions: string[];
+    targetTypes: string[];
+    admins: string[];
+  };
+};
+
+const parseAdminAuditDetail = (detail: string | null): Record<string, string | number | boolean | null> | null => {
+  if (detail === null) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(detail);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const entries = Object.entries(parsed).filter(([, value]) => (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ));
+    return Object.fromEntries(entries);
+  } catch {
+    return null;
+  }
+};
+
+const summarizeAdminAuditDetail = (detailJson: Record<string, string | number | boolean | null> | null, detail: string | null): string => {
+  if (detailJson === null) {
+    return detail ?? "-";
+  }
+
+  const deliveredRewards = detailJson.deliveredRewards;
+  const retryLabel = detailJson.isRetry === true ? "重试" : "首次";
+  if (typeof deliveredRewards === "number") {
+    return `${retryLabel}，发放 ${deliveredRewards} 条奖励`;
+  }
+
+  const reason = detailJson.reason;
+  return typeof reason === "string" && reason !== "" ? reason : "已记录结构化明细";
+};
+
+const toAdminAuditLogRecord = (log: {
+  id: string;
+  adminUser: { username: string };
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  detail: string | null;
+  createdAt: Date;
+}): AdminAuditLogRecord => {
+  const detailJson = parseAdminAuditDetail(log.detail);
+  return {
+    id: log.id,
+    adminUsername: log.adminUser.username,
+    action: log.action,
+    targetType: log.targetType,
+    targetId: log.targetId,
+    detail: log.detail,
+    detailJson,
+    summary: summarizeAdminAuditDetail(detailJson, log.detail),
+    createdAt: log.createdAt.toISOString()
+  };
 };
 
 export type AdminConfigCenterRecord = {
@@ -1352,7 +1434,7 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(): Promise<AdminConfigCenterRecord>;
-  listAdminAuditLogs(): Promise<AdminAuditLogRecord[]>;
+  listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
   listAdminKnowledgeEntries(filters: { keyword: string; category: string; reviewStatus: string }): Promise<AdminKnowledgeListRecord>;
   updateAdminKnowledgeEntry(adminUserId: string, knowledgeId: string, input: AdminKnowledgeUpdateInput): Promise<AdminKnowledgeUpdateRecord | "KNOWLEDGE_NOT_FOUND">;
   grantAdminTitle(adminUserId: string, profileId: string, titleId: string, reason: string): Promise<AdminTitleActionRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND">;
@@ -6933,22 +7015,54 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async listAdminAuditLogs() {
-    const logs = await prisma.adminAuditLog.findMany({
-      include: { adminUser: true },
-      orderBy: [{ createdAt: "desc" }],
-      take: 50
-    });
+  async listAdminAuditLogs(filters) {
+    const where: Prisma.AdminAuditLogWhereInput = {};
+    if (filters.action !== "") {
+      where.action = filters.action;
+    }
+    if (filters.targetType !== "") {
+      where.targetType = filters.targetType;
+    }
+    if (filters.targetId !== "") {
+      where.targetId = filters.targetId;
+    }
+    if (filters.admin !== "") {
+      where.adminUser = { username: { contains: filters.admin } };
+    }
+    if (filters.from !== "" || filters.to !== "") {
+      where.createdAt = {};
+      if (filters.from !== "") {
+        where.createdAt.gte = new Date(`${filters.from}T00:00:00.000Z`);
+      }
+      if (filters.to !== "") {
+        where.createdAt.lte = new Date(`${filters.to}T23:59:59.999Z`);
+      }
+    }
 
-    return logs.map((log) => ({
-      id: log.id,
-      adminUsername: log.adminUser.username,
-      action: log.action,
-      targetType: log.targetType,
-      targetId: log.targetId,
-      detail: log.detail,
-      createdAt: log.createdAt.toISOString()
-    }));
+    const [logs, total, filterSource] = await Promise.all([
+      prisma.adminAuditLog.findMany({
+        where,
+        include: { adminUser: true },
+        orderBy: [{ createdAt: "desc" }],
+        take: 100
+      }),
+      prisma.adminAuditLog.count({ where }),
+      prisma.adminAuditLog.findMany({
+        include: { adminUser: true },
+        orderBy: [{ createdAt: "desc" }],
+        take: 200
+      })
+    ]);
+
+    return {
+      rows: logs.map(toAdminAuditLogRecord),
+      total,
+      filters: {
+        actions: [...new Set(filterSource.map((log) => log.action))].sort(),
+        targetTypes: [...new Set(filterSource.map((log) => log.targetType))].sort(),
+        admins: [...new Set(filterSource.map((log) => log.adminUser.username))].sort()
+      }
+    };
   },
 
   async listAdminKnowledgeEntries(filters) {
@@ -7233,7 +7347,14 @@ export const createPrismaGameRepository = (
         action: "admin_leaderboard_settle",
         targetType: "leaderboard",
         targetId: serverId,
-        detail: JSON.stringify({ serverId, today, reason, deliveredRewards: settlement.deliveredRewards })
+        detail: JSON.stringify({
+          serverId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        })
       }
     });
 
@@ -7397,7 +7518,14 @@ export const createPrismaGameRepository = (
         action: "admin_activity_leaderboard_settle",
         targetType: "activity_leaderboard",
         targetId: activity.id,
-        detail: JSON.stringify({ activityId: activity.id, today, reason, deliveredRewards })
+        detail: JSON.stringify({
+          activityId: activity.id,
+          today,
+          reason,
+          deliveredRewards,
+          isRetry: deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        })
       }
     });
     const list = await this.listAdminActivities(today);
@@ -7590,7 +7718,14 @@ export const createPrismaGameRepository = (
         action: "admin_guild_leaderboard_settle",
         targetType: "guild",
         targetId: guildId,
-        detail: JSON.stringify({ guildId, today, reason, deliveredRewards: settlement.deliveredRewards })
+        detail: JSON.stringify({
+          guildId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        })
       }
     });
 
@@ -7620,7 +7755,14 @@ export const createPrismaGameRepository = (
         action: "admin_cross_guild_season_settle",
         targetType: "cross_server_guild",
         targetId: serverId,
-        detail: JSON.stringify({ serverId, today, reason, deliveredRewards: settlement.deliveredRewards })
+        detail: JSON.stringify({
+          serverId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        })
       }
     });
 

@@ -2643,8 +2643,49 @@ const createTestRepository = (): GameRepository => {
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
     },
-    async listAdminAuditLogs() {
-      return adminAuditLogs;
+    async listAdminAuditLogs(filters) {
+      const parseDetail = (detail: string | null) => {
+        if (detail === null) return null;
+        try {
+          const parsed = JSON.parse(detail) as unknown;
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+          return Object.fromEntries(Object.entries(parsed).filter(([, value]) => (
+            value === null ||
+            typeof value === "string" ||
+            typeof value === "number" ||
+            typeof value === "boolean"
+          )));
+        } catch {
+          return null;
+        }
+      };
+      const rows = adminAuditLogs
+        .filter((log) => filters.action === "" || log.action === filters.action)
+        .filter((log) => filters.targetType === "" || log.targetType === filters.targetType)
+        .filter((log) => filters.targetId === "" || log.targetId === filters.targetId)
+        .filter((log) => filters.admin === "" || log.adminUsername.includes(filters.admin))
+        .filter((log) => filters.from === "" || log.createdAt.slice(0, 10) >= filters.from)
+        .filter((log) => filters.to === "" || log.createdAt.slice(0, 10) <= filters.to)
+        .map((log) => {
+          const detailJson = parseDetail(log.detail);
+          const deliveredRewards = detailJson?.deliveredRewards;
+          return {
+            ...log,
+            detailJson,
+            summary: typeof deliveredRewards === "number"
+              ? `${detailJson?.isRetry === true ? "重试" : "首次"}，发放 ${deliveredRewards} 条奖励`
+              : log.detail ?? "-"
+          };
+        });
+      return {
+        rows,
+        total: rows.length,
+        filters: {
+          actions: [...new Set(adminAuditLogs.map((log) => log.action))].sort(),
+          targetTypes: [...new Set(adminAuditLogs.map((log) => log.targetType))].sort(),
+          admins: [...new Set(adminAuditLogs.map((log) => log.adminUsername))].sort()
+        }
+      };
     },
     async listAdminKnowledgeEntries(filters) {
       const filtered = knowledgeEntries.filter((knowledge) => {
@@ -2796,10 +2837,21 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
+      const deliveredRewards = 0;
+      const auditLogId = `${adminUserId}:${serverId}:${reason}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_leaderboard_settle",
+        targetType: "leaderboard",
+        targetId: serverId,
+        detail: JSON.stringify({ serverId, today, reason, deliveredRewards, isRetry: true, rewardBoundary: "no_cash_no_platform_coins" }),
+        createdAt: new Date().toISOString()
+      });
       return {
         leaderboard: buildLeaderboards(serverId, today),
-        deliveredRewards: 0,
-        auditLogId: `${adminUserId}:${serverId}:${reason}`
+        deliveredRewards,
+        auditLogId
       };
     },
     async listAdminCrossServerGroups() {
@@ -2899,7 +2951,14 @@ const createTestRepository = (): GameRepository => {
         action: "admin_activity_leaderboard_settle",
         targetType: "activity_leaderboard",
         targetId: activityId,
-        detail: JSON.stringify({ activityId, today, reason, deliveredRewards }),
+        detail: JSON.stringify({
+          activityId,
+          today,
+          reason,
+          deliveredRewards,
+          isRetry: deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        }),
         createdAt: new Date().toISOString()
       });
       const activities = await this.listAdminActivities(today);
@@ -3035,7 +3094,14 @@ const createTestRepository = (): GameRepository => {
         action: "admin_guild_leaderboard_settle",
         targetType: "guild",
         targetId: guildId,
-        detail: reason,
+        detail: JSON.stringify({
+          guildId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        }),
         createdAt: new Date().toISOString()
       });
       return { ...settlement, auditLogId };
@@ -3062,7 +3128,14 @@ const createTestRepository = (): GameRepository => {
         action: "admin_cross_guild_season_settle",
         targetType: "cross_server_guild",
         targetId: serverId,
-        detail: reason,
+        detail: JSON.stringify({
+          serverId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "no_cash_no_platform_coins"
+        }),
         createdAt: new Date().toISOString()
       });
       return { ...settlement, auditLogId };
@@ -7120,12 +7193,12 @@ test("phase 16 admin can query operations data and adjust cross server groups wi
     assert.ok(assigned.body.data?.group.serverIds.includes("s2"));
     assert.ok(assigned.body.data?.auditLogId);
 
-    const auditLogs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+    const auditLogs = await requestJson<{ rows: Array<{ action: string }> }>(baseUrl, "/admin/audit-logs", {
       headers: { authorization: `Bearer ${adminLogin.body.data.token}` }
     });
     assert.equal(auditLogs.status, 200);
-    assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_player_ban"));
-    assert.ok(auditLogs.body.data?.some((log) => log.action === "admin_cross_server_group_assign"));
+    assert.ok(auditLogs.body.data?.rows.some((log) => log.action === "admin_player_ban"));
+    assert.ok(auditLogs.body.data?.rows.some((log) => log.action === "admin_cross_server_group_assign"));
   });
 });
 
@@ -8245,11 +8318,11 @@ test("admin can filter and update knowledge entries with audit", async () => {
     assert.equal(relisted.status, 200, JSON.stringify(relisted.body));
     assert.equal(relisted.body.data?.rows.some((entry) => entry.id === "labor-written-contract"), true);
 
-    const logs = await requestJson<Array<{ action: string; targetType: string; targetId: string | null }>>(baseUrl, "/admin/audit-logs", {
+    const logs = await requestJson<{ rows: Array<{ action: string; targetType: string; targetId: string | null }> }>(baseUrl, "/admin/audit-logs", {
       headers: auth
     });
     assert.equal(logs.status, 200);
-    assert.ok(logs.body.data?.some((log) => log.action === "admin_knowledge_update" && log.targetType === "knowledge_entry" && log.targetId === "labor-written-contract"));
+    assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_knowledge_update" && log.targetType === "knowledge_entry" && log.targetId === "labor-written-contract"));
   });
 });
 
@@ -9291,12 +9364,12 @@ test("admin guild operations lists details and settles guild rewards idempotentl
     assert.equal(afterLeader.body.data?.cash, beforeLeader.body.data?.cash);
     assert.equal(afterLeader.body.data?.platformCoins, beforeLeader.body.data?.platformCoins);
 
-    const logs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+    const logs = await requestJson<{ rows: Array<{ action: string }> }>(baseUrl, "/admin/audit-logs", {
       headers: adminHeaders
     });
     assert.equal(logs.status, 200);
-    assert.ok(logs.body.data?.some((log) => log.action === "admin_guild_leaderboard_settle"));
-    assert.ok(logs.body.data?.some((log) => log.action === "admin_cross_guild_season_settle"));
+    assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_guild_leaderboard_settle"));
+    assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_cross_guild_season_settle"));
   });
 });
 
@@ -9437,10 +9510,106 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
     });
     assert.equal(recapAfterSettle.body.data?.activityRecaps[0]?.isSettled, true);
 
-    const logs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+    const logs = await requestJson<{ rows: Array<{ action: string }> }>(baseUrl, "/admin/audit-logs", {
       headers: adminHeaders
     });
     assert.equal(logs.status, 200);
-    assert.ok(logs.body.data?.some((log) => log.action === "admin_activity_leaderboard_settle"));
+    assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_activity_leaderboard_settle"));
+  });
+});
+
+test("phase 24 admin audit filters settlement retries and exposes details", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await createPlayerSession(baseUrl, "auditactivity01");
+    const second = await createPlayerSession(baseUrl, "auditactivity02");
+    const firstHeaders = { authorization: `Bearer ${first.token}` };
+    const secondHeaders = { authorization: `Bearer ${second.token}` };
+
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 90 })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 150 })
+    });
+
+    const blocked = await requestJson(baseUrl, "/admin/audit-logs?action=admin_activity_leaderboard_settle");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const firstSettlement = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "阶段24审计首结算" })
+      }
+    );
+    assert.equal(firstSettlement.status, 200, JSON.stringify(firstSettlement.body));
+    assert.equal(firstSettlement.body.data?.deliveredRewards, 2);
+
+    const retrySettlement = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "阶段24审计重试" })
+      }
+    );
+    assert.equal(retrySettlement.status, 200, JSON.stringify(retrySettlement.body));
+    assert.equal(retrySettlement.body.data?.deliveredRewards, 0);
+
+    const logs = await requestJson<{
+      rows: Array<{
+        action: string;
+        targetType: string;
+        targetId: string | null;
+        detailJson: { activityId?: string; deliveredRewards?: number; isRetry?: boolean } | null;
+        summary: string;
+      }>;
+      total: number;
+      filters: { actions: string[]; targetTypes: string[]; admins: string[] };
+    }>(
+      baseUrl,
+      "/admin/audit-logs?action=admin_activity_leaderboard_settle&targetType=activity_leaderboard&targetId=ai-agent-growth&admin=admin&from=2026-05-01&to=2026-05-30",
+      { headers: adminHeaders }
+    );
+    assert.equal(logs.status, 200, JSON.stringify(logs.body));
+    assert.equal(logs.body.data?.total, 2);
+    assert.deepEqual(logs.body.data?.rows.map((log) => log.action), [
+      "admin_activity_leaderboard_settle",
+      "admin_activity_leaderboard_settle"
+    ]);
+    assert.ok(logs.body.data?.filters.actions.includes("admin_activity_leaderboard_settle"));
+    assert.ok(logs.body.data?.filters.targetTypes.includes("activity_leaderboard"));
+    assert.ok(logs.body.data?.filters.admins.includes("admin"));
+    assert.equal(logs.body.data?.rows[0]?.targetId, "ai-agent-growth");
+    assert.equal(logs.body.data?.rows[0]?.detailJson?.isRetry, true);
+    assert.equal(logs.body.data?.rows[0]?.detailJson?.deliveredRewards, 0);
+    assert.equal(logs.body.data?.rows[1]?.detailJson?.isRetry, false);
+    assert.equal(logs.body.data?.rows[1]?.detailJson?.deliveredRewards, 2);
+    assert.match(logs.body.data?.rows[0]?.summary ?? "", /重试/);
   });
 });
