@@ -804,6 +804,14 @@ type GuildCenter = {
     role: string;
     contributionScore: number;
   }>;
+  joinRequests: Array<{
+    id: string;
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    status: string;
+    createdAt: string;
+  }>;
   tasks: Array<{
     id: string;
     title: string;
@@ -848,6 +856,7 @@ type AchievementClaimResult = {
 type GuildActionResult = {
   guildCenter: GuildCenter;
   result: string;
+  applicationStatus?: "approved" | "pending";
 };
 
 type GuildLeaderboardSettlement = GuildActionResult & {
@@ -1800,6 +1809,11 @@ function App() {
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
+  const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
+  const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
+  const canManageGuildMembers = currentGuildMember?.role === "leader";
+  const guildRoleLabel = (role: string): string =>
+    role === "leader" ? "会长" : role === "vice_leader" ? "副会长" : "成员";
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
   const primarySeasonActivity = seasonCenter?.activities[0] ?? null;
   const primaryActivityBoard = seasonCenter?.activityBoards[0] ?? null;
@@ -2658,6 +2672,78 @@ function App() {
       "/guild/leaderboard/settle",
       {
         method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const reviewGuildApplication = async (requestId: string, decision: "approved" | "rejected"): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/applications/${encodeURIComponent(requestId)}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, decision })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const updateGuildMemberRole = async (profileId: string, role: "member" | "vice_leader"): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/members/${encodeURIComponent(profileId)}/role`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, role })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const removeGuildMember = async (profileId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/members/${encodeURIComponent(profileId)}`,
+      {
+        method: "DELETE",
         body: JSON.stringify({ serverId: selectedServer.id })
       },
       account.token
@@ -4639,17 +4725,61 @@ function App() {
                     </section>
                     <section className="glass-panel rounded-3xl p-4">
                       <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">入会申请</strong>
+                        <span className="text-[10px] text-slate-500">{guildCenter.joinRequests.length} 条</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.joinRequests.length === 0 && (
+                          <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无待审核申请。</p>
+                        )}
+                        {guildCenter.joinRequests.slice(0, 4).map((request) => (
+                          <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={request.id}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <strong className="block text-xs text-white font-black">{request.founderName}</strong>
+                                <span className="mt-1 block text-[9px] text-slate-500 truncate">{request.companyName} · {request.createdAt.slice(0, 10)}</span>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">待审核</span>
+                            </div>
+                            {canReviewGuildApplications && (
+                              <div className="mt-3 grid grid-cols-2 gap-2">
+                                <button className="btn-gold rounded-xl py-2 text-[10px] font-black text-business-dark" type="button" onClick={() => void reviewGuildApplication(request.id, "approved")}>
+                                  通过
+                                </button>
+                                <button className="rounded-xl bg-slate-800 py-2 text-[10px] font-black text-slate-300" type="button" onClick={() => void reviewGuildApplication(request.id, "rejected")}>
+                                  拒绝
+                                </button>
+                              </div>
+                            )}
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
                         <strong className="text-sm text-white font-black">成员贡献</strong>
                         <span className="text-[10px] text-slate-500">{guildCenter.members.length} 人</span>
                       </div>
                       <div className="space-y-2">
                         {guildCenter.members.slice(0, 5).map((member) => (
-                          <div className="flex items-center justify-between rounded-2xl bg-slate-900/60 px-3 py-2" key={member.profileId}>
-                            <div>
+                          <div className="rounded-2xl bg-slate-900/60 px-3 py-2" key={member.profileId}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
                               <strong className="block text-xs text-white">{member.founderName}</strong>
-                              <span className="text-[9px] text-slate-500">{member.companyName} · {member.role}</span>
+                                <span className="text-[9px] text-slate-500 truncate">{member.companyName} · {guildRoleLabel(member.role)}</span>
+                              </div>
+                              <span className="text-xs text-business-gold font-black">{member.contributionScore}</span>
                             </div>
-                            <span className="text-xs text-business-gold font-black">{member.contributionScore}</span>
+                            {canManageGuildMembers && member.profileId !== profile.id && member.role === "member" && (
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                <button className="rounded-xl bg-business-gold/15 py-1.5 text-[9px] font-black text-business-gold" type="button" onClick={() => void updateGuildMemberRole(member.profileId, "vice_leader")}>
+                                  任命副会长
+                                </button>
+                                <button className="rounded-xl bg-red-500/15 py-1.5 text-[9px] font-black text-red-200" type="button" onClick={() => void removeGuildMember(member.profileId)}>
+                                  移除成员
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

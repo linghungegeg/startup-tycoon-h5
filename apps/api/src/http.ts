@@ -75,7 +75,7 @@ const sendJson = <T>(
 ): void => {
   response.writeHead(statusCode, {
     "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
     [TRACE_ID_HEADER]: body.traceId
@@ -86,7 +86,7 @@ const sendJson = <T>(
 const sendOptions = (response: ServerResponse): void => {
   response.writeHead(204, {
     "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-length": "0"
   });
@@ -96,7 +96,7 @@ const sendOptions = (response: ServerResponse): void => {
 const sendRateLimited = (response: ServerResponse, traceId: string): void => {
   response.writeHead(429, {
     "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
     "retry-after": String(Math.ceil(AUTH_RATE_LIMIT_WINDOW_MS / 1000)),
@@ -1472,6 +1472,131 @@ export const createApiServer = (
       const result = await repository.joinOrCreateGuild(account.id, serverId, guildName, readToday(request));
       if (result === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const guildApplicationReviewMatch = url.pathname.match(/^\/guild\/applications\/([^/]+)\/review$/);
+    if (request.method === "POST" && guildApplicationReviewMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const requestId = guildApplicationReviewMatch[1];
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const decision = isRecord(body) ? readString(body, "decision") : "";
+      if (requestId === undefined || serverId === undefined || (decision !== "approved" && decision !== "rejected")) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and decision are required.", traceId));
+        return;
+      }
+
+      const result = await repository.reviewGuildApplication(account.id, serverId, decodeURIComponent(requestId), decision, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before reviewing applications.", traceId));
+        return;
+      }
+      if (result === "GUILD_PERMISSION_DENIED") {
+        sendJson(response, 403, failure("GUILD_PERMISSION_DENIED", "Guild permission denied.", traceId));
+        return;
+      }
+      if (result === "GUILD_APPLICATION_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_APPLICATION_NOT_FOUND", "Guild application not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_APPLICATION_ALREADY_REVIEWED") {
+        sendJson(response, 409, failure("GUILD_APPLICATION_ALREADY_REVIEWED", "Guild application already reviewed.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const guildMemberRoleMatch = url.pathname.match(/^\/guild\/members\/([^/]+)\/role$/);
+    if (request.method === "POST" && guildMemberRoleMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const profileId = guildMemberRoleMatch[1];
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const role = isRecord(body) ? readString(body, "role") : "";
+      if (profileId === undefined || serverId === undefined || (role !== "member" && role !== "vice_leader")) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and role are required.", traceId));
+        return;
+      }
+
+      const result = await repository.updateGuildMemberRole(account.id, serverId, decodeURIComponent(profileId), role, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before managing members.", traceId));
+        return;
+      }
+      if (result === "GUILD_PERMISSION_DENIED") {
+        sendJson(response, 403, failure("GUILD_PERMISSION_DENIED", "Guild permission denied.", traceId));
+        return;
+      }
+      if (result === "GUILD_MEMBER_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_MEMBER_NOT_FOUND", "Guild member not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_SELF_ROLE_FORBIDDEN") {
+        sendJson(response, 409, failure("GUILD_SELF_ROLE_FORBIDDEN", "Cannot change your own guild role.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const guildMemberRemoveMatch = url.pathname.match(/^\/guild\/members\/([^/]+)$/);
+    if (request.method === "DELETE" && guildMemberRemoveMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const profileId = guildMemberRemoveMatch[1];
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      if (profileId === undefined || serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.removeGuildMember(account.id, serverId, decodeURIComponent(profileId), readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before managing members.", traceId));
+        return;
+      }
+      if (result === "GUILD_PERMISSION_DENIED") {
+        sendJson(response, 403, failure("GUILD_PERMISSION_DENIED", "Guild permission denied.", traceId));
+        return;
+      }
+      if (result === "GUILD_MEMBER_NOT_FOUND") {
+        sendJson(response, 404, failure("GUILD_MEMBER_NOT_FOUND", "Guild member not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_SELF_REMOVE_FORBIDDEN") {
+        sendJson(response, 409, failure("GUILD_SELF_REMOVE_FORBIDDEN", "Cannot remove yourself from guild.", traceId));
         return;
       }
 

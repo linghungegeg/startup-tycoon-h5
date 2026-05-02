@@ -227,6 +227,7 @@ model PlayerProfile {
   knowledgeUnlocks PlayerKnowledgeUnlock[]
   guildMembership GuildMember?
   guildHelpRequests GuildHelpRequest[]
+  guildJoinRequests GuildJoinRequest[]
   crossServerSignups CrossServerSignup[]
   mailCompensations AdminMailCompensation[]
   seasonProgresses PlayerSeasonProgress[]
@@ -680,6 +681,7 @@ model Guild {
   taskProgress GuildTaskProgress[]
   techStates  GuildTechState[]
   helpRequests GuildHelpRequest[]
+  joinRequests GuildJoinRequest[]
 
   @@unique([serverId, name])
   @@index([serverId, contributionScore])
@@ -696,6 +698,22 @@ model GuildMember {
   profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([guildId, contributionScore])
+}
+
+model GuildJoinRequest {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  status      String        @default("pending") @db.VarChar(16)
+  createdAt   DateTime      @default(now())
+  reviewedAt  DateTime?
+  reviewedByProfileId String? @db.VarChar(36)
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, profileId])
+  @@index([guildId, status])
+  @@index([profileId, status])
 }
 
 model GuildTaskConfig {

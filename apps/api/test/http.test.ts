@@ -1823,6 +1823,7 @@ const createTestRepository = (): GameRepository => {
   const crossServerSignups = new Set<string>();
   const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
+  const guildJoinRequests = new Map<string, { id: string; guildId: string; profileId: string; status: string; createdAt: string; reviewedAt: string | null; reviewedByProfileId: string | null }>();
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string; fulfilledAt: string | null }>();
   const guildTaskClaims = new Map<string, { guildId: string; taskId: string; claimedAt: string }>();
   const guildTechStates = new Map<string, { guildId: string; techId: string; level: number }>();
@@ -2210,10 +2211,11 @@ const createTestRepository = (): GameRepository => {
   const toGuildCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): GuildCenterRecord => {
     const member = guildMembers.get(profile.id);
     if (member === undefined) {
-      return { guild: null, members: [], tasks: [], techs: [], helpRequests: [], leaderboard: [] };
+      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], leaderboard: [] };
     }
     const guild = guilds.get(member.guildId);
     const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
+    const joinRequests = [...guildJoinRequests.values()].filter((request) => request.guildId === member.guildId && request.status === "pending");
     const todayHelpCount = [...guildHelpRequests.values()].filter((request) =>
       request.guildId === member.guildId && (request.createdAt.slice(0, 10) === today || request.fulfilledAt?.slice(0, 10) === today)
     ).length;
@@ -2232,6 +2234,19 @@ const createTestRepository = (): GameRepository => {
           contributionScore: item.contributionScore
         };
       }),
+      joinRequests: member.role === "leader" || member.role === "vice_leader"
+        ? joinRequests.map((request) => {
+          const requestProfile = getProfileById(request.profileId);
+          return {
+            id: request.id,
+            profileId: request.profileId,
+            founderName: requestProfile?.founderName ?? "",
+            companyName: requestProfile?.companyName ?? "",
+            status: request.status,
+            createdAt: request.createdAt
+          };
+        })
+        : [],
       tasks: [{ id: "guild-daily-help", title: "成员互助", description: "发布或完成一次商会协作。", progress: Math.min(todayHelpCount, 1), target: 1, contributionReward: 20, isClaimed: isHelpClaimed, isClaimable: todayHelpCount >= 1 && !isHelpClaimed }],
       techs: [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: sharedOfficeLevel, maxLevel: 5, upgradeCost, isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost, bonusLabel: sharedOfficeLevel <= 0 ? "待激活" : `协作效率 +${sharedOfficeLevel * 2}%` }],
       helpRequests: [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId).map((request) => {
@@ -4350,10 +4365,101 @@ const createTestRepository = (): GameRepository => {
         return "PLAYER_NOT_FOUND";
       }
       const guildKey = `${serverId}:${guildName}`;
-      const guild = guilds.get(guildKey) ?? { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0 };
+      const existingMember = guildMembers.get(profile.id);
+      if (existingMember !== undefined) {
+        return { guildCenter: toGuildCenter(profile, today), result: `${guilds.get(existingMember.guildId)?.name ?? guildName} 已加入。`, applicationStatus: "approved" } satisfies GuildActionRecord & { applicationStatus: "approved" };
+      }
+      const existingGuild = guilds.get(guildKey);
+      if (existingGuild !== undefined) {
+        const existingRequest = [...guildJoinRequests.values()].find((request) => request.guildId === existingGuild.id && request.profileId === profile.id);
+        const request = existingRequest ?? { id: randomUUID(), guildId: existingGuild.id, profileId: profile.id, status: "pending", createdAt: `${today}T12:00:00.000Z`, reviewedAt: null, reviewedByProfileId: null };
+        request.status = "pending";
+        request.reviewedAt = null;
+        request.reviewedByProfileId = null;
+        guildJoinRequests.set(request.id, request);
+        return { guildCenter: toGuildCenter(profile, today), result: "入会申请已提交，等待会长或副会长审核。", applicationStatus: "pending" } satisfies GuildActionRecord & { applicationStatus: "pending" };
+      }
+      const guild = { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0 };
       guilds.set(guildKey, guild);
       guildMembers.set(profile.id, { guildId: guild.id, profileId: profile.id, role: "leader", contributionScore: 0 });
-      return { guildCenter: toGuildCenter(profile, today), result: `${guildName} 已加入。` } satisfies GuildActionRecord;
+      return { guildCenter: toGuildCenter(profile, today), result: `${guildName} 已加入。`, applicationStatus: "approved" } satisfies GuildActionRecord & { applicationStatus: "approved" };
+    },
+    async reviewGuildApplication(accountId, serverId, requestId, decision, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const reviewer = guildMembers.get(profile.id);
+      if (reviewer === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (reviewer.role !== "leader" && reviewer.role !== "vice_leader") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      const request = guildJoinRequests.get(requestId);
+      if (request === undefined || request.guildId !== reviewer.guildId) {
+        return "GUILD_APPLICATION_NOT_FOUND";
+      }
+      if (request.status !== "pending") {
+        return "GUILD_APPLICATION_ALREADY_REVIEWED";
+      }
+      request.status = decision;
+      request.reviewedAt = `${today}T12:00:00.000Z`;
+      request.reviewedByProfileId = profile.id;
+      if (decision === "approved") {
+        guildMembers.set(request.profileId, { guildId: reviewer.guildId, profileId: request.profileId, role: "member", contributionScore: 0 });
+      }
+      return { guildCenter: toGuildCenter(profile, today), result: decision === "approved" ? "入会申请已通过。" : "入会申请已拒绝。" } satisfies GuildActionRecord;
+    },
+    async updateGuildMemberRole(accountId, serverId, profileId, role, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const operator = guildMembers.get(profile.id);
+      if (operator === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (operator.role !== "leader") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      if (profile.id === profileId) {
+        return "GUILD_SELF_ROLE_FORBIDDEN";
+      }
+      const target = guildMembers.get(profileId);
+      if (target === undefined || target.guildId !== operator.guildId) {
+        return "GUILD_MEMBER_NOT_FOUND";
+      }
+      if (target.role === "leader") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      target.role = role;
+      return { guildCenter: toGuildCenter(profile, today), result: role === "vice_leader" ? "已任命副会长。" : "成员职位已更新。" } satisfies GuildActionRecord;
+    },
+    async removeGuildMember(accountId, serverId, profileId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const operator = guildMembers.get(profile.id);
+      if (operator === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (profile.id === profileId) {
+        return "GUILD_SELF_REMOVE_FORBIDDEN";
+      }
+      if (operator.role !== "leader") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      const target = guildMembers.get(profileId);
+      if (target === undefined || target.guildId !== operator.guildId) {
+        return "GUILD_MEMBER_NOT_FOUND";
+      }
+      if (target.role !== "member") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      guildMembers.delete(profileId);
+      return { guildCenter: toGuildCenter(profile, today), result: "成员已移出商会。" } satisfies GuildActionRecord;
     },
     async requestGuildHelp(accountId, serverId, requestType, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -4575,6 +4681,20 @@ const createPlayerSession = async (
 
   return { token: register.body.data.token, profile: profile.body.data };
 };
+
+test("cors preflight allows guild member delete requests", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/guild/members/test-profile`, {
+      method: "OPTIONS",
+      headers: {
+        "access-control-request-method": "DELETE",
+        origin: "http://127.0.0.1:5173"
+      }
+    });
+    assert.equal(response.status, 204);
+    assert.match(response.headers.get("access-control-allow-methods") ?? "", /DELETE/);
+  });
+});
 
 test("registers an account, logs in, and returns a session token", async () => {
   await withServer(async (baseUrl) => {
@@ -7789,6 +7909,20 @@ test("guild help fulfillment and leaderboard settlement reward daily collaborati
       });
       assert.equal(joined.status, 200, JSON.stringify(joined.body));
     }
+    const joinCenter = await requestJson<GuildCenterRecord & { joinRequests: Array<{ id: string; profileId: string }> }>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(joinCenter.status, 200, JSON.stringify(joinCenter.body));
+    for (const applicant of [helper, third]) {
+      const requestId = joinCenter.body.data?.joinRequests.find((request) => request.profileId === applicant.profile.id)?.id ?? "";
+      assert.ok(requestId);
+      const approved = await requestJson<GuildActionRecord>(baseUrl, `/guild/applications/${encodeURIComponent(requestId)}/review`, {
+        method: "POST",
+        headers: leaderHeaders,
+        body: JSON.stringify({ serverId: "s1", decision: "approved" })
+      });
+      assert.equal(approved.status, 200, JSON.stringify(approved.body));
+    }
     await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
       method: "POST",
       headers: outsiderHeaders,
@@ -7881,6 +8015,114 @@ test("guild help fulfillment and leaderboard settlement reward daily collaborati
     });
     assert.equal(duplicateSettlement.status, 200, JSON.stringify(duplicateSettlement.body));
     assert.equal(duplicateSettlement.body.data?.deliveredRewards, 0);
+  });
+});
+
+test("guild member applications and role permissions gate member management", async () => {
+  await withServer(async (baseUrl) => {
+    const leader = await createPlayerSession(baseUrl, "guildmanageleader");
+    const officer = await createPlayerSession(baseUrl, "guildmanageofficer");
+    const member = await createPlayerSession(baseUrl, "guildmanagemember");
+    const outsider = await createPlayerSession(baseUrl, "guildmanageoutsider");
+    const leaderHeaders = { authorization: `Bearer ${leader.token}`, "x-server-date": "2026-05-04" };
+    const officerHeaders = { authorization: `Bearer ${officer.token}`, "x-server-date": "2026-05-04" };
+    const memberHeaders = { authorization: `Bearer ${member.token}`, "x-server-date": "2026-05-04" };
+    const outsiderHeaders = { authorization: `Bearer ${outsider.token}`, "x-server-date": "2026-05-04" };
+
+    const created = await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "管理创业会" })
+    });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    assert.equal(created.body.data?.guildCenter.members[0]?.role, "leader");
+
+    const applied = await requestJson<{ guildCenter: GuildCenterRecord; result: string; applicationStatus: string }>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: officerHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "管理创业会" })
+    });
+    assert.equal(applied.status, 200, JSON.stringify(applied.body));
+    assert.equal(applied.body.data?.applicationStatus, "pending");
+    assert.equal(applied.body.data?.guildCenter.guild, null);
+
+    const leaderCenter = await requestJson<GuildCenterRecord & { joinRequests: Array<{ id: string; profileId: string; status: string }> }>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(leaderCenter.status, 200, JSON.stringify(leaderCenter.body));
+    const officerRequestId = leaderCenter.body.data?.joinRequests.find((request) => request.profileId === officer.profile.id)?.id ?? "";
+    assert.ok(officerRequestId);
+
+    const approvedOfficer = await requestJson<GuildActionRecord>(baseUrl, `/guild/applications/${encodeURIComponent(officerRequestId)}/review`, {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+    assert.equal(approvedOfficer.status, 200, JSON.stringify(approvedOfficer.body));
+    assert.equal(approvedOfficer.body.data?.guildCenter.members.find((item) => item.profileId === officer.profile.id)?.role, "member");
+
+    const promoted = await requestJson<GuildActionRecord>(baseUrl, `/guild/members/${encodeURIComponent(officer.profile.id)}/role`, {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", role: "vice_leader" })
+    });
+    assert.equal(promoted.status, 200, JSON.stringify(promoted.body));
+    assert.equal(promoted.body.data?.guildCenter.members.find((item) => item.profileId === officer.profile.id)?.role, "vice_leader");
+
+    const memberApplication = await requestJson<{ guildCenter: GuildCenterRecord; applicationStatus: string }>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "管理创业会" })
+    });
+    assert.equal(memberApplication.status, 200, JSON.stringify(memberApplication.body));
+    assert.equal(memberApplication.body.data?.applicationStatus, "pending");
+
+    const officerCenter = await requestJson<GuildCenterRecord & { joinRequests: Array<{ id: string; profileId: string; status: string }> }>(baseUrl, "/guild?serverId=s1", {
+      headers: officerHeaders
+    });
+    assert.equal(officerCenter.status, 200, JSON.stringify(officerCenter.body));
+    const memberRequestId = officerCenter.body.data?.joinRequests.find((request) => request.profileId === member.profile.id)?.id ?? "";
+    assert.ok(memberRequestId);
+
+    const approvedMember = await requestJson<GuildActionRecord>(baseUrl, `/guild/applications/${encodeURIComponent(memberRequestId)}/review`, {
+      method: "POST",
+      headers: officerHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+    assert.equal(approvedMember.status, 200, JSON.stringify(approvedMember.body));
+    assert.equal(approvedMember.body.data?.guildCenter.members.find((item) => item.profileId === member.profile.id)?.role, "member");
+
+    const officerRemoveLeader = await requestJson(baseUrl, `/guild/members/${encodeURIComponent(leader.profile.id)}`, {
+      method: "DELETE",
+      headers: officerHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(officerRemoveLeader.status, 403);
+    assert.equal(officerRemoveLeader.body.error?.code, "GUILD_PERMISSION_DENIED");
+
+    const selfRemove = await requestJson(baseUrl, `/guild/members/${encodeURIComponent(leader.profile.id)}`, {
+      method: "DELETE",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(selfRemove.status, 409);
+    assert.equal(selfRemove.body.error?.code, "GUILD_SELF_REMOVE_FORBIDDEN");
+
+    const removed = await requestJson<GuildActionRecord>(baseUrl, `/guild/members/${encodeURIComponent(member.profile.id)}`, {
+      method: "DELETE",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(removed.status, 200, JSON.stringify(removed.body));
+    assert.equal(removed.body.data?.guildCenter.members.some((item) => item.profileId === member.profile.id), false);
+
+    const outsiderReview = await requestJson(baseUrl, `/guild/applications/${encodeURIComponent(memberRequestId)}/review`, {
+      method: "POST",
+      headers: outsiderHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+    assert.equal(outsiderReview.status, 409);
+    assert.equal(outsiderReview.body.error?.code, "GUILD_NOT_JOINED");
   });
 });
 
