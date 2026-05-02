@@ -3021,6 +3021,73 @@ const createTestRepository = (): GameRepository => {
         auditLogId
       };
     },
+    async getAdminActivityPublishObservations(today) {
+      const publishedDrafts = [...activityDrafts.values()]
+        .filter((draft) => draft.status === "published")
+        .sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
+      const rows = publishedDrafts.flatMap((draft) => {
+        const activity = activityConfigs.find((item) => item.id === draft.id);
+        if (activity === undefined) {
+          return [];
+        }
+        const rewardEntries = [...leaderboardRewards].map((key) => {
+          const parts = key.split(":");
+          const snapshotDate = parts.pop() ?? "";
+          const boardKey = parts.pop() ?? "";
+          return { boardKey, snapshotDate };
+        });
+        const states = [...activityStates.values()].filter((state) => state.activityId === activity.id && (state.isJoined || state.score > 0));
+        const deliveredRewards = rewardEntries.filter((entry) => entry.boardKey === activity.leaderboardKey && entry.snapshotDate === activity.endDate).length;
+        const status = seasonStatus(activity.startDate, activity.endDate, today);
+        const riskLabels = [
+          ...(activity.rewardCash > 0 ? ["reward_cash"] : []),
+          ...(activity.leaderboardKey.trim() === "" ? ["missing_leaderboard_key"] : [])
+        ];
+        const rewardBoundary = riskLabels.length === 0 ? "safe" as const : "risk" as const;
+        const isSettled = deliveredRewards > 0;
+        const auditLog = adminAuditLogs.find((log) => log.action === "admin_activity_draft_publish" && log.targetId === draft.draftId) ?? null;
+        let publishReason: string | null = null;
+        if (auditLog?.detail !== null && auditLog?.detail !== undefined) {
+          const detail = JSON.parse(auditLog.detail) as { reason?: unknown };
+          publishReason = typeof detail.reason === "string" ? detail.reason : null;
+        }
+        const suggestion = rewardBoundary === "risk"
+          ? "发布后观察发现奖励边界风险，先暂停新增运营动作并进入配置复核。"
+          : status === "ended" && !isSettled
+            ? "活动已结束但尚未结算，进入活动运营页按幂等结算流程处理。"
+            : status === "active"
+              ? "活动进行中，继续观察报名、积分和榜单波动。"
+              : "活动尚未开启，继续观察档期、榜单 key 和奖励边界。";
+        return [{
+          draftId: draft.draftId,
+          activityId: activity.id,
+          name: activity.name,
+          status,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          leaderboardKey: activity.leaderboardKey,
+          participantCount: states.length,
+          totalScore: states.reduce((total, state) => total + state.score, 0),
+          isSettled,
+          deliveredRewards,
+          rewardBoundary,
+          riskLabels,
+          publishAuditLogId: auditLog?.id ?? null,
+          publishReason,
+          publishedAt: auditLog?.createdAt ?? null,
+          suggestion
+        }];
+      });
+      return {
+        summary: {
+          total: rows.length,
+          published: publishedDrafts.length,
+          rewardRiskCount: rows.filter((row) => row.rewardBoundary === "risk").length,
+          unsettledEndedCount: rows.filter((row) => row.status === "ended" && !row.isSettled).length
+        },
+        rows
+      };
+    },
     async getAdminOperationConfigAlerts(today) {
       const rewardEntries = [...leaderboardRewards].map((key) => {
         const parts = key.split(":");
@@ -11257,6 +11324,106 @@ test("phase 24 admin activity draft publish requires approval and is idempotent"
     );
     assert.equal(auditLogs.status, 200, JSON.stringify(auditLogs.body));
     assert.equal(auditLogs.body.data?.rows.filter((log) => log.action === "admin_activity_draft_publish").length, 1);
+  });
+});
+
+test("phase 24 admin activity publish observations are read-only after release", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "activitypublishobserve");
+    const playerProfileBefore = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(playerProfileBefore.status, 200, JSON.stringify(playerProfileBefore.body));
+
+    const blocked = await requestJson(baseUrl, "/admin/activity-publish-observations");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const draft = await requestJson<{ draft: { id: string } }>(baseUrl, "/admin/activity-config-drafts", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        id: "creator-economy-observe",
+        name: "创作者经济观察周",
+        startDate: "2026-07-29",
+        endDate: "2026-08-10",
+        leaderboardKey: "activity-creator-economy-observe",
+        targetScore: 240,
+        rewardReputation: 100,
+        rewardPoints: 150,
+        rewardTitleId: "season-creator-builder",
+        rewardCash: 0,
+        rewardPlatformCoins: 0
+      })
+    });
+    assert.equal(draft.status, 200, JSON.stringify(draft.body));
+    await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/submit`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "提交观察发布审核" })
+    });
+    await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/approve`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "观察发布审核通过" })
+    });
+    const published = await requestJson(baseUrl, `/admin/activity-config-drafts/${encodeURIComponent(draft.body.data?.draft.id ?? "")}/publish`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ reason: "发布后观察验证" })
+    });
+    assert.equal(published.status, 200, JSON.stringify(published.body));
+
+    const observations = await requestJson<{
+      summary: { total: number; published: number; rewardRiskCount: number; unsettledEndedCount: number };
+      rows: Array<{
+        draftId: string;
+        activityId: string;
+        name: string;
+        status: string;
+        participantCount: number;
+        totalScore: number;
+        isSettled: boolean;
+        deliveredRewards: number;
+        rewardBoundary: "safe" | "risk";
+        riskLabels: string[];
+        publishAuditLogId: string | null;
+        publishReason: string | null;
+        suggestion: string;
+      }>;
+    }>(baseUrl, "/admin/activity-publish-observations", {
+      headers: adminHeaders
+    });
+    assert.equal(observations.status, 200, JSON.stringify(observations.body));
+    assert.equal(observations.body.data?.summary.published, 1);
+    assert.equal(observations.body.data?.summary.rewardRiskCount, 0);
+    const row = observations.body.data?.rows.find((item) => item.activityId === "creator-economy-observe");
+    assert.ok(row);
+    assert.equal(row.name, "创作者经济观察周");
+    assert.equal(row.status, "upcoming");
+    assert.equal(row.participantCount, 0);
+    assert.equal(row.totalScore, 0);
+    assert.equal(row.isSettled, false);
+    assert.equal(row.deliveredRewards, 0);
+    assert.equal(row.rewardBoundary, "safe");
+    assert.deepEqual(row.riskLabels, []);
+    assert.ok((row.publishAuditLogId ?? "").length > 0);
+    assert.equal(row.publishReason, "发布后观察验证");
+    assert.equal(row.suggestion.includes("观察"), true);
+
+    const playerProfileAfter = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(playerProfileAfter.status, 200, JSON.stringify(playerProfileAfter.body));
+    assert.equal(playerProfileAfter.body.data?.cash, playerProfileBefore.body.data?.cash);
+    assert.equal(playerProfileAfter.body.data?.platformCoins, playerProfileBefore.body.data?.platformCoins);
   });
 });
 

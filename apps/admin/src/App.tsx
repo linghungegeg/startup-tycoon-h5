@@ -404,6 +404,34 @@ type ActivityDraftPublishResult = ActivityDraftActionResult & {
   };
 };
 
+type ActivityPublishObservationList = {
+  summary: {
+    total: number;
+    published: number;
+    rewardRiskCount: number;
+    unsettledEndedCount: number;
+  };
+  rows: Array<{
+    draftId: string;
+    activityId: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    participantCount: number;
+    totalScore: number;
+    isSettled: boolean;
+    deliveredRewards: number;
+    rewardBoundary: "safe" | "risk";
+    riskLabels: string[];
+    publishAuditLogId: string | null;
+    publishReason: string | null;
+    publishedAt: string | null;
+    suggestion: string;
+  }>;
+};
+
 type OperationConfigAlertAction = AuditResult & {
   alert: OperationConfigAlert;
 };
@@ -733,6 +761,7 @@ export default function App() {
   const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
   const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
+  const [activityPublishObservations, setActivityPublishObservations] = useState<ActivityPublishObservationList>({ summary: { total: 0, published: 0, rewardRiskCount: 0, unsettledEndedCount: 0 }, rows: [] });
   const [activityDraftReviewReason, setActivityDraftReviewReason] = useState("运营复核通过");
   const [activityDraftPublishReason, setActivityDraftPublishReason] = useState("发布前二次确认：配置、档期、奖励边界均已复核");
   const [alertLevel, setAlertLevel] = useState("");
@@ -883,11 +912,12 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, scheduleResponse, draftResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, scheduleResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
+        apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
@@ -908,6 +938,10 @@ export default function App() {
         setError(draftResponse.error.message);
         return;
       }
+      if (!publishObservationResponse.success) {
+        setError(publishObservationResponse.error.message);
+        return;
+      }
       if (!logs.success) {
         setError(logs.error.message);
         return;
@@ -924,6 +958,7 @@ export default function App() {
       setOperationConfigAlerts(configAlerts.data);
       setActivitySchedule(scheduleResponse.data);
       setActivityDrafts(draftResponse.data);
+      setActivityPublishObservations(publishObservationResponse.data);
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
@@ -1053,6 +1088,7 @@ export default function App() {
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
     setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
+    setActivityPublishObservations({ summary: { total: 0, published: 0, rewardRiskCount: 0, unsettledEndedCount: 0 }, rows: [] });
     setActivityDraftReviewReason("运营复核通过");
     setActivityDraftPublishReason("发布前二次确认：配置、档期、奖励边界均已复核");
     setAlertLevel("");
@@ -1520,6 +1556,18 @@ export default function App() {
     setActivityDrafts(result.data);
   };
 
+  const refreshActivityPublishObservations = async (): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const result = await apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActivityPublishObservations(result.data);
+  };
+
   const submitActivityDraftValidation = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (session === null) {
@@ -1610,6 +1658,7 @@ export default function App() {
     setError("");
     setActivityDraftValidation(result.data.validation);
     await refreshActivityDrafts();
+    await refreshActivityPublishObservations();
     const auditText = result.data.auditLogId === null ? "重复发布未新增审计记录" : `审计记录：${result.data.auditLogId}`;
     setActionMessage(`${result.data.activity.name} 已发布到正式活动配置，${auditText}`);
   };
@@ -2723,6 +2772,57 @@ export default function App() {
                             {draft.status !== "draft" && draft.status !== "pending_review" && draft.status !== "approved" && <span>{draft.reviewNote ?? "已完成复核"}</span>}
                           </div>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="活动发布观察">
+              <div className="table-toolbar">
+                <strong>活动发布观察</strong>
+                <span>已发布 {activityPublishObservations.summary.published} 个，风险 {activityPublishObservations.summary.rewardRiskCount} 项，结束未结算 {activityPublishObservations.summary.unsettledEndedCount} 个</span>
+                <button className="secondary-button" onClick={() => void refreshActivityPublishObservations()} type="button">刷新观察</button>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>活动</th>
+                      <th>状态</th>
+                      <th>榜单</th>
+                      <th>参与</th>
+                      <th>结算</th>
+                      <th>发布审计</th>
+                      <th>边界</th>
+                      <th>建议</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activityPublishObservations.rows.length === 0 && (
+                      <tr>
+                        <td colSpan={8}>暂无已发布草案观察记录。</td>
+                      </tr>
+                    )}
+                    {activityPublishObservations.rows.map((row) => (
+                      <tr key={row.draftId}>
+                        <td className="stacked-cell">
+                          <strong>{row.name}</strong>
+                          <span>{row.activityId}</span>
+                          <span>{row.startDate} - {row.endDate}</span>
+                        </td>
+                        <td>{row.status}</td>
+                        <td>{row.leaderboardKey}</td>
+                        <td>{row.participantCount} 人 / 总分 {formatNumber(row.totalScore)}</td>
+                        <td>{row.isSettled ? `已结算 ${row.deliveredRewards}` : "未结算"}</td>
+                        <td className="stacked-cell">
+                          <span>{row.publishAuditLogId ?? "-"}</span>
+                          <span>{formatDateTime(row.publishedAt)}</span>
+                          <span>{row.publishReason ?? "-"}</span>
+                        </td>
+                        <td>{row.rewardBoundary === "safe" ? "安全" : `风险 ${row.riskLabels.join("、")}`}</td>
+                        <td>{row.suggestion}</td>
                       </tr>
                     ))}
                   </tbody>

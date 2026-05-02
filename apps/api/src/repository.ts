@@ -1148,6 +1148,36 @@ export type AdminActivityConfigDraftPublishRecord = AdminActivityConfigDraftActi
   activity: AdminActivityConfigDraftPublishedActivityRecord;
 };
 
+export type AdminActivityPublishObservationRecord = {
+  draftId: string;
+  activityId: string;
+  name: string;
+  status: SeasonStatus;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  participantCount: number;
+  totalScore: number;
+  isSettled: boolean;
+  deliveredRewards: number;
+  rewardBoundary: "safe" | "risk";
+  riskLabels: string[];
+  publishAuditLogId: string | null;
+  publishReason: string | null;
+  publishedAt: string | null;
+  suggestion: string;
+};
+
+export type AdminActivityPublishObservationListRecord = {
+  summary: {
+    total: number;
+    published: number;
+    rewardRiskCount: number;
+    unsettledEndedCount: number;
+  };
+  rows: AdminActivityPublishObservationRecord[];
+};
+
 export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
 export type AdminOperationConfigAlertStatus = "pending" | "acknowledged" | "ignored";
 
@@ -1787,6 +1817,7 @@ export type GameRepository = {
   submitAdminActivityConfigDraft(adminUserId: string, draftId: string, reason: string, today: string): Promise<AdminActivityConfigDraftActionRecord | "ACTIVITY_DRAFT_NOT_FOUND" | "ACTIVITY_DRAFT_VALIDATION_FAILED">;
   reviewAdminActivityConfigDraft(adminUserId: string, draftId: string, status: "approved" | "rejected", reason: string, today: string): Promise<AdminActivityConfigDraftActionRecord | "ACTIVITY_DRAFT_NOT_FOUND" | "ACTIVITY_DRAFT_NOT_PENDING">;
   publishAdminActivityConfigDraft(adminUserId: string, draftId: string, reason: string, today: string): Promise<AdminActivityConfigDraftPublishRecord | "ACTIVITY_DRAFT_NOT_FOUND" | "ACTIVITY_DRAFT_NOT_APPROVED" | "ACTIVITY_DRAFT_VALIDATION_FAILED" | "ACTIVITY_SEASON_NOT_FOUND">;
+  getAdminActivityPublishObservations(today: string): Promise<AdminActivityPublishObservationListRecord>;
   getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
   handleAdminOperationConfigAlert(adminUserId: string, alertId: string, status: AdminOperationConfigAlertStatus, note: string, today: string): Promise<AdminOperationConfigAlertActionRecord | "ALERT_NOT_FOUND">;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
@@ -3020,6 +3051,39 @@ const toAdminActivityConfigDraftPublishedActivityRecord = (activity: ActivityDra
   rewardTitleId: activity.rewardTitleId,
   sortOrder: activity.sortOrder
 });
+
+const readAdminAuditDetailReason = (detail: string | null): string | null => {
+  if (detail === null || detail.trim() === "") {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(detail) as unknown;
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const reason = (parsed as { reason?: unknown }).reason;
+      return typeof reason === "string" && reason.trim() !== "" ? reason : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const toAdminActivityPublishSuggestion = (input: {
+  status: SeasonStatus;
+  isSettled: boolean;
+  rewardBoundary: "safe" | "risk";
+}): string => {
+  if (input.rewardBoundary === "risk") {
+    return "发布后观察发现奖励边界风险，先暂停新增运营动作并进入配置复核。";
+  }
+  if (input.status === "ended" && !input.isSettled) {
+    return "活动已结束但尚未结算，进入活动运营页按幂等结算流程处理。";
+  }
+  if (input.status === "active") {
+    return "活动进行中，继续观察报名、积分和榜单波动。";
+  }
+  return "活动尚未开启，继续观察档期、榜单 key 和奖励边界。";
+};
 
 type ActivityLeaderboardConfigLike = {
   id: string;
@@ -8226,6 +8290,85 @@ export const createPrismaGameRepository = (
       validation: record.validation,
       activity: toAdminActivityConfigDraftPublishedActivityRecord(result.activity),
       auditLogId: result.audit.id
+    };
+  },
+
+  async getAdminActivityPublishObservations(today) {
+    const drafts = await prisma.activityConfigDraft.findMany({
+      where: { status: "published" },
+      orderBy: [{ updatedAt: "desc" }, { activityId: "asc" }]
+    });
+    const activityIds = drafts.map((draft) => draft.activityId);
+    const activities = activityIds.length === 0
+      ? []
+      : await prisma.activityConfig.findMany({
+        where: { id: { in: activityIds } },
+        include: { states: true },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      });
+    const boardKeys = activities.map((activity) => activity.leaderboardKey).filter((boardKey) => boardKey.trim() !== "");
+    const deliveries = boardKeys.length === 0
+      ? []
+      : await prisma.leaderboardRewardDelivery.findMany({
+        where: { boardKey: { in: boardKeys } },
+        select: { boardKey: true, snapshotDate: true }
+      });
+    const auditLogs = drafts.length === 0
+      ? []
+      : await prisma.adminAuditLog.findMany({
+        where: {
+          action: "admin_activity_draft_publish",
+          targetType: "activity_config_draft",
+          targetId: { in: drafts.map((draft) => draft.id) }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+    const countDeliveries = (boardKey: string, snapshotDate: string) =>
+      deliveries.filter((delivery) => delivery.boardKey === boardKey && delivery.snapshotDate === snapshotDate).length;
+    const rows = drafts.flatMap((draft): AdminActivityPublishObservationRecord[] => {
+      const activity = activities.find((item) => item.id === draft.activityId);
+      if (activity === undefined) {
+        return [];
+      }
+      const joinedStates = activity.states.filter((state) => state.isJoined || state.score > 0);
+      const status = readSeasonStatus(activity.startDate, activity.endDate, today);
+      const deliveredRewards = countDeliveries(activity.leaderboardKey, activity.endDate);
+      const riskLabels = [
+        ...(activity.rewardCash > 0 ? ["reward_cash"] : []),
+        ...(activity.leaderboardKey.trim() === "" ? ["missing_leaderboard_key"] : [])
+      ];
+      const rewardBoundary = riskLabels.length === 0 ? "safe" : "risk";
+      const auditLog = auditLogs.find((log) => log.targetId === draft.id) ?? null;
+      const isSettled = deliveredRewards > 0;
+      return [{
+        draftId: draft.id,
+        activityId: activity.id,
+        name: activity.name,
+        status,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        leaderboardKey: activity.leaderboardKey,
+        participantCount: joinedStates.length,
+        totalScore: joinedStates.reduce((total, state) => total + state.score, 0),
+        isSettled,
+        deliveredRewards,
+        rewardBoundary,
+        riskLabels,
+        publishAuditLogId: auditLog?.id ?? null,
+        publishReason: readAdminAuditDetailReason(auditLog?.detail ?? null),
+        publishedAt: auditLog?.createdAt.toISOString() ?? null,
+        suggestion: toAdminActivityPublishSuggestion({ status, isSettled, rewardBoundary })
+      }];
+    });
+
+    return {
+      summary: {
+        total: rows.length,
+        published: drafts.length,
+        rewardRiskCount: rows.filter((row) => row.rewardBoundary === "risk").length,
+        unsettledEndedCount: rows.filter((row) => row.status === "ended" && !row.isSettled).length
+      },
+      rows
     };
   },
 
