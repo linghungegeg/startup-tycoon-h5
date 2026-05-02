@@ -268,6 +268,44 @@ type OperationConfigAlerts = {
   alerts: OperationConfigAlert[];
 };
 
+type ActivitySchedule = {
+  summary: {
+    totalActivities: number;
+    activeCount: number;
+    upcomingCount: number;
+    endedCount: number;
+    maxConcurrentActive: number;
+    rewardBoundaryRiskCount: number;
+    missingLeaderboardKeyCount: number;
+  };
+  windows: Array<{
+    date: string;
+    activeActivityIds: string[];
+    activeActivityNames: string[];
+    activeCount: number;
+    status: string;
+  }>;
+  activities: Array<{
+    id: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    rewardLabel: string;
+    rewardBoundary: string;
+    riskLabels: string[];
+  }>;
+  alerts: Array<{
+    id: string;
+    level: string;
+    type: string;
+    targetId: string;
+    message: string;
+    suggestion: string;
+  }>;
+};
+
 type OperationConfigAlertAction = AuditResult & {
   alert: OperationConfigAlert;
 };
@@ -571,6 +609,12 @@ export default function App() {
     filters: { levels: [], types: [], targetTypes: [], statuses: [] },
     alerts: []
   });
+  const [activitySchedule, setActivitySchedule] = useState<ActivitySchedule>({
+    summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 },
+    windows: [],
+    activities: [],
+    alerts: []
+  });
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
   const [alertStatus, setAlertStatus] = useState("");
@@ -719,9 +763,10 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, scheduleResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
+        apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
@@ -732,6 +777,10 @@ export default function App() {
       }
       if (!configAlerts.success) {
         setError(configAlerts.error.message);
+        return;
+      }
+      if (!scheduleResponse.success) {
+        setError(scheduleResponse.error.message);
         return;
       }
       if (!logs.success) {
@@ -748,6 +797,7 @@ export default function App() {
       }
       setConfigCenter(configs.data);
       setOperationConfigAlerts(configAlerts.data);
+      setActivitySchedule(scheduleResponse.data);
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
@@ -873,6 +923,7 @@ export default function App() {
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
     setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [], statuses: [] }, alerts: [] });
+    setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
     setAlertLevel("");
     setAlertType("");
     setAnalytics(null);
@@ -2249,6 +2300,45 @@ export default function App() {
                   <h3>商品配置</h3>
                   {configCenter.shopProducts.slice(0, 6).map((product) => (
                     <p key={product.id}>{product.name}：{formatNumber(product.pricePlatformCoins)} 平台币 / {product.isActive ? "启用" : "停用"}</p>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="table-section compact-table" aria-label="活动轮换节奏">
+              <div className="table-toolbar">
+                <strong>活动轮换节奏</strong>
+                <span>峰值 {activitySchedule.summary.maxConcurrentActive} 个同期开启，风险 {activitySchedule.summary.rewardBoundaryRiskCount} 项</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>节奏摘要</h3>
+                  <p>活动总数：{activitySchedule.summary.totalActivities}</p>
+                  <p>进行中：{activitySchedule.summary.activeCount} / 预告：{activitySchedule.summary.upcomingCount} / 已结束：{activitySchedule.summary.endedCount}</p>
+                  <p>缺少榜单 key：{activitySchedule.summary.missingLeaderboardKeyCount}</p>
+                </div>
+                <div>
+                  <h3>档期窗口</h3>
+                  {activitySchedule.windows.filter((window) => window.activeCount > 0).slice(0, 8).map((window) => (
+                    <p key={window.date}>
+                      {window.date}：{window.activeCount} 个 / {window.status === "crowded" ? "拥挤" : "正常"} / {window.activeActivityNames.slice(0, 3).join("、")}
+                    </p>
+                  ))}
+                  {activitySchedule.windows.length === 0 && <p>暂无活动档期</p>}
+                </div>
+                <div>
+                  <h3>运营提示</h3>
+                  {activitySchedule.alerts.length === 0 && <p>暂无节奏告警</p>}
+                  {activitySchedule.alerts.slice(0, 6).map((alert) => (
+                    <p key={alert.id}>{alert.level}：{alert.message} {alert.suggestion}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>奖励边界</h3>
+                  {activitySchedule.activities.map((activity) => (
+                    <p key={activity.id}>
+                      {activity.name}：{activity.status} / {activity.startDate} - {activity.endDate} / {activity.rewardBoundary === "safe" ? "安全" : `风险 ${activity.riskLabels.join("、")}`} / {activity.rewardLabel}
+                    </p>
                   ))}
                 </div>
               </div>

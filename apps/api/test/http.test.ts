@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress } from "../src/repository.js";
+import { buildAdminActivitySchedule, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -2819,6 +2819,9 @@ const createTestRepository = (): GameRepository => {
         leaderboardSettlements: [...settlementMap.values()],
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
+    },
+    async getAdminActivitySchedule(today) {
+      return buildAdminActivitySchedule(activityConfigs, today, new Set());
     },
     async getAdminOperationConfigAlerts(today) {
       const rewardEntries = [...leaderboardRewards].map((key) => {
@@ -10491,6 +10494,77 @@ test("phase 24 activity content pool rotates multiple startup activities", async
     assert.equal(cashflowConfig?.rewardBoundary, "leaderboard_no_cash_no_platform_coins");
     assert.equal(configs.body.data?.activities.find((activity) => activity.id === "compliance-ops-week")?.status, "upcoming");
     assert.ok(configs.body.data?.activityShopItems.some((item) => item.id === "activity-founder-title-shard" && item.isActive));
+  });
+});
+
+test("phase 24 admin activity schedule reports rotation cadence and reward boundaries", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, "/admin/activity-schedule", {
+      headers: { "x-server-date": "2026-05-10" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-10" };
+
+    const schedule = await requestJson<{
+      summary: {
+        totalActivities: number;
+        activeCount: number;
+        upcomingCount: number;
+        endedCount: number;
+        maxConcurrentActive: number;
+        rewardBoundaryRiskCount: number;
+        missingLeaderboardKeyCount: number;
+      };
+      windows: Array<{ date: string; activeCount: number; activeActivityIds: string[]; status: string }>;
+      activities: Array<{ id: string; status: string; rewardBoundary: string; riskLabels: string[] }>;
+      alerts: Array<{ type: string; level: string; targetId: string; message: string; suggestion: string }>;
+    }>(baseUrl, "/admin/activity-schedule", {
+      headers: adminHeaders
+    });
+
+    assert.equal(schedule.status, 200, JSON.stringify(schedule.body));
+    assert.ok((schedule.body.data?.summary.totalActivities ?? 0) >= 6);
+    assert.equal(schedule.body.data?.summary.activeCount, 4);
+    assert.equal(schedule.body.data?.summary.upcomingCount, 2);
+    assert.equal(schedule.body.data?.summary.endedCount, 0);
+    assert.ok((schedule.body.data?.summary.maxConcurrentActive ?? 0) >= 4);
+    assert.equal(schedule.body.data?.summary.rewardBoundaryRiskCount, 1);
+    assert.equal(schedule.body.data?.summary.missingLeaderboardKeyCount, 0);
+
+    const crowdedWindow = schedule.body.data?.windows.find((window) => window.date === "2026-05-10");
+    assert.equal(crowdedWindow?.activeCount, 4);
+    assert.equal(crowdedWindow?.status, "crowded");
+    assert.ok(crowdedWindow?.activeActivityIds.includes("cashflow-sprint"));
+    assert.ok(crowdedWindow?.activeActivityIds.includes("team-growth-camp"));
+
+    assert.equal(schedule.body.data?.activities.find((activity) => activity.id === "cashflow-sprint")?.rewardBoundary, "safe");
+    const aiActivity = schedule.body.data?.activities.find((activity) => activity.id === "ai-agent-growth");
+    assert.equal(aiActivity?.rewardBoundary, "risk");
+    assert.ok(aiActivity?.riskLabels.includes("cash_reward_configured"));
+
+    const crowdedAlert = schedule.body.data?.alerts.find((alert) => alert.type === "activity_schedule_crowded");
+    assert.equal(crowdedAlert?.level, "warning");
+    assert.match(crowdedAlert?.message ?? "", /同期开启/);
+    assert.match(crowdedAlert?.suggestion ?? "", /错峰/);
+
+    const afterAllActivities = await requestJson<{
+      summary: { activeCount: number; upcomingCount: number; endedCount: number };
+      alerts: Array<{ type: string; level: string }>;
+    }>(baseUrl, "/admin/activity-schedule", {
+      headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-06-29" }
+    });
+    assert.equal(afterAllActivities.status, 200, JSON.stringify(afterAllActivities.body));
+    assert.equal(afterAllActivities.body.data?.summary.activeCount, 0);
+    assert.equal(afterAllActivities.body.data?.summary.upcomingCount, 0);
+    assert.ok((afterAllActivities.body.data?.summary.endedCount ?? 0) >= 6);
+    assert.ok(afterAllActivities.body.data?.alerts.some((alert) => alert.type === "activity_no_upcoming" && alert.level === "info"));
   });
 });
 

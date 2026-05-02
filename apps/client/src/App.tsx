@@ -1935,6 +1935,11 @@ function App() {
   const guildRules = guildCenter?.guild?.collaborationRules.trim() || "暂无协作规则";
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
   const seasonActivities = seasonCenter?.activities ?? [];
+  const groupedSeasonActivities = [
+    { key: "active", title: "当前活动", activities: seasonActivities.filter((activity) => activity.status === "active") },
+    { key: "upcoming", title: "即将开放", activities: seasonActivities.filter((activity) => activity.status === "upcoming") },
+    { key: "ended", title: "已结束回顾", activities: seasonActivities.filter((activity) => activity.status === "ended") }
+  ].filter((group) => group.activities.length > 0);
   const activeActivityBoards = seasonCenter?.activityBoards ?? [];
   const latestActivityRecaps = seasonCenter?.activityRecaps.slice(0, 2) ?? [];
   const activityShopItems = seasonCenter?.shopItems ?? [];
@@ -4539,29 +4544,34 @@ function App() {
                     <span className="text-[10px] text-business-gold">{seasonActivities.filter((activity) => activity.status === "active").length} 个进行中</span>
                   </div>
                   <div className="space-y-2">
-                    {seasonActivities.map((activity) => (
-                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={activity.id}>
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <div className="min-w-0">
-                            <strong className="block text-xs text-white font-black truncate">{activity.name}</strong>
-                            <span className="text-[9px] text-slate-500">{activity.score}/{activity.targetScore}</span>
-                          </div>
-                          <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                            {activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={activity.status !== "active" || activity.isJoined} type="button" onClick={() => void joinSeasonActivity(activity.id)}>
-                            {activity.isJoined ? "已报名" : "报名"}
-                          </button>
-                          <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={activity.status !== "active" || !activity.isJoined || activity.rewardClaimed} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
-                            推进
-                          </button>
-                          <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={activity.status !== "active" || activity.score < activity.targetScore || activity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(activity.id)}>
-                            {activity.rewardClaimed ? "已领" : "领奖"}
-                          </button>
-                        </div>
-                      </article>
+                    {groupedSeasonActivities.map((group) => (
+                      <div className="space-y-2" key={group.key}>
+                        <strong className="block text-[10px] font-black text-slate-400">{group.title}</strong>
+                        {group.activities.map((activity) => (
+                          <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={activity.id}>
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                              <div className="min-w-0">
+                                <strong className="block text-xs text-white font-black truncate">{activity.name}</strong>
+                                <span className="text-[9px] text-slate-500">{activity.score}/{activity.targetScore}</span>
+                              </div>
+                              <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                                {activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={activity.status !== "active" || activity.isJoined} type="button" onClick={() => void joinSeasonActivity(activity.id)}>
+                                {activity.isJoined ? "已报名" : "报名"}
+                              </button>
+                              <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={activity.status !== "active" || !activity.isJoined || activity.rewardClaimed} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
+                                推进
+                              </button>
+                              <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={activity.status !== "active" || activity.score < activity.targetScore || activity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(activity.id)}>
+                                {activity.rewardClaimed ? "已领" : "领奖"}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
                     ))}
                     {seasonCenter && seasonActivities.length === 0 && <p className="text-xs text-slate-400 font-bold">暂无活动配置。</p>}
                   </div>

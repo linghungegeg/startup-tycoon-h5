@@ -1007,6 +1007,44 @@ export type AdminConfigCenterRecord = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+export type AdminActivityScheduleRecord = {
+  summary: {
+    totalActivities: number;
+    activeCount: number;
+    upcomingCount: number;
+    endedCount: number;
+    maxConcurrentActive: number;
+    rewardBoundaryRiskCount: number;
+    missingLeaderboardKeyCount: number;
+  };
+  windows: Array<{
+    date: string;
+    activeActivityIds: string[];
+    activeActivityNames: string[];
+    activeCount: number;
+    status: "normal" | "crowded" | "empty";
+  }>;
+  activities: Array<{
+    id: string;
+    name: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    rewardLabel: string;
+    rewardBoundary: "safe" | "risk";
+    riskLabels: string[];
+  }>;
+  alerts: Array<{
+    id: string;
+    level: AdminOperationConfigAlertLevel;
+    type: string;
+    targetId: string;
+    message: string;
+    suggestion: string;
+  }>;
+};
+
 export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
 export type AdminOperationConfigAlertStatus = "pending" | "acknowledged" | "ignored";
 
@@ -1639,6 +1677,7 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
+  getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
   getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
   handleAdminOperationConfigAlert(adminUserId: string, alertId: string, status: AdminOperationConfigAlertStatus, note: string, today: string): Promise<AdminOperationConfigAlertActionRecord | "ALERT_NOT_FOUND">;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
@@ -2553,6 +2592,134 @@ const readSeasonStatus = (startDate: string, endDate: string, today: string): Se
     return "upcoming";
   }
   return today > endDate ? "ended" : "active";
+};
+
+const ACTIVITY_SCHEDULE_MAX_RECOMMENDED_ACTIVE = 3;
+
+type ActivityScheduleConfigLike = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  rewardCash: number;
+  rewardReputation: number;
+  rewardPoints: number;
+  rewardTitleId: string | null;
+};
+
+const addUtcDays = (date: Date, days: number): Date => {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+};
+
+const formatUtcDate = (date: Date): string => date.toISOString().slice(0, 10);
+
+export const buildAdminActivitySchedule = (
+  activities: ActivityScheduleConfigLike[],
+  today: string,
+  platformCoinRewardBoardKeys: Set<string>
+): AdminActivityScheduleRecord => {
+  const orderedActivities = [...activities].sort((left, right) => left.startDate.localeCompare(right.startDate) || left.id.localeCompare(right.id));
+  const activityRecords = orderedActivities.map((activity) => {
+    const riskLabels = [
+      activity.rewardCash > 0 ? "cash_reward_configured" : "",
+      platformCoinRewardBoardKeys.has(activity.leaderboardKey) ? "platform_coin_delivery_found" : "",
+      activity.leaderboardKey.trim() === "" ? "missing_leaderboard_key" : ""
+    ].filter(Boolean);
+    const rewardLabel = [
+      activity.rewardReputation > 0 ? `声望 +${activity.rewardReputation}` : "",
+      activity.rewardPoints > 0 ? `活动积分 +${activity.rewardPoints}` : "",
+      activity.rewardTitleId !== null ? `称号 ${activity.rewardTitleId}` : ""
+    ].filter(Boolean).join(" / ") || "荣誉奖励";
+
+    return {
+      id: activity.id,
+      name: activity.name,
+      status: readSeasonStatus(activity.startDate, activity.endDate, today),
+      startDate: activity.startDate,
+      endDate: activity.endDate,
+      leaderboardKey: activity.leaderboardKey,
+      rewardLabel,
+      rewardBoundary: riskLabels.length > 0 ? "risk" as const : "safe" as const,
+      riskLabels
+    };
+  });
+  const minStartDate = orderedActivities[0]?.startDate ?? today;
+  const maxEndDate = orderedActivities.reduce((latest, activity) => activity.endDate > latest ? activity.endDate : latest, minStartDate);
+  const windows: AdminActivityScheduleRecord["windows"] = [];
+  for (let date = new Date(`${minStartDate}T00:00:00.000Z`); formatUtcDate(date) <= maxEndDate; date = addUtcDays(date, 1)) {
+    const currentDate = formatUtcDate(date);
+    const activeActivities = orderedActivities.filter((activity) => activity.startDate <= currentDate && currentDate <= activity.endDate);
+    windows.push({
+      date: currentDate,
+      activeActivityIds: activeActivities.map((activity) => activity.id),
+      activeActivityNames: activeActivities.map((activity) => activity.name),
+      activeCount: activeActivities.length,
+      status: activeActivities.length === 0 ? "empty" : activeActivities.length > ACTIVITY_SCHEDULE_MAX_RECOMMENDED_ACTIVE ? "crowded" : "normal"
+    });
+  }
+  const maxConcurrentActive = windows.reduce((max, window) => Math.max(max, window.activeCount), 0);
+  const alerts: AdminActivityScheduleRecord["alerts"] = [];
+  const firstCrowdedWindow = windows.find((window) => window.status === "crowded");
+  if (firstCrowdedWindow !== undefined) {
+    alerts.push({
+      id: `activity-schedule-crowded:${firstCrowdedWindow.date}`,
+      level: "warning",
+      type: "activity_schedule_crowded",
+      targetId: firstCrowdedWindow.date,
+      message: `${firstCrowdedWindow.date} 有 ${firstCrowdedWindow.activeCount} 个活动同期开启。`,
+      suggestion: "后续活动配置建议错峰排期，保持同时进行活动数量不超过 3 个。"
+    });
+  }
+  for (const activity of activityRecords) {
+    if (activity.rewardBoundary === "risk") {
+      alerts.push({
+        id: `activity-reward-boundary:${activity.id}`,
+        level: "critical",
+        type: "reward_boundary_risk",
+        targetId: activity.id,
+        message: `活动 ${activity.name} 存在奖励边界风险。`,
+        suggestion: "活动榜奖励保持声望、称号、外观券或碎片，不进入现金或平台币链路。"
+      });
+    }
+    if (activity.leaderboardKey.trim() === "") {
+      alerts.push({
+        id: `activity-missing-board:${activity.id}`,
+        level: "critical",
+        type: "activity_missing_leaderboard_key",
+        targetId: activity.id,
+        message: `活动 ${activity.name} 缺少活动榜 key。`,
+        suggestion: "补齐活动榜 key 后再开放活动榜展示和结算。"
+      });
+    }
+  }
+  if (!orderedActivities.some((activity) => activity.endDate >= today)) {
+    alerts.push({
+      id: `activity-no-upcoming:${today}`,
+      level: "info",
+      type: "activity_no_upcoming",
+      targetId: today,
+      message: "当前日期之后没有可轮换活动。",
+      suggestion: "补充下一轮活动配置，避免活动页长期无运营内容。"
+    });
+  }
+
+  return {
+    summary: {
+      totalActivities: activityRecords.length,
+      activeCount: activityRecords.filter((activity) => activity.status === "active").length,
+      upcomingCount: activityRecords.filter((activity) => activity.status === "upcoming").length,
+      endedCount: activityRecords.filter((activity) => activity.status === "ended").length,
+      maxConcurrentActive,
+      rewardBoundaryRiskCount: activityRecords.filter((activity) => activity.rewardBoundary === "risk").length,
+      missingLeaderboardKeyCount: activityRecords.filter((activity) => activity.leaderboardKey.trim() === "").length
+    },
+    windows,
+    activities: activityRecords,
+    alerts
+  };
 };
 
 type ActivityLeaderboardConfigLike = {
@@ -7444,6 +7611,26 @@ export const createPrismaGameRepository = (
         rewardTitleId: scenario.rewardTitleId
       }))
     };
+  },
+
+  async getAdminActivitySchedule(today) {
+    const activities = await prisma.activityConfig.findMany({
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+    });
+    const activityBoardKeys = activities.map((activity) => activity.leaderboardKey).filter((boardKey) => boardKey.trim() !== "");
+    const platformCoinRewardBoardKeys = new Set(
+      activityBoardKeys.length === 0
+        ? []
+        : (await prisma.leaderboardRewardDelivery.findMany({
+          where: {
+            boardKey: { in: activityBoardKeys },
+            rewardPlatformCoins: { gt: 0 }
+          },
+          select: { boardKey: true }
+        })).map((delivery) => delivery.boardKey)
+    );
+
+    return buildAdminActivitySchedule(activities, today, platformCoinRewardBoardKeys);
   },
 
   async getAdminOperationConfigAlerts(today) {
