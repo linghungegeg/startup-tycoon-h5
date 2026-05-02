@@ -4813,90 +4813,91 @@ function App() {
 
           {nativeHomePage === "mail" && (
             <section className="page-container page-active" aria-label="邮件" data-testid="native-mail">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="mail" className="w-7 h-7 text-business-gold" />
-                  <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Mail 邮件中心</h2>
-                    <span className="text-[10px] text-slate-500">系统通知、奖励邮件和运营补偿</span>
+              <div className="flex-1 overflow-hidden px-4 pb-5 pt-10">
+                <div className="relative grid h-full grid-cols-[4.75rem_minmax(0,1fr)] overflow-hidden rounded-2xl border border-business-gold/30 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.96))] shadow-[0_18px_40px_rgba(0,0,0,0.42)]" data-testid="mail-unified-shell">
+                  <button className="absolute right-2 top-2 z-20 w-8 h-8 bg-slate-950/75 border border-business-gold/25 rounded-full flex items-center justify-center text-slate-200" data-testid="mail-close-button" type="button" aria-label="关闭邮件" onClick={closeNativeHomePage}>
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                  <nav className="flex h-full flex-col border-r border-business-gold/20 bg-slate-950/45 py-3" aria-label="邮件分类" data-testid="mail-channel-rail">
+                    {[
+                      ["all", "全部"],
+                      ["system", "系统"],
+                      ["reward", "奖励"],
+                      ["compensation", "补偿"]
+                    ].map(([id, label]) => (
+                      <button
+                        className={`mx-2 mb-2 rounded-xl px-2 py-3 text-center text-[11px] font-black transition-colors ${activeMailChannel === id ? "bg-business-gold text-business-dark shadow-[0_8px_18px_rgba(245,158,11,0.22)]" : "text-slate-300 hover:bg-white/5"}`}
+                        key={id}
+                        type="button"
+                        onClick={() => setActiveMailChannel(id as "all" | MailChannelId)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="min-w-0 flex h-full flex-col overflow-hidden" data-testid="mail-content-pane">
+                    <div className="border-b border-business-gold/15 px-4 pb-3 pt-4 pr-12">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="block truncate text-sm font-black text-white">邮件</strong>
+                          <span className="text-[10px] font-bold text-business-gold">未读 {mailCenter?.summary.unreadCount ?? profile.unreadMailCount} / 共 {mailCenter?.summary.totalCount ?? 0}</span>
+                        </div>
+                        <button className="btn-gold shrink-0 rounded-full px-3 py-2 text-[11px] font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
+                          全部已读
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {[
+                          ["all", "全部"],
+                          ["unread", "未读"],
+                          ["read", "已读"]
+                        ].map(([id, label]) => (
+                          <button className={`rounded-full border px-2 py-2 text-[10px] font-black ${activeMailStatus === id ? "border-business-gold bg-business-gold text-business-dark" : "border-white/10 bg-slate-950/50 text-slate-300"}`} key={id} type="button" onClick={() => setActiveMailStatus(id as MailStatusFilter)}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {(mailNotice || mailError) && <p className={mailError ? "task-error mt-2" : "task-notice mt-2"}>{mailError || mailNotice}</p>}
+                    </div>
+                    <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+                      <section className="min-h-0 overflow-y-auto scroll-hide divide-y divide-white/5" data-testid="mail-list" aria-label="邮件列表">
+                        {mailCenter === null && <p className="px-4 py-5 text-xs font-bold text-slate-300">暂无邮件</p>}
+                        {mailCenter !== null && visibleMails.length === 0 && <p className="px-4 py-5 text-xs font-bold text-slate-300">暂无邮件</p>}
+                        {visibleMails.map((mail) => (
+                          <button
+                            className={`w-full px-4 py-3 text-left transition-colors ${mail.id === selectedMail?.id ? "bg-business-gold/10" : mail.isRead ? "bg-transparent" : "bg-slate-900/45"}`}
+                            data-testid={`mail-item-${mail.id}`}
+                            key={mail.id}
+                            type="button"
+                            onClick={() => setSelectedMailId(mail.id)}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="min-w-0 truncate text-xs text-white">{mail.subject}</strong>
+                              <span className="shrink-0 text-[9px] text-business-gold">{mail.channel === "reward" ? "奖励" : mail.channel === "compensation" ? "补偿" : "系统"}</span>
+                            </div>
+                            <p className="mt-1 truncate text-[10px] text-slate-400">{mail.body}</p>
+                            {mail.rewardSummary && <span className="mt-1 block text-[9px] font-black text-business-gold">{mail.rewardSummary}</span>}
+                          </button>
+                        ))}
+                      </section>
+                      <section className="border-t border-business-gold/15 bg-slate-950/35 px-4 py-3" data-testid="mail-detail" aria-label="邮件详情">
+                        {selectedMail === null ? (
+                          <p className="text-xs font-bold text-slate-300">请选择邮件查看详情。</p>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between gap-3">
+                              <strong className="min-w-0 truncate text-sm text-white">{selectedMail.subject}</strong>
+                              <span className="shrink-0 text-[9px] text-slate-500">{new Date(selectedMail.createdAt).toLocaleDateString("zh-CN")}</span>
+                            </div>
+                            <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{selectedMail.body}</p>
+                            {selectedMail.rewardSummary && <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励摘要：{selectedMail.rewardSummary}</p>}
+                          </>
+                        )}
+                      </section>
+                    </div>
                   </div>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭邮件" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
-                </button>
-              </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-28 scroll-hide">
-                <div className="business-tabs" aria-label="邮件频道">
-                  {[
-                    ["all", "全部"],
-                    ["system", "系统"],
-                    ["reward", "奖励"],
-                    ["compensation", "补偿"]
-                  ].map(([id, label]) => (
-                    <button className={activeMailChannel === id ? "active" : undefined} key={id} type="button" onClick={() => setActiveMailChannel(id as "all" | MailChannelId)}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    ["all", "全部邮件"],
-                    ["unread", "未读邮件"],
-                    ["read", "已读邮件"]
-                  ].map(([id, label]) => (
-                    <button className={`rounded-xl border px-2 py-2 text-[10px] font-black ${activeMailStatus === id ? "border-business-gold bg-business-gold text-business-dark" : "border-white/10 bg-slate-900/70 text-slate-300"}`} key={id} type="button" onClick={() => setActiveMailStatus(id as MailStatusFilter)}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="text-sm text-white">邮件概览</strong>
-                    <span className="text-[10px] text-business-gold">未读 {mailCenter?.summary.unreadCount ?? profile.unreadMailCount} / 共 {mailCenter?.summary.totalCount ?? 0}</span>
-                  </div>
-                </section>
-                {(mailNotice || mailError) && <p className={mailError ? "task-error" : "task-notice"}>{mailError || mailNotice}</p>}
-                <section className="space-y-3" data-testid="mail-list" aria-label="邮件列表">
-                  {mailCenter === null && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">邮件读取中，请确认 API 服务已启动。</p>}
-                  {mailCenter !== null && visibleMails.length === 0 && <p className="glass-panel rounded-2xl p-4 text-xs text-slate-300 font-bold">当前筛选下暂无邮件。</p>}
-                  {visibleMails.map((mail) => (
-                    <button
-                      className={`w-full rounded-2xl border p-4 text-left ${mail.id === selectedMail?.id ? "border-business-gold bg-business-gold/10" : mail.isRead ? "border-white/5 bg-slate-900/60" : "border-business-gold/25 bg-slate-900/80"}`}
-                      data-testid={`mail-item-${mail.id}`}
-                      key={mail.id}
-                      type="button"
-                      onClick={() => setSelectedMailId(mail.id)}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <strong className="min-w-0 truncate text-xs text-white">{mail.subject}</strong>
-                        <span className="shrink-0 text-[9px] text-business-gold">{mail.channel === "reward" ? "奖励" : mail.channel === "compensation" ? "补偿" : "系统"}</span>
-                      </div>
-                      <p className="mt-2 truncate text-[10px] text-slate-400">{mail.body}</p>
-                      {mail.rewardSummary && <span className="mt-2 block text-[9px] font-black text-business-gold">{mail.rewardSummary}</span>}
-                    </button>
-                  ))}
-                </section>
-                <section className="glass-panel rounded-3xl p-4" data-testid="mail-detail" aria-label="邮件详情">
-                  {selectedMail === null ? (
-                    <p className="text-xs text-slate-300 font-bold">请选择邮件查看详情。</p>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between gap-3">
-                        <strong className="text-sm text-white">{selectedMail.subject}</strong>
-                        <span className="text-[9px] text-slate-500">{new Date(selectedMail.createdAt).toLocaleDateString("zh-CN")}</span>
-                      </div>
-                      <p className="mt-3 text-xs leading-5 text-slate-300 font-bold">{selectedMail.body}</p>
-                      {selectedMail.rewardSummary && <p className="mt-3 rounded-2xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励摘要：{selectedMail.rewardSummary}</p>}
-                      <p className="mt-3 text-[9px] text-slate-500">首版邮件中心只查看和已读，不做二次领奖，避免破坏奖励幂等。</p>
-                    </>
-                  )}
-                </section>
               </div>
-              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-                <button className="btn-gold w-full rounded-2xl py-3 text-sm font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
-                  全部已读
-                </button>
-              </footer>
             </section>
           )}
 

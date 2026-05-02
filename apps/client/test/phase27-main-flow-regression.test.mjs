@@ -99,15 +99,14 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
 test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   for (const copy of [
     "邮件",
-    "邮件中心",
-    "全部邮件",
-    "未读邮件",
-    "已读邮件",
+    "全部",
+    "未读",
+    "已读",
     "系统",
     "奖励",
     "补偿",
     "全部已读",
-    "邮件读取中，请确认 API 服务已启动。"
+    "暂无邮件"
   ]) {
     assert.ok(source.includes(copy), `missing mail center copy: ${copy}`);
   }
@@ -117,9 +116,15 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.match(source, /data-testid="home-mail-unread-count"/, "home unread mail count should stay addressable");
   assert.match(source, /setNativeHomePage\("mail"\)/, "mail capsule should open full-screen mail center");
   assert.match(source, /data-testid="native-mail"/, "full-screen mail page should stay addressable");
+  assert.match(source, /data-testid="mail-unified-shell"/, "mail should render as one unified game panel");
+  assert.match(source, /data-testid="mail-close-button"/, "mail close button should stay addressable without a separate top nav");
+  assert.match(source, /data-testid="mail-channel-rail"/, "mail categories should use a left-side rail");
+  assert.match(source, /data-testid="mail-content-pane"/, "mail content should stay in the right-side pane");
   assert.match(source, /data-testid="mail-list"/, "mail list should stay addressable");
   assert.match(source, /data-testid="mail-detail"/, "mail detail should stay addressable");
   assert.match(source, /data-testid="mail-mark-all-read"/, "mark all read button should stay addressable");
+  assert.doesNotMatch(source, /Mail 邮件中心/, "mail should not keep a separate English top title");
+  assert.doesNotMatch(source, /邮件读取中，请确认 API 服务已启动。/, "player mail empty/loading copy should avoid engineering wording");
   assert.match(source, /\/mails\?serverId=/, "client should load mail center from API");
   assert.match(source, /\/mails\/read-all/, "client should mark all mails read through API");
 });
