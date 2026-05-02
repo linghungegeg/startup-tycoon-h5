@@ -2467,6 +2467,19 @@ VIP 权益：
 - Game Studio 检查 HUD、底部导航、主页任务条、全覆盖内页滚动无回归。
 - 文档写入 Phase 26 总结，下一阶段入口改为 Phase 27“商业化稳定、数据化调优与上线前质量收口”。
 
+##### Phase 26 第五实施批次总结：经营时钟阶段收口
+
+- 完成内容：Phase 26 经营时间流动阶段收口完成，已回归经营时钟懒同步、夜间经营简报、经营脉冲生成专属经理待办和 Admin 经营时钟只读观测四条链路。
+- 稳定边界：经营时钟继续只影响轻量现金、估值、员工满意度、客户满意度和专属经理待办；平台币、VIP 经验、榜单奖励、活动榜奖励、商会/跨服奖励和付费入口不由离线脉冲发放。
+- 回归范围：覆盖财务日/月结、平台币消费升级 VIP、活动榜运营配置告警、商业化边界、长期目标、专属经理待办、Admin 经营时钟观测和前台 Rank 荣誉中心。
+- 四插件检查：
+  - Superpowers：按收口成功标准先确认稳定点 `fe20a5f` 和最小范围，本批只做验证与文档总结，不改业务逻辑。
+  - Browser Use：本地浏览器验收 `http://127.0.0.1:5173/` 首页 HUD、财务经营脉冲、专属经理待办、活动入口、Rank 荣誉中心；验收 `http://127.0.0.1:5174/` Admin 经营时钟观测页；5173/5174 本轮新加载无新增 console error。
+  - Build Web Apps：确认 Admin 经营时钟仍是稳重后台表格/摘要结构，前台仍是深色商务手游 HUD 和全覆盖内页结构，不引入营销式页面。
+  - Game Studio：确认 HUD、底部导航、主页任务条、财务页、活动页、Rank 和专属经理入口未被经营时钟提示遮挡。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 26|phase 25 admin monetization boundaries|phase 25 long-term goals|phase 25 rank center|phase 24 activity publish observations|phase 24 operation config alerts|loads and settles company finance|platform coin spending upgrades VIP|settles activity leaderboard|settles cross-server guild season|settles guild leaderboard" --import tsx apps/api/test/http.test.ts`、`node --test apps/admin/test/phase26-business-clock-observations.test.mjs apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一阶段入口：Phase 27 第一实施批次“商业化数据看板补齐”，基于长期目标、商业入口、周卡/月卡、成长基金、通行证、活动商店、经营道具、夜间简报和经营时钟待办处理率做数据化调优入口。
+
 ### Phase 27 完整开发计划：商业化稳定、数据化调优与上线前质量收口
 
 - 阶段目标：基于 Phase 23-26 新增的商会、跨服、活动运营、长期目标、商业体验和经营时钟，重新做一次上线前质量与商业化稳定收口。Phase 17/18 已完成早期基础，但新系统已扩展，需要后置收口。
