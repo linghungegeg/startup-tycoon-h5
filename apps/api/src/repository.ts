@@ -3516,6 +3516,7 @@ const BUSINESS_CLOCK_MAX_OFFLINE_MINUTES = 8 * 60;
 const BUSINESS_CLOCK_MONTHLY_MINUTES = 30 * 24 * 60;
 const BUSINESS_CLOCK_MAX_CASH_DELTA = 80000;
 const NIGHT_BUSINESS_BRIEFING_MINUTES = 30;
+const BUSINESS_CLOCK_MANAGER_TODO_EXPIRES_HOURS = 6;
 const RANDOM_TASK_VISIBLE_COUNT = 3;
 const RANDOM_TASK_PASS_VISIBLE_BONUS = 1;
 const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
@@ -3631,6 +3632,90 @@ export const calculateBusinessClockPulse = (
     summary: `经营时钟同步 ${settledMinutes} 分钟，现金 ${signedCash}，平台币/VIP/榜单奖励不变。`,
     nightBriefing
   };
+};
+
+const resolveBusinessClockManagerTaskConfigId = (
+  profile: Pick<PlayerProfileRecord, "cash" | "monthlyIncome" | "monthlyExpense" | "totalDebt" | "valuation" | "riskStatus">,
+  pulse: BusinessClockPulseRecord
+): string | null => {
+  if (pulse.settledTicks <= 0) {
+    return null;
+  }
+
+  const report = calculateFinanceReport(profile);
+  if (report.debtRatioBasisPoints >= 6000) {
+    return "random-loan-rate-review";
+  }
+  if (pulse.cashDelta < 0 || report.netCashFlow < 0 || profile.riskStatus !== "稳健") {
+    return "random-cashflow-warning";
+  }
+  if (pulse.employeeSatisfactionDelta < 0) {
+    return "random-employee-burnout";
+  }
+  if (pulse.customerSatisfactionDelta < 0) {
+    return "random-market-counter";
+  }
+
+  return null;
+};
+
+const createBusinessClockManagerTodo = async (
+  tx: Prisma.TransactionClient,
+  profile: PlayerProfileRecord,
+  pulse: BusinessClockPulseRecord
+): Promise<void> => {
+  const configId = resolveBusinessClockManagerTaskConfigId(profile, pulse);
+  if (configId === null) {
+    return;
+  }
+
+  const today = pulse.syncedAt.slice(0, 10);
+  const [existingCount, existingTask, hasPrivilege, seasonPass, config] = await Promise.all([
+    tx.playerRandomTask.count({ where: { profileId: profile.id, dailyDate: today } }),
+    tx.playerRandomTask.findUnique({
+      where: {
+        profileId_configId_dailyDate: {
+          profileId: profile.id,
+          configId,
+          dailyDate: today
+        }
+      }
+    }),
+    tx.playerShopPurchase.findFirst({
+      where: {
+        profileId: profile.id,
+        product: { category: { in: ["weekly_card", "monthly_card"] } }
+      }
+    }),
+    tx.playerSeasonPassPurchase.findFirst({
+      where: {
+        profileId: profile.id,
+        season: {
+          startDate: { lte: today },
+          endDate: { gte: today }
+        }
+      }
+    }),
+    tx.randomTaskConfig.findFirst({ where: { id: configId, isActive: true } })
+  ]);
+  if (existingTask !== null || config === null) {
+    return;
+  }
+
+  const dailyLimit = (hasPrivilege === null ? RANDOM_TASK_BASE_DAILY_LIMIT : RANDOM_TASK_PRIVILEGE_DAILY_LIMIT) + (seasonPass === null ? 0 : RANDOM_TASK_PASS_DAILY_LIMIT_BONUS);
+  if (existingCount >= dailyLimit) {
+    return;
+  }
+
+  await tx.playerRandomTask.createMany({
+    data: [{
+      profileId: profile.id,
+      configId,
+      dailyDate: today,
+      expiresAt: new Date(new Date(pulse.syncedAt).getTime() + BUSINESS_CLOCK_MANAGER_TODO_EXPIRES_HOURS * 60 * 60 * 1000)
+    }],
+    skipDuplicates: true
+  });
 };
 
 const readCompanyLevel = (experience: number): number =>
@@ -5964,16 +6049,20 @@ export const createPrismaGameRepository = (
       };
     }
 
-    const updated = await prisma.playerProfile.update({
-      where: { id: profile.id },
-      data: {
-        businessClockSyncedAt: new Date(pulse.syncedAt),
-        lastBusinessPulseSummaryJson: JSON.stringify(pulse),
-        cash: { increment: pulse.cashDelta },
-        valuation: { increment: pulse.valuationDelta },
-        employeeSatisfaction: { increment: pulse.employeeSatisfactionDelta },
-        customerSatisfaction: { increment: pulse.customerSatisfactionDelta }
-      }
+    const updated = await prisma.$transaction(async (tx) => {
+      const savedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          businessClockSyncedAt: new Date(pulse.syncedAt),
+          lastBusinessPulseSummaryJson: JSON.stringify(pulse),
+          cash: { increment: pulse.cashDelta },
+          valuation: { increment: pulse.valuationDelta },
+          employeeSatisfaction: { increment: pulse.employeeSatisfactionDelta },
+          customerSatisfaction: { increment: pulse.customerSatisfactionDelta }
+        }
+      });
+      await createBusinessClockManagerTodo(tx, currentProfile, pulse);
+      return savedProfile;
     });
 
     return {

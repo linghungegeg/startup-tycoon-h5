@@ -4183,6 +4183,22 @@ const createTestRepository = (): GameRepository => {
         profile.valuation += pulse.valuationDelta;
         profile.employeeSatisfaction += pulse.employeeSatisfactionDelta;
         profile.customerSatisfaction += pulse.customerSatisfactionDelta;
+        if (pulse.settledTicks > 0) {
+          const today = pulse.syncedAt.slice(0, 10);
+          const report = calculateFinanceReport(profile);
+          const configId =
+            report.debtRatioBasisPoints >= 6000
+              ? "random-loan-rate-review"
+              : pulse.cashDelta < 0 || report.netCashFlow < 0 || profile.riskStatus !== "稳健"
+                ? "random-cashflow-warning"
+                : null;
+          const taskId = configId === null ? null : `${profile.id}:${today}:${configId}`;
+          const existingToday = [...playerRandomTasks.values()].filter((task) => task.id.startsWith(`${profile.id}:${today}:`));
+          const config = configId === null ? undefined : randomTaskConfigs.find((taskConfig) => taskConfig.id === configId);
+          if (taskId !== null && config !== undefined && !playerRandomTasks.has(taskId) && existingToday.length < 6) {
+            playerRandomTasks.set(taskId, toRandomTask(profile.id, config, today));
+          }
+        }
       }
 
       return {
@@ -6459,6 +6475,66 @@ test("phase 26 company status creates night business briefing without duplicate 
     assert.equal(repeat.status, 200);
     assert.equal(repeat.body.data?.cash, afterOffline.body.data?.cash);
     assert.equal(repeat.body.data?.businessClock?.settledTicks, 0);
+  });
+});
+
+test("phase 26 business clock creates manager todo without duplicate random tasks", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "phase26pulsemanager", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "脉冲待办验收",
+        companyName: "风险脉冲社"
+      })
+    });
+
+    const loan = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    assert.equal(loan.status, 201, JSON.stringify(loan.body));
+
+    const first = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+    assert.equal(first.status, 200);
+
+    const synced = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:40:00.000Z" }
+    });
+    assert.equal(synced.status, 200);
+    assert.ok((synced.body.data?.businessClock?.settledTicks ?? 0) > 0);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: auth
+    });
+    assert.equal(center.status, 200);
+    const pulseTasks = center.body.data?.tasks.filter((task) => task.configId === "random-loan-rate-review") ?? [];
+    assert.equal(pulseTasks.length, 1);
+    assert.equal(pulseTasks[0]?.status, "pending");
+
+    const repeat = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:41:00.000Z" }
+    });
+    assert.equal(repeat.status, 200);
+
+    const repeatedCenter = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
+      headers: auth
+    });
+    assert.equal(repeatedCenter.status, 200);
+    assert.equal(repeatedCenter.body.data?.tasks.filter((task) => task.configId === "random-loan-rate-review").length, 1);
   });
 });
 

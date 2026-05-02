@@ -2425,6 +2425,20 @@ VIP 权益：
 - 生成待办不消耗行动力，玩家处理时仍走既有随机任务选择与道具修正规则。
 - 验收标准：经营脉冲能转化为可处理事项，而不是只在资源条上闪一下。
 
+##### Phase 26 第三实施批次总结：经营脉冲生成专属经理待办
+
+- 完成内容：`GET /company/status` 在经营时钟产生有效结算时，会按风险原因尝试生成当天专属经理随机待办；高负债优先生成 `random-loan-rate-review`，现金流/风险状态异常生成 `random-cashflow-warning`，满意度下降保留员工/市场类映射。
+- 幂等边界：待办复用 `PlayerRandomTask`、`RandomTaskConfig` 和 `profileId + configId + dailyDate` 唯一键；重复打开公司状态不会重复生成，同日任务达到随机任务每日上限时不突破上限。
+- 玩法边界：生成待办本身不消耗行动力，不发放奖励，不影响平台币、VIP 经验、榜单奖励、商城、领奖、通行证购买、活动商店和随机任务处理结算；玩家处理时仍走既有专属经理随机任务详情、短决策弹窗和经营道具修正规则。
+- 前台接入：不新增 HUD 条、主页入口或强制弹窗；生成后的待办自然出现在现有“专属经理”随机任务列表中，财务页夜间简报继续只显示“新待办”和“建议动作”。
+- 四插件检查：
+  - Superpowers：按 TDD 先补经营脉冲生成待办红灯测试，确认失败于未生成 `random-loan-rate-review` 后再实现最小代码并转绿。
+  - Browser Use：本地浏览器验收前台专属经理入口、随机任务列表/详情/弹窗、Admin 首页和 API health。
+  - Build Web Apps：本批不新增前台视觉体系，继续复用深色商务手游专属经理全覆盖内页、随机任务列表和短决策弹窗。
+  - Game Studio：经营脉冲待办只作为主动进入专属经理后的可处理事项，不遮挡主页 HUD、任务条、底部导航、财务页和随机任务弹窗滚动区域。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 26 business clock creates manager todo|phase 26 company status" --import tsx apps/api/test/http.test.ts`、`node --test --test-reporter spec --test-name-pattern "phase 26 company status|phase 26 business clock creates manager todo|regular random task generation|season pass adds one daily season random task|uses finance advisor card|lists funding and loan random tasks|lists loan products and applies cashflow loans" --import tsx apps/api/test/http.test.ts`、`node --test apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 26 第四实施批次“Admin 经营时钟观测”。
+
 #### Phase 26 第四实施批次：Admin 经营时钟观测
 
 - 新增 Admin 只读观察，推荐接口 `GET /admin/business-clock-observations`。
