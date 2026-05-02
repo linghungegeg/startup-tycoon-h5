@@ -224,9 +224,12 @@ type ConfigCenter = {
   shopProducts: Array<{ id: string; name: string; category: string; pricePlatformCoins: number; purchaseLimit: number; isActive: boolean }>;
   leaderboardSnapshots: Array<{ id: string; serverId: string; boardName: string; snapshotDate: string; createdAt: string }>;
   mailCompensations: Array<{ id: string; profileId: string; subject: string; platformCoins: number; reason: string; createdAt: string }>;
-  seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string }>;
-  activities: Array<{ id: string; name: string; status: string; leaderboardKey: string }>;
-  scenarios: Array<{ id: string; name: string; rewardTitleId: string }>;
+  seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string; passPricePlatformCoins: number; taskCount: number; activityCount: number; passPurchaseCount: number }>;
+  activities: Array<{ id: string; seasonId: string; name: string; status: string; startDate: string; endDate: string; leaderboardKey: string; targetScore: number; participantCount: number; totalScore: number; isSettled: boolean; deliveredRewards: number; rewardLabel: string; rewardBoundary: string }>;
+  activityShopItems: Array<{ id: string; seasonId: string; name: string; costPoints: number; purchaseLimit: number; purchaseCount: number; rewardLabel: string; isActive: boolean }>;
+  seasonPass: Array<{ seasonId: string; pricePlatformCoins: number; purchaseCount: number; rewardLabel: string }>;
+  leaderboardSettlements: Array<{ boardKey: string; snapshotDate: string; deliveredRewards: number; rewardPlatformCoinsTotal: number; rewardBoundary: string }>;
+  scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
 type KnowledgeEntry = {
@@ -506,6 +509,9 @@ export default function App() {
     mailCompensations: [],
     seasons: [],
     activities: [],
+    activityShopItems: [],
+    seasonPass: [],
+    leaderboardSettlements: [],
     scenarios: []
   });
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
@@ -791,7 +797,7 @@ export default function App() {
     setSelectedActivityId("");
     setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
-    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
+    setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
     setAnalytics(null);
     setAuditLogs([]);
     setAuditTotal(0);
@@ -2019,26 +2025,53 @@ export default function App() {
 
             <section className="table-section compact-table" aria-label="赛季活动剧本配置">
               <div className="table-toolbar">
-                <strong>赛季 / 活动 / 经营剧本</strong>
-                <span>{configCenter.seasons.length} 个赛季，{configCenter.activities.length} 个活动</span>
+                <strong>赛季 / 活动运营配置总览</strong>
+                <span>{configCenter.seasons.length} 个赛季，{configCenter.activities.length} 个活动，{configCenter.leaderboardSettlements.length} 条结算</span>
               </div>
               <div className="config-grid">
                 <div>
                   <h3>赛季配置</h3>
                   {configCenter.seasons.map((season) => (
-                    <p key={season.id}>{season.name}：{season.status} / {season.startDate} - {season.endDate}</p>
+                    <p key={season.id}>
+                      {season.name}：{season.status} / {season.startDate} - {season.endDate} / 通行证 {formatNumber(season.passPricePlatformCoins)} / 任务 {season.taskCount} / 活动 {season.activityCount} / 已购 {season.passPurchaseCount}
+                    </p>
                   ))}
                 </div>
                 <div>
-                  <h3>活动配置</h3>
+                  <h3>活动榜状态</h3>
                   {configCenter.activities.map((activity) => (
-                    <p key={activity.id}>{activity.name}：{activity.status} / {activity.leaderboardKey}</p>
+                    <p key={activity.id}>
+                      {activity.name}：{activity.status} / {activity.leaderboardKey} / 参与 {activity.participantCount} / 总分 {formatNumber(activity.totalScore)} / {activity.isSettled ? `已结算 ${activity.deliveredRewards}` : "未结算"} / {activity.rewardLabel}
+                    </p>
+                  ))}
+                </div>
+                <div>
+                  <h3>活动商店</h3>
+                  {configCenter.activityShopItems.map((item) => (
+                    <p key={item.id}>
+                      {item.name}：{formatNumber(item.costPoints)} 积分 / 限购 {item.purchaseLimit} / 已购 {item.purchaseCount} / {item.isActive ? "启用" : "停用"} / {item.rewardLabel}
+                    </p>
+                  ))}
+                </div>
+                <div>
+                  <h3>通行证</h3>
+                  {configCenter.seasonPass.map((pass) => (
+                    <p key={pass.seasonId}>{pass.seasonId}：{formatNumber(pass.pricePlatformCoins)} 平台币 / 已购 {pass.purchaseCount} / {pass.rewardLabel}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>最近活动榜结算</h3>
+                  {configCenter.leaderboardSettlements.length === 0 && <p>暂无结算记录</p>}
+                  {configCenter.leaderboardSettlements.slice(0, 6).map((settlement) => (
+                    <p key={`${settlement.boardKey}:${settlement.snapshotDate}`}>
+                      {settlement.boardKey}：{settlement.snapshotDate} / 发放 {settlement.deliveredRewards} / 平台币 {formatNumber(settlement.rewardPlatformCoinsTotal)} / {settlement.rewardBoundary}
+                    </p>
                   ))}
                 </div>
                 <div>
                   <h3>经营剧本</h3>
                   {configCenter.scenarios.map((scenario) => (
-                    <p key={scenario.id}>{scenario.name}：奖励称号 {scenario.rewardTitleId}</p>
+                    <p key={scenario.id}>{scenario.name}：奖励称号 {scenario.rewardTitleId ?? "-"}</p>
                   ))}
                 </div>
               </div>

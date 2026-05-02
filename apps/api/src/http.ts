@@ -718,7 +718,7 @@ export const createApiServer = (
         return;
       }
 
-      sendJson(response, 200, success(await repository.getAdminConfigCenter(), traceId));
+      sendJson(response, 200, success(await repository.getAdminConfigCenter(readToday(request)), traceId));
       return;
     }
 

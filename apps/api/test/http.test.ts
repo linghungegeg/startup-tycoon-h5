@@ -2697,7 +2697,31 @@ const createTestRepository = (): GameRepository => {
 
       return { rows };
     },
-    async getAdminConfigCenter() {
+    async getAdminConfigCenter(today) {
+      const rewardEntries = [...leaderboardRewards].map((key) => {
+        const parts = key.split(":");
+        const snapshotDate = parts.pop() ?? "";
+        const boardKey = parts.pop() ?? "";
+        return { boardKey, snapshotDate };
+      });
+      const activityRewardCount = (boardKey: string, snapshotDate: string) =>
+        rewardEntries.filter((entry) => entry.boardKey === boardKey && entry.snapshotDate === snapshotDate).length;
+      const settlementMap = new Map<string, { boardKey: string; snapshotDate: string; deliveredRewards: number; rewardPlatformCoinsTotal: number; rewardBoundary: string }>();
+      for (const entry of rewardEntries) {
+        if (!activityConfigs.some((activity) => activity.leaderboardKey === entry.boardKey)) {
+          continue;
+        }
+        const key = `${entry.boardKey}:${entry.snapshotDate}`;
+        const current = settlementMap.get(key) ?? {
+          boardKey: entry.boardKey,
+          snapshotDate: entry.snapshotDate,
+          deliveredRewards: 0,
+          rewardPlatformCoinsTotal: 0,
+          rewardBoundary: "leaderboard_no_cash_no_platform_coins"
+        };
+        current.deliveredRewards += 1;
+        settlementMap.set(key, current);
+      }
       return {
         titles: titleConfigs.map((title) => ({
           id: title.id,
@@ -2734,8 +2758,54 @@ const createTestRepository = (): GameRepository => {
         })),
         leaderboardSnapshots: [],
         mailCompensations: [],
-        seasons: [{ id: seasonConfig.id, name: seasonConfig.name, status: seasonStatus(seasonConfig.startDate, seasonConfig.endDate, new Date().toISOString().slice(0, 10)), startDate: seasonConfig.startDate, endDate: seasonConfig.endDate }],
-        activities: activityConfigs.map((activity) => ({ id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, new Date().toISOString().slice(0, 10)), leaderboardKey: activity.leaderboardKey })),
+        seasons: [{
+          id: seasonConfig.id,
+          name: seasonConfig.name,
+          status: seasonStatus(seasonConfig.startDate, seasonConfig.endDate, today),
+          startDate: seasonConfig.startDate,
+          endDate: seasonConfig.endDate,
+          passPricePlatformCoins: seasonConfig.passPricePlatformCoins,
+          taskCount: seasonTasks.length,
+          activityCount: activityConfigs.length,
+          passPurchaseCount: [...seasonPassPurchases.values()].filter((purchase) => purchase.seasonId === seasonConfig.id).length
+        }],
+        activities: activityConfigs.map((activity) => {
+          const states = [...activityStates.values()].filter((state) => state.activityId === activity.id && (state.isJoined || state.score > 0));
+          const deliveredRewards = activityRewardCount(activity.leaderboardKey, activity.endDate);
+          return {
+            id: activity.id,
+            seasonId: seasonConfig.id,
+            name: activity.name,
+            status: seasonStatus(activity.startDate, activity.endDate, today),
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            leaderboardKey: activity.leaderboardKey,
+            targetScore: activity.targetScore,
+            participantCount: states.length,
+            totalScore: states.reduce((total, state) => total + state.score, 0),
+            isSettled: deliveredRewards > 0,
+            deliveredRewards,
+            rewardLabel: `声望 +${activity.rewardReputation} / 活动积分 +${activity.rewardPoints}`,
+            rewardBoundary: "leaderboard_no_cash_no_platform_coins"
+          };
+        }),
+        activityShopItems: activityShopItems.map((item) => ({
+          id: item.id,
+          seasonId: seasonConfig.id,
+          name: item.name,
+          costPoints: item.costPoints,
+          purchaseLimit: item.purchaseLimit,
+          purchaseCount: [...activityShopPurchases.values()].filter((purchase) => purchase.itemId === item.id).length,
+          rewardLabel: `行动力 +${item.rewardActionPower} / 声望 +${item.rewardReputation}`,
+          isActive: true
+        })),
+        seasonPass: [{
+          seasonId: seasonConfig.id,
+          pricePlatformCoins: seasonConfig.passPricePlatformCoins,
+          purchaseCount: [...seasonPassPurchases.values()].filter((purchase) => purchase.seasonId === seasonConfig.id).length,
+          rewardLabel: "解锁赛季高级奖励轨"
+        }],
+        leaderboardSettlements: [...settlementMap.values()],
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
       };
     },
@@ -9937,5 +10007,109 @@ test("phase 24 guild season history archives guild and cross-server results", as
     assert.equal(adminDetail.status, 200, JSON.stringify(adminDetail.body));
     assert.equal(adminDetail.body.data?.history.guildSettlements[0]?.deliveredRewards, 2);
     assert.equal(adminDetail.body.data?.history.crossServerSettlements[0]?.deliveredRewards, 2);
+  });
+});
+
+test("phase 24 operation configs expose season and activity operations read-only", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, "/admin/config-center", {
+      headers: { "x-server-date": "2026-05-21" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const playerA = await createPlayerSession(baseUrl, "operationconfiga");
+    const playerB = await createPlayerSession(baseUrl, "operationconfigb");
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerA.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerB.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerA.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerB.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 120 })
+    });
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const settled = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "运营配置总览验证" })
+      }
+    );
+    assert.equal(settled.status, 200);
+    assert.equal(settled.body.data?.deliveredRewards, 2);
+
+    const configs = await requestJson<{
+      seasons: Array<{ id: string; status: string; passPricePlatformCoins: number; activityCount: number; passPurchaseCount: number }>;
+      activities: Array<{
+        id: string;
+        status: string;
+        leaderboardKey: string;
+        participantCount: number;
+        totalScore: number;
+        isSettled: boolean;
+        deliveredRewards: number;
+        rewardLabel: string;
+        rewardBoundary: string;
+      }>;
+      activityShopItems: Array<{ id: string; seasonId: string; costPoints: number; purchaseLimit: number; purchaseCount: number; rewardLabel: string; isActive: boolean }>;
+      seasonPass: Array<{ seasonId: string; pricePlatformCoins: number; purchaseCount: number; rewardLabel: string }>;
+      leaderboardSettlements: Array<{ boardKey: string; snapshotDate: string; deliveredRewards: number; rewardPlatformCoinsTotal: number; rewardBoundary: string }>;
+    }>(baseUrl, "/admin/config-center", {
+      headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(configs.status, 200);
+    assert.ok(configs.body.data?.seasons.some((season) =>
+      season.id === "season-ai-agent-2026" &&
+      season.status === "active" &&
+      season.passPricePlatformCoins === 880 &&
+      season.activityCount === 1
+    ));
+    const activity = configs.body.data?.activities.find((item) => item.id === "ai-agent-growth");
+    assert.equal(activity?.status, "ended");
+    assert.equal(activity?.leaderboardKey, "activity-ai-agent-growth");
+    assert.equal(activity?.participantCount, 2);
+    assert.equal(activity?.totalScore, 380);
+    assert.equal(activity?.isSettled, true);
+    assert.equal(activity?.deliveredRewards, 2);
+    assert.equal(activity?.rewardBoundary, "leaderboard_no_cash_no_platform_coins");
+    assert.ok(activity?.rewardLabel.includes("声望"));
+    assert.ok(configs.body.data?.activityShopItems.some((item) =>
+      item.id === "activity-risk-insurance" &&
+      item.seasonId === "season-ai-agent-2026" &&
+      item.costPoints === 180 &&
+      item.purchaseLimit === 1
+    ));
+    assert.ok(configs.body.data?.seasonPass.some((pass) =>
+      pass.seasonId === "season-ai-agent-2026" &&
+      pass.pricePlatformCoins === 880 &&
+      pass.rewardLabel === "解锁赛季高级奖励轨"
+    ));
+    assert.ok(configs.body.data?.leaderboardSettlements.some((settlement) =>
+      settlement.boardKey === "activity-ai-agent-growth" &&
+      settlement.snapshotDate === "2026-05-20" &&
+      settlement.deliveredRewards === 2 &&
+      settlement.rewardPlatformCoinsTotal === 0 &&
+      settlement.rewardBoundary === "leaderboard_no_cash_no_platform_coins"
+    ));
   });
 });

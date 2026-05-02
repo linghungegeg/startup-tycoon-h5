@@ -954,8 +954,56 @@ export type AdminConfigCenterRecord = {
     reason: string;
     createdAt: string;
   }>;
-  seasons: Array<{ id: string; name: string; status: string; startDate: string; endDate: string }>;
-  activities: Array<{ id: string; name: string; status: string; leaderboardKey: string }>;
+  seasons: Array<{
+    id: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    passPricePlatformCoins: number;
+    taskCount: number;
+    activityCount: number;
+    passPurchaseCount: number;
+  }>;
+  activities: Array<{
+    id: string;
+    seasonId: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    targetScore: number;
+    participantCount: number;
+    totalScore: number;
+    isSettled: boolean;
+    deliveredRewards: number;
+    rewardLabel: string;
+    rewardBoundary: string;
+  }>;
+  activityShopItems: Array<{
+    id: string;
+    seasonId: string;
+    name: string;
+    costPoints: number;
+    purchaseLimit: number;
+    purchaseCount: number;
+    rewardLabel: string;
+    isActive: boolean;
+  }>;
+  seasonPass: Array<{
+    seasonId: string;
+    pricePlatformCoins: number;
+    purchaseCount: number;
+    rewardLabel: string;
+  }>;
+  leaderboardSettlements: Array<{
+    boardKey: string;
+    snapshotDate: string;
+    deliveredRewards: number;
+    rewardPlatformCoinsTotal: number;
+    rewardBoundary: string;
+  }>;
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
@@ -1484,7 +1532,7 @@ export type GameRepository = {
   listVipLevelConfigs(): Promise<VipLevelRecord[]>;
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
-  getAdminConfigCenter(): Promise<AdminConfigCenterRecord>;
+  getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
   listAdminKnowledgeEntries(filters: { keyword: string; category: string; reviewStatus: string }): Promise<AdminKnowledgeListRecord>;
   updateAdminKnowledgeEntry(adminUserId: string, knowledgeId: string, input: AdminKnowledgeUpdateInput): Promise<AdminKnowledgeUpdateRecord | "KNOWLEDGE_NOT_FOUND">;
@@ -7111,18 +7159,79 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async getAdminConfigCenter() {
-    const [titles, achievements, knowledgeEntries, shopProducts, leaderboardSnapshots, mailCompensations, seasons, activities, scenarios] = await Promise.all([
+  async getAdminConfigCenter(today) {
+    const [titles, achievements, knowledgeEntries, shopProducts, leaderboardSnapshots, mailCompensations, seasons, activities, activityShopItems, scenarios] = await Promise.all([
       prisma.titleConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.achievementConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.knowledgeEntry.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }], take: 100 }),
       prisma.shopProductConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.leaderboardSnapshot.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 }),
       prisma.adminMailCompensation.findMany({ orderBy: [{ createdAt: "desc" }], take: 20 }),
-      prisma.seasonConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
-      prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.seasonConfig.findMany({
+        include: {
+          _count: {
+            select: {
+              tasks: true,
+              activities: true,
+              passPurchases: true
+            }
+          }
+        },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
+      prisma.activityConfig.findMany({
+        include: { states: true },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
+      prisma.activityShopItemConfig.findMany({
+        include: {
+          rewardItem: true,
+          purchases: true
+        },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
       prisma.scenarioConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] })
     ]);
+    const activityBoardKeys = activities.map((activity) => activity.leaderboardKey);
+    const leaderboardDeliveries = activityBoardKeys.length === 0
+      ? []
+      : await prisma.leaderboardRewardDelivery.findMany({
+        where: { boardKey: { in: activityBoardKeys } },
+        orderBy: [{ snapshotDate: "desc" }, { rank: "asc" }],
+        take: 200
+      });
+    const countDeliveries = (boardKey: string, snapshotDate: string) =>
+      leaderboardDeliveries.filter((delivery) => delivery.boardKey === boardKey && delivery.snapshotDate === snapshotDate).length;
+    const activityRewardLabel = (activity: (typeof activities)[number]) => [
+      activity.rewardReputation > 0 ? `声望 +${activity.rewardReputation}` : "",
+      activity.rewardPoints > 0 ? `活动积分 +${activity.rewardPoints}` : "",
+      activity.rewardTitleId !== null ? `称号 ${activity.rewardTitleId}` : ""
+    ].filter(Boolean).join(" / ") || "荣誉奖励";
+    const shopRewardLabel = (item: (typeof activityShopItems)[number]) => [
+      item.rewardActionPower > 0 ? `行动力 +${item.rewardActionPower}` : "",
+      item.rewardReputation > 0 ? `声望 +${item.rewardReputation}` : "",
+      item.rewardItem !== null && item.rewardItemQuantity > 0 ? `${item.rewardItem.name} x${item.rewardItemQuantity}` : ""
+    ].filter(Boolean).join(" / ") || "活动权益";
+    const settlementMap = new Map<string, {
+      boardKey: string;
+      snapshotDate: string;
+      deliveredRewards: number;
+      rewardPlatformCoinsTotal: number;
+      rewardBoundary: string;
+    }>();
+    for (const delivery of leaderboardDeliveries) {
+      const key = `${delivery.boardKey}:${delivery.snapshotDate}`;
+      const current = settlementMap.get(key) ?? {
+        boardKey: delivery.boardKey,
+        snapshotDate: delivery.snapshotDate,
+        deliveredRewards: 0,
+        rewardPlatformCoinsTotal: 0,
+        rewardBoundary: "leaderboard_no_cash_no_platform_coins"
+      };
+      current.deliveredRewards += 1;
+      current.rewardPlatformCoinsTotal += delivery.rewardPlatformCoins;
+      settlementMap.set(key, current);
+    }
 
     return {
       titles: titles.map((title) => ({
@@ -7176,16 +7285,50 @@ export const createPrismaGameRepository = (
       seasons: seasons.map((season) => ({
         id: season.id,
         name: season.name,
-        status: readSeasonStatus(season.startDate, season.endDate, new Date().toISOString().slice(0, 10)),
+        status: readSeasonStatus(season.startDate, season.endDate, today),
         startDate: season.startDate,
-        endDate: season.endDate
+        endDate: season.endDate,
+        passPricePlatformCoins: season.passPricePlatformCoins,
+        taskCount: season._count.tasks,
+        activityCount: season._count.activities,
+        passPurchaseCount: season._count.passPurchases
       })),
-      activities: activities.map((activity) => ({
-        id: activity.id,
-        name: activity.name,
-        status: readSeasonStatus(activity.startDate, activity.endDate, new Date().toISOString().slice(0, 10)),
-        leaderboardKey: activity.leaderboardKey
+      activities: activities.map((activity) => {
+        const joinedStates = activity.states.filter((state) => state.isJoined || state.score > 0);
+        return {
+          id: activity.id,
+          seasonId: activity.seasonId,
+          name: activity.name,
+          status: readSeasonStatus(activity.startDate, activity.endDate, today),
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          leaderboardKey: activity.leaderboardKey,
+          targetScore: activity.targetScore,
+          participantCount: joinedStates.length,
+          totalScore: joinedStates.reduce((total, state) => total + state.score, 0),
+          isSettled: countDeliveries(activity.leaderboardKey, activity.endDate) > 0,
+          deliveredRewards: countDeliveries(activity.leaderboardKey, activity.endDate),
+          rewardLabel: activityRewardLabel(activity),
+          rewardBoundary: "leaderboard_no_cash_no_platform_coins"
+        };
+      }),
+      activityShopItems: activityShopItems.map((item) => ({
+        id: item.id,
+        seasonId: item.seasonId,
+        name: item.name,
+        costPoints: item.costPoints,
+        purchaseLimit: item.purchaseLimit,
+        purchaseCount: item.purchases.length,
+        rewardLabel: shopRewardLabel(item),
+        isActive: item.isActive
       })),
+      seasonPass: seasons.map((season) => ({
+        seasonId: season.id,
+        pricePlatformCoins: season.passPricePlatformCoins,
+        purchaseCount: season._count.passPurchases,
+        rewardLabel: "解锁赛季高级奖励轨"
+      })),
+      leaderboardSettlements: [...settlementMap.values()],
       scenarios: scenarios.map((scenario) => ({
         id: scenario.id,
         name: scenario.name,
