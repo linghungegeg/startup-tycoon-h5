@@ -2086,6 +2086,20 @@ VIP 权益：
   - Game Studio：检查前台 Rank、赛季活动页、商会页、HUD 和底部导航不受 Admin 巡检改动回归影响。
 - 下一阶段入口：Phase 24 第六实施批次建议进入“运营巡检告警处理闭环”或“活动内容池扩容”，二者择一完整实施，不混做。
 
+### Phase 24 第六实施批次阶段总结：运营巡检告警处理闭环
+
+- 当前稳定点：`9cc546f feat: add operation config alerts`。
+- 完成内容：在只读巡检基础上补齐告警处理状态，Admin 可对当前巡检告警执行知悉、忽略和重新打开；本批只记录处理状态与审计日志，不编辑配置、不自动修复、不触发奖励发放。
+- 后端接口：新增 `POST /admin/operation-config-alerts/:alertId/ack`、`POST /admin/operation-config-alerts/:alertId/ignore`、`POST /admin/operation-config-alerts/:alertId/reopen`；处理状态通过 Admin 审计日志持久化，`GET /admin/operation-config-alerts` 返回 `status`、`handledBy`、`handledAt`、`note` 和状态摘要。
+- Admin 前台：配置清单页的“运营配置巡检告警”区域新增处理状态筛选、处理备注输入、知悉/忽略/重新打开按钮和处理记录列；保持表格化后台结构，不新增复杂弹窗。
+- 审计与边界：处理动作统一写入 `operation_config_alert` 审计日志；不改变玩家现金、平台币、活动配置或活动榜结算状态。
+- 四插件使用证据：
+  - Superpowers：按 TDD 先写未登录拦截、处理状态、审计日志和现金/平台币不变测试，再实现后端与 Admin 前台。
+  - Browser Use：需打开 `http://127.0.0.1:5174/` 验收 Admin 巡检告警处理、状态筛选和刷新，并打开 `http://127.0.0.1:5173/` 做前台回归。
+  - Build Web Apps：Admin 页面继续采用筛选区、摘要区、表格和页内提示，避免弹窗堆叠和营销式布局。
+  - Game Studio：检查前台 Rank、赛季活动页、商会页、HUD 和底部导航不受 Admin 告警处理改动回归影响。
+- 下一阶段入口：Phase 24 第七实施批次建议进入“活动内容池扩容”，完整扩充活动任务、活动商店兑换和活动回顾内容，不与配置编辑混做。
+
 ### Phase 23 后续完整开发计划：商会与跨服深度闭环
 
 - 阶段总目标：Phase 23 共 7 个完整批次，不做骨架；每批必须包含后端规则、前台入口、测试、Browser/Game QA 和文档同步，稳定后再提交。

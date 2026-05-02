@@ -241,6 +241,10 @@ type OperationConfigAlert = {
   message: string;
   suggestion: string;
   createdAt: string;
+  status: string;
+  handledBy: string | null;
+  handledAt: string | null;
+  note: string | null;
 };
 
 type OperationConfigAlerts = {
@@ -249,6 +253,9 @@ type OperationConfigAlerts = {
     critical: number;
     warning: number;
     info: number;
+    pending: number;
+    acknowledged: number;
+    ignored: number;
     unsettledActivityCount: number;
     rewardBoundaryRiskCount: number;
   };
@@ -256,8 +263,13 @@ type OperationConfigAlerts = {
     levels: string[];
     types: string[];
     targetTypes: string[];
+    statuses: string[];
   };
   alerts: OperationConfigAlert[];
+};
+
+type OperationConfigAlertAction = AuditResult & {
+  alert: OperationConfigAlert;
 };
 
 type KnowledgeEntry = {
@@ -390,6 +402,12 @@ const alertLevelLabel = (level: string): string => {
   if (level === "warning") return "警告";
   if (level === "info") return "提示";
   return level;
+};
+const alertStatusLabel = (status: string): string => {
+  if (status === "pending") return "待处理";
+  if (status === "acknowledged") return "已知悉";
+  if (status === "ignored") return "已忽略";
+  return status;
 };
 const emptyKnowledgeForm = (): KnowledgeForm => ({
   summary: "",
@@ -549,12 +567,14 @@ export default function App() {
     scenarios: []
   });
   const [operationConfigAlerts, setOperationConfigAlerts] = useState<OperationConfigAlerts>({
-    summary: { total: 0, critical: 0, warning: 0, info: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 },
-    filters: { levels: [], types: [], targetTypes: [] },
+    summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 },
+    filters: { levels: [], types: [], targetTypes: [], statuses: [] },
     alerts: []
   });
   const [alertLevel, setAlertLevel] = useState("");
   const [alertType, setAlertType] = useState("");
+  const [alertStatus, setAlertStatus] = useState("");
+  const [alertHandleNote, setAlertHandleNote] = useState("运营巡检处理记录");
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
@@ -620,8 +640,9 @@ export default function App() {
   const filteredOperationConfigAlerts = useMemo(
     () => operationConfigAlerts.alerts
       .filter((alert) => alertLevel === "" || alert.level === alertLevel)
-      .filter((alert) => alertType === "" || alert.type === alertType),
-    [alertLevel, alertType, operationConfigAlerts.alerts]
+      .filter((alert) => alertType === "" || alert.type === alertType)
+      .filter((alert) => alertStatus === "" || alert.status === alertStatus),
+    [alertLevel, alertStatus, alertType, operationConfigAlerts.alerts]
   );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
@@ -851,7 +872,7 @@ export default function App() {
     setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
-    setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [] }, alerts: [] });
+    setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, pending: 0, acknowledged: 0, ignored: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [], statuses: [] }, alerts: [] });
     setAlertLevel("");
     setAlertType("");
     setAnalytics(null);
@@ -1297,6 +1318,41 @@ export default function App() {
     }
     setOperationConfigAlerts(result.data);
     setActionMessage("运营配置巡检已刷新。");
+  };
+
+  const handleOperationConfigAlert = async (alert: OperationConfigAlert, action: "ack" | "ignore" | "reopen"): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const note = alertHandleNote.trim();
+    if (note.length > 180) {
+      setError("巡检处理备注不能超过 180 个字符。");
+      return;
+    }
+
+    const result = await apiRequest<OperationConfigAlertAction>(
+      `/admin/operation-config-alerts/${encodeURIComponent(alert.id)}/${action}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ note })
+      },
+      session.token
+    );
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+
+    const refreshed = await apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, session.token);
+    if (refreshed.success) {
+      setOperationConfigAlerts(refreshed.data);
+    } else {
+      setOperationConfigAlerts((current) => ({
+        ...current,
+        alerts: current.alerts.map((item) => item.id === result.data.alert.id ? result.data.alert : item)
+      }));
+    }
+    setActionMessage(`巡检告警已更新为 ${alertStatusLabel(result.data.alert.status)}，审计记录：${result.data.auditLogId}`);
   };
 
   if (session === null) {
@@ -2043,6 +2099,19 @@ export default function App() {
                   </select>
                 </label>
                 <label>
+                  处理状态
+                  <select onChange={(event) => setAlertStatus(event.target.value)} value={alertStatus}>
+                    <option value="">全部状态</option>
+                    {operationConfigAlerts.filters.statuses.map((status) => (
+                      <option key={status} value={status}>{alertStatusLabel(status)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  处理备注
+                  <input maxLength={180} onChange={(event) => setAlertHandleNote(event.target.value)} value={alertHandleNote} />
+                </label>
+                <label>
                   告警类型
                   <select onChange={(event) => setAlertType(event.target.value)} value={alertType}>
                     <option value="">全部类型</option>
@@ -2051,19 +2120,20 @@ export default function App() {
                     ))}
                   </select>
                 </label>
-                <button type="button" className="secondary-button" onClick={() => { setAlertLevel(""); setAlertType(""); }}>重置筛选</button>
+                <button type="button" className="secondary-button" onClick={() => { setAlertLevel(""); setAlertType(""); setAlertStatus(""); }}>重置筛选</button>
               </form>
               <div className="config-grid">
                 <div>
                   <h3>巡检摘要</h3>
                   <p>总告警：{operationConfigAlerts.summary.total}</p>
+                  <p>待处理：{operationConfigAlerts.summary.pending} / 已知悉：{operationConfigAlerts.summary.acknowledged} / 已忽略：{operationConfigAlerts.summary.ignored}</p>
                   <p>已结束未结算活动：{operationConfigAlerts.summary.unsettledActivityCount}</p>
                   <p>奖励边界风险：{operationConfigAlerts.summary.rewardBoundaryRiskCount}</p>
                 </div>
                 <div>
                   <h3>处理边界</h3>
-                  <p>本区只读展示配置风险，不提供编辑、自动修复或奖励发放动作。</p>
-                  <p>需要处理时请进入对应运营页按既有幂等接口操作。</p>
+                  <p>处理动作只记录运营状态和审计日志，不编辑配置、不自动修复、不发放奖励。</p>
+                  <p>实际配置处理仍进入对应运营页按既有幂等接口操作。</p>
                 </div>
               </div>
               <div className="table-wrap">
@@ -2073,15 +2143,18 @@ export default function App() {
                       <th>等级</th>
                       <th>类型</th>
                       <th>对象</th>
+                      <th>状态</th>
                       <th>说明</th>
                       <th>建议</th>
+                      <th>处理记录</th>
                       <th>巡检日期</th>
+                      <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredOperationConfigAlerts.length === 0 && (
                       <tr>
-                        <td colSpan={6}>当前筛选下暂无告警。</td>
+                        <td colSpan={9}>当前筛选下暂无告警。</td>
                       </tr>
                     )}
                     {filteredOperationConfigAlerts.map((alert) => (
@@ -2089,9 +2162,23 @@ export default function App() {
                         <td><span className={`status-tag status-${alert.level}`}>{alertLevelLabel(alert.level)}</span></td>
                         <td>{alert.type}</td>
                         <td>{alert.targetType} / {alert.targetId}</td>
+                        <td><span className={`status-tag status-${alert.status}`}>{alertStatusLabel(alert.status)}</span></td>
                         <td>{alert.message}</td>
                         <td>{alert.suggestion}</td>
+                        <td>{alert.handledBy === null ? "-" : `${alert.handledBy} / ${alert.note ?? "-"} / ${alert.handledAt?.slice(0, 10) ?? "-"}`}</td>
                         <td>{alert.createdAt.slice(0, 10)}</td>
+                        <td>
+                          <div className="alert-actions">
+                            {alert.status === "pending" ? (
+                              <>
+                                <button type="button" onClick={() => void handleOperationConfigAlert(alert, "ack")}>知悉</button>
+                                <button type="button" className="secondary-button" onClick={() => void handleOperationConfigAlert(alert, "ignore")}>忽略</button>
+                              </>
+                            ) : (
+                              <button type="button" className="secondary-button" onClick={() => void handleOperationConfigAlert(alert, "reopen")}>重新打开</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

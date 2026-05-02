@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import type { ApiConfig } from "./config.js";
 import { createPasswordRecord, verifyPassword } from "./password.js";
-import { createPrismaGameRepository, type AccountRecord, type AdminKnowledgeUpdateInput, type GameRepository, type VipLevelRecord } from "./repository.js";
+import { createPrismaGameRepository, type AccountRecord, type AdminKnowledgeUpdateInput, type AdminOperationConfigAlertStatus, type GameRepository, type VipLevelRecord } from "./repository.js";
 
 type ApiSuccess<T> = {
   success: true;
@@ -731,6 +731,48 @@ export const createApiServer = (
       }
 
       sendJson(response, 200, success(await repository.getAdminOperationConfigAlerts(readToday(request)), traceId));
+      return;
+    }
+
+    const operationConfigAlertActionMatch = url.pathname.match(/^\/admin\/operation-config-alerts\/([^/]+)\/(ack|ignore|reopen)$/);
+    if (request.method === "POST" && operationConfigAlertActionMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("INVALID_ALERT_NOTE", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const note = readString(body, "note");
+      if (note.length > 180) {
+        sendJson(response, 400, failure("INVALID_ALERT_NOTE", "Alert handling note must be 180 characters or fewer.", traceId));
+        return;
+      }
+
+      const action = operationConfigAlertActionMatch[2];
+      const status: AdminOperationConfigAlertStatus = action === "ack"
+        ? "acknowledged"
+        : action === "ignore"
+          ? "ignored"
+          : "pending";
+      const result = await repository.handleAdminOperationConfigAlert(
+        admin.id,
+        decodeURIComponent(operationConfigAlertActionMatch[1] ?? ""),
+        status,
+        note,
+        readToday(request)
+      );
+      if (result === "ALERT_NOT_FOUND") {
+        sendJson(response, 404, failure("ALERT_NOT_FOUND", "Operation config alert was not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
       return;
     }
 

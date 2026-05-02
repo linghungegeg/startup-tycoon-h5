@@ -1008,6 +1008,7 @@ export type AdminConfigCenterRecord = {
 };
 
 export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
+export type AdminOperationConfigAlertStatus = "pending" | "acknowledged" | "ignored";
 
 export type AdminOperationConfigAlertRecord = {
   id: string;
@@ -1018,6 +1019,10 @@ export type AdminOperationConfigAlertRecord = {
   message: string;
   suggestion: string;
   createdAt: string;
+  status: AdminOperationConfigAlertStatus;
+  handledBy: string | null;
+  handledAt: string | null;
+  note: string | null;
 };
 
 export type AdminOperationConfigAlertListRecord = {
@@ -1026,6 +1031,9 @@ export type AdminOperationConfigAlertListRecord = {
     critical: number;
     warning: number;
     info: number;
+    pending: number;
+    acknowledged: number;
+    ignored: number;
     unsettledActivityCount: number;
     rewardBoundaryRiskCount: number;
   };
@@ -1033,8 +1041,76 @@ export type AdminOperationConfigAlertListRecord = {
     levels: AdminOperationConfigAlertLevel[];
     types: string[];
     targetTypes: string[];
+    statuses: AdminOperationConfigAlertStatus[];
   };
   alerts: AdminOperationConfigAlertRecord[];
+};
+
+export type AdminOperationConfigAlertActionRecord = {
+  alert: AdminOperationConfigAlertRecord;
+  auditLogId: string;
+};
+
+const OPERATION_CONFIG_ALERT_TARGET_TYPE = "operation_config_alert";
+
+const operationConfigAlertActionByStatus: Record<AdminOperationConfigAlertStatus, string> = {
+  pending: "admin_operation_config_alert_reopen",
+  acknowledged: "admin_operation_config_alert_ack",
+  ignored: "admin_operation_config_alert_ignore"
+};
+
+const operationConfigAlertStatusByAction = new Map<string, AdminOperationConfigAlertStatus>(
+  Object.entries(operationConfigAlertActionByStatus).map(([status, action]) => [action, status as AdminOperationConfigAlertStatus])
+);
+
+type OperationConfigAlertAuditLogSource = {
+  id: string;
+  adminUser: { username: string };
+  action: string;
+  targetId: string | null;
+  detail: string | null;
+  createdAt: Date;
+};
+
+const createOperationConfigAlert = (
+  alert: Omit<AdminOperationConfigAlertRecord, "status" | "handledBy" | "handledAt" | "note">
+): AdminOperationConfigAlertRecord => ({
+  ...alert,
+  status: "pending",
+  handledBy: null,
+  handledAt: null,
+  note: null
+});
+
+const applyOperationConfigAlertHandling = (
+  alerts: AdminOperationConfigAlertRecord[],
+  logs: OperationConfigAlertAuditLogSource[]
+): AdminOperationConfigAlertRecord[] => {
+  const latestByAlert = new Map<string, OperationConfigAlertAuditLogSource>();
+  for (const log of [...logs].sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())) {
+    if (log.targetId === null || latestByAlert.has(log.targetId) || !operationConfigAlertStatusByAction.has(log.action)) {
+      continue;
+    }
+    latestByAlert.set(log.targetId, log);
+  }
+
+  return alerts.map((alert) => {
+    const log = latestByAlert.get(alert.id);
+    if (log === undefined) {
+      return alert;
+    }
+
+    const detailJson = parseAdminAuditDetail(log.detail);
+    const status = operationConfigAlertStatusByAction.get(log.action) ?? "pending";
+    const note = typeof detailJson?.note === "string" ? detailJson.note : null;
+    return {
+      ...alert,
+      status,
+      handledBy: log.adminUser.username,
+      handledAt: log.createdAt.toISOString(),
+      note
+    };
+  });
 };
 
 export type AdminKnowledgeEntryRecord = KnowledgeEntryRecord & {
@@ -1564,6 +1640,7 @@ export type GameRepository = {
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
   getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
+  handleAdminOperationConfigAlert(adminUserId: string, alertId: string, status: AdminOperationConfigAlertStatus, note: string, today: string): Promise<AdminOperationConfigAlertActionRecord | "ALERT_NOT_FOUND">;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
   listAdminKnowledgeEntries(filters: { keyword: string; category: string; reviewStatus: string }): Promise<AdminKnowledgeListRecord>;
   updateAdminKnowledgeEntry(adminUserId: string, knowledgeId: string, input: AdminKnowledgeUpdateInput): Promise<AdminKnowledgeUpdateRecord | "KNOWLEDGE_NOT_FOUND">;
@@ -7382,12 +7459,15 @@ export const createPrismaGameRepository = (
         select: { boardKey: true, snapshotDate: true, rewardPlatformCoins: true }
       });
     const alerts: AdminOperationConfigAlertRecord[] = [];
+    const pushAlert = (alert: Omit<AdminOperationConfigAlertRecord, "status" | "handledBy" | "handledAt" | "note">) => {
+      alerts.push(createOperationConfigAlert(alert));
+    };
     const createdAt = `${today}T00:00:00.000Z`;
     const hasActivitySettlement = (boardKey: string, snapshotDate: string) =>
       leaderboardDeliveries.some((delivery) => delivery.boardKey === boardKey && delivery.snapshotDate === snapshotDate);
     for (const season of seasons) {
       if (season.passPricePlatformCoins < 0) {
-        alerts.push({
+        pushAlert({
           id: `season-pass-price:${season.id}`,
           level: "critical",
           type: "season_pass_price_invalid",
@@ -7402,7 +7482,7 @@ export const createPrismaGameRepository = (
     for (const activity of activities) {
       const status = readSeasonStatus(activity.startDate, activity.endDate, today);
       if (activity.leaderboardKey.trim() === "") {
-        alerts.push({
+        pushAlert({
           id: `activity-missing-board:${activity.id}`,
           level: "critical",
           type: "activity_missing_leaderboard_key",
@@ -7414,7 +7494,7 @@ export const createPrismaGameRepository = (
         });
       }
       if (status === "ended" && activity.leaderboardKey.trim() !== "" && !hasActivitySettlement(activity.leaderboardKey, activity.endDate)) {
-        alerts.push({
+        pushAlert({
           id: `activity-unsettled:${activity.id}:${activity.endDate}`,
           level: "warning",
           type: "activity_ended_unsettled",
@@ -7426,7 +7506,7 @@ export const createPrismaGameRepository = (
         });
       }
       if (activity.rewardCash > 0) {
-        alerts.push({
+        pushAlert({
           id: `reward-boundary:${activity.id}:cash`,
           level: "critical",
           type: "reward_boundary_risk",
@@ -7438,7 +7518,7 @@ export const createPrismaGameRepository = (
         });
       }
       if (leaderboardDeliveries.some((delivery) => delivery.boardKey === activity.leaderboardKey && delivery.rewardPlatformCoins > 0)) {
-        alerts.push({
+        pushAlert({
           id: `reward-boundary:${activity.id}:platform-coins`,
           level: "critical",
           type: "reward_boundary_risk",
@@ -7452,7 +7532,7 @@ export const createPrismaGameRepository = (
     }
     for (const item of activityShopItems) {
       if (item.purchaseLimit < 0 || item.costPoints < 0) {
-        alerts.push({
+        pushAlert({
           id: `activity-shop-invalid:${item.id}`,
           level: "critical",
           type: "activity_shop_invalid",
@@ -7464,7 +7544,7 @@ export const createPrismaGameRepository = (
         });
       }
       if (!item.isActive) {
-        alerts.push({
+        pushAlert({
           id: `activity-shop-inactive:${item.id}`,
           level: "info",
           type: "activity_shop_inactive",
@@ -7476,23 +7556,57 @@ export const createPrismaGameRepository = (
         });
       }
     }
+    const alertIds = alerts.map((alert) => alert.id);
+    const handlingLogs = alertIds.length === 0
+      ? []
+      : await prisma.adminAuditLog.findMany({
+        where: { targetType: OPERATION_CONFIG_ALERT_TARGET_TYPE, targetId: { in: alertIds } },
+        include: { adminUser: true },
+        orderBy: [{ createdAt: "desc" }]
+      });
+    const handledAlerts = applyOperationConfigAlertHandling(alerts, handlingLogs);
     const summary = {
-      total: alerts.length,
-      critical: alerts.filter((alert) => alert.level === "critical").length,
-      warning: alerts.filter((alert) => alert.level === "warning").length,
-      info: alerts.filter((alert) => alert.level === "info").length,
-      unsettledActivityCount: alerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
-      rewardBoundaryRiskCount: alerts.filter((alert) => alert.type === "reward_boundary_risk").length
+      total: handledAlerts.length,
+      critical: handledAlerts.filter((alert) => alert.level === "critical").length,
+      warning: handledAlerts.filter((alert) => alert.level === "warning").length,
+      info: handledAlerts.filter((alert) => alert.level === "info").length,
+      pending: handledAlerts.filter((alert) => alert.status === "pending").length,
+      acknowledged: handledAlerts.filter((alert) => alert.status === "acknowledged").length,
+      ignored: handledAlerts.filter((alert) => alert.status === "ignored").length,
+      unsettledActivityCount: handledAlerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
+      rewardBoundaryRiskCount: handledAlerts.filter((alert) => alert.type === "reward_boundary_risk").length
     };
     return {
       summary,
       filters: {
-        levels: [...new Set(alerts.map((alert) => alert.level))],
-        types: [...new Set(alerts.map((alert) => alert.type))].sort(),
-        targetTypes: [...new Set(alerts.map((alert) => alert.targetType))].sort()
+        levels: [...new Set(handledAlerts.map((alert) => alert.level))],
+        types: [...new Set(handledAlerts.map((alert) => alert.type))].sort(),
+        targetTypes: [...new Set(handledAlerts.map((alert) => alert.targetType))].sort(),
+        statuses: [...new Set(handledAlerts.map((alert) => alert.status))]
       },
-      alerts
+      alerts: handledAlerts
     };
+  },
+
+  async handleAdminOperationConfigAlert(adminUserId, alertId, status, note, today) {
+    const current = await this.getAdminOperationConfigAlerts(today);
+    const alert = current.alerts.find((item) => item.id === alertId);
+    if (alert === undefined) {
+      return "ALERT_NOT_FOUND";
+    }
+
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: operationConfigAlertActionByStatus[status],
+        targetType: OPERATION_CONFIG_ALERT_TARGET_TYPE,
+        targetId: alertId,
+        detail: JSON.stringify({ alertId, status, note })
+      },
+      include: { adminUser: true }
+    });
+    const [handledAlert] = applyOperationConfigAlertHandling([alert], [audit]);
+    return { alert: handledAlert ?? alert, auditLogId: audit.id };
   },
 
   async listAdminAuditLogs(filters) {

@@ -2818,9 +2818,12 @@ const createTestRepository = (): GameRepository => {
         return { boardKey, snapshotDate };
       });
       const alerts: AdminOperationConfigAlertListRecord["alerts"] = [];
+      const pushAlert = (alert: Omit<AdminOperationConfigAlertListRecord["alerts"][number], "status" | "handledBy" | "handledAt" | "note">) => {
+        alerts.push({ ...alert, status: "pending", handledBy: null, handledAt: null, note: null });
+      };
       const createdAt = `${today}T00:00:00.000Z`;
       if (seasonConfig.passPricePlatformCoins < 0) {
-        alerts.push({
+        pushAlert({
           id: `season-pass-price:${seasonConfig.id}`,
           level: "critical",
           type: "season_pass_price_invalid",
@@ -2835,7 +2838,7 @@ const createTestRepository = (): GameRepository => {
         const status = seasonStatus(activity.startDate, activity.endDate, today);
         const isSettled = rewardEntries.some((entry) => entry.boardKey === activity.leaderboardKey && entry.snapshotDate === activity.endDate);
         if (activity.leaderboardKey.trim() === "") {
-          alerts.push({
+          pushAlert({
             id: `activity-missing-board:${activity.id}`,
             level: "critical",
             type: "activity_missing_leaderboard_key",
@@ -2847,7 +2850,7 @@ const createTestRepository = (): GameRepository => {
           });
         }
         if (status === "ended" && activity.leaderboardKey.trim() !== "" && !isSettled) {
-          alerts.push({
+          pushAlert({
             id: `activity-unsettled:${activity.id}:${activity.endDate}`,
             level: "warning",
             type: "activity_ended_unsettled",
@@ -2859,7 +2862,7 @@ const createTestRepository = (): GameRepository => {
           });
         }
         if (activity.rewardCash > 0) {
-          alerts.push({
+          pushAlert({
             id: `reward-boundary:${activity.id}:cash`,
             level: "critical",
             type: "reward_boundary_risk",
@@ -2873,7 +2876,7 @@ const createTestRepository = (): GameRepository => {
       }
       for (const item of activityShopItems) {
         if (item.costPoints < 0 || item.purchaseLimit < 0) {
-          alerts.push({
+          pushAlert({
             id: `activity-shop-invalid:${item.id}`,
             level: "critical",
             type: "activity_shop_invalid",
@@ -2885,21 +2888,81 @@ const createTestRepository = (): GameRepository => {
           });
         }
       }
+      const handledAlerts = alerts.map((alert) => {
+        const log = adminAuditLogs.find((item) =>
+          item.targetType === "operation_config_alert" &&
+          item.targetId === alert.id &&
+          (
+            item.action === "admin_operation_config_alert_ack" ||
+            item.action === "admin_operation_config_alert_ignore" ||
+            item.action === "admin_operation_config_alert_reopen"
+          )
+        );
+        if (log === undefined) {
+          return alert;
+        }
+        const detailJson = log.detail === null ? null : JSON.parse(log.detail) as { status?: string; note?: string };
+        return {
+          ...alert,
+          status: detailJson?.status === "acknowledged" || detailJson?.status === "ignored" ? detailJson.status : "pending",
+          handledBy: log.adminUsername,
+          handledAt: log.createdAt,
+          note: typeof detailJson?.note === "string" ? detailJson.note : null
+        };
+      });
       return {
         summary: {
-          total: alerts.length,
-          critical: alerts.filter((alert) => alert.level === "critical").length,
-          warning: alerts.filter((alert) => alert.level === "warning").length,
-          info: alerts.filter((alert) => alert.level === "info").length,
-          unsettledActivityCount: alerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
-          rewardBoundaryRiskCount: alerts.filter((alert) => alert.type === "reward_boundary_risk").length
+          total: handledAlerts.length,
+          critical: handledAlerts.filter((alert) => alert.level === "critical").length,
+          warning: handledAlerts.filter((alert) => alert.level === "warning").length,
+          info: handledAlerts.filter((alert) => alert.level === "info").length,
+          pending: handledAlerts.filter((alert) => alert.status === "pending").length,
+          acknowledged: handledAlerts.filter((alert) => alert.status === "acknowledged").length,
+          ignored: handledAlerts.filter((alert) => alert.status === "ignored").length,
+          unsettledActivityCount: handledAlerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
+          rewardBoundaryRiskCount: handledAlerts.filter((alert) => alert.type === "reward_boundary_risk").length
         },
         filters: {
-          levels: [...new Set(alerts.map((alert) => alert.level))],
-          types: [...new Set(alerts.map((alert) => alert.type))].sort(),
-          targetTypes: [...new Set(alerts.map((alert) => alert.targetType))].sort()
+          levels: [...new Set(handledAlerts.map((alert) => alert.level))],
+          types: [...new Set(handledAlerts.map((alert) => alert.type))].sort(),
+          targetTypes: [...new Set(handledAlerts.map((alert) => alert.targetType))].sort(),
+          statuses: [...new Set(handledAlerts.map((alert) => alert.status))]
         },
-        alerts
+        alerts: handledAlerts
+      };
+    },
+    async handleAdminOperationConfigAlert(adminUserId, alertId, status, note, today) {
+      void adminUserId;
+      const list = await this.getAdminOperationConfigAlerts(today);
+      const alert = list.alerts.find((item) => item.id === alertId);
+      if (alert === undefined) {
+        return "ALERT_NOT_FOUND";
+      }
+      const auditLogId = `audit-operation-config-alert-${adminAuditLogs.length + 1}`;
+      const action = status === "acknowledged"
+        ? "admin_operation_config_alert_ack"
+        : status === "ignored"
+          ? "admin_operation_config_alert_ignore"
+          : "admin_operation_config_alert_reopen";
+      const createdAt = new Date().toISOString();
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action,
+        targetType: "operation_config_alert",
+        targetId: alertId,
+        detail: JSON.stringify({ alertId, status, note }),
+        createdAt
+      });
+      return {
+        auditLogId,
+        alert: {
+          ...alert,
+          status,
+          handledBy: "admin",
+          handledAt: createdAt,
+          note
+        }
       };
     },
     async listAdminAuditLogs(filters) {
@@ -10312,5 +10375,109 @@ test("phase 24 operation config alerts expose read-only admin inspections", asyn
     assert.equal(afterSettle.status, 200);
     assert.equal(afterSettle.body.data?.summary.unsettledActivityCount, 0);
     assert.equal(afterSettle.body.data?.alerts.some((alert) => alert.type === "activity_ended_unsettled" && alert.targetId === "ai-agent-growth"), false);
+  });
+});
+
+test("phase 24 operation config alerts support audited handling without rewards", async () => {
+  await withServer(async (baseUrl) => {
+    const alertId = "reward-boundary:ai-agent-growth:cash";
+    const unauthenticated = await requestJson(
+      baseUrl,
+      `/admin/operation-config-alerts/${encodeURIComponent(alertId)}/ack`,
+      {
+        method: "POST",
+        headers: { "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ note: "未登录处理" })
+      }
+    );
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const player = await createPlayerSession(baseUrl, "configalerthandle");
+    const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(beforeProfile.status, 200);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}`, "x-server-date": "2026-05-21" };
+
+    const beforeAlerts = await requestJson<{
+      summary: { pending: number; acknowledged: number; ignored: number };
+      filters: { statuses: string[] };
+      alerts: Array<{ id: string; status: string; handledBy: string | null; handledAt: string | null; note: string | null }>;
+    }>(baseUrl, "/admin/operation-config-alerts", {
+      headers: adminHeaders
+    });
+    assert.equal(beforeAlerts.status, 200, JSON.stringify(beforeAlerts.body));
+    const pendingAlert = beforeAlerts.body.data?.alerts.find((alert) => alert.id === alertId);
+    assert.equal(pendingAlert?.status, "pending");
+    assert.equal(pendingAlert?.handledBy, null);
+    assert.equal(pendingAlert?.handledAt, null);
+    assert.equal(pendingAlert?.note, null);
+    assert.ok(beforeAlerts.body.data?.filters.statuses.includes("pending"));
+
+    const acknowledged = await requestJson<{
+      auditLogId: string;
+      alert: { id: string; status: string; handledBy: string | null; note: string | null };
+    }>(baseUrl, `/admin/operation-config-alerts/${encodeURIComponent(alertId)}/ack`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ note: "已确认奖励边界风险" })
+    });
+    assert.equal(acknowledged.status, 200, JSON.stringify(acknowledged.body));
+    assert.equal(acknowledged.body.data?.alert.status, "acknowledged");
+    assert.equal(acknowledged.body.data?.alert.handledBy, "admin");
+    assert.equal(acknowledged.body.data?.alert.note, "已确认奖励边界风险");
+    assert.ok((acknowledged.body.data?.auditLogId ?? "").length > 0);
+
+    const ignored = await requestJson<{
+      alert: { id: string; status: string; handledBy: string | null; note: string | null };
+    }>(baseUrl, `/admin/operation-config-alerts/${encodeURIComponent(alertId)}/ignore`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ note: "本轮活动榜不发放现金" })
+    });
+    assert.equal(ignored.status, 200, JSON.stringify(ignored.body));
+    assert.equal(ignored.body.data?.alert.status, "ignored");
+    assert.equal(ignored.body.data?.alert.note, "本轮活动榜不发放现金");
+
+    const reopened = await requestJson<{
+      alert: { id: string; status: string; handledBy: string | null; note: string | null };
+    }>(baseUrl, `/admin/operation-config-alerts/${encodeURIComponent(alertId)}/reopen`, {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ note: "重新跟进配置来源" })
+    });
+    assert.equal(reopened.status, 200, JSON.stringify(reopened.body));
+    assert.equal(reopened.body.data?.alert.status, "pending");
+    assert.equal(reopened.body.data?.alert.note, "重新跟进配置来源");
+
+    const auditLogs = await requestJson<{ rows: Array<{ action: string; targetType: string; targetId: string | null; detailJson: Record<string, string | number | boolean | null> | null }> }>(
+      baseUrl,
+      `/admin/audit-logs?targetType=operation_config_alert&targetId=${encodeURIComponent(alertId)}`,
+      { headers: adminHeaders }
+    );
+    assert.equal(auditLogs.status, 200, JSON.stringify(auditLogs.body));
+    assert.deepEqual(
+      auditLogs.body.data?.rows.slice(0, 3).map((log) => log.action),
+      [
+        "admin_operation_config_alert_reopen",
+        "admin_operation_config_alert_ignore",
+        "admin_operation_config_alert_ack"
+      ]
+    );
+    assert.equal(auditLogs.body.data?.rows[0]?.detailJson?.status, "pending");
+
+    const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${player.token}` }
+    });
+    assert.equal(afterProfile.status, 200);
+    assert.equal(afterProfile.body.data?.cash, beforeProfile.body.data?.cash);
+    assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
   });
 });
