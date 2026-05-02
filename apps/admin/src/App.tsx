@@ -152,6 +152,19 @@ type AdminGuildDetail = {
     groupName: string | null;
     signupDate: string | null;
   };
+  history: {
+    guildSettlements: Array<{
+      snapshotDate: string;
+      deliveredRewards: number;
+      topMembers: Array<{ profileId: string; founderName: string; companyName: string; rank: number; contributionScore: number; reputationReward: number }>;
+    }>;
+    crossServerSettlements: Array<{
+      snapshotDate: string;
+      deliveredRewards: number;
+      finalRank: number | null;
+      topGuilds: Array<{ guildId: string; guildName: string; serverId: string; leaderProfileId: string; leaderFounderName: string; rank: number; reputationReward: number }>;
+    }>;
+  };
 };
 
 type LeaderboardRow = {
@@ -1787,6 +1800,22 @@ export default function App() {
                       <h3>协作项目</h3>
                       {selectedGuildDetail.projects.map((project) => (
                         <p key={project.id}>{project.name}：{project.progress}/{project.target}{project.claimedAt === null ? "" : " / 已领奖"}</p>
+                      ))}
+                    </div>
+                    <div>
+                      <h3>单服历史</h3>
+                      {selectedGuildDetail.history.guildSettlements.length === 0 ? (
+                        <p>暂无结算记录。</p>
+                      ) : selectedGuildDetail.history.guildSettlements.slice(0, 3).map((settlement) => (
+                        <p key={settlement.snapshotDate}>{settlement.snapshotDate}：发放 {settlement.deliveredRewards} 份 / 第一 {settlement.topMembers[0]?.companyName ?? "-"}</p>
+                      ))}
+                    </div>
+                    <div>
+                      <h3>跨服历史</h3>
+                      {selectedGuildDetail.history.crossServerSettlements.length === 0 ? (
+                        <p>暂无赛季回顾。</p>
+                      ) : selectedGuildDetail.history.crossServerSettlements.slice(0, 3).map((settlement) => (
+                        <p key={settlement.snapshotDate}>{settlement.snapshotDate}：名次 {settlement.finalRank ?? "-"} / 发放 {settlement.deliveredRewards} 份</p>
                       ))}
                     </div>
                   </div>

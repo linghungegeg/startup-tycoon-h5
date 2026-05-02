@@ -30,7 +30,9 @@ import type {
   AchievementRecord,
   GuildActionRecord,
   GuildCenterRecord,
+  GuildHistoryRecord,
   CrossServerCenterRecord,
+  CrossServerGuildHistoryRecord,
   KnowledgeEntryRecord,
   LeaderboardCenterRecord,
   LeaderboardSettlementRecord,
@@ -1800,6 +1802,8 @@ const createTestRepository = (): GameRepository => {
   const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
   const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
   const leaderboardRewards = new Set<string>();
+  const guildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
+  const crossGuildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; groupId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const adminAuditLogs: Array<{ id: string; adminUsername: string; action: string; targetType: string; targetId: string | null; detail: string | null; createdAt: string }> = [
     {
       id: "audit-player-ban",
@@ -2437,7 +2441,99 @@ const createTestRepository = (): GameRepository => {
             valueLabel: `${item.contributionScore}`,
             equippedTitle: null
           };
-        })
+      })
+    };
+  };
+  const toGuildHistory = (profile: PlayerProfileRecord): GuildHistoryRecord | "GUILD_NOT_JOINED" => {
+    const member = guildMembers.get(profile.id);
+    if (member === undefined) {
+      return "GUILD_NOT_JOINED";
+    }
+    const guild = guilds.get(member.guildId);
+    if (guild === undefined) {
+      return "GUILD_NOT_JOINED";
+    }
+    const currentTopMembers = [...guildMembers.values()]
+      .filter((item) => item.guildId === guild.id)
+      .sort((left, right) => right.contributionScore - left.contributionScore)
+      .slice(0, 3)
+      .map((item, index) => {
+        const memberProfile = getProfileById(item.profileId);
+        return {
+          profileId: item.profileId,
+          founderName: memberProfile?.founderName ?? "",
+          companyName: memberProfile?.companyName ?? "",
+          rank: index + 1,
+          contributionScore: item.contributionScore,
+          reputationReward: [120, 80, 50][index] ?? 0
+        };
+      });
+    const deliveries = guildLeaderboardDeliveries.filter((delivery) => delivery.guildId === guild.id && delivery.serverId === guild.serverId);
+    const snapshotDates = [...new Set(deliveries.map((delivery) => delivery.snapshotDate))].sort((left, right) => right.localeCompare(left));
+    return {
+      guild: { id: guild.id, name: guild.name, serverId: guild.serverId },
+      currentTopMembers,
+      settlements: snapshotDates.map((snapshotDate) => {
+        const rows = deliveries.filter((delivery) => delivery.snapshotDate === snapshotDate).sort((left, right) => left.rank - right.rank);
+        return {
+          snapshotDate,
+          deliveredRewards: rows.length,
+          topMembers: rows.map((delivery) => {
+            const deliveryProfile = getProfileById(delivery.profileId);
+            return {
+              profileId: delivery.profileId,
+              founderName: deliveryProfile?.founderName ?? "",
+              companyName: deliveryProfile?.companyName ?? "",
+              rank: delivery.rank,
+              contributionScore: guildMembers.get(delivery.profileId)?.contributionScore ?? 0,
+              reputationReward: delivery.reputationReward
+            };
+          })
+        };
+      })
+    };
+  };
+  const toCrossServerGuildHistory = (profile: PlayerProfileRecord): CrossServerGuildHistoryRecord | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED" => {
+    const group = crossServerGroups.find((item) => item.serverIds.includes(profile.serverId));
+    if (group === undefined) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const member = guildMembers.get(profile.id);
+    if (member === undefined) {
+      return "GUILD_NOT_JOINED";
+    }
+    const guild = guilds.get(member.guildId);
+    if (guild === undefined) {
+      return "GUILD_NOT_JOINED";
+    }
+    const deliveries = crossGuildLeaderboardDeliveries.filter((delivery) => delivery.groupId === group.id);
+    const snapshotDates = [...new Set(deliveries.map((delivery) => delivery.snapshotDate))].sort((left, right) => right.localeCompare(left));
+    return {
+      guild: { id: guild.id, name: guild.name, serverId: guild.serverId },
+      group,
+      isRegistered: crossServerGuildSignups.has(`${guild.id}|${group.id}`),
+      settlements: snapshotDates.map((snapshotDate) => {
+        const rows = deliveries.filter((delivery) => delivery.snapshotDate === snapshotDate).sort((left, right) => left.rank - right.rank);
+        const topGuilds = rows.map((delivery) => {
+          const settledGuild = guilds.get(delivery.guildId);
+          const leaderProfile = getProfileById(delivery.profileId);
+          return {
+            guildId: delivery.guildId,
+            guildName: settledGuild?.name ?? "",
+            serverId: settledGuild?.serverId ?? delivery.serverId,
+            leaderProfileId: delivery.profileId,
+            leaderFounderName: leaderProfile?.founderName ?? "",
+            rank: delivery.rank,
+            reputationReward: delivery.reputationReward
+          };
+        });
+        return {
+          snapshotDate,
+          deliveredRewards: rows.length,
+          finalRank: topGuilds.find((row) => row.guildId === guild.id)?.rank ?? null,
+          topGuilds
+        };
+      })
     };
   };
 
@@ -3071,6 +3167,20 @@ const createTestRepository = (): GameRepository => {
           groupId: group?.id ?? null,
           groupName: group?.name ?? null,
           signupDate: group === undefined || !crossServerGuildSignups.has(`${guild.id}|${group.id}`) ? null : new Date().toISOString().slice(0, 10)
+        },
+        history: {
+          guildSettlements: (() => {
+            const memberProfile = members[0] === undefined ? undefined : getProfileById(members[0].profileId);
+            const history = memberProfile === undefined ? "GUILD_NOT_JOINED" : toGuildHistory(memberProfile);
+            return typeof history === "string" ? [] : history.settlements;
+          })(),
+          crossServerSettlements: members[0] === undefined
+            ? []
+            : (() => {
+              const memberProfile = getProfileById(members[0].profileId);
+              const history = memberProfile === undefined ? "GUILD_NOT_JOINED" : toCrossServerGuildHistory(memberProfile);
+              return typeof history === "string" ? [] : history.settlements;
+            })()
         }
       };
     },
@@ -4697,6 +4807,13 @@ const createTestRepository = (): GameRepository => {
       }
       return buildCrossServerCenter(profile, today);
     },
+    async getCrossServerGuildHistory(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      return toCrossServerGuildHistory(profile);
+    },
     async registerCrossServer(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
@@ -4791,6 +4908,15 @@ const createTestRepository = (): GameRepository => {
         if (rewardProfile !== undefined) {
           rewardProfile.reputation += reward.reputationReward;
         }
+        crossGuildLeaderboardDeliveries.push({
+          guildId: reward.guildId,
+          profileId: reward.leaderProfileId,
+          serverId,
+          groupId: center.group.id,
+          snapshotDate: today,
+          rank: reward.rank,
+          reputationReward: reward.reputationReward
+        });
         deliveredRewards += 1;
       }
       return { leaderboard: { boards: center.boards, activityBoards: [] }, deliveredRewards, rewards: deliveredRewards > 0 ? rewards : [] };
@@ -4890,6 +5016,10 @@ const createTestRepository = (): GameRepository => {
     async getGuildCenter(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       return profile === undefined ? "PLAYER_NOT_FOUND" : toGuildCenter(profile, today);
+    },
+    async getGuildHistory(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toGuildHistory(profile);
     },
     async joinOrCreateGuild(accountId, serverId, guildName, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5187,6 +5317,14 @@ const createTestRepository = (): GameRepository => {
         if (rewardProfile !== undefined) {
           rewardProfile.reputation += reward.reputationReward;
         }
+        guildLeaderboardDeliveries.push({
+          guildId: member.guildId,
+          profileId: reward.profileId,
+          serverId,
+          snapshotDate: today,
+          rank: reward.rank,
+          reputationReward: reward.reputationReward
+        });
       }
       return {
         guildCenter: toGuildCenter(profile, today),
@@ -9611,5 +9749,193 @@ test("phase 24 admin audit filters settlement retries and exposes details", asyn
     assert.equal(logs.body.data?.rows[1]?.detailJson?.isRetry, false);
     assert.equal(logs.body.data?.rows[1]?.detailJson?.deliveredRewards, 2);
     assert.match(logs.body.data?.rows[0]?.summary ?? "", /重试/);
+  });
+});
+
+test("phase 24 guild season history archives guild and cross-server results", async () => {
+  await withServer(async (baseUrl) => {
+    const outsider = await createPlayerSession(baseUrl, "guildhistoryoutsider");
+    const leader = await createPlayerSession(baseUrl, "guildhistoryleader");
+    const member = await createPlayerSession(baseUrl, "guildhistorymember");
+    const rivalLeader = await createPlayerSession(baseUrl, "guildhistoryrivalleader", "s2");
+    const rivalMember = await createPlayerSession(baseUrl, "guildhistoryrivalmember", "s2");
+    const leaderHeaders = { authorization: `Bearer ${leader.token}`, "x-server-date": "2026-05-12" };
+    const memberHeaders = { authorization: `Bearer ${member.token}`, "x-server-date": "2026-05-12" };
+    const rivalLeaderHeaders = { authorization: `Bearer ${rivalLeader.token}`, "x-server-date": "2026-05-12" };
+    const rivalMemberHeaders = { authorization: `Bearer ${rivalMember.token}`, "x-server-date": "2026-05-12" };
+
+    const blocked = await requestJson(baseUrl, "/guild/history?serverId=s1", {
+      headers: { authorization: `Bearer ${outsider.token}` }
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.error?.code, "GUILD_NOT_JOINED");
+
+    await requestJson(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "历史商会" })
+    });
+    await requestJson(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "历史商会" })
+    });
+    const leaderCenter = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    const memberRequestId = leaderCenter.body.data?.joinRequests.find((request) => request.profileId === member.profile.id)?.id ?? "";
+    await requestJson(baseUrl, `/guild/applications/${encodeURIComponent(memberRequestId)}/review`, {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+    const help = await requestJson<{ guildCenter: GuildCenterRecord }>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    const helpId = help.body.data?.guildCenter.helpRequests[0]?.id ?? "";
+    await requestJson(baseUrl, `/guild/help/${encodeURIComponent(helpId)}/fulfill`, {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    await requestJson(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: rivalLeaderHeaders,
+      body: JSON.stringify({ serverId: "s2", guildName: "历史对手会" })
+    });
+    await requestJson(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: rivalMemberHeaders,
+      body: JSON.stringify({ serverId: "s2", guildName: "历史对手会" })
+    });
+    const rivalCenter = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s2", {
+      headers: rivalLeaderHeaders
+    });
+    const rivalRequestId = rivalCenter.body.data?.joinRequests.find((request) => request.profileId === rivalMember.profile.id)?.id ?? "";
+    await requestJson(baseUrl, `/guild/applications/${encodeURIComponent(rivalRequestId)}/review`, {
+      method: "POST",
+      headers: rivalLeaderHeaders,
+      body: JSON.stringify({ serverId: "s2", decision: "approved" })
+    });
+    const rivalHelp = await requestJson<{ guildCenter: GuildCenterRecord }>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: rivalLeaderHeaders,
+      body: JSON.stringify({ serverId: "s2", requestType: "risk-review" })
+    });
+    const rivalHelpId = rivalHelp.body.data?.guildCenter.helpRequests[0]?.id ?? "";
+    await requestJson(baseUrl, `/guild/help/${encodeURIComponent(rivalHelpId)}/fulfill`, {
+      method: "POST",
+      headers: rivalMemberHeaders,
+      body: JSON.stringify({ serverId: "s2" })
+    });
+    await requestJson(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers: rivalMemberHeaders,
+      body: JSON.stringify({ serverId: "s2" })
+    });
+
+    const beforeLeader = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: leaderHeaders
+    });
+    const settled = await requestJson<{ deliveredRewards: number }>(baseUrl, "/guild/leaderboard/settle", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200, JSON.stringify(settled.body));
+    assert.equal(settled.body.data?.deliveredRewards, 2);
+    const duplicate = await requestJson<{ deliveredRewards: number }>(baseUrl, "/guild/leaderboard/settle", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.body.data?.deliveredRewards, 0);
+
+    const guildHistory = await requestJson<{
+      guild: { id: string; name: string };
+      settlements: Array<{
+        snapshotDate: string;
+        deliveredRewards: number;
+        topMembers: Array<{ profileId: string; rank: number; reputationReward: number }>;
+      }>;
+      currentTopMembers: Array<{ profileId: string; rank: number }>;
+    }>(baseUrl, "/guild/history?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(guildHistory.status, 200, JSON.stringify(guildHistory.body));
+    assert.equal(guildHistory.body.data?.guild.name, "历史商会");
+    assert.equal(guildHistory.body.data?.settlements.length, 1);
+    assert.equal(guildHistory.body.data?.settlements[0]?.snapshotDate, "2026-05-12");
+    assert.equal(guildHistory.body.data?.settlements[0]?.deliveredRewards, 2);
+    assert.equal(guildHistory.body.data?.settlements[0]?.topMembers.length, 2);
+    assert.equal(guildHistory.body.data?.currentTopMembers.length, 2);
+
+    await requestJson(baseUrl, "/cross-server/guild/register", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/cross-server/guild/register", {
+      method: "POST",
+      headers: rivalLeaderHeaders,
+      body: JSON.stringify({ serverId: "s2" })
+    });
+    const crossSettled = await requestJson<{ deliveredRewards: number }>(baseUrl, "/cross-server/guild/settle", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(crossSettled.status, 200, JSON.stringify(crossSettled.body));
+    assert.equal(crossSettled.body.data?.deliveredRewards, 2);
+
+    const crossHistory = await requestJson<{
+      guild: { id: string; name: string };
+      isRegistered: boolean;
+      settlements: Array<{
+        snapshotDate: string;
+        deliveredRewards: number;
+        finalRank: number | null;
+        topGuilds: Array<{ guildId: string; rank: number; reputationReward: number }>;
+      }>;
+    }>(baseUrl, "/cross-server/guild/history?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(crossHistory.status, 200, JSON.stringify(crossHistory.body));
+    assert.equal(crossHistory.body.data?.guild.name, "历史商会");
+    assert.equal(crossHistory.body.data?.isRegistered, true);
+    assert.equal(crossHistory.body.data?.settlements.length, 1);
+    assert.equal(crossHistory.body.data?.settlements[0]?.deliveredRewards, 2);
+    assert.ok((crossHistory.body.data?.settlements[0]?.topGuilds.length ?? 0) >= 2);
+
+    const afterLeader = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(afterLeader.body.data?.cash, beforeLeader.body.data?.cash);
+    assert.equal(afterLeader.body.data?.platformCoins, beforeLeader.body.data?.platformCoins);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+    const adminGuilds = await requestJson<{ rows: Array<{ id: string; name: string }> }>(baseUrl, "/admin/guilds?keyword=历史商会", {
+      headers: adminHeaders
+    });
+    const guildId = adminGuilds.body.data?.rows[0]?.id ?? "";
+    const adminDetail = await requestJson<{
+      history: {
+        guildSettlements: Array<{ snapshotDate: string; deliveredRewards: number }>;
+        crossServerSettlements: Array<{ snapshotDate: string; deliveredRewards: number }>;
+      };
+    }>(baseUrl, `/admin/guilds/${encodeURIComponent(guildId)}`, {
+      headers: adminHeaders
+    });
+    assert.equal(adminDetail.status, 200, JSON.stringify(adminDetail.body));
+    assert.equal(adminDetail.body.data?.history.guildSettlements[0]?.deliveredRewards, 2);
+    assert.equal(adminDetail.body.data?.history.crossServerSettlements[0]?.deliveredRewards, 2);
   });
 });

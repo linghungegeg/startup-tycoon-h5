@@ -770,6 +770,10 @@ export type AdminGuildDetailRecord = {
     groupName: string | null;
     signupDate: string | null;
   };
+  history: {
+    guildSettlements: GuildHistoryRecord["settlements"];
+    crossServerSettlements: CrossServerGuildHistoryRecord["settlements"];
+  };
 };
 
 export type AdminGuildSettlementRecord = GuildActionRecord & {
@@ -1209,6 +1213,53 @@ export type CrossServerGuildSettlementRecord = LeaderboardSettlementRecord & {
   }>;
 };
 
+export type GuildHistoryMemberRecord = {
+  profileId: string;
+  founderName: string;
+  companyName: string;
+  rank: number;
+  contributionScore: number;
+  reputationReward: number;
+};
+
+export type GuildHistoryRecord = {
+  guild: {
+    id: string;
+    name: string;
+    serverId: string;
+  };
+  currentTopMembers: GuildHistoryMemberRecord[];
+  settlements: Array<{
+    snapshotDate: string;
+    deliveredRewards: number;
+    topMembers: GuildHistoryMemberRecord[];
+  }>;
+};
+
+export type CrossServerGuildHistoryRecord = {
+  guild: {
+    id: string;
+    name: string;
+    serverId: string;
+  };
+  group: CrossServerGroupRecord | null;
+  isRegistered: boolean;
+  settlements: Array<{
+    snapshotDate: string;
+    deliveredRewards: number;
+    finalRank: number | null;
+    topGuilds: Array<{
+      guildId: string;
+      guildName: string;
+      serverId: string;
+      leaderProfileId: string;
+      leaderFounderName: string;
+      rank: number;
+      reputationReward: number;
+    }>;
+  }>;
+};
+
 export type TitleRecord = {
   id: string;
   name: string;
@@ -1462,6 +1513,7 @@ export type GameRepository = {
   getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
   settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
   getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  getCrossServerGuildHistory(accountId: string, serverId: string): Promise<CrossServerGuildHistoryRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   registerCrossServerGuild(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_SEASON_REQUIREMENT_NOT_MET">;
@@ -1472,6 +1524,7 @@ export type GameRepository = {
   claimAchievement(accountId: string, serverId: string, achievementId: string): Promise<AchievementClaimRecord | "PLAYER_NOT_FOUND" | "ACHIEVEMENT_NOT_FOUND" | "ACHIEVEMENT_INCOMPLETE" | "ACHIEVEMENT_ALREADY_CLAIMED">;
   listKnowledge(accountId: string, serverId: string): Promise<KnowledgeEntryRecord[] | "PLAYER_NOT_FOUND">;
   getGuildCenter(accountId: string, serverId: string, today: string): Promise<GuildCenterRecord | "PLAYER_NOT_FOUND">;
+  getGuildHistory(accountId: string, serverId: string): Promise<GuildHistoryRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
   joinOrCreateGuild(accountId: string, serverId: string, guildName: string, today: string): Promise<GuildJoinActionRecord | "PLAYER_NOT_FOUND">;
   reviewGuildApplication(accountId: string, serverId: string, requestId: string, decision: "approved" | "rejected", today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_APPLICATION_NOT_FOUND" | "GUILD_APPLICATION_ALREADY_REVIEWED">;
   updateGuildMemberRole(accountId: string, serverId: string, profileId: string, role: "member" | "vice_leader", today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_MEMBER_NOT_FOUND" | "GUILD_SELF_ROLE_FORBIDDEN">;
@@ -2846,6 +2899,7 @@ const crossServerGuildSeasonRequirements = {
   rewardLabel: "前 3 名会长获得声望 180/120/80"
 };
 
+const guildLeaderboardRewards = [120, 80, 50];
 const crossServerGuildSeasonRewards = [180, 120, 80];
 
 const formatLeaderboardValue = (key: string, value: number): string => {
@@ -2889,6 +2943,131 @@ const guildActivityLabel = (action: string): string => {
   }
 
   return "参与商会协作";
+};
+
+const readCrossGuildIdFromMailBody = (mailBody: string | null): string | null => {
+  const prefix = "cross-guild-season:";
+  return mailBody?.startsWith(prefix) === true ? mailBody.slice(prefix.length) : null;
+};
+
+const buildGuildHistory = async (
+  database: PrismaClient,
+  guild: { id: string; name: string; serverId: string }
+): Promise<GuildHistoryRecord> => {
+  const currentMembers = await database.guildMember.findMany({
+    where: { guildId: guild.id },
+    include: { profile: true },
+    orderBy: { contributionScore: "desc" },
+    take: 3
+  });
+  const contributionByProfileId = new Map(currentMembers.map((member) => [member.profileId, member.contributionScore]));
+  const currentTopMembers = currentMembers.map((member, index) => ({
+    profileId: member.profileId,
+    founderName: member.profile.founderName,
+    companyName: member.profile.companyName,
+    rank: index + 1,
+    contributionScore: member.contributionScore,
+    reputationReward: guildLeaderboardRewards[index] ?? 0
+  }));
+  const deliveries = await database.leaderboardRewardDelivery.findMany({
+    where: {
+      serverId: guild.serverId,
+      boardKey: "guild-contribution",
+      mailBody: `guild:${guild.id}`
+    },
+    include: { profile: true },
+    orderBy: [{ snapshotDate: "desc" }, { rank: "asc" }]
+  });
+  const snapshotDates = [...new Set(deliveries.map((delivery) => delivery.snapshotDate))].slice(0, 5);
+
+  return {
+    guild: {
+      id: guild.id,
+      name: guild.name,
+      serverId: guild.serverId
+    },
+    currentTopMembers,
+    settlements: snapshotDates.map((snapshotDate) => {
+      const rows = deliveries.filter((delivery) => delivery.snapshotDate === snapshotDate);
+      return {
+        snapshotDate,
+        deliveredRewards: rows.length,
+        topMembers: rows.map((delivery) => ({
+          profileId: delivery.profileId,
+          founderName: delivery.profile.founderName,
+          companyName: delivery.profile.companyName,
+          rank: delivery.rank,
+          contributionScore: contributionByProfileId.get(delivery.profileId) ?? 0,
+          reputationReward: guildLeaderboardRewards[delivery.rank - 1] ?? 0
+        }))
+      };
+    })
+  };
+};
+
+const buildCrossServerGuildHistory = async (
+  database: PrismaClient,
+  guild: { id: string; name: string; serverId: string },
+  group: CrossServerGroupRecord | null
+): Promise<CrossServerGuildHistoryRecord> => {
+  if (group === null) {
+    return {
+      guild: { id: guild.id, name: guild.name, serverId: guild.serverId },
+      group: null,
+      isRegistered: false,
+      settlements: []
+    };
+  }
+  const [signup, deliveries] = await Promise.all([
+    database.crossServerGuildSignup.findUnique({
+      where: {
+        guildId_groupId: {
+          guildId: guild.id,
+          groupId: group.id
+        }
+      }
+    }),
+    database.leaderboardRewardDelivery.findMany({
+      where: {
+        serverId: group.id,
+        boardKey: "cross-guild-season"
+      },
+      include: { profile: true },
+      orderBy: [{ snapshotDate: "desc" }, { rank: "asc" }]
+    })
+  ]);
+  const guildIds = [...new Set(deliveries.map((delivery) => readCrossGuildIdFromMailBody(delivery.mailBody)).filter((id): id is string => id !== null))];
+  const guilds = await database.guild.findMany({ where: { id: { in: guildIds } } });
+  const guildById = new Map(guilds.map((item) => [item.id, item]));
+  const snapshotDates = [...new Set(deliveries.map((delivery) => delivery.snapshotDate))].slice(0, 5);
+
+  return {
+    guild: { id: guild.id, name: guild.name, serverId: guild.serverId },
+    group,
+    isRegistered: signup?.status === "active",
+    settlements: snapshotDates.map((snapshotDate) => {
+      const rows = deliveries.filter((delivery) => delivery.snapshotDate === snapshotDate);
+      const topGuilds = rows.map((delivery) => {
+        const settledGuildId = readCrossGuildIdFromMailBody(delivery.mailBody) ?? "";
+        const settledGuild = guildById.get(settledGuildId);
+        return {
+          guildId: settledGuildId,
+          guildName: settledGuild?.name ?? "",
+          serverId: settledGuild?.serverId ?? "",
+          leaderProfileId: delivery.profileId,
+          leaderFounderName: delivery.profile.founderName,
+          rank: delivery.rank,
+          reputationReward: crossServerGuildSeasonRewards[delivery.rank - 1] ?? 0
+        };
+      });
+      return {
+        snapshotDate,
+        deliveredRewards: rows.length,
+        finalRank: topGuilds.find((row) => row.guildId === guild.id)?.rank ?? null,
+        topGuilds
+      };
+    })
+  };
 };
 
 const guildProjectConfigs = [
@@ -7694,6 +7873,19 @@ export const createPrismaGameRepository = (
         groupId: signup?.groupId ?? null,
         groupName: signup === null ? null : group?.name ?? null,
         signupDate: signup?.signupDate ?? null
+      },
+      history: {
+        guildSettlements: (await buildGuildHistory(prisma, guild)).settlements,
+        crossServerSettlements: (await buildCrossServerGuildHistory(
+          prisma,
+          guild,
+          group === null ? null : {
+            id: group.id,
+            name: group.name,
+            ruleLabel: group.ruleLabel,
+            serverIds: [guild.serverId]
+          }
+        )).settlements
       }
     };
   },
@@ -8292,6 +8484,48 @@ export const createPrismaGameRepository = (
         rows: guildRows
       }
     };
+  },
+
+  async getCrossServerGuildHistory(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const groupServer = await prisma.crossServerGroupServer.findUnique({
+      where: { serverId },
+      include: {
+        group: {
+          include: {
+            servers: { orderBy: { sortOrder: "asc" } }
+          }
+        }
+      }
+    });
+    if (groupServer === null || !groupServer.group.isActive) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({
+      where: { profileId: profile.id },
+      include: { guild: true }
+    });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+
+    return buildCrossServerGuildHistory(prisma, member.guild, {
+      id: groupServer.group.id,
+      name: groupServer.group.name,
+      ruleLabel: groupServer.group.ruleLabel,
+      serverIds: groupServer.group.servers.map((item) => item.serverId)
+    });
   },
 
   async registerCrossServer(accountId, serverId, today) {
@@ -8921,6 +9155,29 @@ export const createPrismaGameRepository = (
         equippedTitle: null
       }))
     };
+  },
+
+  async getGuildHistory(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({
+      where: { profileId: profile.id },
+      include: { guild: true }
+    });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+
+    return buildGuildHistory(prisma, member.guild);
   },
 
   async joinOrCreateGuild(accountId, serverId, guildName, today) {
@@ -9738,13 +9995,12 @@ export const createPrismaGameRepository = (
       orderBy: { contributionScore: "desc" },
       take: 3
     });
-    const rewardValues = [120, 80, 50];
     const rewards = rankedMembers.map((rankedMember, index) => ({
       profileId: rankedMember.profileId,
       founderName: rankedMember.profile.founderName,
       companyName: rankedMember.profile.companyName,
       rank: index + 1,
-      reputationReward: rewardValues[index] ?? 0
+      reputationReward: guildLeaderboardRewards[index] ?? 0
     })).filter((reward) => reward.reputationReward > 0);
 
     await prisma.$transaction(rewards.flatMap((reward) => [

@@ -936,6 +936,50 @@ type GuildLeaderboardSettlement = GuildActionResult & {
   }>;
 };
 
+type GuildHistory = {
+  guild: { id: string; name: string; serverId: string };
+  currentTopMembers: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    rank: number;
+    contributionScore: number;
+    reputationReward: number;
+  }>;
+  settlements: Array<{
+    snapshotDate: string;
+    deliveredRewards: number;
+    topMembers: Array<{
+      profileId: string;
+      founderName: string;
+      companyName: string;
+      rank: number;
+      contributionScore: number;
+      reputationReward: number;
+    }>;
+  }>;
+};
+
+type CrossServerGuildHistory = {
+  guild: { id: string; name: string; serverId: string };
+  group: { id: string; name: string; ruleLabel: string; serverIds: string[] } | null;
+  isRegistered: boolean;
+  settlements: Array<{
+    snapshotDate: string;
+    deliveredRewards: number;
+    finalRank: number | null;
+    topGuilds: Array<{
+      guildId: string;
+      guildName: string;
+      serverId: string;
+      leaderProfileId: string;
+      leaderFounderName: string;
+      rank: number;
+      reputationReward: number;
+    }>;
+  }>;
+};
+
 const productStageLabels: Record<ProductStage, string> = {
   idea: "立项",
   mvp: "MVP",
@@ -1581,11 +1625,13 @@ function App() {
   const [scenarioRun, setScenarioRun] = useState<ScenarioRunResult["run"] | null>(null);
   const [leaderboardCenter, setLeaderboardCenter] = useState<LeaderboardCenter | null>(null);
   const [crossServerCenter, setCrossServerCenter] = useState<CrossServerCenter | null>(null);
+  const [crossServerGuildHistory, setCrossServerGuildHistory] = useState<CrossServerGuildHistory | null>(null);
   const [titleCenter, setTitleCenter] = useState<TitleCenter | null>(null);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [selectedKnowledgeEntryId, setSelectedKnowledgeEntryId] = useState("");
   const [guildCenter, setGuildCenter] = useState<GuildCenter | null>(null);
+  const [guildHistory, setGuildHistory] = useState<GuildHistory | null>(null);
   const [guildAnnouncementDraft, setGuildAnnouncementDraft] = useState("");
   const [guildRulesDraft, setGuildRulesDraft] = useState("");
   const [phase14Error, setPhase14Error] = useState("");
@@ -1878,6 +1924,8 @@ function App() {
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
   const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
+  const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
+  const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
   const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
   const canManageGuildMembers = currentGuildMember?.role === "leader";
@@ -2480,13 +2528,15 @@ function App() {
   };
 
   const loadPhase14Center = async (token: string, nextServerId: string): Promise<void> => {
-    const [leaderboards, crossServer, titles, achievementList, knowledge, guild] = await Promise.all([
+    const [leaderboards, crossServer, titles, achievementList, knowledge, guild, guildHistoryResponse, crossGuildHistoryResponse] = await Promise.all([
       apiRequest<LeaderboardCenter>(`/leaderboards?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<CrossServerCenter>(`/cross-server?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<TitleCenter>(`/titles?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<AchievementItem[]>(`/achievements?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
       apiRequest<KnowledgeEntry[]>(`/knowledge?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
-      apiRequest<GuildCenter>(`/guild?serverId=${encodeURIComponent(nextServerId)}`, {}, token)
+      apiRequest<GuildCenter>(`/guild?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<GuildHistory>(`/guild/history?serverId=${encodeURIComponent(nextServerId)}`, {}, token),
+      apiRequest<CrossServerGuildHistory>(`/cross-server/guild/history?serverId=${encodeURIComponent(nextServerId)}`, {}, token)
     ]);
 
     if (leaderboards.success) {
@@ -2511,6 +2561,8 @@ function App() {
     if (guild.success) {
       setGuildCenter(guild.data);
     }
+    setGuildHistory(guildHistoryResponse.success ? guildHistoryResponse.data : null);
+    setCrossServerGuildHistory(crossGuildHistoryResponse.success ? crossGuildHistoryResponse.data : null);
 
     const firstError = [leaderboards, crossServer, titles, achievementList, knowledge, guild].find((response) => !response.success);
     setPhase14Error(firstError && !firstError.success ? firstError.error.message : "");
@@ -2582,6 +2634,7 @@ function App() {
       setCrossServerCenter(response.data);
       setPhase14Notice(`${response.data.guildSeason.guildName ?? "商会"} 已报名跨服商会赛季。`);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -2680,6 +2733,7 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -2729,6 +2783,7 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -2753,6 +2808,7 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -2777,6 +2833,7 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -2801,6 +2858,7 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
       return;
     }
 
@@ -4748,6 +4806,29 @@ function App() {
                       结算商会赛季
                     </button>
                   </div>
+                  <div className="mt-4 rounded-2xl bg-slate-900/60 border border-white/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <strong className="text-xs text-white font-black">赛季回顾</strong>
+                      <span className="text-[9px] text-business-gold">{crossServerGuildHistory?.isRegistered ? "已报名" : "未报名"}</span>
+                    </div>
+                    {latestCrossGuildSettlement === null ? (
+                      <p className="mt-3 text-[10px] leading-5 text-slate-500 font-bold">跨服商会赛季结算后生成回顾。</p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.finalRank ?? "-"}</strong><span className="text-[9px] text-slate-500">最终名次</span></div>
+                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.deliveredRewards}</strong><span className="text-[9px] text-slate-500">发放</span></div>
+                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.snapshotDate.slice(5)}</strong><span className="text-[9px] text-slate-500">赛季日</span></div>
+                        </div>
+                        {latestCrossGuildSettlement.topGuilds.slice(0, 3).map((row) => (
+                          <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-950/70 px-3 py-2" key={`${row.guildId}:${row.rank}`}>
+                            <span className="min-w-0 truncate text-[10px] text-slate-300 font-bold">#{row.rank} {row.guildName}</span>
+                            <span className="shrink-0 text-[9px] text-business-gold">声望 +{row.reputationReward}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -4938,6 +5019,31 @@ function App() {
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayActiveMemberCount}</strong><span className="text-[9px] text-slate-500">活跃</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayCollaborationCount}</strong><span className="text-[9px] text-slate-500">协作</span></div>
                       </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">历史荣誉</strong>
+                        <span className="text-[10px] text-business-gold">{latestGuildSettlement?.snapshotDate ?? "待结算"}</span>
+                      </div>
+                      {latestGuildSettlement === null ? (
+                        <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">贡献榜结算后生成商会历史荣誉。</p>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{latestGuildSettlement.deliveredRewards}</strong><span className="text-[9px] text-slate-500">奖励发放</span></div>
+                            <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildHistory?.currentTopMembers[0]?.contributionScore ?? 0}</strong><span className="text-[9px] text-slate-500">当前最高贡献</span></div>
+                          </div>
+                          {latestGuildSettlement.topMembers.slice(0, 3).map((member) => (
+                            <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-900/60 px-3 py-2" key={`${member.profileId}:${member.rank}`}>
+                              <div className="min-w-0">
+                                <strong className="block text-xs text-white truncate">#{member.rank} {member.founderName}</strong>
+                                <span className="text-[9px] text-slate-500 truncate">{member.companyName}</span>
+                              </div>
+                              <span className="shrink-0 text-[10px] text-business-gold font-black">声望 +{member.reputationReward}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </section>
                     <section className="glass-panel rounded-3xl p-4">
                       <div className="flex items-center justify-between mb-3">
