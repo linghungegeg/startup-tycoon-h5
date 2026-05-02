@@ -1273,6 +1273,74 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/cross-server/guild/register") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.registerCrossServerGuild(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before registering cross-server guild season.", traceId));
+        return;
+      }
+      if (result === "GUILD_PERMISSION_DENIED") {
+        sendJson(response, 403, failure("GUILD_PERMISSION_DENIED", "Guild permission denied.", traceId));
+        return;
+      }
+      if (result === "GUILD_SEASON_REQUIREMENT_NOT_MET") {
+        sendJson(response, 409, failure("GUILD_SEASON_REQUIREMENT_NOT_MET", "Guild season requirements are not met.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/guild/settle") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.settleCrossServerGuildRewards(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before settling cross-server guild season.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/cross-server/settle") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

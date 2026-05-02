@@ -977,6 +977,49 @@ export type CrossServerCenterRecord = {
   group: CrossServerGroupRecord;
   isRegistered: boolean;
   boards: LeaderboardBoardRecord[];
+  guildSeason: {
+    isGuildMember: boolean;
+    isManager: boolean;
+    isRegistered: boolean;
+    canRegister: boolean;
+    guildId: string | null;
+    guildName: string | null;
+    memberCount: number;
+    todayActiveMemberCount: number;
+    minMembers: number;
+    minTodayActiveMembers: number;
+    rewardLabel: string;
+    statusLabel: string;
+  };
+  guildBoard: {
+    key: string;
+    name: string;
+    scope: "cross";
+    isActive: boolean;
+    snapshotDate: string;
+    rows: Array<{
+      rank: number;
+      guildId: string;
+      guildName: string;
+      serverId: string;
+      leaderProfileId: string;
+      leaderFounderName: string;
+      memberCount: number;
+      value: number;
+      valueLabel: string;
+    }>;
+  };
+};
+
+export type CrossServerGuildSettlementRecord = LeaderboardSettlementRecord & {
+  rewards: Array<{
+    guildId: string;
+    guildName: string;
+    leaderProfileId: string;
+    leaderFounderName: string;
+    rank: number;
+    reputationReward: number;
+  }>;
 };
 
 export type TitleRecord = {
@@ -1228,6 +1271,8 @@ export type GameRepository = {
   getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  registerCrossServerGuild(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_SEASON_REQUIREMENT_NOT_MET">;
+  settleCrossServerGuildRewards(accountId: string, serverId: string, today: string): Promise<CrossServerGuildSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   listTitles(accountId: string, serverId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND">;
   equipTitle(accountId: string, serverId: string, titleId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND" | "TITLE_NOT_FOUND" | "TITLE_EXPIRED">;
   listAchievements(accountId: string, serverId: string): Promise<AchievementRecord[] | "PLAYER_NOT_FOUND">;
@@ -2530,6 +2575,14 @@ const crossServerLeaderboardConfigs = [
   { key: "cross-company-value", name: "跨服创业大赛榜" },
   { key: "cross-guild", name: "跨服商会榜" }
 ] as const;
+
+const crossServerGuildSeasonRequirements = {
+  minMembers: 2,
+  minTodayActiveMembers: 2,
+  rewardLabel: "前 3 名会长获得声望 180/120/80"
+};
+
+const crossServerGuildSeasonRewards = [180, 120, 80];
 
 const formatLeaderboardValue = (key: string, value: number): string => {
   if (key === "cashflow") {
@@ -7440,7 +7493,9 @@ export const createPrismaGameRepository = (
     }
 
     const serverIds = groupServer.group.servers.map((item) => item.serverId);
-    const [profiles, signup] = await Promise.all([
+    const dayStart = new Date(`${today}T00:00:00.000Z`);
+    const dayEnd = new Date(`${today}T23:59:59.999Z`);
+    const [profiles, signup, guildMember, guildSignups] = await Promise.all([
       prisma.playerProfile.findMany({
         where: { serverId: { in: serverIds } },
         include: {
@@ -7454,6 +7509,20 @@ export const createPrismaGameRepository = (
           profileId_groupId: {
             profileId: profile.id,
             groupId: groupServer.groupId
+          }
+        }
+      }),
+      prisma.guildMember.findUnique({
+        where: { profileId: profile.id },
+        include: { guild: true }
+      }),
+      prisma.crossServerGuildSignup.findMany({
+        where: { groupId: groupServer.groupId, status: "active" },
+        include: {
+          guild: {
+            include: {
+              members: { include: { profile: true } }
+            }
           }
         }
       })
@@ -7507,6 +7576,35 @@ export const createPrismaGameRepository = (
         snapshotDate: today
       };
     }));
+    const guildRows = guildSignups
+      .map((signupRow) => {
+        const leader = signupRow.guild.members.find((item) => item.role === "leader") ?? signupRow.guild.members[0];
+        return {
+          rank: 0,
+          guildId: signupRow.guildId,
+          guildName: signupRow.guild.name,
+          serverId: signupRow.serverId,
+          leaderProfileId: leader?.profileId ?? "",
+          leaderFounderName: leader?.profile.founderName ?? "",
+          memberCount: signupRow.guild.members.length,
+          value: signupRow.guild.contributionScore,
+          valueLabel: formatLeaderboardValue("cross-guild", signupRow.guild.contributionScore)
+        };
+      })
+      .filter((row) => row.leaderProfileId !== "")
+      .sort((left, right) => right.value - left.value)
+      .map((row, index) => ({ ...row, rank: index + 1 }));
+    const memberCount = guildMember === null ? 0 : await prisma.guildMember.count({ where: { guildId: guildMember.guildId } });
+    const todayActiveMemberCount = guildMember === null ? 0 : (await prisma.guildActivityLog.findMany({
+      where: { guildId: guildMember.guildId, createdAt: { gte: dayStart, lte: dayEnd } },
+      distinct: ["profileId"],
+      select: { profileId: true }
+    })).length;
+    const guildSignup = guildMember === null ? null : guildSignups.find((item) => item.guildId === guildMember.guildId) ?? null;
+    const isManager = guildMember?.role === "leader" || guildMember?.role === "vice_leader";
+    const meetsRequirements =
+      memberCount >= crossServerGuildSeasonRequirements.minMembers &&
+      todayActiveMemberCount >= crossServerGuildSeasonRequirements.minTodayActiveMembers;
 
     return {
       group: {
@@ -7516,7 +7614,29 @@ export const createPrismaGameRepository = (
         serverIds
       },
       isRegistered: signup?.status === "active",
-      boards
+      boards,
+      guildSeason: {
+        isGuildMember: guildMember !== null,
+        isManager,
+        isRegistered: guildSignup !== null,
+        canRegister: guildMember !== null && isManager && meetsRequirements,
+        guildId: guildMember?.guildId ?? null,
+        guildName: guildMember?.guild.name ?? null,
+        memberCount,
+        todayActiveMemberCount,
+        minMembers: crossServerGuildSeasonRequirements.minMembers,
+        minTodayActiveMembers: crossServerGuildSeasonRequirements.minTodayActiveMembers,
+        rewardLabel: crossServerGuildSeasonRequirements.rewardLabel,
+        statusLabel: guildSignup !== null ? "已报名" : meetsRequirements ? "可报名" : "未达标"
+      },
+      guildBoard: {
+        key: "cross-guild-season",
+        name: "跨服商会赛季榜",
+        scope: "cross",
+        isActive: true,
+        snapshotDate: today,
+        rows: guildRows
+      }
     };
   },
 
@@ -7554,6 +7674,71 @@ export const createPrismaGameRepository = (
       },
       create: {
         profileId: profile.id,
+        serverId,
+        groupId: groupServer.groupId,
+        signupDate: today
+      }
+    });
+
+    return this.getCrossServerCenter(accountId, serverId, today);
+  },
+
+  async registerCrossServerGuild(accountId, serverId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const groupServer = await prisma.crossServerGroupServer.findUnique({
+      where: { serverId },
+      include: { group: true }
+    });
+    if (groupServer === null || !groupServer.group.isActive) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    if (member.role !== "leader" && member.role !== "vice_leader") {
+      return "GUILD_PERMISSION_DENIED";
+    }
+    const dayStart = new Date(`${today}T00:00:00.000Z`);
+    const dayEnd = new Date(`${today}T23:59:59.999Z`);
+    const [memberCount, todayActiveMembers] = await Promise.all([
+      prisma.guildMember.count({ where: { guildId: member.guildId } }),
+      prisma.guildActivityLog.findMany({
+        where: { guildId: member.guildId, createdAt: { gte: dayStart, lte: dayEnd } },
+        distinct: ["profileId"],
+        select: { profileId: true }
+      })
+    ]);
+    if (
+      memberCount < crossServerGuildSeasonRequirements.minMembers ||
+      todayActiveMembers.length < crossServerGuildSeasonRequirements.minTodayActiveMembers
+    ) {
+      return "GUILD_SEASON_REQUIREMENT_NOT_MET";
+    }
+
+    await prisma.crossServerGuildSignup.upsert({
+      where: {
+        guildId_groupId: {
+          guildId: member.guildId,
+          groupId: groupServer.groupId
+        }
+      },
+      update: {
+        status: "active",
+        signupDate: today
+      },
+      create: {
+        guildId: member.guildId,
         serverId,
         groupId: groupServer.groupId,
         signupDate: today
@@ -7611,6 +7796,70 @@ export const createPrismaGameRepository = (
         activityBoards: []
       },
       deliveredRewards
+    };
+  },
+
+  async settleCrossServerGuildRewards(accountId, serverId, today) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+    if (!center.guildSeason.isGuildMember) {
+      return "GUILD_NOT_JOINED";
+    }
+
+    const rewards = center.guildBoard.rows.slice(0, 3).map((row, index) => ({
+      guildId: row.guildId,
+      guildName: row.guildName,
+      leaderProfileId: row.leaderProfileId,
+      leaderFounderName: row.leaderFounderName,
+      rank: row.rank,
+      reputationReward: crossServerGuildSeasonRewards[index] ?? 0
+    })).filter((reward) => reward.reputationReward > 0);
+
+    let deliveredRewards = 0;
+    for (const reward of rewards) {
+      const existing = await prisma.leaderboardRewardDelivery.findUnique({
+        where: {
+          profileId_boardKey_snapshotDate: {
+            profileId: reward.leaderProfileId,
+            boardKey: "cross-guild-season",
+            snapshotDate: today
+          }
+        }
+      });
+      if (existing !== null) {
+        continue;
+      }
+      await prisma.$transaction([
+        prisma.playerProfile.update({
+          where: { id: reward.leaderProfileId },
+          data: { reputation: { increment: reward.reputationReward } }
+        }),
+        prisma.leaderboardRewardDelivery.create({
+          data: {
+            profileId: reward.leaderProfileId,
+            serverId: center.group.id,
+            boardKey: "cross-guild-season",
+            snapshotDate: today,
+            rank: reward.rank,
+            rewardPlatformCoins: 0,
+            rewardTitleId: null,
+            mailSubject: `跨服商会赛季榜第 ${reward.rank} 名奖励`,
+            mailBody: `cross-guild-season:${reward.guildId}`
+          }
+        })
+      ]);
+      deliveredRewards += 1;
+    }
+
+    return {
+      leaderboard: {
+        boards: center.boards,
+        activityBoards: []
+      },
+      deliveredRewards,
+      rewards: deliveredRewards > 0 ? rewards : []
     };
   },
 

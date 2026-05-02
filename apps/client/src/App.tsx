@@ -729,6 +729,38 @@ type CrossServerCenter = {
   };
   isRegistered: boolean;
   boards: LeaderboardCenter["boards"];
+  guildSeason: {
+    isGuildMember: boolean;
+    isManager: boolean;
+    isRegistered: boolean;
+    canRegister: boolean;
+    guildId: string | null;
+    guildName: string | null;
+    memberCount: number;
+    todayActiveMemberCount: number;
+    minMembers: number;
+    minTodayActiveMembers: number;
+    rewardLabel: string;
+    statusLabel: string;
+  };
+  guildBoard: {
+    key: string;
+    name: string;
+    scope: "cross";
+    isActive: boolean;
+    snapshotDate: string;
+    rows: Array<{
+      rank: number;
+      guildId: string;
+      guildName: string;
+      serverId: string;
+      leaderProfileId: string;
+      leaderFounderName: string;
+      memberCount: number;
+      value: number;
+      valueLabel: string;
+    }>;
+  };
 };
 
 type LeaderboardSettlement = {
@@ -1834,6 +1866,7 @@ function App() {
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
+  const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
   const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
   const canManageGuildMembers = currentGuildMember?.role === "leader";
@@ -2511,6 +2544,54 @@ function App() {
 
     if (response.success) {
       setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服奖励已结算 ${response.data.deliveredRewards} 份。` : "跨服奖励已结算，本日没有重复发放。");
+      setPhase14Error("");
+      await loadPhase14Center(account.token, selectedServer.id);
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const registerCrossServerGuild = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<CrossServerCenter>(
+      "/cross-server/guild/register",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCrossServerCenter(response.data);
+      setPhase14Notice(`${response.data.guildSeason.guildName ?? "商会"} 已报名跨服商会赛季。`);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const settleCrossServerGuild = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<LeaderboardSettlement>(
+      "/cross-server/guild/settle",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服商会赛季已结算 ${response.data.deliveredRewards} 份声望奖励。` : "跨服商会赛季已结算，本日没有重复发放。");
       setPhase14Error("");
       await loadPhase14Center(account.token, selectedServer.id);
       return;
@@ -4542,6 +4623,62 @@ function App() {
                     </button>
                     <button className="rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleCrossServer()}>
                       结算跨服
+                    </button>
+                  </div>
+                </section>
+                <section className="glass-panel rounded-3xl p-4">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">跨服商会赛季</strong>
+                      <span className="text-[9px] text-slate-500">{crossServerCenter?.guildSeason.guildName ?? "加入商会后参与"}</span>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                      {crossServerCenter?.guildSeason.statusLabel ?? "读取中"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.memberCount ?? 0}/{crossServerCenter?.guildSeason.minMembers ?? 2}</strong>
+                      <span className="text-[9px] text-slate-500">成员</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.todayActiveMemberCount ?? 0}/{crossServerCenter?.guildSeason.minTodayActiveMembers ?? 2}</strong>
+                      <span className="text-[9px] text-slate-500">活跃</span>
+                    </div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2">
+                      <strong className="block text-sm text-white">{currentCrossGuildRank}</strong>
+                      <span className="text-[9px] text-slate-500">排名</span>
+                    </div>
+                  </div>
+                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
+                    {crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {(crossServerCenter?.guildBoard.rows ?? []).slice(0, 3).map((row) => (
+                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.guildId}>
+                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                        <div className="flex-1 min-w-0">
+                          <strong className="block text-xs text-white font-black truncate">{row.guildName}</strong>
+                          <span className="text-[9px] text-slate-500">会长 {row.leaderFounderName} · {row.memberCount} 人</span>
+                        </div>
+                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                      </article>
+                    ))}
+                    {(crossServerCenter?.guildBoard.rows.length ?? 0) === 0 && (
+                      <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无已报名商会。</p>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                      disabled={!crossServerCenter?.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
+                      type="button"
+                      onClick={() => void registerCrossServerGuild()}
+                    >
+                      {crossServerCenter?.guildSeason.isRegistered ? "已报名" : "报名商会赛季"}
+                    </button>
+                    <button className="rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleCrossServerGuild()}>
+                      结算商会赛季
                     </button>
                   </div>
                 </section>

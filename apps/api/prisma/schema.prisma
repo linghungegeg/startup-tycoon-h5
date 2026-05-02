@@ -128,6 +128,7 @@ model CrossServerGroup {
   createdAt   DateTime      @default(now())
   servers     CrossServerGroupServer[]
   signups     CrossServerSignup[]
+  guildSignups CrossServerGuildSignup[]
 
   @@index([isActive, sortOrder])
 }
@@ -156,6 +157,22 @@ model CrossServerSignup {
   profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@unique([profileId, groupId])
+  @@index([groupId, status])
+  @@index([serverId, status])
+}
+
+model CrossServerGuildSignup {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  groupId     String        @db.VarChar(32)
+  guildId     String        @db.VarChar(36)
+  serverId    String        @db.VarChar(32)
+  signupDate  String        @db.VarChar(10)
+  status      String        @default("active") @db.VarChar(16)
+  createdAt   DateTime      @default(now())
+  group       CrossServerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, groupId])
   @@index([groupId, status])
   @@index([serverId, status])
 }
@@ -687,6 +704,7 @@ model Guild {
   joinRequests GuildJoinRequest[]
   activityLogs GuildActivityLog[]
   projectProgress GuildProjectProgress[]
+  crossServerGuildSignups CrossServerGuildSignup[]
 
   @@unique([serverId, name])
   @@index([serverId, contributionScore])
