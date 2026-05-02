@@ -2518,6 +2518,19 @@ VIP 权益：
 - 不做自动修复，不做资产编辑。
 - 验收标准：异常能被识别，正常配置不误报严重风险，巡检不改变玩家资产。
 
+##### Phase 27 第二实施批次总结：经济异常巡检
+
+- 完成内容：新增只读 `GET /admin/economy-alerts`，Admin 登录后可查看平台币异常增长、VIP 经验异常、离线现金异常、重复结算风险、经营时钟同步频率和外部支付预留状态。
+- 只读边界：接口只读取玩家档案、平台币流水、VIP 钱包、经营时钟摘要、榜单奖励投递和外部支付预留订单；不触发经营时钟懒同步，不发放奖励，不扣减资产，不修正配置。
+- Admin 前台：新增“经济巡检”菜单，页面采用后台摘要、检查点和告警表格，不新增处理按钮，不改变玩家查询、平台币 / VIP、经营时钟和审计日志的既有操作链路。
+- 四插件检查：
+  - Superpowers：按 TDD 先补 API 鉴权/只读巡检红灯测试和 Admin 静态红灯检查，再实现最小仓库方法、路由和页面。
+  - Browser Use：本地浏览器验收 Admin 经济巡检页、数据看板、前台主页入口和 API health；确认巡检页只读展示。
+  - Build Web Apps：Admin 页面保持稳重后台结构、紧凑摘要、检查点和表格密度，不做营销式页面或卡片堆叠。
+  - Game Studio：本批不改前台可见层；确认前台 HUD、底部导航、商业/活动/Rank/专属经理入口不受影响。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 27 economy alerts|phase 27 aggregates commercial engagement|phase 26 admin business clock observations|phase 25 admin monetization boundaries|platform coin spending upgrades VIP" --import tsx apps/api/test/http.test.ts`、`node --test apps/admin/test/phase27-economy-alerts.test.mjs apps/admin/test/phase27-monetization-analytics.test.mjs apps/admin/test/phase26-business-clock-observations.test.mjs apps/client/test/phase27-commercial-telemetry.test.mjs apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/admin`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/client`、`git diff --check`。
+- 下一批入口：Phase 27 第三实施批次“玩家主流程上线前回归”。
+
 #### Phase 27 第三实施批次：玩家主流程上线前回归
 
 - 回归路径：

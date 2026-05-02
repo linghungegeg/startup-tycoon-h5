@@ -359,6 +359,30 @@ type BusinessClockObservations = {
   }>;
 };
 
+type EconomyAlerts = {
+  summary: {
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+    platformCoinRiskCount: number;
+    vipExperienceRiskCount: number;
+    offlineCashRiskCount: number;
+    settlementRiskCount: number;
+    businessClockSyncRiskCount: number;
+  };
+  checkpoints: Array<{ key: string; label: string; status: string; value: number }>;
+  alerts: Array<{
+    id: string;
+    level: string;
+    type: string;
+    targetType: string;
+    targetId: string;
+    message: string;
+    suggestion: string;
+  }>;
+};
+
 type ActivityDraftForm = {
   id: string;
   name: string;
@@ -591,7 +615,7 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "businessClock" | "configs" | "knowledge" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "businessClock" | "economy" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "analytics", label: "数据看板" },
@@ -602,6 +626,7 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "guilds", label: "商会运营" },
   { id: "activities", label: "活动运营" },
   { id: "businessClock", label: "经营时钟" },
+  { id: "economy", label: "经济巡检" },
   { id: "configs", label: "配置清单" },
   { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
@@ -837,6 +862,11 @@ export default function App() {
     cashDeltaBands: [],
     rows: []
   });
+  const [economyAlerts, setEconomyAlerts] = useState<EconomyAlerts>({
+    summary: { total: 0, critical: 0, warning: 0, info: 0, platformCoinRiskCount: 0, vipExperienceRiskCount: 0, offlineCashRiskCount: 0, settlementRiskCount: 0, businessClockSyncRiskCount: 0 },
+    checkpoints: [],
+    alerts: []
+  });
   const [activityDraftForm, setActivityDraftForm] = useState<ActivityDraftForm>(defaultActivityDraftForm);
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
   const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
@@ -991,12 +1021,13 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
         apiRequest<ActivitySchedule>("/admin/activity-schedule", {}, token),
         apiRequest<BusinessClockObservations>("/admin/business-clock-observations", {}, token),
+        apiRequest<EconomyAlerts>("/admin/economy-alerts", {}, token),
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
@@ -1021,6 +1052,10 @@ export default function App() {
       }
       if (!clockResponse.success) {
         setError(clockResponse.error.message);
+        return;
+      }
+      if (!economyResponse.success) {
+        setError(economyResponse.error.message);
         return;
       }
       if (!draftResponse.success) {
@@ -1048,6 +1083,7 @@ export default function App() {
       setMonetizationBoundaries(boundaryResponse.data);
       setActivitySchedule(scheduleResponse.data);
       setBusinessClockObservations(clockResponse.data);
+      setEconomyAlerts(economyResponse.data);
       setActivityDrafts(draftResponse.data);
       setActivityPublishObservations(publishObservationResponse.data);
       applyAuditList(logs.data);
@@ -1185,6 +1221,7 @@ export default function App() {
     });
     setActivitySchedule({ summary: { totalActivities: 0, activeCount: 0, upcomingCount: 0, endedCount: 0, maxConcurrentActive: 0, rewardBoundaryRiskCount: 0, missingLeaderboardKeyCount: 0 }, windows: [], activities: [], alerts: [] });
     setBusinessClockObservations({ summary: { totalPlayers: 0, syncedPlayers: 0, staleSyncCount: 0, riskPulseCount: 0, managerTodoCount: 0, anomalyCount: 0 }, offlineMinuteBands: [], cashDeltaBands: [], rows: [] });
+    setEconomyAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, platformCoinRiskCount: 0, vipExperienceRiskCount: 0, offlineCashRiskCount: 0, settlementRiskCount: 0, businessClockSyncRiskCount: 0 }, checkpoints: [], alerts: [] });
     setActivityDraftForm(defaultActivityDraftForm());
     setActivityDraftValidation(null);
     setActivityDrafts({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
@@ -2619,6 +2656,74 @@ export default function App() {
                             {row.anomaly ?? "正常"}
                           </span>
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+        )}
+
+        {activeSection === "economy" && (
+          <section className="stacked-sections" aria-label="经济巡检">
+            <section className="table-section compact-table">
+              <div className="table-toolbar">
+                <strong>经济巡检</strong>
+                <span>只读巡检</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>巡检摘要</h3>
+                  <p>总告警：{formatNumber(economyAlerts.summary.total)}</p>
+                  <p>严重 {formatNumber(economyAlerts.summary.critical)} / 警告 {formatNumber(economyAlerts.summary.warning)} / 提示 {formatNumber(economyAlerts.summary.info)}</p>
+                  <p>平台币异常增长：{formatNumber(economyAlerts.summary.platformCoinRiskCount)}</p>
+                  <p>VIP 经验异常：{formatNumber(economyAlerts.summary.vipExperienceRiskCount)}</p>
+                </div>
+                <div>
+                  <h3>经营与结算</h3>
+                  <p>离线现金异常：{formatNumber(economyAlerts.summary.offlineCashRiskCount)}</p>
+                  <p>重复结算风险：{formatNumber(economyAlerts.summary.settlementRiskCount)}</p>
+                  <p>经营时钟同步频率：{formatNumber(economyAlerts.summary.businessClockSyncRiskCount)}</p>
+                </div>
+                <div>
+                  <h3>处理边界</h3>
+                  <p>经济巡检只读展示风险，不自动修复、不发放奖励、不扣减资产。</p>
+                  <p>具体处理仍进入玩家查询、平台币 / VIP、经营时钟或审计日志核查。</p>
+                </div>
+              </div>
+              <div className="config-grid">
+                {economyAlerts.checkpoints.map((checkpoint) => (
+                  <div key={checkpoint.key}>
+                    <h3>{checkpoint.label}</h3>
+                    <p>{checkpoint.status === "normal" ? "正常" : alertLevelLabel(checkpoint.status)}：{formatNumber(checkpoint.value)}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>等级</th>
+                      <th>类型</th>
+                      <th>目标</th>
+                      <th>提示</th>
+                      <th>建议</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {economyAlerts.alerts.length === 0 && (
+                      <tr>
+                        <td colSpan={5}>暂无经济巡检告警。</td>
+                      </tr>
+                    )}
+                    {economyAlerts.alerts.map((alert) => (
+                      <tr key={alert.id}>
+                        <td><span className={`status-tag status-${alert.level}`}>{alertLevelLabel(alert.level)}</span></td>
+                        <td>{alert.type}</td>
+                        <td>{alert.targetType} / {alert.targetId}</td>
+                        <td>{alert.message}</td>
+                        <td>{alert.suggestion}</td>
                       </tr>
                     ))}
                   </tbody>

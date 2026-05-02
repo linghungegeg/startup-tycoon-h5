@@ -2690,6 +2690,75 @@ const createTestRepository = (): GameRepository => {
         ]
       };
     },
+    async getAdminEconomyAlerts(today) {
+      const alerts: Array<{ id: string; level: "critical" | "warning" | "info"; type: string; targetType: string; targetId: string; message: string; suggestion: string }> = [];
+      for (const [profileId, ledgers] of walletLedgers.entries()) {
+        for (const ledger of ledgers) {
+          if (ledger.changeAmount >= 50000) {
+            alerts.push({
+              id: `platform-coin-${profileId}`,
+              level: "warning",
+              type: "platform_coin_abnormal_growth",
+              targetType: "player_profile",
+              targetId: profileId,
+              message: `平台币异常增长：单笔增加 ${ledger.changeAmount}`,
+              suggestion: "复核平台币流水来源、审计日志和发放原因，不自动修正玩家资产。"
+            });
+          }
+        }
+      }
+      for (const wallet of wallets.values()) {
+        if (wallet.vipExperience >= 100000) {
+          alerts.push({
+            id: `vip-experience-${wallet.profileId}`,
+            level: "warning",
+            type: "vip_experience_abnormal",
+            targetType: "player_profile",
+            targetId: wallet.profileId,
+            message: `VIP 经验异常：当前 ${wallet.vipExperience}`,
+            suggestion: "复核付费商品、后台调整和 VIP 经验来源，不自动降级或扣减。"
+          });
+        }
+      }
+      const businessClockSyncRiskCount = [...profiles.values()].filter((profile) => profile.businessClockSyncedAt === null).length;
+      if (businessClockSyncRiskCount > 0) {
+        alerts.push({
+          id: "business-clock-sync-frequency",
+          level: "info",
+          type: "business_clock_sync_frequency",
+          targetType: "business_clock",
+          targetId: today,
+          message: `经营时钟同步频率：${businessClockSyncRiskCount} 名玩家未同步。`,
+          suggestion: "进入经营时钟观测页确认最近同步时间，本巡检只读不触发懒同步。"
+        });
+      }
+      const platformCoinRiskCount = alerts.filter((alert) => alert.type === "platform_coin_abnormal_growth").length;
+      const vipExperienceRiskCount = alerts.filter((alert) => alert.type === "vip_experience_abnormal").length;
+      const offlineCashRiskCount = 0;
+      const settlementRiskCount = 0;
+      const checkpoint = (key: string, label: string, value: number) => ({ key, label, status: value === 0 ? "normal" as const : "warning" as const, value });
+      return {
+        summary: {
+          total: alerts.length,
+          critical: alerts.filter((alert) => alert.level === "critical").length,
+          warning: alerts.filter((alert) => alert.level === "warning").length,
+          info: alerts.filter((alert) => alert.level === "info").length,
+          platformCoinRiskCount,
+          vipExperienceRiskCount,
+          offlineCashRiskCount,
+          settlementRiskCount,
+          businessClockSyncRiskCount
+        },
+        checkpoints: [
+          checkpoint("platform_coin_abnormal_growth", "平台币异常增长", platformCoinRiskCount),
+          checkpoint("vip_experience_abnormal", "VIP 经验异常", vipExperienceRiskCount),
+          checkpoint("offline_cash_abnormal", "离线现金异常", offlineCashRiskCount),
+          checkpoint("settlement_duplicate_risk", "重复结算风险", settlementRiskCount),
+          checkpoint("business_clock_sync_frequency", "经营时钟同步频率", businessClockSyncRiskCount)
+        ],
+        alerts
+      };
+    },
     async getAdminBusinessClockObservations(today) {
       const now = new Date(`${today}T23:59:59.000Z`);
       const offlineBands = new Map<string, number>([
@@ -8478,6 +8547,70 @@ test("phase 27 aggregates commercial engagement signals in admin analytics", asy
     assert.equal(analytics.body.data?.monetization.longTermGoalClickCount, 1);
     assert.equal(analytics.body.data?.monetization.businessClockBriefingOpenCount, 1);
     assert.equal(analytics.body.data?.monetization.businessClockTodoHandledCount, 1);
+  });
+});
+
+test("phase 27 economy alerts report read-only monetization and settlement risks", async () => {
+  await withServer(async (baseUrl) => {
+    const { profile } = await createPlayerSession(baseUrl, "economyalerts27");
+
+    const blocked = await requestJson(baseUrl, "/admin/economy-alerts");
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    assert.ok(adminLogin.body.data?.token);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data.token}` };
+
+    const granted = await requestJson(baseUrl, "/admin/wallet/adjust", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        profileId: profile.id,
+        source: "admin_grant",
+        changeAmount: 60000,
+        reason: "经济巡检红灯测试"
+      })
+    });
+    assert.equal(granted.status, 200, JSON.stringify(granted.body));
+
+    const vipAdjusted = await requestJson(baseUrl, "/admin/vip/adjust", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({
+        profileId: profile.id,
+        vipExperience: 120000,
+        reason: "经济巡检红灯测试"
+      })
+    });
+    assert.equal(vipAdjusted.status, 200, JSON.stringify(vipAdjusted.body));
+
+    const alerts = await requestJson<{
+      summary: {
+        total: number;
+        platformCoinRiskCount: number;
+        vipExperienceRiskCount: number;
+        offlineCashRiskCount: number;
+        settlementRiskCount: number;
+        businessClockSyncRiskCount: number;
+      };
+      alerts: Array<{ level: string; type: string; targetType: string; targetId: string; message: string; suggestion: string }>;
+      checkpoints: Array<{ key: string; label: string; status: string; value: number }>;
+    }>(baseUrl, "/admin/economy-alerts", {
+      headers: adminHeaders
+    });
+    assert.equal(alerts.status, 200, JSON.stringify(alerts.body));
+    assert.ok((alerts.body.data?.summary.total ?? 0) >= 2);
+    assert.equal(alerts.body.data?.summary.platformCoinRiskCount, 1);
+    assert.equal(alerts.body.data?.summary.vipExperienceRiskCount, 1);
+    assert.ok(alerts.body.data?.alerts.some((alert) => alert.type === "platform_coin_abnormal_growth" && alert.targetId === profile.id));
+    assert.ok(alerts.body.data?.alerts.some((alert) => alert.type === "vip_experience_abnormal" && alert.targetId === profile.id));
+    assert.ok(alerts.body.data?.checkpoints.some((checkpoint) => checkpoint.key === "settlement_duplicate_risk"));
+    assert.ok(alerts.body.data?.checkpoints.some((checkpoint) => checkpoint.key === "business_clock_sync_frequency"));
   });
 });
 

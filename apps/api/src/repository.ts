@@ -1135,6 +1135,32 @@ export type AdminMonetizationBoundaryRecord = {
   }>;
 };
 
+export type AdminEconomyAlertRecord = {
+  id: string;
+  level: AdminOperationConfigAlertLevel;
+  type: string;
+  targetType: string;
+  targetId: string;
+  message: string;
+  suggestion: string;
+};
+
+export type AdminEconomyAlertListRecord = {
+  summary: {
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+    platformCoinRiskCount: number;
+    vipExperienceRiskCount: number;
+    offlineCashRiskCount: number;
+    settlementRiskCount: number;
+    businessClockSyncRiskCount: number;
+  };
+  checkpoints: Array<{ key: string; label: string; status: "normal" | "warning" | "critical"; value: number }>;
+  alerts: AdminEconomyAlertRecord[];
+};
+
 export type AdminActivityScheduleRecord = {
   summary: {
     totalActivities: number;
@@ -1975,6 +2001,7 @@ export type GameRepository = {
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
   getAdminMonetizationBoundaries(today: string): Promise<AdminMonetizationBoundaryRecord>;
+  getAdminEconomyAlerts(today: string): Promise<AdminEconomyAlertListRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
   validateAdminActivityConfigDraft(draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftValidationRecord>;
   listAdminActivityConfigDrafts(status: string, today: string): Promise<AdminActivityConfigDraftListRecord>;
@@ -4523,6 +4550,11 @@ const guildProjectProgressUpdates = (prisma: PrismaClient, guildId: string): Pri
 const rateBasisPoints = (part: number, total: number): number =>
   total <= 0 ? 0 : Math.min(10000, Math.round((part / total) * 10000));
 
+const ECONOMY_PLATFORM_COIN_DELTA_ALERT = 50000;
+const ECONOMY_VIP_EXPERIENCE_ALERT = 100000;
+const ECONOMY_OFFLINE_CASH_DELTA_ALERT = 500000;
+const ECONOMY_BUSINESS_CLOCK_STALE_MINUTES = 24 * 60;
+
 const countTelemetryTargets = <TKey extends string>(
   events: Array<{ targetId: string | null }>,
   keyName: TKey
@@ -5459,6 +5491,147 @@ export const createPrismaGameRepository = (
           traceId: null
         }
       ]
+    };
+  },
+
+  async getAdminEconomyAlerts(today) {
+    const now = new Date(`${today}T23:59:59.000Z`);
+    const [profiles, wallets, ledgers, reservedPaymentCount, platformCoinRewardDeliveryCount] = await Promise.all([
+      prisma.playerProfile.findMany({
+        select: {
+          id: true,
+          companyName: true,
+          serverId: true,
+          businessClockSyncedAt: true,
+          lastBusinessPulseSummaryJson: true
+        }
+      }),
+      prisma.playerPlatformWallet.findMany({ select: { profileId: true, balance: true, vipExperience: true } }),
+      prisma.platformCoinLedger.findMany({
+        orderBy: [{ createdAt: "desc" }],
+        take: 200,
+        select: { profileId: true, changeAmount: true, source: true, reason: true }
+      }),
+      prisma.externalPaymentOrder.count({ where: { status: "reserved" } }),
+      prisma.leaderboardRewardDelivery.count({ where: { rewardPlatformCoins: { gt: 0 } } })
+    ]);
+    const profileNames = new Map(profiles.map((profile) => [profile.id, profile.companyName]));
+    const alerts: AdminEconomyAlertRecord[] = [];
+
+    for (const ledger of ledgers) {
+      if (ledger.changeAmount >= ECONOMY_PLATFORM_COIN_DELTA_ALERT) {
+        alerts.push({
+          id: `platform-coin-${ledger.profileId}`,
+          level: "warning",
+          type: "platform_coin_abnormal_growth",
+          targetType: "player_profile",
+          targetId: ledger.profileId,
+          message: `平台币异常增长：${profileNames.get(ledger.profileId) ?? ledger.profileId} 单笔增加 ${ledger.changeAmount}`,
+          suggestion: "复核平台币流水来源、审计日志和发放原因，不自动修正玩家资产。"
+        });
+      }
+    }
+
+    for (const wallet of wallets) {
+      if (wallet.vipExperience >= ECONOMY_VIP_EXPERIENCE_ALERT) {
+        alerts.push({
+          id: `vip-experience-${wallet.profileId}`,
+          level: "warning",
+          type: "vip_experience_abnormal",
+          targetType: "player_profile",
+          targetId: wallet.profileId,
+          message: `VIP 经验异常：${profileNames.get(wallet.profileId) ?? wallet.profileId} 当前 ${wallet.vipExperience}`,
+          suggestion: "复核付费商品、后台调整和 VIP 经验来源，不自动降级或扣减。"
+        });
+      }
+    }
+
+    for (const profile of profiles) {
+      const pulse = parseBusinessClockPulse(profile.lastBusinessPulseSummaryJson);
+      if (pulse !== null && Math.abs(pulse.cashDelta) >= ECONOMY_OFFLINE_CASH_DELTA_ALERT) {
+        alerts.push({
+          id: `offline-cash-${profile.id}`,
+          level: "warning",
+          type: "offline_cash_abnormal",
+          targetType: "player_profile",
+          targetId: profile.id,
+          message: `离线现金异常：${profile.companyName} 最近脉冲 ${pulse.cashDelta}`,
+          suggestion: "复核经营时钟摘要和财务页展示，不通过巡检接口修改现金。"
+        });
+      }
+    }
+
+    const businessClockSyncRiskCount = profiles.filter((profile) => {
+      if (profile.businessClockSyncedAt === null) {
+        return true;
+      }
+      return Math.floor((now.getTime() - profile.businessClockSyncedAt.getTime()) / 60000) >= ECONOMY_BUSINESS_CLOCK_STALE_MINUTES;
+    }).length;
+    if (businessClockSyncRiskCount > 0) {
+      alerts.push({
+        id: "business-clock-sync-frequency",
+        level: "info",
+        type: "business_clock_sync_frequency",
+        targetType: "business_clock",
+        targetId: today,
+        message: `经营时钟同步频率：${businessClockSyncRiskCount} 名玩家未同步或超过 24 小时未同步。`,
+        suggestion: "进入经营时钟观测页确认最近同步时间，本巡检只读不触发懒同步。"
+      });
+    }
+    if (platformCoinRewardDeliveryCount > 0) {
+      alerts.push({
+        id: "settlement-duplicate-risk",
+        level: "info",
+        type: "settlement_duplicate_risk",
+        targetType: "leaderboard_reward_delivery",
+        targetId: today,
+        message: `重复结算风险：已有 ${platformCoinRewardDeliveryCount} 条榜单平台币奖励投递记录。`,
+        suggestion: "继续依赖唯一键和审计日志追溯，手动结算前确认活动榜和常驻榜状态。"
+      });
+    }
+    if (reservedPaymentCount > 0) {
+      alerts.push({
+        id: "external-payment-reserved",
+        level: "info",
+        type: "external_payment_reserved",
+        targetType: "external_payment_order",
+        targetId: today,
+        message: `外部支付预留订单：${reservedPaymentCount} 条仍为预留状态。`,
+        suggestion: "本地阶段不接真实支付回调，仅确认预留订单不会直接发放平台币。"
+      });
+    }
+
+    const platformCoinRiskCount = alerts.filter((alert) => alert.type === "platform_coin_abnormal_growth").length;
+    const vipExperienceRiskCount = alerts.filter((alert) => alert.type === "vip_experience_abnormal").length;
+    const offlineCashRiskCount = alerts.filter((alert) => alert.type === "offline_cash_abnormal").length;
+    const settlementRiskCount = alerts.filter((alert) => alert.type === "settlement_duplicate_risk").length;
+    const checkpoint = (key: string, label: string, value: number): AdminEconomyAlertListRecord["checkpoints"][number] => ({
+      key,
+      label,
+      status: value === 0 ? "normal" : "warning",
+      value
+    });
+
+    return {
+      summary: {
+        total: alerts.length,
+        critical: alerts.filter((alert) => alert.level === "critical").length,
+        warning: alerts.filter((alert) => alert.level === "warning").length,
+        info: alerts.filter((alert) => alert.level === "info").length,
+        platformCoinRiskCount,
+        vipExperienceRiskCount,
+        offlineCashRiskCount,
+        settlementRiskCount,
+        businessClockSyncRiskCount
+      },
+      checkpoints: [
+        checkpoint("platform_coin_abnormal_growth", "平台币异常增长", platformCoinRiskCount),
+        checkpoint("vip_experience_abnormal", "VIP 经验异常", vipExperienceRiskCount),
+        checkpoint("offline_cash_abnormal", "离线现金异常", offlineCashRiskCount),
+        checkpoint("settlement_duplicate_risk", "重复结算风险", settlementRiskCount),
+        checkpoint("business_clock_sync_frequency", "经营时钟同步频率", businessClockSyncRiskCount)
+      ],
+      alerts
     };
   },
 
