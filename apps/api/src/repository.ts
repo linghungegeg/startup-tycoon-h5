@@ -1007,6 +1007,36 @@ export type AdminConfigCenterRecord = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+export type AdminOperationConfigAlertLevel = "critical" | "warning" | "info";
+
+export type AdminOperationConfigAlertRecord = {
+  id: string;
+  level: AdminOperationConfigAlertLevel;
+  type: string;
+  targetType: string;
+  targetId: string;
+  message: string;
+  suggestion: string;
+  createdAt: string;
+};
+
+export type AdminOperationConfigAlertListRecord = {
+  summary: {
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+    unsettledActivityCount: number;
+    rewardBoundaryRiskCount: number;
+  };
+  filters: {
+    levels: AdminOperationConfigAlertLevel[];
+    types: string[];
+    targetTypes: string[];
+  };
+  alerts: AdminOperationConfigAlertRecord[];
+};
+
 export type AdminKnowledgeEntryRecord = KnowledgeEntryRecord & {
   categoryId: string;
   sortOrder: number;
@@ -1533,6 +1563,7 @@ export type GameRepository = {
   upsertVipLevelConfig(adminUserId: string, config: VipLevelRecord, reason: string): Promise<AdminVipConfigRecord>;
   listAdminPlayers(keyword: string, today: string): Promise<AdminPlayerListRecord>;
   getAdminConfigCenter(today: string): Promise<AdminConfigCenterRecord>;
+  getAdminOperationConfigAlerts(today: string): Promise<AdminOperationConfigAlertListRecord>;
   listAdminAuditLogs(filters: AdminAuditLogFilters): Promise<AdminAuditLogListRecord>;
   listAdminKnowledgeEntries(filters: { keyword: string; category: string; reviewStatus: string }): Promise<AdminKnowledgeListRecord>;
   updateAdminKnowledgeEntry(adminUserId: string, knowledgeId: string, input: AdminKnowledgeUpdateInput): Promise<AdminKnowledgeUpdateRecord | "KNOWLEDGE_NOT_FOUND">;
@@ -7334,6 +7365,133 @@ export const createPrismaGameRepository = (
         name: scenario.name,
         rewardTitleId: scenario.rewardTitleId
       }))
+    };
+  },
+
+  async getAdminOperationConfigAlerts(today) {
+    const [seasons, activities, activityShopItems] = await Promise.all([
+      prisma.seasonConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.activityConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.activityShopItemConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] })
+    ]);
+    const activityBoardKeys = activities.map((activity) => activity.leaderboardKey).filter((boardKey) => boardKey.trim() !== "");
+    const leaderboardDeliveries = activityBoardKeys.length === 0
+      ? []
+      : await prisma.leaderboardRewardDelivery.findMany({
+        where: { boardKey: { in: activityBoardKeys } },
+        select: { boardKey: true, snapshotDate: true, rewardPlatformCoins: true }
+      });
+    const alerts: AdminOperationConfigAlertRecord[] = [];
+    const createdAt = `${today}T00:00:00.000Z`;
+    const hasActivitySettlement = (boardKey: string, snapshotDate: string) =>
+      leaderboardDeliveries.some((delivery) => delivery.boardKey === boardKey && delivery.snapshotDate === snapshotDate);
+    for (const season of seasons) {
+      if (season.passPricePlatformCoins < 0) {
+        alerts.push({
+          id: `season-pass-price:${season.id}`,
+          level: "critical",
+          type: "season_pass_price_invalid",
+          targetType: "season",
+          targetId: season.id,
+          message: `赛季 ${season.name} 的通行证价格小于 0。`,
+          suggestion: "检查赛季通行证配置，保持价格为非负数。",
+          createdAt
+        });
+      }
+    }
+    for (const activity of activities) {
+      const status = readSeasonStatus(activity.startDate, activity.endDate, today);
+      if (activity.leaderboardKey.trim() === "") {
+        alerts.push({
+          id: `activity-missing-board:${activity.id}`,
+          level: "critical",
+          type: "activity_missing_leaderboard_key",
+          targetType: "activity",
+          targetId: activity.id,
+          message: `活动 ${activity.name} 缺少活动榜 key。`,
+          suggestion: "补齐活动榜 key 后再开放活动榜展示与结算。",
+          createdAt
+        });
+      }
+      if (status === "ended" && activity.leaderboardKey.trim() !== "" && !hasActivitySettlement(activity.leaderboardKey, activity.endDate)) {
+        alerts.push({
+          id: `activity-unsettled:${activity.id}:${activity.endDate}`,
+          level: "warning",
+          type: "activity_ended_unsettled",
+          targetType: "activity",
+          targetId: activity.id,
+          message: `活动 ${activity.name} 已结束但活动榜未结算。`,
+          suggestion: "在活动运营页手动触发活动榜结算，重复触发会按幂等规则处理。",
+          createdAt
+        });
+      }
+      if (activity.rewardCash > 0) {
+        alerts.push({
+          id: `reward-boundary:${activity.id}:cash`,
+          level: "critical",
+          type: "reward_boundary_risk",
+          targetType: "activity",
+          targetId: activity.id,
+          message: `活动 ${activity.name} 配置包含现金奖励 ${activity.rewardCash}。`,
+          suggestion: "活动榜结算奖励应保持声望、称号等荣誉资源，避免现金或平台币进入榜单奖励链路。",
+          createdAt
+        });
+      }
+      if (leaderboardDeliveries.some((delivery) => delivery.boardKey === activity.leaderboardKey && delivery.rewardPlatformCoins > 0)) {
+        alerts.push({
+          id: `reward-boundary:${activity.id}:platform-coins`,
+          level: "critical",
+          type: "reward_boundary_risk",
+          targetType: "activity",
+          targetId: activity.id,
+          message: `活动 ${activity.name} 的活动榜结算记录包含平台币奖励。`,
+          suggestion: "复核活动榜结算记录，后续奖励保持声望、称号等荣誉资源。",
+          createdAt
+        });
+      }
+    }
+    for (const item of activityShopItems) {
+      if (item.purchaseLimit < 0 || item.costPoints < 0) {
+        alerts.push({
+          id: `activity-shop-invalid:${item.id}`,
+          level: "critical",
+          type: "activity_shop_invalid",
+          targetType: "activity_shop_item",
+          targetId: item.id,
+          message: `活动商店商品 ${item.name} 的积分或限购配置小于 0。`,
+          suggestion: "修正活动商店积分消耗与限购配置，保持非负数。",
+          createdAt
+        });
+      }
+      if (!item.isActive) {
+        alerts.push({
+          id: `activity-shop-inactive:${item.id}`,
+          level: "info",
+          type: "activity_shop_inactive",
+          targetType: "activity_shop_item",
+          targetId: item.id,
+          message: `活动商店商品 ${item.name} 当前停用。`,
+          suggestion: "如活动仍在进行，确认该商品是否应继续停用。",
+          createdAt
+        });
+      }
+    }
+    const summary = {
+      total: alerts.length,
+      critical: alerts.filter((alert) => alert.level === "critical").length,
+      warning: alerts.filter((alert) => alert.level === "warning").length,
+      info: alerts.filter((alert) => alert.level === "info").length,
+      unsettledActivityCount: alerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
+      rewardBoundaryRiskCount: alerts.filter((alert) => alert.type === "reward_boundary_risk").length
+    };
+    return {
+      summary,
+      filters: {
+        levels: [...new Set(alerts.map((alert) => alert.level))],
+        types: [...new Set(alerts.map((alert) => alert.type))].sort(),
+        targetTypes: [...new Set(alerts.map((alert) => alert.targetType))].sort()
+      },
+      alerts
     };
   },
 

@@ -232,6 +232,34 @@ type ConfigCenter = {
   scenarios: Array<{ id: string; name: string; rewardTitleId: string | null }>;
 };
 
+type OperationConfigAlert = {
+  id: string;
+  level: string;
+  type: string;
+  targetType: string;
+  targetId: string;
+  message: string;
+  suggestion: string;
+  createdAt: string;
+};
+
+type OperationConfigAlerts = {
+  summary: {
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+    unsettledActivityCount: number;
+    rewardBoundaryRiskCount: number;
+  };
+  filters: {
+    levels: string[];
+    types: string[];
+    targetTypes: string[];
+  };
+  alerts: OperationConfigAlert[];
+};
+
 type KnowledgeEntry = {
   id: string;
   categoryId: string;
@@ -357,6 +385,12 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
 
 const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
 const formatRate = (basisPoints: number): string => `${(basisPoints / 100).toFixed(1)}%`;
+const alertLevelLabel = (level: string): string => {
+  if (level === "critical") return "严重";
+  if (level === "warning") return "警告";
+  if (level === "info") return "提示";
+  return level;
+};
 const emptyKnowledgeForm = (): KnowledgeForm => ({
   summary: "",
   scenarioText: "",
@@ -514,6 +548,13 @@ export default function App() {
     leaderboardSettlements: [],
     scenarios: []
   });
+  const [operationConfigAlerts, setOperationConfigAlerts] = useState<OperationConfigAlerts>({
+    summary: { total: 0, critical: 0, warning: 0, info: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 },
+    filters: { levels: [], types: [], targetTypes: [] },
+    alerts: []
+  });
+  const [alertLevel, setAlertLevel] = useState("");
+  const [alertType, setAlertType] = useState("");
   const [analytics, setAnalytics] = useState<AnalyticsDashboard | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
@@ -575,6 +616,12 @@ export default function App() {
   const selectedAuditLog = useMemo(
     () => auditLogs.find((log) => log.id === selectedAuditId) ?? auditLogs[0] ?? null,
     [auditLogs, selectedAuditId]
+  );
+  const filteredOperationConfigAlerts = useMemo(
+    () => operationConfigAlerts.alerts
+      .filter((alert) => alertLevel === "" || alert.level === alertLevel)
+      .filter((alert) => alertType === "" || alert.type === alertType),
+    [alertLevel, alertType, operationConfigAlerts.alerts]
   );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
@@ -651,14 +698,19 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
+      const [configs, configAlerts, logs, analyticsResponse, knowledgeResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
+        apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token)
       ]);
       if (!configs.success) {
         setError(configs.error.message);
+        return;
+      }
+      if (!configAlerts.success) {
+        setError(configAlerts.error.message);
         return;
       }
       if (!logs.success) {
@@ -674,6 +726,7 @@ export default function App() {
         return;
       }
       setConfigCenter(configs.data);
+      setOperationConfigAlerts(configAlerts.data);
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
@@ -798,6 +851,9 @@ export default function App() {
     setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], activityShopItems: [], seasonPass: [], leaderboardSettlements: [], scenarios: [] });
+    setOperationConfigAlerts({ summary: { total: 0, critical: 0, warning: 0, info: 0, unsettledActivityCount: 0, rewardBoundaryRiskCount: 0 }, filters: { levels: [], types: [], targetTypes: [] }, alerts: [] });
+    setAlertLevel("");
+    setAlertType("");
     setAnalytics(null);
     setAuditLogs([]);
     setAuditTotal(0);
@@ -1228,6 +1284,19 @@ export default function App() {
     }
     setActionMessage(`排行榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
     await loadAdminData(session.token, keyword);
+  };
+
+  const refreshOperationConfigAlerts = async (): Promise<void> => {
+    if (session === null) {
+      return;
+    }
+    const result = await apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, session.token);
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setOperationConfigAlerts(result.data);
+    setActionMessage("运营配置巡检已刷新。");
   };
 
   if (session === null) {
@@ -1954,6 +2023,81 @@ export default function App() {
               </label>
               <button type="submit">二次确认后结算</button>
             </form>
+
+            <section className="table-section compact-table" aria-label="运营配置巡检告警">
+              <div className="table-toolbar">
+                <strong>运营配置巡检告警</strong>
+                <div>
+                  <span>严重 {operationConfigAlerts.summary.critical}，警告 {operationConfigAlerts.summary.warning}，提示 {operationConfigAlerts.summary.info}</span>
+                  <button type="button" onClick={() => void refreshOperationConfigAlerts()}>刷新巡检</button>
+                </div>
+              </div>
+              <form className="filter-bar alert-filter" onSubmit={(event) => event.preventDefault()}>
+                <label>
+                  告警等级
+                  <select onChange={(event) => setAlertLevel(event.target.value)} value={alertLevel}>
+                    <option value="">全部等级</option>
+                    {operationConfigAlerts.filters.levels.map((level) => (
+                      <option key={level} value={level}>{alertLevelLabel(level)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  告警类型
+                  <select onChange={(event) => setAlertType(event.target.value)} value={alertType}>
+                    <option value="">全部类型</option>
+                    {operationConfigAlerts.filters.types.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="secondary-button" onClick={() => { setAlertLevel(""); setAlertType(""); }}>重置筛选</button>
+              </form>
+              <div className="config-grid">
+                <div>
+                  <h3>巡检摘要</h3>
+                  <p>总告警：{operationConfigAlerts.summary.total}</p>
+                  <p>已结束未结算活动：{operationConfigAlerts.summary.unsettledActivityCount}</p>
+                  <p>奖励边界风险：{operationConfigAlerts.summary.rewardBoundaryRiskCount}</p>
+                </div>
+                <div>
+                  <h3>处理边界</h3>
+                  <p>本区只读展示配置风险，不提供编辑、自动修复或奖励发放动作。</p>
+                  <p>需要处理时请进入对应运营页按既有幂等接口操作。</p>
+                </div>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>等级</th>
+                      <th>类型</th>
+                      <th>对象</th>
+                      <th>说明</th>
+                      <th>建议</th>
+                      <th>巡检日期</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOperationConfigAlerts.length === 0 && (
+                      <tr>
+                        <td colSpan={6}>当前筛选下暂无告警。</td>
+                      </tr>
+                    )}
+                    {filteredOperationConfigAlerts.map((alert) => (
+                      <tr key={alert.id}>
+                        <td><span className={`status-tag status-${alert.level}`}>{alertLevelLabel(alert.level)}</span></td>
+                        <td>{alert.type}</td>
+                        <td>{alert.targetType} / {alert.targetId}</td>
+                        <td>{alert.message}</td>
+                        <td>{alert.suggestion}</td>
+                        <td>{alert.createdAt.slice(0, 10)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
             <section className="table-section" aria-label="VIP 配置列表">
               <div className="table-toolbar">

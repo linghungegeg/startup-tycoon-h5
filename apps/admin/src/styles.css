@@ -362,6 +362,21 @@ tbody tr {
   background: #fee2e2;
 }
 
+.status-critical {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.status-warning {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.status-info {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
 .status-稳健 {
   color: #166534;
   background: #dcfce7;
@@ -502,6 +517,13 @@ tbody tr {
 .audit-filter {
   grid-template-columns: repeat(4, minmax(150px, 1fr)) repeat(2, minmax(140px, 160px)) auto auto;
   margin-bottom: 0;
+}
+
+.alert-filter {
+  grid-template-columns: minmax(180px, 220px) minmax(220px, 1fr) auto;
+  margin-bottom: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
 }
 
 .audit-grid {

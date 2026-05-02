@@ -14,6 +14,7 @@ import { calculateProjectSuccessRate } from "../src/project.js";
 import { readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress } from "../src/repository.js";
 import type {
   AccountRecord,
+  AdminOperationConfigAlertListRecord,
   AdminUserRecord,
   AvatarRecord,
   CompanyGrowthRecord,
@@ -2807,6 +2808,98 @@ const createTestRepository = (): GameRepository => {
         }],
         leaderboardSettlements: [...settlementMap.values()],
         scenarios: scenarioConfigs.map((scenario) => ({ id: scenario.id, name: scenario.name, rewardTitleId: scenario.rewardTitleId }))
+      };
+    },
+    async getAdminOperationConfigAlerts(today) {
+      const rewardEntries = [...leaderboardRewards].map((key) => {
+        const parts = key.split(":");
+        const snapshotDate = parts.pop() ?? "";
+        const boardKey = parts.pop() ?? "";
+        return { boardKey, snapshotDate };
+      });
+      const alerts: AdminOperationConfigAlertListRecord["alerts"] = [];
+      const createdAt = `${today}T00:00:00.000Z`;
+      if (seasonConfig.passPricePlatformCoins < 0) {
+        alerts.push({
+          id: `season-pass-price:${seasonConfig.id}`,
+          level: "critical",
+          type: "season_pass_price_invalid",
+          targetType: "season",
+          targetId: seasonConfig.id,
+          message: `赛季 ${seasonConfig.name} 的通行证价格小于 0。`,
+          suggestion: "检查赛季通行证配置，保持价格为非负数。",
+          createdAt
+        });
+      }
+      for (const activity of activityConfigs) {
+        const status = seasonStatus(activity.startDate, activity.endDate, today);
+        const isSettled = rewardEntries.some((entry) => entry.boardKey === activity.leaderboardKey && entry.snapshotDate === activity.endDate);
+        if (activity.leaderboardKey.trim() === "") {
+          alerts.push({
+            id: `activity-missing-board:${activity.id}`,
+            level: "critical",
+            type: "activity_missing_leaderboard_key",
+            targetType: "activity",
+            targetId: activity.id,
+            message: `活动 ${activity.name} 缺少活动榜 key。`,
+            suggestion: "补齐活动榜 key 后再开放活动榜展示与结算。",
+            createdAt
+          });
+        }
+        if (status === "ended" && activity.leaderboardKey.trim() !== "" && !isSettled) {
+          alerts.push({
+            id: `activity-unsettled:${activity.id}:${activity.endDate}`,
+            level: "warning",
+            type: "activity_ended_unsettled",
+            targetType: "activity",
+            targetId: activity.id,
+            message: `活动 ${activity.name} 已结束但活动榜未结算。`,
+            suggestion: "在活动运营页手动触发活动榜结算，重复触发会按幂等规则处理。",
+            createdAt
+          });
+        }
+        if (activity.rewardCash > 0) {
+          alerts.push({
+            id: `reward-boundary:${activity.id}:cash`,
+            level: "critical",
+            type: "reward_boundary_risk",
+            targetType: "activity",
+            targetId: activity.id,
+            message: `活动 ${activity.name} 配置包含现金奖励 ${activity.rewardCash}。`,
+            suggestion: "活动榜结算奖励应保持声望、称号等荣誉资源，避免现金或平台币进入榜单奖励链路。",
+            createdAt
+          });
+        }
+      }
+      for (const item of activityShopItems) {
+        if (item.costPoints < 0 || item.purchaseLimit < 0) {
+          alerts.push({
+            id: `activity-shop-invalid:${item.id}`,
+            level: "critical",
+            type: "activity_shop_invalid",
+            targetType: "activity_shop_item",
+            targetId: item.id,
+            message: `活动商店商品 ${item.name} 的积分或限购配置小于 0。`,
+            suggestion: "修正活动商店积分消耗与限购配置，保持非负数。",
+            createdAt
+          });
+        }
+      }
+      return {
+        summary: {
+          total: alerts.length,
+          critical: alerts.filter((alert) => alert.level === "critical").length,
+          warning: alerts.filter((alert) => alert.level === "warning").length,
+          info: alerts.filter((alert) => alert.level === "info").length,
+          unsettledActivityCount: alerts.filter((alert) => alert.type === "activity_ended_unsettled").length,
+          rewardBoundaryRiskCount: alerts.filter((alert) => alert.type === "reward_boundary_risk").length
+        },
+        filters: {
+          levels: [...new Set(alerts.map((alert) => alert.level))],
+          types: [...new Set(alerts.map((alert) => alert.type))].sort(),
+          targetTypes: [...new Set(alerts.map((alert) => alert.targetType))].sort()
+        },
+        alerts
       };
     },
     async listAdminAuditLogs(filters) {
@@ -10111,5 +10204,113 @@ test("phase 24 operation configs expose season and activity operations read-only
       settlement.rewardPlatformCoinsTotal === 0 &&
       settlement.rewardBoundary === "leaderboard_no_cash_no_platform_coins"
     ));
+  });
+});
+
+test("phase 24 operation config alerts expose read-only admin inspections", async () => {
+  await withServer(async (baseUrl) => {
+    const unauthenticated = await requestJson(baseUrl, "/admin/operation-config-alerts", {
+      headers: { "x-server-date": "2026-05-21" }
+    });
+    assert.equal(unauthenticated.status, 401);
+    assert.equal(unauthenticated.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const alerts = await requestJson<{
+      summary: {
+        total: number;
+        critical: number;
+        warning: number;
+        info: number;
+        unsettledActivityCount: number;
+        rewardBoundaryRiskCount: number;
+      };
+      filters: {
+        levels: string[];
+        types: string[];
+        targetTypes: string[];
+      };
+      alerts: Array<{
+        id: string;
+        level: string;
+        type: string;
+        targetType: string;
+        targetId: string;
+        message: string;
+        suggestion: string;
+        createdAt: string;
+      }>;
+    }>(baseUrl, "/admin/operation-config-alerts", {
+      headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(alerts.status, 200, JSON.stringify(alerts.body));
+    assert.ok((alerts.body.data?.summary.total ?? 0) >= 2);
+    assert.equal(alerts.body.data?.summary.unsettledActivityCount, 1);
+    assert.equal(alerts.body.data?.summary.rewardBoundaryRiskCount, 1);
+    assert.ok((alerts.body.data?.summary.critical ?? 0) >= 1);
+    assert.ok(alerts.body.data?.filters.levels.includes("critical"));
+    assert.ok(alerts.body.data?.filters.types.includes("activity_ended_unsettled"));
+    assert.ok(alerts.body.data?.alerts.some((alert) =>
+      alert.level === "warning" &&
+      alert.type === "activity_ended_unsettled" &&
+      alert.targetType === "activity" &&
+      alert.targetId === "ai-agent-growth" &&
+      alert.message.includes("未结算") &&
+      alert.suggestion.includes("活动榜结算")
+    ));
+    assert.ok(alerts.body.data?.alerts.some((alert) =>
+      alert.level === "critical" &&
+      alert.type === "reward_boundary_risk" &&
+      alert.targetType === "activity" &&
+      alert.targetId === "ai-agent-growth" &&
+      alert.message.includes("现金") &&
+      alert.suggestion.includes("荣誉")
+    ));
+
+    const playerA = await createPlayerSession(baseUrl, "configalerta");
+    const playerB = await createPlayerSession(baseUrl, "configalertb");
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerA.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerB.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerA.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 220 })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { authorization: `Bearer ${playerB.token}`, "x-server-date": "2026-05-10" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 120 })
+    });
+
+    const settled = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "巡检告警验证" })
+      }
+    );
+    assert.equal(settled.status, 200);
+    const afterSettle = await requestJson<{ summary: { unsettledActivityCount: number }; alerts: Array<{ type: string; targetId: string }> }>(
+      baseUrl,
+      "/admin/operation-config-alerts",
+      { headers: { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-21" } }
+    );
+    assert.equal(afterSettle.status, 200);
+    assert.equal(afterSettle.body.data?.summary.unsettledActivityCount, 0);
+    assert.equal(afterSettle.body.data?.alerts.some((alert) => alert.type === "activity_ended_unsettled" && alert.targetId === "ai-agent-growth"), false);
   });
 });
