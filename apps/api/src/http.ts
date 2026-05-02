@@ -1634,6 +1634,39 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/guild/settings") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const announcement = isRecord(body) ? readString(body, "announcement") : "";
+      const collaborationRules = isRecord(body) ? readString(body, "collaborationRules") : "";
+      if (serverId === undefined || announcement.length > 240 || collaborationRules.length > 240) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, announcement and collaborationRules are required.", traceId));
+        return;
+      }
+
+      const result = await repository.updateGuildSettings(account.id, serverId, announcement, collaborationRules, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "GUILD_NOT_JOINED") {
+        sendJson(response, 409, failure("GUILD_NOT_JOINED", "Join a guild before updating guild settings.", traceId));
+        return;
+      }
+      if (result === "GUILD_PERMISSION_DENIED") {
+        sendJson(response, 403, failure("GUILD_PERMISSION_DENIED", "Guild permission denied.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     const guildHelpFulfillMatch = url.pathname.match(/^\/guild\/help\/([^/]+)\/fulfill$/);
     if (request.method === "POST" && guildHelpFulfillMatch !== null) {
       if (account === undefined) {

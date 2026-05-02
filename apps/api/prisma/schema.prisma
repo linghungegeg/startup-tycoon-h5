@@ -228,6 +228,7 @@ model PlayerProfile {
   guildMembership GuildMember?
   guildHelpRequests GuildHelpRequest[]
   guildJoinRequests GuildJoinRequest[]
+  guildActivityLogs GuildActivityLog[]
   crossServerSignups CrossServerSignup[]
   mailCompensations AdminMailCompensation[]
   seasonProgresses PlayerSeasonProgress[]
@@ -676,12 +677,15 @@ model Guild {
   name        String        @db.VarChar(32)
   level       Int           @default(1)
   contributionScore Int     @default(0)
+  announcement String       @default("") @db.VarChar(240)
+  collaborationRules String @default("") @db.VarChar(240)
   createdAt   DateTime      @default(now())
   members     GuildMember[]
   taskProgress GuildTaskProgress[]
   techStates  GuildTechState[]
   helpRequests GuildHelpRequest[]
   joinRequests GuildJoinRequest[]
+  activityLogs GuildActivityLog[]
 
   @@unique([serverId, name])
   @@index([serverId, contributionScore])
@@ -771,6 +775,19 @@ model GuildHelpRequest {
 
   @@index([guildId, status])
   @@index([profileId, createdAt])
+}
+
+model GuildActivityLog {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  action      String        @db.VarChar(32)
+  createdAt   DateTime      @default(now())
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt])
+  @@index([guildId, profileId, createdAt])
 }
 
 model PlatformCoinLedger {

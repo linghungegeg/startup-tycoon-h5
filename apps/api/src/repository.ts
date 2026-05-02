@@ -1041,6 +1041,8 @@ export type GuildCenterRecord = {
     name: string;
     level: number;
     contributionScore: number;
+    announcement: string;
+    collaborationRules: string;
   } | null;
   members: Array<{
     profileId: string;
@@ -1087,6 +1089,16 @@ export type GuildCenterRecord = {
     createdAt: string;
     fulfilledAt: string | null;
     canFulfill?: boolean;
+  }>;
+  todayActiveMemberCount: number;
+  todayCollaborationCount: number;
+  recentActivities: Array<{
+    id: string;
+    profileId: string;
+    founderName: string;
+    action: string;
+    actionLabel: string;
+    createdAt: string;
   }>;
   leaderboard: LeaderboardRowRecord[];
 };
@@ -1215,6 +1227,7 @@ export type GameRepository = {
   reviewGuildApplication(accountId: string, serverId: string, requestId: string, decision: "approved" | "rejected", today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_APPLICATION_NOT_FOUND" | "GUILD_APPLICATION_ALREADY_REVIEWED">;
   updateGuildMemberRole(accountId: string, serverId: string, profileId: string, role: "member" | "vice_leader", today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_MEMBER_NOT_FOUND" | "GUILD_SELF_ROLE_FORBIDDEN">;
   removeGuildMember(accountId: string, serverId: string, profileId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_MEMBER_NOT_FOUND" | "GUILD_SELF_REMOVE_FORBIDDEN">;
+  updateGuildSettings(accountId: string, serverId: string, announcement: string, collaborationRules: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED">;
   requestGuildHelp(accountId: string, serverId: string, requestType: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED">;
   fulfillGuildHelp(accountId: string, serverId: string, requestId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_HELP_NOT_FOUND" | "GUILD_HELP_ALREADY_FULFILLED" | "GUILD_HELP_SELF_FULFILL_FORBIDDEN">;
   claimGuildTask(accountId: string, serverId: string, taskId: string, today: string): Promise<GuildActionRecord | "PLAYER_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_TASK_NOT_FOUND" | "GUILD_TASK_NOT_READY" | "GUILD_TASK_ALREADY_CLAIMED">;
@@ -2528,6 +2541,23 @@ const guildTechUpgradeCost = (currentLevel: number): number | null =>
 
 const guildTechBonusLabel = (level: number): string =>
   level <= 0 ? "待激活" : `协作效率 +${level * 2}%`;
+
+const guildActivityLabel = (action: string): string => {
+  if (action === "help_requested") {
+    return "发布商会协作";
+  }
+  if (action === "help_fulfilled") {
+    return "完成商会协作";
+  }
+  if (action === "task_claimed") {
+    return "领取商会任务";
+  }
+  if (action === "tech_upgraded") {
+    return "升级商会科技";
+  }
+
+  return "参与商会协作";
+};
 
 const rateBasisPoints = (part: number, total: number): number =>
   total <= 0 ? 0 : Math.min(10000, Math.round((part / total) * 10000));
@@ -7774,12 +7804,28 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       };
     }
     const dayStart = new Date(`${today}T00:00:00.000Z`);
     const dayEnd = new Date(`${today}T23:59:59.999Z`);
-    const [guild, members, joinRequests, taskConfigs, progresses, techConfigs, techs, helpRequests, todayHelpCount] = await Promise.all([
+    const [
+      guild,
+      members,
+      joinRequests,
+      taskConfigs,
+      progresses,
+      techConfigs,
+      techs,
+      helpRequests,
+      todayHelpCount,
+      todayActivityProfiles,
+      todayCollaborationCount,
+      recentActivities
+    ] = await Promise.all([
       prisma.guild.findUnique({ where: { id: member.guildId } }),
       prisma.guildMember.findMany({ where: { guildId: member.guildId }, include: { profile: true }, orderBy: { contributionScore: "desc" } }),
       prisma.guildJoinRequest.findMany({ where: { guildId: member.guildId, status: "pending" }, include: { profile: true }, orderBy: { createdAt: "asc" } }),
@@ -7796,6 +7842,20 @@ export const createPrismaGameRepository = (
             { fulfilledAt: { gte: dayStart, lte: dayEnd } }
           ]
         }
+      }),
+      prisma.guildActivityLog.findMany({
+        where: { guildId: member.guildId, createdAt: { gte: dayStart, lte: dayEnd } },
+        distinct: ["profileId"],
+        select: { profileId: true }
+      }),
+      prisma.guildActivityLog.count({
+        where: { guildId: member.guildId, createdAt: { gte: dayStart, lte: dayEnd } }
+      }),
+      prisma.guildActivityLog.findMany({
+        where: { guildId: member.guildId },
+        include: { profile: true },
+        orderBy: { createdAt: "desc" },
+        take: 6
       })
     ]);
 
@@ -7804,7 +7864,9 @@ export const createPrismaGameRepository = (
         id: guild.id,
         name: guild.name,
         level: guild.level,
-        contributionScore: guild.contributionScore
+        contributionScore: guild.contributionScore,
+        announcement: guild.announcement,
+        collaborationRules: guild.collaborationRules
       },
       members: members.map((item) => ({
         profileId: item.profileId,
@@ -7863,6 +7925,16 @@ export const createPrismaGameRepository = (
         fulfilledAt: request.fulfilledAt?.toISOString() ?? null,
         canFulfill: request.status === "open" && request.profileId !== profile.id
       })),
+      todayActiveMemberCount: todayActivityProfiles.length,
+      todayCollaborationCount,
+      recentActivities: recentActivities.map((activity) => ({
+        id: activity.id,
+        profileId: activity.profileId,
+        founderName: activity.profile.founderName,
+        action: activity.action,
+        actionLabel: guildActivityLabel(activity.action),
+        createdAt: activity.createdAt.toISOString()
+      })),
       leaderboard: members.map((item, index) => ({
         rank: index + 1,
         profileId: item.profileId,
@@ -7898,6 +7970,9 @@ export const createPrismaGameRepository = (
           techs: [],
           helpRequests: [],
           joinRequests: [],
+          todayActiveMemberCount: 0,
+          todayCollaborationCount: 0,
+          recentActivities: [],
           leaderboard: []
         } : guildCenter,
         result: `${existingMember.guild.name} 已加入。`,
@@ -7939,6 +8014,9 @@ export const createPrismaGameRepository = (
           tasks: [],
           techs: [],
           helpRequests: [],
+          todayActiveMemberCount: 0,
+          todayCollaborationCount: 0,
+          recentActivities: [],
           leaderboard: []
         },
         result: "入会申请已提交，等待会长或副会长审核。",
@@ -7970,6 +8048,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: `${guildName} 已加入。`,
@@ -8033,6 +8114,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: decision === "approved" ? "入会申请已通过。" : "入会申请已拒绝。"
@@ -8078,6 +8162,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: role === "vice_leader" ? "已任命副会长。" : "成员职位已更新。"
@@ -8123,9 +8210,57 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: "成员已移出商会。"
+    };
+  },
+
+  async updateGuildSettings(accountId, serverId, announcement, collaborationRules, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
+    if (member === null) {
+      return "GUILD_NOT_JOINED";
+    }
+    if (member.role !== "leader" && member.role !== "vice_leader") {
+      return "GUILD_PERMISSION_DENIED";
+    }
+
+    await prisma.guild.update({
+      where: { id: member.guildId },
+      data: {
+        announcement,
+        collaborationRules
+      }
+    });
+    const guildCenter = await this.getGuildCenter(accountId, serverId, today);
+    return {
+      guildCenter: guildCenter === "PLAYER_NOT_FOUND" ? {
+        guild: null,
+        members: [],
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
+        leaderboard: []
+      } : guildCenter,
+      result: "商会公告已更新。"
     };
   },
 
@@ -8145,36 +8280,47 @@ export const createPrismaGameRepository = (
     if (member === null) {
       return "GUILD_NOT_JOINED";
     }
-    await prisma.guildHelpRequest.create({
-      data: {
-        guildId: member.guildId,
-        profileId: profile.id,
-        requestType,
-        createdAt: new Date(`${today}T12:00:00.000Z`)
-      }
-    });
-    await prisma.guildMember.update({
-      where: { id: member.id },
-      data: { contributionScore: { increment: 20 } }
-    });
-    await prisma.guild.update({
-      where: { id: member.guildId },
-      data: { contributionScore: { increment: 20 } }
-    });
-    await prisma.guildTaskProgress.upsert({
-      where: {
-        guildId_taskId: {
+    const createdAt = new Date(`${today}T12:00:00.000Z`);
+    await prisma.$transaction([
+      prisma.guildHelpRequest.create({
+        data: {
           guildId: member.guildId,
-          taskId: "guild-daily-help"
+          profileId: profile.id,
+          requestType,
+          createdAt
         }
-      },
-      update: { progress: { increment: 1 } },
-      create: {
-        guildId: member.guildId,
-        taskId: "guild-daily-help",
-        progress: 1
-      }
-    });
+      }),
+      prisma.guildMember.update({
+        where: { id: member.id },
+        data: { contributionScore: { increment: 20 } }
+      }),
+      prisma.guild.update({
+        where: { id: member.guildId },
+        data: { contributionScore: { increment: 20 } }
+      }),
+      prisma.guildTaskProgress.upsert({
+        where: {
+          guildId_taskId: {
+            guildId: member.guildId,
+            taskId: "guild-daily-help"
+          }
+        },
+        update: { progress: { increment: 1 } },
+        create: {
+          guildId: member.guildId,
+          taskId: "guild-daily-help",
+          progress: 1
+        }
+      }),
+      prisma.guildActivityLog.create({
+        data: {
+          guildId: member.guildId,
+          profileId: profile.id,
+          action: "help_requested",
+          createdAt
+        }
+      })
+    ]);
     const guildCenter = await this.getGuildCenter(accountId, serverId, today);
 
     return {
@@ -8185,6 +8331,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: "商会互助已发布。"
@@ -8248,6 +8397,14 @@ export const createPrismaGameRepository = (
           taskId: "guild-daily-help",
           progress: 1
         }
+      }),
+      prisma.guildActivityLog.create({
+        data: {
+          guildId: member.guildId,
+          profileId: profile.id,
+          action: "help_fulfilled",
+          createdAt: fulfilledAt
+        }
       })
     ]);
 
@@ -8260,6 +8417,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: "商会协作已完成，贡献 +15。"
@@ -8341,6 +8501,14 @@ export const createPrismaGameRepository = (
           progress: Math.max(currentProgress, task.target),
           claimedAt
         }
+      }),
+      prisma.guildActivityLog.create({
+        data: {
+          guildId: member.guildId,
+          profileId: profile.id,
+          action: "task_claimed",
+          createdAt: claimedAt
+        }
       })
     ]);
 
@@ -8353,6 +8521,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: `商会任务已领取，贡献 +${task.contributionReward}。`
@@ -8424,6 +8595,14 @@ export const createPrismaGameRepository = (
       prisma.guild.update({
         where: { id: member.guildId },
         data: { level: Math.max(guild.level, 1 + otherTechLevelTotal + nextLevel) }
+      }),
+      prisma.guildActivityLog.create({
+        data: {
+          guildId: member.guildId,
+          profileId: profile.id,
+          action: "tech_upgraded",
+          createdAt: new Date(`${today}T12:00:00.000Z`)
+        }
       })
     ]);
 
@@ -8436,6 +8615,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: `${tech.name} 已升级到 Lv.${nextLevel}。`
@@ -8477,6 +8659,9 @@ export const createPrismaGameRepository = (
           techs: [],
           helpRequests: [],
           joinRequests: [],
+          todayActiveMemberCount: 0,
+          todayCollaborationCount: 0,
+          recentActivities: [],
           leaderboard: []
         } : guildCenter,
         result: "今日商会贡献榜已结算。",
@@ -8529,6 +8714,9 @@ export const createPrismaGameRepository = (
         techs: [],
         helpRequests: [],
         joinRequests: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0,
+        recentActivities: [],
         leaderboard: []
       } : guildCenter,
       result: `商会贡献榜已结算，发放 ${rewards.length} 份声望奖励。`,

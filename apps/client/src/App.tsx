@@ -796,6 +796,8 @@ type GuildCenter = {
     name: string;
     level: number;
     contributionScore: number;
+    announcement: string;
+    collaborationRules: string;
   } | null;
   members: Array<{
     profileId: string;
@@ -842,6 +844,16 @@ type GuildCenter = {
     createdAt: string;
     fulfilledAt: string | null;
     canFulfill?: boolean;
+  }>;
+  todayActiveMemberCount: number;
+  todayCollaborationCount: number;
+  recentActivities: Array<{
+    id: string;
+    profileId: string;
+    founderName: string;
+    action: string;
+    actionLabel: string;
+    createdAt: string;
   }>;
   leaderboard: LeaderboardRow[];
 };
@@ -1520,6 +1532,8 @@ function App() {
   const [knowledgeEntries, setKnowledgeEntries] = useState<KnowledgeEntry[]>([]);
   const [selectedKnowledgeEntryId, setSelectedKnowledgeEntryId] = useState("");
   const [guildCenter, setGuildCenter] = useState<GuildCenter | null>(null);
+  const [guildAnnouncementDraft, setGuildAnnouncementDraft] = useState("");
+  const [guildRulesDraft, setGuildRulesDraft] = useState("");
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
 
@@ -1814,6 +1828,8 @@ function App() {
   const canManageGuildMembers = currentGuildMember?.role === "leader";
   const guildRoleLabel = (role: string): string =>
     role === "leader" ? "会长" : role === "vice_leader" ? "副会长" : "成员";
+  const guildAnnouncement = guildCenter?.guild?.announcement.trim() || "暂无公告";
+  const guildRules = guildCenter?.guild?.collaborationRules.trim() || "暂无协作规则";
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
   const primarySeasonActivity = seasonCenter?.activities[0] ?? null;
   const primaryActivityBoard = seasonCenter?.activityBoards[0] ?? null;
@@ -2687,6 +2703,34 @@ function App() {
     setPhase14Error(response.error.message);
   };
 
+  const updateGuildSettings = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      "/guild/settings",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          serverId: selectedServer.id,
+          announcement: guildAnnouncementDraft.trim(),
+          collaborationRules: guildRulesDraft.trim()
+        })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
   const reviewGuildApplication = async (requestId: string, decision: "approved" | "rejected"): Promise<void> => {
     if (!account || !selectedServer) {
       return;
@@ -2900,6 +2944,11 @@ function App() {
     void loadProjects(account.token, selectedServer.id);
     reportTelemetry(account.token, selectedServer.id, "tutorial_step", "home-entered", { step: "home_entered" });
   }, [step, account?.token, selectedServer?.id, reportTelemetry]);
+
+  useEffect(() => {
+    setGuildAnnouncementDraft(guildCenter?.guild?.announcement ?? "");
+    setGuildRulesDraft(guildCenter?.guild?.collaborationRules ?? "");
+  }, [guildCenter?.guild?.id, guildCenter?.guild?.announcement, guildCenter?.guild?.collaborationRules]);
 
   useEffect(() => {
     if (step !== "game" || !profile) {
@@ -4635,10 +4684,68 @@ function App() {
                           </button>
                         </div>
                       </div>
-                      <div className="mt-5 grid grid-cols-3 gap-2 text-center">
+                      <div className="mt-5 grid grid-cols-5 gap-2 text-center">
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.level}</strong><span className="text-[9px] text-slate-500">等级</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.members.length}</strong><span className="text-[9px] text-slate-500">成员</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.guild.contributionScore}</strong><span className="text-[9px] text-slate-500">贡献</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayActiveMemberCount}</strong><span className="text-[9px] text-slate-500">活跃</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayCollaborationCount}</strong><span className="text-[9px] text-slate-500">协作</span></div>
+                      </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">公告与规则</strong>
+                        <span className="text-[10px] text-business-gold">{canReviewGuildApplications ? "可编辑" : "成员可见"}</span>
+                      </div>
+                      {canReviewGuildApplications ? (
+                        <div className="space-y-3">
+                          <label className="block">
+                            <span className="mb-1 block text-[9px] text-slate-500 font-black">商会公告</span>
+                            <textarea
+                              className="w-full min-h-20 resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs leading-5 text-white outline-none focus:border-business-gold/60"
+                              maxLength={240}
+                              value={guildAnnouncementDraft}
+                              onChange={(event) => setGuildAnnouncementDraft(event.target.value)}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1 block text-[9px] text-slate-500 font-black">协作规则</span>
+                            <textarea
+                              className="w-full min-h-20 resize-none rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs leading-5 text-white outline-none focus:border-business-gold/60"
+                              maxLength={240}
+                              value={guildRulesDraft}
+                              onChange={(event) => setGuildRulesDraft(event.target.value)}
+                            />
+                          </label>
+                          <button className="w-full btn-gold rounded-xl py-2 text-[10px] font-black text-business-dark" type="button" onClick={() => void updateGuildSettings()}>
+                            保存公告
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] leading-5 text-slate-300 font-bold">{guildAnnouncement}</p>
+                          <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] leading-5 text-slate-400 font-bold">{guildRules}</p>
+                        </div>
+                      )}
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">最近动态</strong>
+                        <span className="text-[10px] text-slate-500">{guildCenter.recentActivities.length} 条</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.recentActivities.length === 0 && (
+                          <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无成员动态。</p>
+                        )}
+                        {guildCenter.recentActivities.slice(0, 5).map((activity) => (
+                          <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-900/60 px-3 py-2" key={activity.id}>
+                            <div className="min-w-0">
+                              <strong className="block text-xs text-white truncate">{activity.founderName}</strong>
+                              <span className="text-[9px] text-slate-500">{activity.actionLabel}</span>
+                            </div>
+                            <span className="shrink-0 text-[9px] text-slate-600">{activity.createdAt.slice(0, 10)}</span>
+                          </div>
+                        ))}
                       </div>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">

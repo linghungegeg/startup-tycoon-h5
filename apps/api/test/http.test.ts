@@ -1821,10 +1821,11 @@ const createTestRepository = (): GameRepository => {
     }
   ];
   const crossServerSignups = new Set<string>();
-  const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number }>();
+  const guilds = new Map<string, { id: string; serverId: string; name: string; level: number; contributionScore: number; announcement: string; collaborationRules: string }>();
   const guildMembers = new Map<string, { guildId: string; profileId: string; role: string; contributionScore: number }>();
   const guildJoinRequests = new Map<string, { id: string; guildId: string; profileId: string; status: string; createdAt: string; reviewedAt: string | null; reviewedByProfileId: string | null }>();
   const guildHelpRequests = new Map<string, { id: string; guildId: string; profileId: string; requestType: string; status: string; createdAt: string; fulfilledAt: string | null }>();
+  const guildActivityLogs = new Map<string, { id: string; guildId: string; profileId: string; action: string; createdAt: string }>();
   const guildTaskClaims = new Map<string, { guildId: string; taskId: string; claimedAt: string }>();
   const guildTechStates = new Map<string, { guildId: string; techId: string; level: number }>();
   const telemetryEvents = new Map<string, { id: string; accountId: string; serverId: string; eventName: string; targetId: string | null; metadata: Record<string, string | number | boolean | null> }>();
@@ -2206,12 +2207,27 @@ const createTestRepository = (): GameRepository => {
   };
   const guildTechUpgradeCost = (currentLevel: number): number | null =>
     currentLevel >= 5 ? null : [40, 120, 240, 400, 600][currentLevel] ?? null;
+  const guildActivityLabel = (action: string): string => {
+    if (action === "help_requested") {
+      return "发布商会协作";
+    }
+    if (action === "help_fulfilled") {
+      return "完成商会协作";
+    }
+    if (action === "task_claimed") {
+      return "领取商会任务";
+    }
+    if (action === "tech_upgraded") {
+      return "升级商会科技";
+    }
+    return "参与商会协作";
+  };
   const getProfileById = (profileId: string): PlayerProfileRecord | undefined =>
     [...profiles.values()].find((profile) => profile.id === profileId);
   const toGuildCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): GuildCenterRecord => {
     const member = guildMembers.get(profile.id);
     if (member === undefined) {
-      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], leaderboard: [] };
+      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], todayActiveMemberCount: 0, todayCollaborationCount: 0, recentActivities: [], leaderboard: [] };
     }
     const guild = guilds.get(member.guildId);
     const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
@@ -2219,11 +2235,12 @@ const createTestRepository = (): GameRepository => {
     const todayHelpCount = [...guildHelpRequests.values()].filter((request) =>
       request.guildId === member.guildId && (request.createdAt.slice(0, 10) === today || request.fulfilledAt?.slice(0, 10) === today)
     ).length;
+    const todayActivities = [...guildActivityLogs.values()].filter((activity) => activity.guildId === member.guildId && activity.createdAt.slice(0, 10) === today);
     const isHelpClaimed = guildTaskClaims.get(`${member.guildId}:guild-daily-help`)?.claimedAt.slice(0, 10) === today;
     const sharedOfficeLevel = guildTechStates.get(`${member.guildId}:shared-office`)?.level ?? 0;
     const upgradeCost = guildTechUpgradeCost(sharedOfficeLevel);
     return {
-      guild: guild === undefined ? null : { id: guild.id, name: guild.name, level: guild.level, contributionScore: guild.contributionScore },
+      guild: guild === undefined ? null : { id: guild.id, name: guild.name, level: guild.level, contributionScore: guild.contributionScore, announcement: guild.announcement, collaborationRules: guild.collaborationRules },
       members: members.map((item) => {
         const memberProfile = getProfileById(item.profileId);
         return {
@@ -2263,6 +2280,23 @@ const createTestRepository = (): GameRepository => {
           canFulfill: request.status === "open" && request.profileId !== profile.id
         };
       }),
+      todayActiveMemberCount: new Set(todayActivities.map((activity) => activity.profileId)).size,
+      todayCollaborationCount: todayActivities.length,
+      recentActivities: [...guildActivityLogs.values()]
+        .filter((activity) => activity.guildId === member.guildId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+        .slice(0, 6)
+        .map((activity) => {
+          const activityProfile = getProfileById(activity.profileId);
+          return {
+            id: activity.id,
+            profileId: activity.profileId,
+            founderName: activityProfile?.founderName ?? "",
+            action: activity.action,
+            actionLabel: guildActivityLabel(activity.action),
+            createdAt: activity.createdAt
+          };
+        }),
       leaderboard: members
         .sort((left, right) => right.contributionScore - left.contributionScore)
         .map((item, index) => {
@@ -4379,7 +4413,7 @@ const createTestRepository = (): GameRepository => {
         guildJoinRequests.set(request.id, request);
         return { guildCenter: toGuildCenter(profile, today), result: "入会申请已提交，等待会长或副会长审核。", applicationStatus: "pending" } satisfies GuildActionRecord & { applicationStatus: "pending" };
       }
-      const guild = { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0 };
+      const guild = { id: guildKey, serverId, name: guildName, level: 1, contributionScore: 0, announcement: "", collaborationRules: "" };
       guilds.set(guildKey, guild);
       guildMembers.set(profile.id, { guildId: guild.id, profileId: profile.id, role: "leader", contributionScore: 0 });
       return { guildCenter: toGuildCenter(profile, today), result: `${guildName} 已加入。`, applicationStatus: "approved" } satisfies GuildActionRecord & { applicationStatus: "approved" };
@@ -4461,6 +4495,25 @@ const createTestRepository = (): GameRepository => {
       guildMembers.delete(profileId);
       return { guildCenter: toGuildCenter(profile, today), result: "成员已移出商会。" } satisfies GuildActionRecord;
     },
+    async updateGuildSettings(accountId, serverId, announcement, collaborationRules, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const member = guildMembers.get(profile.id);
+      if (member === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      if (member.role !== "leader" && member.role !== "vice_leader") {
+        return "GUILD_PERMISSION_DENIED";
+      }
+      const guild = [...guilds.values()].find((item) => item.id === member.guildId);
+      if (guild !== undefined) {
+        guild.announcement = announcement;
+        guild.collaborationRules = collaborationRules;
+      }
+      return { guildCenter: toGuildCenter(profile, today), result: "商会公告已更新。" } satisfies GuildActionRecord;
+    },
     async requestGuildHelp(accountId, serverId, requestType, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
@@ -4477,6 +4530,7 @@ const createTestRepository = (): GameRepository => {
       if (guild !== undefined) {
         guild.contributionScore += 20;
       }
+      guildActivityLogs.set(`${request.id}:help_requested`, { id: `${request.id}:help_requested`, guildId: member.guildId, profileId: profile.id, action: "help_requested", createdAt: `${today}T12:00:00.000Z` });
       return { guildCenter: toGuildCenter(profile, today), result: "商会互助已发布。" } satisfies GuildActionRecord;
     },
     async fulfillGuildHelp(accountId, serverId, requestId, today) {
@@ -4505,6 +4559,7 @@ const createTestRepository = (): GameRepository => {
       if (guild !== undefined) {
         guild.contributionScore += 15;
       }
+      guildActivityLogs.set(`${request.id}:help_fulfilled`, { id: `${request.id}:help_fulfilled`, guildId: member.guildId, profileId: profile.id, action: "help_fulfilled", createdAt: `${today}T12:00:00.000Z` });
       return { guildCenter: toGuildCenter(profile, today), result: "商会协作已完成，贡献 +15。" } satisfies GuildActionRecord;
     },
     async claimGuildTask(accountId, serverId, taskId, today) {
@@ -4535,6 +4590,7 @@ const createTestRepository = (): GameRepository => {
         guild.contributionScore += 20;
       }
       guildTaskClaims.set(claimKey, { guildId: member.guildId, taskId, claimedAt: `${today}T12:00:00.000Z` });
+      guildActivityLogs.set(`${member.guildId}:${profile.id}:${taskId}:task_claimed:${today}`, { id: `${member.guildId}:${profile.id}:${taskId}:task_claimed:${today}`, guildId: member.guildId, profileId: profile.id, action: "task_claimed", createdAt: `${today}T12:00:00.000Z` });
       return { guildCenter: toGuildCenter(profile, today), result: "商会任务已领取，贡献 +20。" } satisfies GuildActionRecord;
     },
     async upgradeGuildTech(accountId, serverId, techId, today) {
@@ -4565,6 +4621,7 @@ const createTestRepository = (): GameRepository => {
       const nextLevel = currentLevel + 1;
       guildTechStates.set(stateKey, { guildId: member.guildId, techId, level: nextLevel });
       guild.level = Math.max(guild.level, 1 + nextLevel);
+      guildActivityLogs.set(`${member.guildId}:${profile.id}:${techId}:tech_upgraded:${today}`, { id: `${member.guildId}:${profile.id}:${techId}:tech_upgraded:${today}`, guildId: member.guildId, profileId: profile.id, action: "tech_upgraded", createdAt: `${today}T12:00:00.000Z` });
       return { guildCenter: toGuildCenter(profile, today), result: `联合办公 已升级到 Lv.${nextLevel}。` } satisfies GuildActionRecord;
     },
     async settleGuildLeaderboard(accountId, serverId, today) {
@@ -8123,6 +8180,114 @@ test("guild member applications and role permissions gate member management", as
     });
     assert.equal(outsiderReview.status, 409);
     assert.equal(outsiderReview.body.error?.code, "GUILD_NOT_JOINED");
+  });
+});
+
+test("guild announcement rules and member activity summarize daily collaboration", async () => {
+  await withServer(async (baseUrl) => {
+    const leader = await createPlayerSession(baseUrl, "guildactiveleader");
+    const member = await createPlayerSession(baseUrl, "guildactivemember");
+    const leaderHeaders = { authorization: `Bearer ${leader.token}`, "x-server-date": "2026-05-05" };
+    const memberHeaders = { authorization: `Bearer ${member.token}`, "x-server-date": "2026-05-05" };
+    type GuildActivityCenter = GuildCenterRecord & {
+      guild: (NonNullable<GuildCenterRecord["guild"]> & { announcement: string; collaborationRules: string }) | null;
+      todayActiveMemberCount: number;
+      todayCollaborationCount: number;
+      recentActivities: Array<{
+        id: string;
+        profileId: string;
+        founderName: string;
+        action: string;
+        actionLabel: string;
+        createdAt: string;
+      }>;
+    };
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "活跃创业会" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1", guildName: "活跃创业会" })
+    });
+
+    const joinCenter = await requestJson<GuildActivityCenter>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    const requestId = joinCenter.body.data?.joinRequests.find((request) => request.profileId === member.profile.id)?.id ?? "";
+    assert.ok(requestId);
+    await requestJson<GuildActionRecord>(baseUrl, `/guild/applications/${encodeURIComponent(requestId)}/review`, {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", decision: "approved" })
+    });
+
+    const memberSettings = await requestJson(baseUrl, "/guild/settings", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({
+        serverId: "s1",
+        announcement: "本周聚焦联合路演材料。",
+        collaborationRules: "互助请求当天响应，风险复核优先。"
+      })
+    });
+    assert.equal(memberSettings.status, 403);
+    assert.equal(memberSettings.body.error?.code, "GUILD_PERMISSION_DENIED");
+
+    const settings = await requestJson<{ guildCenter: GuildActivityCenter; result: string }>(baseUrl, "/guild/settings", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({
+        serverId: "s1",
+        announcement: "本周聚焦联合路演材料。",
+        collaborationRules: "互助请求当天响应，风险复核优先。"
+      })
+    });
+    assert.equal(settings.status, 200, JSON.stringify(settings.body));
+    assert.equal(settings.body.data?.guildCenter.guild?.announcement, "本周聚焦联合路演材料。");
+    assert.equal(settings.body.data?.guildCenter.guild?.collaborationRules, "互助请求当天响应，风险复核优先。");
+
+    const published = await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    const helpId = published.body.data?.guildCenter.helpRequests[0]?.id ?? "";
+    assert.ok(helpId);
+    await requestJson<GuildActionRecord>(baseUrl, `/guild/help/${encodeURIComponent(helpId)}/fulfill`, {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers: memberHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/techs/shared-office/upgrade", {
+      method: "POST",
+      headers: leaderHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const center = await requestJson<GuildActivityCenter>(baseUrl, "/guild?serverId=s1", {
+      headers: leaderHeaders
+    });
+    assert.equal(center.status, 200, JSON.stringify(center.body));
+    assert.equal(center.body.data?.guild?.announcement, "本周聚焦联合路演材料。");
+    assert.equal(center.body.data?.guild?.collaborationRules, "互助请求当天响应，风险复核优先。");
+    assert.equal(center.body.data?.todayActiveMemberCount, 2);
+    assert.equal(center.body.data?.todayCollaborationCount, 4);
+    assert.deepEqual([...new Set(center.body.data?.recentActivities.map((activity) => activity.action))].sort(), [
+      "help_fulfilled",
+      "help_requested",
+      "task_claimed",
+      "tech_upgraded"
+    ]);
+    assert.ok(center.body.data?.recentActivities.every((activity) => activity.createdAt.startsWith("2026-05-05")));
   });
 });
 
