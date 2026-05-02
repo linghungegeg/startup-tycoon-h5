@@ -1811,6 +1811,7 @@ const createTestRepository = (): GameRepository => {
   const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
   const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
   const leaderboardRewards = new Set<string>();
+  const claimedMailRewardIds = new Set<string>();
   const guildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const crossGuildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; groupId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const chatKeywords = defaultChatKeywords();
@@ -4190,7 +4191,9 @@ const createTestRepository = (): GameRepository => {
           rewardSummary: mail.platformCoins > 0 ? `平台币 +${mail.platformCoins}` : null,
           platformCoins: mail.platformCoins,
           createdAt: mail.createdAt,
-          isRead: profile.unreadMailCount === 0
+          isRead: profile.unreadMailCount === 0,
+          canClaim: false,
+          claimStatus: "claimed" as const
         }));
       const rewardMails = [...leaderboardRewards]
         .map((key) => {
@@ -4198,17 +4201,23 @@ const createTestRepository = (): GameRepository => {
           return { profileId, boardKey, snapshotDate };
         })
         .filter((mail) => mail.profileId === profile.id)
-        .map((mail) => ({
-          id: `reward:${mail.boardKey}:${mail.snapshotDate}`,
-          profileId: profile.id,
-          channel: "reward" as const,
-          subject: `${mail.boardKey.includes("cross") ? "跨服榜" : "排行榜"}奖励`,
-          body: "奖励邮件记录用于展示投递结果，不在邮件中心重复发奖。",
-          rewardSummary: "荣誉奖励",
-          platformCoins: 0,
-          createdAt: `${mail.snapshotDate}T00:00:00.000Z`,
-          isRead: profile.unreadMailCount === 0
-        }));
+        .map((mail) => {
+          const id = `reward:${mail.boardKey}:${mail.snapshotDate}`;
+          const platformCoins = mail.boardKey.includes("cross-daily-goal") ? 0 : 60;
+          return {
+            id,
+            profileId: profile.id,
+            channel: "reward" as const,
+            subject: `${mail.boardKey.includes("cross") ? "跨服榜" : "排行榜"}奖励`,
+            body: platformCoins > 0 ? "榜单奖励已送达邮箱。" : "今日跨服目标已完成。",
+            rewardSummary: platformCoins > 0 ? `平台币 +${platformCoins}` : "声望 +30",
+            platformCoins,
+            createdAt: `${mail.snapshotDate}T00:00:00.000Z`,
+            isRead: profile.unreadMailCount === 0,
+            canClaim: platformCoins > 0 && !claimedMailRewardIds.has(id),
+            claimStatus: platformCoins <= 0 ? "none" as const : claimedMailRewardIds.has(id) ? "claimed" as const : "claimable" as const
+          };
+        });
       const mails = [...compensationMails, ...rewardMails].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
       return {
         summary: {
@@ -4232,12 +4241,34 @@ const createTestRepository = (): GameRepository => {
       assert.notEqual(mailCenter, "PLAYER_NOT_FOUND");
       return { updatedCount, mailCenter };
     },
+    async claimMailAttachments(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const mailCenter = await this.listMails(accountId, serverId);
+      assert.notEqual(mailCenter, "PLAYER_NOT_FOUND");
+      const claimableMails = mailCenter.mails.filter((mail) => mail.canClaim);
+      const platformCoins = claimableMails.reduce((total, mail) => total + mail.platformCoins, 0);
+      for (const mail of claimableMails) {
+        claimedMailRewardIds.add(mail.id);
+      }
+      if (platformCoins > 0) {
+        const wallet = ensureWallet(profile);
+        wallet.balance += platformCoins;
+        profile.platformCoins = wallet.balance;
+      }
+      const nextMailCenter = await this.listMails(accountId, serverId);
+      assert.notEqual(nextMailCenter, "PLAYER_NOT_FOUND");
+      return { claimedCount: claimableMails.length, platformCoins, mailCenter: nextMailCenter, profile };
+    },
     async getChatCenter(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      return buildChatCenterRecord(profile, chatMessages, chatKeywords, today, findGuildMembership(profile.id) !== undefined, crossServerRegistrations.has(`${profile.id}:${serverId}`));
+      const group = crossServerGroups.find((item) => item.serverIds.includes(serverId));
+      return buildChatCenterRecord(profile, chatMessages, chatKeywords, today, guildMembers.has(profile.id), group !== undefined && crossServerSignups.has(`${profile.id}:${group.id}`));
     },
     async sendChatMessage(accountId, serverId, channel, content, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -4247,10 +4278,11 @@ const createTestRepository = (): GameRepository => {
       if (channel === "system") {
         return "CHAT_CHANNEL_READONLY";
       }
-      if (channel === "guild" && findGuildMembership(profile.id) === undefined) {
+      if (channel === "guild" && !guildMembers.has(profile.id)) {
         return "CHAT_GUILD_REQUIRED";
       }
-      if (channel === "cross" && !crossServerRegistrations.has(`${profile.id}:${serverId}`)) {
+      const group = crossServerGroups.find((item) => item.serverIds.includes(serverId));
+      if (channel === "cross" && (group === undefined || !crossServerSignups.has(`${profile.id}:${group.id}`))) {
         return "CHAT_CROSS_REQUIRED";
       }
       const filtered = maskChatContent(content, chatKeywords);
@@ -4272,7 +4304,7 @@ const createTestRepository = (): GameRepository => {
       chatMessages.unshift(message);
       return {
         message,
-        chat: buildChatCenterRecord(profile, chatMessages, chatKeywords, today, findGuildMembership(profile.id) !== undefined, crossServerRegistrations.has(`${profile.id}:${serverId}`))
+        chat: buildChatCenterRecord(profile, chatMessages, chatKeywords, today, guildMembers.has(profile.id), group !== undefined && crossServerSignups.has(`${profile.id}:${group.id}`))
       };
     },
     async claimFullLevelChest(accountId, serverId) {
@@ -5933,6 +5965,27 @@ const createTestRepository = (): GameRepository => {
           guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" }
         }
       } satisfies LeaderboardSettlementRecord;
+    },
+    async claimCrossServerDailyReward(accountId, serverId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const center = buildCrossServerCenter(profile, today);
+      if (center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return center;
+      }
+      if (!center.isRegistered) {
+        return "CROSS_SERVER_NOT_REGISTERED";
+      }
+      const key = `${profile.id}:cross-daily-goal:${today}`;
+      if (leaderboardRewards.has(key)) {
+        return { deliveredRewards: 0, rewardReputation: 0, crossServer: center };
+      }
+      leaderboardRewards.add(key);
+      profile.reputation += 30;
+      profile.unreadMailCount += 1;
+      return { deliveredRewards: 1, rewardReputation: 30, crossServer: buildCrossServerCenter(profile, today) as CrossServerCenterRecord };
     },
     async settleCrossServerGuildRewards(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -10646,6 +10699,32 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(registered.status, 200);
     assert.equal(registered.body.data?.isRegistered, true);
 
+    const beforeDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    const dailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(dailyReward.status, 200, JSON.stringify(dailyReward.body));
+    assert.equal(dailyReward.body.data?.deliveredRewards, 1);
+    assert.equal(dailyReward.body.data?.rewardReputation, 30);
+    assert.equal(dailyReward.body.data?.crossServer.isRegistered, true);
+    const afterDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(afterDailyReward.body.data?.reputation, (beforeDailyReward.body.data?.reputation ?? 0) + 30);
+
+    const duplicateDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number }>(baseUrl, "/cross-server/daily-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicateDailyReward.status, 200);
+    assert.equal(duplicateDailyReward.body.data?.deliveredRewards, 0);
+    assert.equal(duplicateDailyReward.body.data?.rewardReputation, 0);
+
     const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
@@ -12944,6 +13023,14 @@ test("phase 28 chat channels filter local keyword library and audit admin change
     assert.equal(masked.body.data?.message.content.includes("外挂"), false);
     assert.ok(masked.body.data?.message.matchedKeywords.includes("外挂"));
 
+    const sensitiveBlocked = await requestJson(baseUrl, "/chat/messages", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", channel: "world", content: "习 近 平" })
+    });
+    assert.equal(sensitiveBlocked.status, 409, JSON.stringify(sensitiveBlocked.body));
+    assert.equal(sensitiveBlocked.body.error?.code, "CHAT_CONTENT_BLOCKED");
+
     const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
       method: "POST",
       body: JSON.stringify({ username: "admin", password: "admin123" })
@@ -13003,6 +13090,11 @@ test("phase 28 chat keyword library blocks sensitive names with light normalizat
 
   const zeroWidth = maskChatContent("习\u200B近\u200B平", keywords);
   assert.equal(zeroWidth.filterAction, "block");
+
+  for (const content of ["法 轮 功", "加QQ群私下交易", "刷 充 值 代 充", "辱骂垃圾玩家"]) {
+    const result = maskChatContent(content, keywords);
+    assert.equal(result.filterAction, "block", `${content} should be blocked`);
+  }
 });
 
 test("phase 30 mail center aggregates mails and read-all is idempotent", async () => {
@@ -13045,7 +13137,30 @@ test("phase 30 mail center aggregates mails and read-all is idempotent", async (
     assert.deepEqual(center.body.data?.filters.channels, ["all", "system", "reward", "compensation"]);
     assert.ok(center.body.data?.mails.some((mail) => mail.channel === "compensation" && mail.subject === "运营补偿"));
     assert.ok(center.body.data?.mails.some((mail) => mail.channel === "reward" && mail.subject.includes("奖励")));
+    assert.ok(center.body.data?.mails.some((mail) => mail.channel === "reward" && mail.rewardSummary?.includes("平台币")));
     assert.equal(center.body.data?.mails.every((mail) => mail.profileId === profile.id), true);
+
+    const beforeClaimProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
+    assert.equal(beforeClaimProfile.status, 200);
+    const claimed = await requestJson<{ claimedCount: number; platformCoins: number; mailCenter: MailCenterRecord }>(baseUrl, "/mails/claim-attachments", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    assert.equal(claimed.body.data?.claimedCount, 4);
+    assert.equal(claimed.body.data?.platformCoins, 240);
+    const afterClaimProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
+    assert.equal(afterClaimProfile.body.data?.platformCoins, (beforeClaimProfile.body.data?.platformCoins ?? 0) + 240);
+
+    const claimedAgain = await requestJson<{ claimedCount: number; platformCoins: number }>(baseUrl, "/mails/claim-attachments", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimedAgain.status, 200);
+    assert.equal(claimedAgain.body.data?.claimedCount, 0);
+    assert.equal(claimedAgain.body.data?.platformCoins, 0);
 
     const beforeReadAllProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", { headers });
     assert.equal(beforeReadAllProfile.status, 200);

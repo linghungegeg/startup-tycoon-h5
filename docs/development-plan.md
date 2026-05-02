@@ -2735,7 +2735,7 @@ VIP 权益：
   - 首页跨服入口可见且不遮挡右侧其他运营入口、主线任务条和底部导航。
   - 跨服独立页首屏有今日目标、赛季进度、报名状态、排名、奖励和主操作。
   - 页面可见参与奖励、阶段奖励、排名奖励和冲榜助力说明。
-  - `cross-server-unified-shell`、`cross-server-close-button`、`cross-server-mode-rail`、`cross-server-content-pane`、`cross-server-personal-board`、`cross-server-guild-season` 均可被测试定位。
+  - `cross-server-unified-shell`、`cross-server-close-button`、`cross-server-stage-bar`、`cross-server-content-pane`、`cross-server-personal-board`、`cross-server-guild-season` 均可被测试定位。
   - 玩家端不再出现 `CROSS 跨服中心` 英文大标题，不出现后台式长规则卡片堆叠。
   - 跨服报名、结算、跨服商会赛季和奖励幂等测试继续通过。
   - Browser Use 验收前台跨服入口、跨服页、Rank 摘要降级和 Console 无新增 error。
@@ -2752,17 +2752,30 @@ VIP 权益：
   - 频道条固定为：全部、系统、奖励、补偿。
   - 中部为邮件列表；未读高亮；奖励邮件显示金色奖励摘要。
   - 小屏优先列表点击进入详情；底部固定“全部已读”主操作。
-  - 首版只查看和已读，不做二次领奖，避免破坏奖励幂等。
+  - 邮件详情支持附件状态展示；榜单、活动榜和跨服投递类附件通过统一“领取附件”入口领取，重复点击必须幂等。
 - 数据与接口：
   - 复用现有 Admin 补偿邮件、排行榜奖励邮件、活动榜奖励邮件、跨服奖励邮件。
   - 新增 `GET /mails?serverId=s1` 聚合邮件列表。
   - 新增 `POST /mails/read-all` 清空未读数。
+  - 新增 `POST /mails/claim-attachments` 统一领取可领取附件，不新增邮件表，不改变既有奖励结算来源。
   - 一键已读不得重复发平台币、称号或活动奖励。
 - 验收标准：
   - 邮件居中胶囊入口可见，未读红点和数量正确。
-  - 邮件中心支持全部、系统、奖励、补偿筛选，详情可读，一键已读生效。
-  - 邮件聚合和一键已读 API 有测试覆盖，且不重复发奖励。
+  - 邮件中心支持全部、系统、奖励、补偿筛选，详情可读，一键已读和领取附件生效。
+  - 邮件聚合、一键已读和附件领取 API 有测试覆盖，且不重复发奖励。
   - Browser Use 验收邮件入口、邮件内页、未读变化和 Console 无新增 error。
+
+#### Phase 28-30 阶段总结与稳定点
+
+- Phase 28 已完成内容：聊天四频道、首页窄聊天入口、左侧频道/右侧消息流全覆盖聊天页、本地优先统一关键词库、Admin 聊天关键词清单、真实发言阻断和玩家端短错误提示已落地。
+- Phase 28 本批补强：默认统一词库增加政治敏感、广告引流、代充、辱骂类阻断词；`POST /chat/messages` 增加领导人姓名轻归一化阻断集成断言，避免只测纯函数。
+- Phase 29 已完成内容：跨服从 Rank 摘要拆成独立赛事页，采用赛事状态头、横向阶段条、赛季/榜单/商会/奖励/战报五阶段；跨服文字战报返回个人对比、商会对比、差距、奖励状态和荣誉信息。
+- Phase 29 本批补强：新增 `POST /cross-server/daily-reward/claim`，报名后可领取今日跨服声望奖励；战报页补齐榜首、下一名差距、称号状态、榜首商会、商会奖励状态和普通成员参与价值；奖励页显示参与、阶段、排名三层短文案。
+- Phase 30 已完成内容：主线任务上方居中邮件入口、全覆盖游戏邮箱、频道筛选、邮件列表、详情、全部已读、奖励摘要和未读数已落地。
+- Phase 30 本批补强：新增 `POST /mails/claim-attachments` 统一领取奖励邮件附件；邮件记录返回 `canClaim` 与 `claimStatus`，前台显示“待领取/已领取”，重复领取不重复发平台币。
+- 四插件证据：Superpowers 用于 TDD 红绿测试、稳定点和多智能体只读复核；Build Web Apps 用于 React 状态更新、按钮层级和短文案检查；Game Studio 用于主页 HUD、全覆盖页、底部操作区和入口无遮挡检查；Browser Use 必须在提交前打开 `http://127.0.0.1:5173/` 验收聊天、跨服、邮件三个入口和 Console。
+- 验证命令：本阶段至少执行 `node --import tsx --test --test-reporter spec --test-name-pattern "phase 28 chat channels" apps/api/test/http.test.ts`、`node --import tsx --test --test-reporter spec --test-name-pattern "phase 15 cross server|phase 28 chat keyword|phase 30 mail" apps/api/test/http.test.ts`、`node --test apps/client/test/phase27-main-flow-regression.test.mjs`、API/client typecheck、lint、`git diff --check`。
+- 当前稳定点目标：完成 Browser Use 验收且验证通过后，提交为 Phase 28-30 收口稳定点；未跟踪参考素材继续保持未提交。
 
 ### Phase 24-30 全局验证要求
 

@@ -760,6 +760,30 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/mails/claim-attachments") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+        return;
+      }
+      const serverId = readString(body, "serverId");
+      if (serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+      const result = await repository.claimMailAttachments(account.id, serverId);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/chat") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -1938,6 +1962,36 @@ export const createApiServer = (
       }
       if (result === "GUILD_SEASON_REQUIREMENT_NOT_MET") {
         sendJson(response, 409, failure("GUILD_SEASON_REQUIREMENT_NOT_MET", "Guild season requirements are not met.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/daily-reward/claim") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+
+      const result = await repository.claimCrossServerDailyReward(account.id, serverId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_NOT_REGISTERED") {
+        sendJson(response, 409, failure("CROSS_SERVER_NOT_REGISTERED", "Register cross-server season before claiming daily reward.", traceId));
         return;
       }
 

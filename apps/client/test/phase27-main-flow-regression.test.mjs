@@ -51,7 +51,8 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
     "世界",
     "商会",
     "跨服",
-    "系统频道只读"
+    "系统频道只读",
+    "内容包含不可发送内容。"
   ]) {
     assert.ok(source.includes(copy), `missing chat copy or guardrail: ${copy}`);
   }
@@ -70,6 +71,7 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
   assert.doesNotMatch(source, /快捷通讯|本地优先词库|发送失败前置校验|已按本地词库替换/, "player chat UI should not expose top-nav, test, or engineering copy");
   assert.match(source, /\/chat\?serverId=/, "client should read chat center from API");
   assert.match(source, /\/chat\/messages/, "client should send chat messages through API");
+  assert.doesNotMatch(source, /local chat keyword library/, "player chat UI should not expose backend keyword wording");
 });
 
 test("phase 29 client promotes cross-server into an independent full-screen center", () => {
@@ -93,6 +95,13 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "商会对比",
     "奖励去向",
     "赛前情报",
+    "领取今日奖励",
+    "榜首",
+    "领先下一名",
+    "称号待争夺",
+    "榜首商会待定",
+    "普通成员贡献计入商会排名",
+    "行动力、通行证、VIP 和商会协作",
     "我的排名",
     "前往跨服",
     "暂无跨服数据"
@@ -121,6 +130,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /home-cross-server-entry/, "home cross-server entry should stay addressable");
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
   assert.match(source, /data-testid="cross-server-guild-season"/, "guild cross-server season should stay addressable");
+  assert.match(source, /\/cross-server\/daily-reward\/claim/, "cross-server should claim real daily participation rewards");
   assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");
   assert.doesNotMatch(source, /跨服数据读取中，请确认 API 服务已启动。/, "player cross-server empty copy should avoid engineering wording");
   assert.doesNotMatch(source, /不改变跨服结算算法|奖励预览：|长期目标：/, "cross-server player UI should avoid backend-rule or long explanatory copy");
@@ -137,6 +147,9 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
     "奖励",
     "补偿",
     "全部已读",
+    "领取附件",
+    "待领取",
+    "已领取",
     "暂无邮件"
   ]) {
     assert.ok(source.includes(copy), `missing mail center copy: ${copy}`);
@@ -154,10 +167,13 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.match(source, /data-testid="mail-list"/, "mail list should stay addressable");
   assert.match(source, /data-testid="mail-detail"/, "mail detail should stay addressable");
   assert.match(source, /data-testid="mail-mark-all-read"/, "mark all read button should stay addressable");
+  assert.match(source, /data-testid="mail-claim-attachments"/, "mail attachment claim button should stay addressable");
+  assert.match(source, /claimStatus: "none" \| "claimable" \| "claimed"/, "mail records should expose attachment claim status");
   assert.doesNotMatch(source, /Mail 邮件中心/, "mail should not keep a separate English top title");
   assert.doesNotMatch(source, /邮件读取中，请确认 API 服务已启动。/, "player mail empty/loading copy should avoid engineering wording");
   assert.match(source, /\/mails\?serverId=/, "client should load mail center from API");
   assert.match(source, /\/mails\/read-all/, "client should mark all mails read through API");
+  assert.match(source, /\/mails\/claim-attachments/, "client should claim mail attachments through API");
 });
 
 test("phase 28-30 plan requires researched differentiated full-screen layouts", () => {

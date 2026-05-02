@@ -632,6 +632,7 @@ export type PlatformCoinLedgerSource =
   | "activity_shop_purchase"
   | "activity_reward"
   | "reserved_payment"
+  | "mail_reward_claim"
   | "system_compensation";
 
 export type PlatformWalletRecord = {
@@ -1043,6 +1044,11 @@ export const defaultChatKeywords = (): AdminChatKeywordRecord[] => {
     createKeyword("public-political-deng-xiaoping", "邓小平", "public", "block"),
     createKeyword("public-political-jiang-zemin", "江泽民", "public", "block"),
     createKeyword("public-political-hu-jintao", "胡锦涛", "public", "block"),
+    createKeyword("public-political-falun", "法轮功", "public", "block"),
+    createKeyword("public-ad-qq-group", "QQ群", "public", "block"),
+    createKeyword("public-ad-recharge-proxy", "代充", "public", "block"),
+    createKeyword("public-ad-brush-recharge", "刷充值", "public", "block"),
+    createKeyword("public-abuse-trash-player", "垃圾玩家", "public", "block"),
     createKeyword("custom-ad-spam", "广告群", "custom", "block"),
     createKeyword("whitelist-guild-business", "商会", "whitelist", "allow", "商会")
   ];
@@ -1733,6 +1739,8 @@ export type MailRecord = {
   body: string;
   rewardSummary: string | null;
   platformCoins: number;
+  canClaim: boolean;
+  claimStatus: "none" | "claimable" | "claimed";
   createdAt: string;
   isRead: boolean;
 };
@@ -1751,6 +1759,13 @@ export type MailCenterRecord = {
 export type MailReadAllRecord = {
   updatedCount: number;
   mailCenter: MailCenterRecord;
+};
+
+export type MailClaimAttachmentsRecord = {
+  claimedCount: number;
+  platformCoins: number;
+  mailCenter: MailCenterRecord;
+  profile: PlayerProfileRecord;
 };
 
 export type AdminProfileStatusRecord = {
@@ -2248,6 +2263,7 @@ export type GameRepository = {
   getLongTermGoals(accountId: string, serverId: string, today: string): Promise<LongTermGoalsRecord | "PLAYER_NOT_FOUND">;
   listMails(accountId: string, serverId: string): Promise<MailCenterRecord | "PLAYER_NOT_FOUND">;
   readAllMails(accountId: string, serverId: string): Promise<MailReadAllRecord | "PLAYER_NOT_FOUND">;
+  claimMailAttachments(accountId: string, serverId: string): Promise<MailClaimAttachmentsRecord | "PLAYER_NOT_FOUND">;
   getChatCenter(accountId: string, serverId: string, today: string): Promise<ChatCenterRecord | "PLAYER_NOT_FOUND">;
   sendChatMessage(accountId: string, serverId: string, channel: ChatChannelId, content: string, today: string): Promise<{ message: ChatMessageRecord; chat: ChatCenterRecord } | "PLAYER_NOT_FOUND" | "CHAT_CHANNEL_READONLY" | "CHAT_GUILD_REQUIRED" | "CHAT_CROSS_REQUIRED" | "CHAT_CONTENT_BLOCKED">;
   claimFullLevelChest(accountId: string, serverId: string): Promise<CompanyGrowthRecord | "PLAYER_NOT_FOUND" | "FULL_LEVEL_CHEST_NOT_READY">;
@@ -2349,6 +2365,7 @@ export type GameRepository = {
   getCrossServerGuildHistory(accountId: string, serverId: string): Promise<CrossServerGuildHistoryRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  claimCrossServerDailyReward(accountId: string, serverId: string, today: string): Promise<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_NOT_REGISTERED">;
   registerCrossServerGuild(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_SEASON_REQUIREMENT_NOT_MET">;
   settleCrossServerGuildRewards(accountId: string, serverId: string, today: string): Promise<CrossServerGuildSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   listTitles(accountId: string, serverId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND">;
@@ -2998,6 +3015,7 @@ const readPlatformCoinLedgerSource = (source: string): PlatformCoinLedgerSource 
   source === "shop_purchase" ||
   source === "activity_reward" ||
   source === "reserved_payment" ||
+  source === "mail_reward_claim" ||
   source === "system_compensation"
     ? source
     : "system_compensation";
@@ -6229,7 +6247,7 @@ export const createPrismaGameRepository = (
     if (profile === undefined) {
       return "PLAYER_NOT_FOUND";
     }
-    const [compensations, deliveries] = await Promise.all([
+    const [compensations, deliveries, claimedLedgers] = await Promise.all([
       prisma.adminMailCompensation.findMany({
         where: { profileId: profile.id },
         orderBy: [{ createdAt: "desc" }]
@@ -6237,8 +6255,13 @@ export const createPrismaGameRepository = (
       prisma.leaderboardRewardDelivery.findMany({
         where: { profileId: profile.id, serverId },
         orderBy: [{ deliveredAt: "desc" }]
+      }),
+      prisma.platformCoinLedger.findMany({
+        where: { profileId: profile.id, source: "mail_reward_claim" },
+        select: { referenceId: true }
       })
     ]);
+    const claimedReferenceIds = new Set(claimedLedgers.map((ledger) => ledger.referenceId).filter((id): id is string => id !== null));
     const mails: MailRecord[] = [
       ...compensations.map((mail): MailRecord => ({
         id: `admin:${mail.id}`,
@@ -6248,6 +6271,8 @@ export const createPrismaGameRepository = (
         body: mail.body,
         rewardSummary: mail.platformCoins > 0 ? `平台币 +${mail.platformCoins}` : null,
         platformCoins: mail.platformCoins,
+        canClaim: false,
+        claimStatus: "claimed",
         createdAt: mail.createdAt.toISOString(),
         isRead: profile.unreadMailCount === 0
       })),
@@ -6256,9 +6281,15 @@ export const createPrismaGameRepository = (
         profileId: profile.id,
         channel: "reward",
         subject: delivery.mailSubject,
-        body: delivery.mailBody,
-        rewardSummary: delivery.rewardPlatformCoins > 0 ? `平台币 +${delivery.rewardPlatformCoins}` : delivery.rewardTitleId === null ? "荣誉奖励" : `称号 ${delivery.rewardTitleId}`,
+        body: delivery.mailBody.startsWith("cross-daily-goal:") ? "今日跨服目标已完成。" : delivery.mailBody.includes("cross") ? "跨服奖励已送达邮箱。" : "榜单奖励已送达邮箱。",
+        rewardSummary: delivery.rewardPlatformCoins > 0
+          ? `平台币 +${delivery.rewardPlatformCoins}`
+          : delivery.mailBody.startsWith("cross-daily-goal:reputation:")
+            ? `声望 +${delivery.mailBody.slice("cross-daily-goal:reputation:".length)}`
+            : delivery.rewardTitleId === null ? "荣誉奖励" : `称号 ${delivery.rewardTitleId}`,
         platformCoins: delivery.rewardPlatformCoins,
+        canClaim: delivery.rewardPlatformCoins > 0 && !claimedReferenceIds.has(delivery.id),
+        claimStatus: delivery.rewardPlatformCoins <= 0 ? "none" : claimedReferenceIds.has(delivery.id) ? "claimed" : "claimable",
         createdAt: delivery.deliveredAt.toISOString(),
         isRead: profile.unreadMailCount === 0
       }))
@@ -6283,6 +6314,84 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
     return { updatedCount, mailCenter };
+  },
+
+  async claimMailAttachments(accountId, serverId) {
+    const profile = await this.getProfile(accountId, serverId);
+    if (profile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const deliveries = await prisma.leaderboardRewardDelivery.findMany({
+      where: {
+        profileId: profile.id,
+        serverId,
+        rewardPlatformCoins: { gt: 0 }
+      },
+      orderBy: [{ deliveredAt: "asc" }]
+    });
+    const existingLedgers = await prisma.platformCoinLedger.findMany({
+      where: {
+        profileId: profile.id,
+        source: "mail_reward_claim",
+        referenceId: { in: deliveries.map((delivery) => delivery.id) }
+      },
+      select: { referenceId: true }
+    });
+    const claimedIds = new Set(existingLedgers.map((ledger) => ledger.referenceId).filter((id): id is string => id !== null));
+    const claimableDeliveries = deliveries.filter((delivery) => !claimedIds.has(delivery.id));
+    const platformCoins = claimableDeliveries.reduce((sum, delivery) => sum + delivery.rewardPlatformCoins, 0);
+
+    if (claimableDeliveries.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        const wallet = await tx.playerPlatformWallet.upsert({
+          where: { profileId: profile.id },
+          update: {},
+          create: {
+            profileId: profile.id,
+            balance: profile.platformCoins,
+            totalSpent: 0,
+            vipExperience: VIP3_START_EXPERIENCE
+          }
+        });
+        let nextBalance = wallet.balance;
+        for (const delivery of claimableDeliveries) {
+          nextBalance += delivery.rewardPlatformCoins;
+          await tx.platformCoinLedger.create({
+            data: {
+              profileId: profile.id,
+              walletId: wallet.id,
+              changeAmount: delivery.rewardPlatformCoins,
+              balanceAfter: nextBalance,
+              source: "mail_reward_claim",
+              referenceId: delivery.id,
+              reason: delivery.mailSubject
+            }
+          });
+        }
+        await tx.playerPlatformWallet.update({
+          where: { id: wallet.id },
+          data: { balance: nextBalance }
+        });
+        await tx.playerProfile.update({
+          where: { id: profile.id },
+          data: { platformCoins: nextBalance }
+        });
+      });
+    }
+
+    const [mailCenter, updatedProfile] = await Promise.all([
+      this.listMails(accountId, serverId),
+      this.getProfile(accountId, serverId)
+    ]);
+    if (mailCenter === "PLAYER_NOT_FOUND" || updatedProfile === undefined) {
+      return "PLAYER_NOT_FOUND";
+    }
+    return {
+      claimedCount: claimableDeliveries.length,
+      platformCoins,
+      mailCenter,
+      profile: updatedProfile
+    };
   },
 
   async getChatCenter(accountId, serverId, today) {
@@ -11337,7 +11446,7 @@ export const createPrismaGameRepository = (
               rewardPlatformCoins,
               rewardTitleId,
               mailSubject: `${board.name} 第 ${row.rank} 名奖励`,
-              mailBody: "排行榜奖励已通过邮件发放，本邮件记录用于防止重复发奖。"
+              mailBody: "榜单奖励已送达邮箱。"
             }
           });
           deliveredRewards += 1;
@@ -11725,7 +11834,7 @@ export const createPrismaGameRepository = (
               rewardPlatformCoins,
               rewardTitleId,
               mailSubject: `${board.name} 第 ${row.rank} 名奖励`,
-              mailBody: "跨服奖励已通过邮件发放，本记录用于重试幂等。"
+              mailBody: "跨服奖励已送达邮箱。"
             }
           });
           deliveredRewards += 1;
@@ -11744,6 +11853,64 @@ export const createPrismaGameRepository = (
       deliveredRewards,
       battleReport: buildCrossServerBattleReport(center, profile.id, deliveredRewards > 0 ? "已生成邮件" : "已结算")
     };
+  },
+
+  async claimCrossServerDailyReward(accountId, serverId, today) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+    if (!center.isRegistered) {
+      return "CROSS_SERVER_NOT_REGISTERED";
+    }
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const existing = await prisma.leaderboardRewardDelivery.findUnique({
+      where: {
+        profileId_boardKey_snapshotDate: {
+          profileId: profile.id,
+          boardKey: "cross-daily-goal",
+          snapshotDate: today
+        }
+      }
+    });
+    if (existing !== null) {
+      return { deliveredRewards: 0, rewardReputation: 0, crossServer: center };
+    }
+    const rewardReputation = 30;
+    await prisma.$transaction([
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: { reputation: { increment: rewardReputation }, unreadMailCount: { increment: 1 } }
+      }),
+      prisma.leaderboardRewardDelivery.create({
+        data: {
+          profileId: profile.id,
+          serverId,
+          boardKey: "cross-daily-goal",
+          snapshotDate: today,
+          rank: center.battleReport.personal.myRank ?? 0,
+          rewardPlatformCoins: 0,
+          rewardTitleId: null,
+          mailSubject: "跨服今日目标奖励",
+          mailBody: `cross-daily-goal:reputation:${rewardReputation}`
+        }
+      })
+    ]);
+    const nextCenter = await this.getCrossServerCenter(accountId, serverId, today);
+    if (nextCenter === "PLAYER_NOT_FOUND" || nextCenter === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return nextCenter;
+    }
+    return { deliveredRewards: 1, rewardReputation, crossServer: nextCenter };
   },
 
   async settleCrossServerGuildRewards(accountId, serverId, today) {

@@ -920,6 +920,8 @@ type MailRecord = {
   platformCoins: number;
   createdAt: string;
   isRead: boolean;
+  canClaim: boolean;
+  claimStatus: "none" | "claimable" | "claimed";
 };
 
 type MailCenter = {
@@ -931,6 +933,19 @@ type MailCenter = {
     channels: Array<"all" | MailChannelId>;
   };
   mails: MailRecord[];
+};
+
+type MailClaimAttachmentsResult = {
+  claimedCount: number;
+  platformCoins: number;
+  mailCenter: MailCenter;
+  profile: PlayerProfile;
+};
+
+type CrossServerDailyRewardResult = {
+  deliveredRewards: number;
+  rewardReputation: number;
+  crossServer: CrossServerCenter;
 };
 
 type LeaderboardSettlement = {
@@ -2820,6 +2835,31 @@ function App() {
     setPhase14Error(response.error.message);
   };
 
+  const claimCrossServerDailyReward = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<CrossServerDailyRewardResult>(
+      "/cross-server/daily-reward/claim",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCrossServerCenter(response.data.crossServer);
+      setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
+      setPhase14Notice(response.data.deliveredRewards > 0 ? `今日跨服奖励已领取：声望 +${response.data.rewardReputation}` : "今日跨服奖励已领取。");
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
   const settleCrossServer = async (): Promise<void> => {
     if (!account || !selectedServer) {
       return;
@@ -3671,6 +3711,30 @@ function App() {
     setMailError(response.error.message || "全部已读失败");
   };
 
+  const claimMailAttachments = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      setMailError("账号或区服状态缺失，请重新登录。");
+      return;
+    }
+    const response = await apiRequest<MailClaimAttachmentsResult>(
+      "/mails/claim-attachments",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+    if (response.success) {
+      setMailCenter(response.data.mailCenter);
+      setProfile(response.data.profile);
+      setMailNotice(response.data.claimedCount > 0 ? `已领取附件：平台币 +${response.data.platformCoins}` : "当前没有可领取附件。");
+      setMailError("");
+      return;
+    }
+    setMailNotice("");
+    setMailError(response.error.message || "领取附件失败");
+  };
+
   const sendChatMessage = async (): Promise<void> => {
     if (!account || !selectedServer) {
       setChatError("账号或区服状态缺失，请重新登录。");
@@ -3697,7 +3761,7 @@ function App() {
       return;
     }
     setChatNotice("");
-    setChatError(response.error.message || "发送失败");
+    setChatError(response.error.code === "CHAT_CONTENT_BLOCKED" ? "内容包含不可发送内容。" : response.error.message || "发送失败");
   };
 
   const openHomePanel = (panelName: string): void => {
@@ -4865,9 +4929,14 @@ function App() {
                           <strong className="block truncate text-sm font-black text-white">邮件</strong>
                           <span className="text-[10px] font-bold text-business-gold">未读 {mailCenter?.summary.unreadCount ?? profile.unreadMailCount} / 共 {mailCenter?.summary.totalCount ?? 0}</span>
                         </div>
-                        <button className="btn-gold shrink-0 rounded-full px-3 py-2 text-[11px] font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
-                          全部已读
-                        </button>
+                        <div className="flex shrink-0 gap-2">
+                          <button className="rounded-full border border-business-gold/40 px-3 py-2 text-[11px] font-black text-business-gold" data-testid="mail-claim-attachments" type="button" onClick={() => void claimMailAttachments()}>
+                            领取附件
+                          </button>
+                          <button className="btn-gold rounded-full px-3 py-2 text-[11px] font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
+                            全部已读
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 space-y-2" data-testid="mail-filter-bar" aria-label="邮件筛选">
                         <div className="flex gap-2 overflow-x-auto scroll-hide">
@@ -4918,7 +4987,7 @@ function App() {
                               <span className="shrink-0 text-[9px] text-business-gold">{mail.channel === "reward" ? "奖励" : mail.channel === "compensation" ? "补偿" : "系统"}</span>
                             </div>
                             <p className="mt-1 truncate text-[10px] text-slate-400">{mail.body}</p>
-                            {mail.rewardSummary && <span className="mt-1 block text-[9px] font-black text-business-gold">{mail.rewardSummary}</span>}
+                            {mail.rewardSummary && <span className="mt-1 block text-[9px] font-black text-business-gold">{mail.rewardSummary}{mail.claimStatus === "claimable" ? " · 待领取" : mail.claimStatus === "claimed" ? " · 已领取" : ""}</span>}
                           </button>
                         ))}
                       </section>
@@ -4932,7 +5001,12 @@ function App() {
                               <span className="shrink-0 text-[9px] text-slate-500">{new Date(selectedMail.createdAt).toLocaleDateString("zh-CN")}</span>
                             </div>
                             <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{selectedMail.body}</p>
-                            {selectedMail.rewardSummary && <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励：{selectedMail.rewardSummary}</p>}
+                            {selectedMail.rewardSummary && <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励：{selectedMail.rewardSummary}{selectedMail.claimStatus === "claimable" ? " · 待领取" : selectedMail.claimStatus === "claimed" ? " · 已领取" : ""}</p>}
+                            {selectedMail.canClaim && (
+                              <button className="mt-2 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark" type="button" onClick={() => void claimMailAttachments()}>
+                                领取附件
+                              </button>
+                            )}
                           </>
                         )}
                       </section>
@@ -5859,6 +5933,14 @@ function App() {
                     <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{highlightedTask ? "今日奖励" : "暂无"}</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
                     <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{personalCrossRank}</strong><span className="text-[9px] text-slate-500">当前排名</span></div>
                   </div>
+                  <button
+                    className="mt-3 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark disabled:opacity-45"
+                    disabled={!crossServerCenter?.isRegistered}
+                    type="button"
+                    onClick={() => void claimCrossServerDailyReward()}
+                  >
+                    领取今日奖励
+                  </button>
                 </section>
 
                 <section className="rounded-2xl border border-business-gold/20 bg-business-gold/10 p-4">
@@ -5866,7 +5948,7 @@ function App() {
                     <strong className="text-sm text-white font-black">冲榜助力</strong>
                     <span className="text-[9px] text-business-gold">{guildCenter?.todayCollaborationCount ?? 0} 次协作</span>
                   </div>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-300 font-bold">行动力、通行证和商会协作只提升经营效率，不直接购买排名。</p>
+                  <p className="mt-2 text-[10px] leading-5 text-slate-300 font-bold">行动力、通行证、VIP 和商会协作提升经营效率，不直接购买排名。</p>
                 </section>
                 </div>
 
@@ -5884,13 +5966,17 @@ function App() {
                       <span className="text-[9px] text-slate-500">我的排名</span>
                     </div>
                     <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block truncate text-sm text-white">{crossServerCenter?.group.name ?? "-"}</strong>
-                      <span className="text-[9px] text-slate-500">跨服分组</span>
+                      <strong className="block truncate text-sm text-white">{crossServerBattleReport?.personal.championName ?? "-"}</strong>
+                      <span className="text-[9px] text-slate-500">榜首</span>
                     </div>
                     <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block truncate text-sm text-white">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</strong>
-                      <span className="text-[9px] text-slate-500">报名状态</span>
+                      <strong className="block truncate text-sm text-white">{crossServerBattleReport?.personal.rewardStatus ?? "待结算"}</strong>
+                      <span className="text-[9px] text-slate-500">奖励状态</span>
                     </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block truncate text-[11px] text-white">{crossServerBattleReport?.personal.previousGapLabel ?? "赛前情报"}</strong><span className="text-[9px] text-slate-500">距上一名</span></div>
+                    <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block truncate text-[11px] text-white">{crossServerBattleReport?.personal.nextGapLabel ?? "保持优势"}</strong><span className="text-[9px] text-slate-500">领先下一名</span></div>
                   </div>
                   <div className="mt-3 space-y-2">
                     {(primaryCrossLeaderboard?.rows ?? []).slice(0, 3).map((row) => (
@@ -5935,7 +6021,7 @@ function App() {
                     </div>
                   </div>
                   <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
-                    {crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
+                    {crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"} · 普通成员贡献计入商会排名。
                   </p>
                   <div className="mt-3 space-y-2">
                     {(crossServerCenter?.guildBoard.rows ?? []).slice(0, 3).map((row) => (
@@ -5977,12 +6063,16 @@ function App() {
                       <strong className="mt-1 block text-sm text-white">{crossServerBattleReport?.personal.myRank ?? "-"}</strong>
                       <span className="mt-1 block text-[9px] text-business-gold">{crossServerBattleReport?.personal.myValueLabel ?? "暂无跨服数据"}</span>
                       <span className="mt-1 block text-[9px] text-slate-500">{crossServerBattleReport?.personal.previousGapLabel ?? "赛前情报"}</span>
+                      <span className="mt-1 block text-[9px] text-slate-500">{crossServerBattleReport?.personal.nextGapLabel ?? "保持优势"}</span>
+                      <span className="mt-1 block text-[9px] text-business-gold">{crossServerBattleReport?.personal.titleStatus ?? "称号待争夺"}</span>
                     </div>
                     <div className="rounded-2xl bg-slate-950/70 p-3">
                       <span className="text-[9px] text-slate-500">商会对比</span>
                       <strong className="mt-1 block text-sm text-white">{crossServerBattleReport?.guild.myGuildRank ?? "-"}</strong>
+                      <span className="mt-1 block text-[9px] text-white">{crossServerBattleReport?.guild.topGuildName ?? "榜首商会待定"}</span>
                       <span className="mt-1 block text-[9px] text-business-gold">{crossServerBattleReport?.guild.myGuildValueLabel ?? "暂无商会排名"}</span>
                       <span className="mt-1 block text-[9px] text-slate-500">{crossServerBattleReport?.guild.activeProgressLabel ?? "加入商会后参与"}</span>
+                      <span className="mt-1 block text-[9px] text-business-gold">{crossServerBattleReport?.guild.rewardStatus ?? "待结算"}</span>
                     </div>
                   </div>
                   <div className="mt-3 rounded-2xl border border-business-gold/20 bg-business-gold/10 px-3 py-2">
@@ -6001,9 +6091,9 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4" aria-label="奖励规则" hidden={activeCrossServerMode !== "rewards"}>
                   <strong className="text-sm text-white font-black">奖励规则</strong>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">参与奖励</strong><span className="text-[9px] text-slate-500">报名参赛</span></div>
-                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">阶段奖励</strong><span className="text-[9px] text-slate-500">赛季目标</span></div>
-                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">排名奖励</strong><span className="text-[9px] text-slate-500">榜单结算</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">参与奖励</strong><span className="text-[9px] text-slate-500">声望 +30</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">阶段奖励</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">排名奖励</strong><span className="text-[9px] text-slate-500">180/120/80</span></div>
                   </div>
                   <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">奖励通过邮件发放，结算后查看邮件。</p>
                 </section>
