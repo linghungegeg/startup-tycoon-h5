@@ -2389,6 +2389,11 @@ VIP 权益：
 
 ### Phase 24-27 全局验证要求
 
+- Phase 24 第十三批、Phase 25、Phase 26 和 Phase 27 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
+  - Superpowers：阶段开始前确认目标、成功标准、当前稳定点、最小改动范围；实现时优先按 TDD 或明确执行计划推进；提交前做验证前检查。
+  - Browser Use：每批完成后打开本地前台、Admin 或 API 健康入口做真实浏览器验收；纯后端批次也要至少确认主页、核心入口和 Console 无关键回归。
+  - Build Web Apps：涉及前台或 Admin 页面时检查深色商务手游 UI、稳重后台结构、文案层级、按钮状态、移动端适配和页面密度；不做营销式改版或卡片堆叠。
+  - Game Studio：检查玩法入口、HUD、底部导航、全覆盖内页、滚动区域、弹窗层级、奖励反馈和主操作按钮不遮挡、不打断、不破坏游戏节奏。
 - 每个实施批次稳定前默认执行：
   - `npm run test -w @wenziyouxi/api`
   - `npm run typecheck -w @wenziyouxi/api`
