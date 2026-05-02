@@ -77,7 +77,9 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "跨服创业赛",
     "今日跨服目标",
     "赛季进度",
+    "下一奖励",
     "冲榜助力",
+    "完成今日目标",
     "参与奖励",
     "阶段奖励",
     "排名奖励",
@@ -85,7 +87,12 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "榜单",
     "创业大赛",
     "跨服商会",
-    "历史",
+    "战报",
+    "赛果摘要",
+    "个人对比",
+    "商会对比",
+    "奖励去向",
+    "赛前情报",
     "我的排名",
     "前往跨服",
     "暂无跨服数据"
@@ -101,13 +108,15 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /data-testid="native-cross-server"/, "independent cross-server page should stay addressable");
   assert.match(source, /data-testid="cross-server-unified-shell"/, "cross-server should render as one unified game panel");
   assert.match(source, /data-testid="cross-server-close-button"/, "cross-server close button should stay addressable without a separate top nav");
-  assert.match(source, /data-testid="cross-server-mode-rail"/, "cross-server modes should use a left-side rail");
-  assert.match(source, /data-testid="cross-server-content-pane"/, "cross-server content should stay in the right-side pane");
-  assert.match(source, /activeCrossServerMode !== "season"/, "cross-server season overview should be controlled by the left rail");
-  assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should be controlled by the left rail");
-  assert.match(source, /activeCrossServerMode !== "guild"/, "cross-server guild content should be controlled by the left rail");
-  assert.match(source, /activeCrossServerMode !== "rewards"/, "cross-server rewards content should be controlled by the left rail");
-  assert.match(source, /activeCrossServerMode !== "history"/, "cross-server history content should be controlled by the left rail");
+  assert.doesNotMatch(source, /data-testid="cross-server-mode-rail"/, "cross-server should not reuse the chat-style left rail");
+  assert.match(source, /data-testid="cross-server-stage-bar"/, "cross-server stages should use a horizontal tournament stage bar");
+  assert.match(source, /data-testid="cross-server-content-pane"/, "cross-server content should stay addressable");
+  assert.match(source, /activeCrossServerMode !== "season"/, "cross-server season overview should be controlled by the stage bar");
+  assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should be controlled by the stage bar");
+  assert.match(source, /activeCrossServerMode !== "guild"/, "cross-server guild content should be controlled by the stage bar");
+  assert.match(source, /activeCrossServerMode !== "rewards"/, "cross-server rewards content should be controlled by the stage bar");
+  assert.match(source, /activeCrossServerMode !== "history"/, "cross-server history content should be controlled by the stage bar");
+  assert.match(source, /data-testid="cross-server-battle-report"/, "cross-server battle report should stay addressable");
   assert.doesNotMatch(source, /business-tabs mt-3/, "cross-server should not keep a second category tab row inside the content pane");
   assert.match(source, /home-cross-server-entry/, "home cross-server entry should stay addressable");
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
@@ -115,6 +124,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");
   assert.doesNotMatch(source, /跨服数据读取中，请确认 API 服务已启动。/, "player cross-server empty copy should avoid engineering wording");
   assert.doesNotMatch(source, /不改变跨服结算算法|奖励预览：|长期目标：/, "cross-server player UI should avoid backend-rule or long explanatory copy");
+  assert.doesNotMatch(source, /前往跨服查看榜单，结合商会任务、项目协作和长期目标提升估值。/, "cross-server season page should use short player-facing copy");
 });
 
 test("phase 30 client exposes mail capsule and full-screen mail center", () => {
@@ -138,8 +148,9 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.match(source, /setNativeHomePage\("mail"\)/, "mail capsule should open full-screen mail center");
   assert.match(source, /data-testid="native-mail"/, "full-screen mail page should stay addressable");
   assert.match(source, /data-testid="mail-close-button"/, "mail close button should stay addressable without a separate top nav");
-  assert.match(source, /data-testid="mail-channel-rail"/, "mail categories should use a left-side rail");
-  assert.match(source, /data-testid="mail-content-pane"/, "mail content should stay in the right-side pane");
+  assert.doesNotMatch(source, /data-testid="mail-channel-rail"/, "mail should not be locked to the chat-style left rail");
+  assert.match(source, /data-testid="mail-filter-bar"/, "mail filters should use a compact mailbox filter bar");
+  assert.match(source, /data-testid="mail-content-pane"/, "mail content should stay addressable");
   assert.match(source, /data-testid="mail-list"/, "mail list should stay addressable");
   assert.match(source, /data-testid="mail-detail"/, "mail detail should stay addressable");
   assert.match(source, /data-testid="mail-mark-all-read"/, "mark all read button should stay addressable");

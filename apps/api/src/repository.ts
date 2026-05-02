@@ -1871,6 +1871,7 @@ export type LeaderboardCenterRecord = {
 export type LeaderboardSettlementRecord = {
   leaderboard: LeaderboardCenterRecord;
   deliveredRewards: number;
+  battleReport?: CrossServerBattleReportRecord;
 };
 
 export type SeasonStatus = "upcoming" | "active" | "ended";
@@ -1987,6 +1988,30 @@ export type CrossServerCenterRecord = {
       valueLabel: string;
     }>;
   };
+  battleReport: CrossServerBattleReportRecord;
+};
+
+export type CrossServerBattleReportRecord = {
+  snapshotDate: string;
+  groupName: string;
+  serverIds: string[];
+  personal: {
+    myRank: number | null;
+    myValueLabel: string;
+    championName: string | null;
+    previousGapLabel: string | null;
+    nextGapLabel: string | null;
+    rewardStatus: "待结算" | "已生成邮件" | "已结算";
+    titleStatus: string;
+  };
+  guild: {
+    myGuildRank: number | null;
+    myGuildValueLabel: string;
+    topGuildName: string | null;
+    activeProgressLabel: string;
+    rewardStatus: "待结算" | "已生成邮件" | "已结算";
+  };
+  lines: string[];
 };
 
 export type CrossServerGuildSettlementRecord = LeaderboardSettlementRecord & {
@@ -2035,6 +2060,7 @@ export type CrossServerGuildHistoryRecord = {
     snapshotDate: string;
     deliveredRewards: number;
     finalRank: number | null;
+    reportLines: string[];
     topGuilds: Array<{
       guildId: string;
       guildName: string;
@@ -4637,6 +4663,51 @@ const formatLeaderboardValue = (key: string, value: number): string => {
   return `估值 ${value.toLocaleString("zh-CN")}`;
 };
 
+const buildCrossServerBattleReport = (
+  center: Omit<CrossServerCenterRecord, "battleReport">,
+  profileId: string,
+  rewardStatus: CrossServerBattleReportRecord["personal"]["rewardStatus"] = "待结算"
+): CrossServerBattleReportRecord => {
+  const personalBoard = center.boards.find((board) => board.key === "cross-company-value") ?? center.boards[0];
+  const personalRows = personalBoard?.rows ?? [];
+  const personalRow = personalRows.find((row) => row.profileId === profileId) ?? null;
+  const previousRow = personalRow === null ? null : personalRows.find((row) => row.rank === personalRow.rank - 1) ?? null;
+  const nextRow = personalRow === null ? null : personalRows.find((row) => row.rank === personalRow.rank + 1) ?? null;
+  const guildRow = center.guildSeason.guildId === null ? null : center.guildBoard.rows.find((row) => row.guildId === center.guildSeason.guildId) ?? null;
+  const topGuild = center.guildBoard.rows[0] ?? null;
+  const personalRankLabel = personalRow === null ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`;
+  const guildRankLabel = guildRow === null ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`;
+
+  return {
+    snapshotDate: personalBoard?.snapshotDate ?? center.guildBoard.snapshotDate,
+    groupName: center.group.name,
+    serverIds: center.group.serverIds,
+    personal: {
+      myRank: personalRow?.rank ?? null,
+      myValueLabel: personalRow?.valueLabel ?? "暂无跨服数据",
+      championName: personalRows[0]?.founderName ?? null,
+      previousGapLabel: personalRow === null || previousRow === null ? null : `距上一名 ${Math.max(previousRow.value - personalRow.value, 0).toLocaleString("zh-CN")} 估值`,
+      nextGapLabel: personalRow === null || nextRow === null ? null : `领先下一名 ${Math.max(personalRow.value - nextRow.value, 0).toLocaleString("zh-CN")} 估值`,
+      rewardStatus,
+      titleStatus: personalRow?.equippedTitle ?? "当前荣誉收集中"
+    },
+    guild: {
+      myGuildRank: guildRow?.rank ?? null,
+      myGuildValueLabel: guildRow?.valueLabel ?? "暂无商会排名",
+      topGuildName: topGuild?.guildName ?? null,
+      activeProgressLabel: `${center.guildSeason.todayActiveMemberCount}/${center.guildSeason.minTodayActiveMembers} 活跃`,
+      rewardStatus
+    },
+    lines: [
+      `跨服战报已汇总 ${center.group.serverIds.length} 个区服的经营表现。`,
+      personalRankLabel,
+      previousRow === null ? "当前暂无上一名差距。" : `距离上一名还差 ${Math.max(previousRow.value - (personalRow?.value ?? 0), 0).toLocaleString("zh-CN")} 估值。`,
+      guildRankLabel,
+      "奖励通过邮件发放。"
+    ]
+  };
+};
+
 const guildTechUpgradeCost = (currentLevel: number): number | null =>
   currentLevel >= 5 ? null : [40, 120, 240, 400, 600][currentLevel] ?? null;
 
@@ -4779,6 +4850,11 @@ const buildCrossServerGuildHistory = async (
         snapshotDate,
         deliveredRewards: rows.length,
         finalRank: topGuilds.find((row) => row.guildId === guild.id)?.rank ?? null,
+        reportLines: [
+          topGuilds.find((row) => row.guildId === guild.id)?.rank === undefined ? "本商会未进入本次跨服商会奖励榜。" : `${guild.name} 本次跨服商会第 ${topGuilds.find((row) => row.guildId === guild.id)?.rank}。`,
+          `本次跨服商会发放 ${rows.length} 份奖励。`,
+          "奖励通过邮件发放。"
+        ],
         topGuilds
       };
     })
@@ -11419,7 +11495,7 @@ export const createPrismaGameRepository = (
       memberCount >= crossServerGuildSeasonRequirements.minMembers &&
       todayActiveMemberCount >= crossServerGuildSeasonRequirements.minTodayActiveMembers;
 
-    return {
+    const center = {
       group: {
         id: groupServer.group.id,
         name: groupServer.group.name,
@@ -11445,11 +11521,15 @@ export const createPrismaGameRepository = (
       guildBoard: {
         key: "cross-guild-season",
         name: "跨服商会赛季榜",
-        scope: "cross",
+        scope: "cross" as const,
         isActive: true,
         snapshotDate: today,
         rows: guildRows
       }
+    };
+    return {
+      ...center,
+      battleReport: buildCrossServerBattleReport(center, profile.id)
     };
   },
 
@@ -11608,6 +11688,17 @@ export const createPrismaGameRepository = (
     if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
       return center;
     }
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
 
     let deliveredRewards = 0;
     for (const board of center.boards) {
@@ -11650,7 +11741,8 @@ export const createPrismaGameRepository = (
         boards: center.boards,
         activityBoards: []
       },
-      deliveredRewards
+      deliveredRewards,
+      battleReport: buildCrossServerBattleReport(center, profile.id, deliveredRewards > 0 ? "已生成邮件" : "已结算")
     };
   },
 
@@ -11658,6 +11750,17 @@ export const createPrismaGameRepository = (
     const center = await this.getCrossServerCenter(accountId, serverId, today);
     if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
       return center;
+    }
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
     }
     if (!center.guildSeason.isGuildMember) {
       return "GUILD_NOT_JOINED";
@@ -11714,6 +11817,7 @@ export const createPrismaGameRepository = (
         activityBoards: []
       },
       deliveredRewards,
+      battleReport: buildCrossServerBattleReport(center, profile.id, deliveredRewards > 0 ? "已生成邮件" : "已结算"),
       rewards: deliveredRewards > 0 ? rewards : []
     };
   },

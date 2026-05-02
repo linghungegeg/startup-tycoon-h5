@@ -2318,13 +2318,14 @@ const createTestRepository = (): GameRepository => {
       .sort((left, right) => right.value - left.value)
       .map((row, index) => ({ ...row, rank: index + 1 }));
 
-    return {
+    const boards = [
+      { key: "cross-company-value", name: "跨服创业大赛榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-company-value"), snapshotDate: today },
+      { key: "cross-guild", name: "跨服商会榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-guild"), snapshotDate: today }
+    ];
+    const center = {
       group,
       isRegistered: crossServerSignups.has(`${profile.id}:${group.id}`),
-      boards: [
-        { key: "cross-company-value", name: "跨服创业大赛榜", scope: "cross", isActive: true, rows: rowsFor("cross-company-value"), snapshotDate: today },
-        { key: "cross-guild", name: "跨服商会榜", scope: "cross", isActive: true, rows: rowsFor("cross-guild"), snapshotDate: today }
-      ],
+      boards,
       guildSeason: {
         isGuildMember: member !== undefined,
         isManager,
@@ -2346,6 +2347,40 @@ const createTestRepository = (): GameRepository => {
         isActive: true,
         snapshotDate: today,
         rows: guildRows
+      }
+    };
+    const personalRow = boards[0]?.rows.find((row) => row.profileId === profile.id);
+    const previousRow = personalRow === undefined ? undefined : boards[0]?.rows.find((row) => row.rank === personalRow.rank - 1);
+    const guildRow = member === undefined ? undefined : guildRows.find((row) => row.guildId === member.guildId);
+    return {
+      ...center,
+      battleReport: {
+        snapshotDate: today,
+        groupName: group.name,
+        serverIds: group.serverIds,
+        personal: {
+          myRank: personalRow?.rank ?? null,
+          myValueLabel: personalRow?.valueLabel ?? "暂无跨服数据",
+          championName: boards[0]?.rows[0]?.founderName ?? null,
+          previousGapLabel: previousRow === undefined || personalRow === undefined ? null : `距上一名 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值`,
+          nextGapLabel: null,
+          rewardStatus: "待结算",
+          titleStatus: personalRow?.equippedTitle ?? "当前荣誉收集中"
+        },
+        guild: {
+          myGuildRank: guildRow?.rank ?? null,
+          myGuildValueLabel: guildRow?.valueLabel ?? "暂无商会排名",
+          topGuildName: guildRows[0]?.guildName ?? null,
+          activeProgressLabel: `${todayActiveMemberCount}/${seasonRequirements.minTodayActiveMembers} 活跃`,
+          rewardStatus: "待结算"
+        },
+        lines: [
+          `跨服战报已汇总 ${group.serverIds.length} 个区服的经营表现。`,
+          personalRow === undefined ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`,
+          previousRow === undefined || personalRow === undefined ? "当前暂无上一名差距。" : `距离上一名还差 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值。`,
+          guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`,
+          "奖励通过邮件发放。"
+        ]
       }
     };
   };
@@ -2573,6 +2608,11 @@ const createTestRepository = (): GameRepository => {
           snapshotDate,
           deliveredRewards: rows.length,
           finalRank: topGuilds.find((row) => row.guildId === guild.id)?.rank ?? null,
+          reportLines: [
+            topGuilds.find((row) => row.guildId === guild.id)?.rank === undefined ? "本商会未进入本次跨服商会奖励榜。" : `${guild.name} 本次跨服商会第 ${topGuilds.find((row) => row.guildId === guild.id)?.rank}。`,
+            `本次跨服商会发放 ${rows.length} 份奖励。`,
+            "奖励通过邮件发放。"
+          ],
           topGuilds
         };
       })
@@ -5884,7 +5924,15 @@ const createTestRepository = (): GameRepository => {
           }
         }
       }
-      return { leaderboard: { boards: center.boards, activityBoards: [] }, deliveredRewards } satisfies LeaderboardSettlementRecord;
+      return {
+        leaderboard: { boards: center.boards, activityBoards: [] },
+        deliveredRewards,
+        battleReport: {
+          ...center.battleReport,
+          personal: { ...center.battleReport.personal, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
+          guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" }
+        }
+      } satisfies LeaderboardSettlementRecord;
     },
     async settleCrossServerGuildRewards(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5929,7 +5977,16 @@ const createTestRepository = (): GameRepository => {
         });
         deliveredRewards += 1;
       }
-      return { leaderboard: { boards: center.boards, activityBoards: [] }, deliveredRewards, rewards: deliveredRewards > 0 ? rewards : [] };
+      return {
+        leaderboard: { boards: center.boards, activityBoards: [] },
+        deliveredRewards,
+        battleReport: {
+          ...center.battleReport,
+          personal: { ...center.battleReport.personal, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
+          guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" }
+        },
+        rewards: deliveredRewards > 0 ? rewards : []
+      };
     },
     async listTitles(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -10577,6 +10634,9 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(center.body.data?.isRegistered, false);
     assert.equal(center.body.data?.boards.length, 2);
     assert.ok(center.body.data?.boards.every((board) => board.scope === "cross"));
+    assert.equal(center.body.data?.battleReport.groupName, "开服成长池");
+    assert.equal(center.body.data?.battleReport.personal.rewardStatus, "待结算");
+    assert.ok((center.body.data?.battleReport.lines.length ?? 0) >= 3);
 
     const registered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/register", {
       method: "POST",
@@ -10593,6 +10653,8 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     });
     assert.equal(settled.status, 200);
     assert.ok((settled.body.data?.deliveredRewards ?? 0) > 0);
+    assert.equal(settled.body.data?.battleReport.personal.rewardStatus, "已生成邮件");
+    assert.match(settled.body.data?.battleReport.lines[0] ?? "", /跨服/);
 
     const duplicate = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",
@@ -10764,6 +10826,8 @@ test("cross-server guild season gates registration ranks guilds and settles repu
     assert.equal(center.body.data?.guildSeason.rewardLabel, "前 3 名会长获得声望 180/120/80");
     assert.deepEqual(center.body.data?.guildBoard.rows.map((row) => row.guildName), ["跨服强会", "跨服先锋会"]);
     assert.ok(center.body.data?.guildBoard.rows.every((row) => row.valueLabel.startsWith("跨服贡献 ")));
+    assert.equal(center.body.data?.battleReport.guild.myGuildRank, 2);
+    assert.equal(center.body.data?.battleReport.guild.topGuildName, "跨服强会");
 
     const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s2", {
       headers: rivalLeaderHeaders
@@ -10776,6 +10840,7 @@ test("cross-server guild season gates registration ranks guilds and settles repu
     assert.equal(settled.status, 200, JSON.stringify(settled.body));
     assert.equal(settled.body.data?.deliveredRewards, 2);
     assert.deepEqual(settled.body.data?.rewards.map((reward) => reward.reputationReward), [180, 120]);
+    assert.equal(settled.body.data?.battleReport.guild.rewardStatus, "已生成邮件");
 
     const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s2", {
       headers: rivalLeaderHeaders
@@ -10791,6 +10856,7 @@ test("cross-server guild season gates registration ranks guilds and settles repu
     });
     assert.equal(duplicate.status, 200, JSON.stringify(duplicate.body));
     assert.equal(duplicate.body.data?.deliveredRewards, 0);
+    assert.equal(duplicate.body.data?.battleReport.guild.rewardStatus, "已结算");
   });
 });
 
