@@ -1932,7 +1932,7 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p>Phase 24 运营深化</p>
+            <p>Phase 27 质量收口</p>
             <h1>{menuItems.find((item) => item.id === activeSection)?.label}</h1>
           </div>
           <div className="operator-bar">

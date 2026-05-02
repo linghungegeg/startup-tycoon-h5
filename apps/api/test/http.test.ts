@@ -8664,6 +8664,86 @@ test("phase 18 rate limits repeated invalid auth attempts", async () => {
   });
 });
 
+test("phase 27 locks production readiness health auth errors and audit guardrails", async () => {
+  const repository = createTestRepository();
+  const server = createApiServer(
+    {
+      host: "127.0.0.1",
+      port: 0,
+      dependencies: {
+        mysql: "configured",
+        redis: "configured"
+      }
+    },
+    repository
+  );
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    assert.equal(typeof address, "object");
+    assert.ok(address);
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const health = await requestJson<{ service: string; status: string; dependencies: { mysql: string; redis: string } }>(baseUrl, "/health", {
+      headers: { "x-trace-id": "phase27-readiness" }
+    });
+    assert.equal(health.status, 200);
+    assert.equal(health.body.traceId, "phase27-readiness");
+    assert.equal(health.body.data?.service, "@wenziyouxi/api");
+    assert.equal(health.body.data?.status, "ok");
+    assert.equal(health.body.data?.dependencies.mysql, "configured");
+    assert.equal(health.body.data?.dependencies.redis, "configured");
+
+    const readiness = await requestJson<{ status: string; checks: Array<{ key: string; status: string }> }>(baseUrl, "/readiness");
+    assert.equal(readiness.status, 200);
+    assert.equal(readiness.body.data?.status, "ready");
+    assert.ok(readiness.body.data?.checks.some((check) => check.key === "mysql" && check.status === "pass"));
+    assert.ok(readiness.body.data?.checks.some((check) => check.key === "redis" && check.status === "pass"));
+
+    const unauthenticatedSession = await requestJson(baseUrl, "/auth/session");
+    assert.equal(unauthenticatedSession.status, 401);
+    assert.equal(unauthenticatedSession.body.error?.code, "UNAUTHORIZED");
+
+    const unauthenticatedAudit = await requestJson(baseUrl, "/admin/audit-logs");
+    assert.equal(unauthenticatedAudit.status, 401);
+    assert.equal(unauthenticatedAudit.body.error?.code, "UNAUTHORIZED");
+
+    const unauthenticatedAdminSession = await requestJson(baseUrl, "/admin/auth/session");
+    assert.equal(unauthenticatedAdminSession.status, 401);
+    assert.equal(unauthenticatedAdminSession.body.error?.code, "UNAUTHORIZED");
+    assert.equal(unauthenticatedAdminSession.body.error?.message, "Missing or invalid admin session token.");
+
+    const missingRoute = await requestJson(baseUrl, "/phase27/missing-route");
+    assert.equal(missingRoute.status, 404);
+    assert.equal(missingRoute.body.error?.code, "NOT_FOUND");
+    assert.equal(missingRoute.body.error?.message, "Route not found.");
+
+    let rateLimitedStatus = 0;
+    let rateLimitedBody: ApiBody<unknown> | undefined;
+    let retryAfter: string | null = null;
+    for (let index = 0; index < 11; index += 1) {
+      const response = await fetch(`${baseUrl}/admin/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username: "admin", password: "wrong-password" })
+      });
+      rateLimitedStatus = response.status;
+      retryAfter = response.headers.get("retry-after");
+      rateLimitedBody = (await response.json()) as ApiBody<unknown>;
+    }
+    assert.equal(rateLimitedStatus, 429);
+    assert.equal(rateLimitedBody?.error?.code, "RATE_LIMITED");
+    assert.equal(rateLimitedBody?.error?.message, "Too many auth attempts. Please retry later.");
+    assert.equal(retryAfter, "60");
+  } finally {
+    server.close();
+    await once(server, "close");
+    await repository.disconnect();
+  }
+});
+
 test("phase 18 rejects mismatched external payment reservations", async () => {
   await withServer(async (baseUrl) => {
     const { token } = await createPlayerSession(baseUrl, "paymentguard");

@@ -7,6 +7,7 @@ const source = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8"
 test("phase 27 admin preserves pre-launch main navigation coverage", () => {
   for (const copy of [
     "后台登录",
+    "Phase 27 质量收口",
     "数据看板",
     "玩家查询",
     "平台币 / VIP",

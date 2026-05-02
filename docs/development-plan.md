@@ -2581,6 +2581,24 @@ VIP 权益：
   - 更新上线前检查清单、当前稳定点和 Phase 27 完成总结。
 - 验收标准：仓库达到本地商业测试上线前质量收口状态，但不执行真实部署。
 
+##### Phase 27 第五实施批次总结：Readiness 与生产前质量收口
+
+- 完成内容：新增 API 生产前质量回归测试，锁定 `/health`、`/readiness`、MySQL/Redis ready 状态、traceId 透传、玩家与 Admin 鉴权、未知路由错误码、Admin 登录限流和审计日志未登录防护；同步 Admin 顶部阶段标识为 `Phase 27 质量收口`。
+- 上线边界：本批不执行真实部署、不改生产配置、不接真实外部支付回调、不改结算、不改资产、不新增玩法和 Admin 操作入口，只完成本地商业测试上线前质量收口。
+- 四插件检查：
+  - Superpowers：当前稳定点 `390b158 test: cover admin main flow regression`，按 TDD 先补 readiness/Admin 阶段标识回归，再做最小实现与验证。
+  - Browser Use：本地浏览器需验收 API `/health`、`/readiness`、前台主页 HUD/底部导航/活动/Rank/商业入口和 Admin `Phase 27 质量收口` 主流程。
+  - Build Web Apps：确认本批不新增页面；前台保持深色商务手游 HUD 与全覆盖内页，Admin 保持稳重后台表格、摘要、表单和详情结构。
+  - Game Studio：确认前台 HUD、底部导航、玩法入口、滚动区域、弹窗层级和主操作按钮不遮挡、不打断玩法节奏。
+- 验证命令：`npm run test -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/api`、`node --test apps/client/test/phase27-main-flow-regression.test.mjs apps/client/test/phase27-commercial-telemetry.test.mjs apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`node --test apps/admin/test/phase27-admin-main-flow-regression.test.mjs apps/admin/test/phase27-economy-alerts.test.mjs apps/admin/test/phase27-monetization-analytics.test.mjs apps/admin/test/phase26-business-clock-observations.test.mjs`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/admin`、`npm run build -w @wenziyouxi/admin`、`git diff --check`。
+
+##### Phase 27 完成总结
+
+- Phase 27 已完成商业化数据聚合、经济巡检告警、玩家主流程上线前回归、Admin 主流程上线前回归和 Readiness 生产前质量收口。
+- 商业化边界：继续保持外部支付预留、不执行真实支付回调；平台币、VIP、商品、通行证、背包、专属经理和经济告警均以后端与审计链路为准。
+- 上线前状态：仓库达到本地商业测试上线前质量收口状态；真实部署、生产数据库、Redis 持久化、宝塔备份、灰度放量和客服值守仍按上线清单执行。
+- 后续入口：Phase 27 收口完成后，再按新阶段目标进入下一轮规划和实施。
+
 ### Phase 24-27 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26 和 Phase 27 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
