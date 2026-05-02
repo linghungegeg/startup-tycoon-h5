@@ -2344,6 +2344,19 @@ VIP 权益：
 - Game Studio 检查主页入口密度不增加、HUD 不遮挡、商业/特权/通行证/背包路径清晰。
 - 文档写入 Phase 25 总结，下一阶段入口改为 Phase 26“经营时间流动与在线/离线脉冲”。
 
+##### Phase 25 第五实施批次总结：阶段收口
+
+- 完成内容：Phase 25 五个实施批次完成收口；长期目标、商业入口、付费价值边界、长期荣誉展示和阶段回归均保留在现有入口内，不新增玩法、不新增主页一级入口。
+- 回归范围：长期目标、商业入口、通行证、活动商店、VIP、特权、背包、称号、成就、商会历史、跨服历史、Admin 付费价值边界和活动运营相关只读链路完成阶段检查。
+- 边界检查：本批只做验证和文档总结，不修改支付回调、平台币购买、后台发币、VIP 经验、通行证购买、活动商店购买、排行榜结算、活动榜结算和商会/跨服结算语义。
+- 四插件检查：
+  - Superpowers：以 `08a7f17 feat: add long-term honor summary` 为当前稳定点，按阶段收口执行最小回归；两路只读智能体分别复核 API/Admin 与前台/Admin 浏览器验收范围，结论均为本批无需新增代码。
+  - Browser Use：本地浏览器验收前台活动、排行、商业、特权、通行证、背包入口，以及 Admin 配置清单“付费价值边界”；浏览器 console 无 error。
+  - Build Web Apps：前台继续沿用深色商务手游 UI、紧凑全覆盖内页和稳重后台结构；Admin 配置清单保持表格与信息块可扫描，不新增营销式页面。
+  - Game Studio：主页 HUD、资源条、左右入口、主线任务条和底部导航密度未增加；长期目标和我的荣誉仍位于 Rank 全覆盖滚动区，不遮挡主操作。
+- 验证命令：`node --test apps/client/test/phase25-honor-center.test.mjs`、`node --test --test-reporter spec --test-name-pattern "phase 25 long-term goals|phase 25 admin monetization boundaries|phase 19 runs season activity pass rewards|lists wallet and buys shop products|platform coin spending upgrades VIP|admin coin grants do not increase VIP|phase 24 guild season history archives|phase 14 achievements titles knowledge and guild basics" --import tsx apps/api/test/http.test.ts`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run typecheck -w @wenziyouxi/admin`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/admin`。
+- Phase 25 玩家长期目标与商业化体验收口完成；下一阶段入口：Phase 26 第一实施批次“经营时钟与懒同步基础”。
+
 ### Phase 26 完整开发计划：经营时间流动与在线/离线脉冲
 
 - 阶段目标：解决文字模拟经营游戏“数据只有点击任务才变化”的问题。让在线与离线都产生可信的小幅经营变化、简报和待办，同时避免挂机暴富和经济膨胀。
