@@ -845,6 +845,17 @@ type GuildCenter = {
     fulfilledAt: string | null;
     canFulfill?: boolean;
   }>;
+  projects: Array<{
+    id: string;
+    name: string;
+    description: string;
+    progress: number;
+    target: number;
+    rewardReputation: number;
+    rewardLabel: string;
+    isClaimed: boolean;
+    isClaimable: boolean;
+  }>;
   todayActiveMemberCount: number;
   todayCollaborationCount: number;
   recentActivities: Array<{
@@ -2697,6 +2708,38 @@ function App() {
       setGuildCenter(response.data.guildCenter);
       setPhase14Notice(response.data.result);
       setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const claimGuildProjectReward = async (projectId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<GuildActionResult>(
+      `/guild/projects/${encodeURIComponent(projectId)}/claim`,
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setGuildCenter(response.data.guildCenter);
+      setPhase14Notice(response.data.result);
+      setPhase14Error("");
+      const profileResponse = await apiRequest<PlayerProfile>(
+        `/players?serverId=${encodeURIComponent(selectedServer.id)}`,
+        {},
+        account.token
+      );
+      if (profileResponse.success) {
+        setProfile(profileResponse.data);
+      }
       return;
     }
 
@@ -4746,6 +4789,42 @@ function App() {
                             <span className="shrink-0 text-[9px] text-slate-600">{activity.createdAt.slice(0, 10)}</span>
                           </div>
                         ))}
+                      </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <strong className="text-sm text-white font-black">协作项目</strong>
+                        <span className="text-[10px] text-business-gold">{guildCenter.projects.length} 项</span>
+                      </div>
+                      <div className="space-y-2">
+                        {guildCenter.projects.slice(0, 3).map((project) => {
+                          const progressRate = project.target <= 0 ? 0 : Math.min(100, Math.round((project.progress / project.target) * 100));
+                          return (
+                            <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={project.id}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block text-xs text-white font-black">{project.name}</strong>
+                                  <p className="mt-1 text-[9px] leading-4 text-slate-500">{project.description}</p>
+                                </div>
+                                <span className="shrink-0 text-[9px] text-business-gold font-black">{project.progress}/{project.target}</span>
+                              </div>
+                              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-950/70">
+                                <div className="h-full rounded-full bg-business-gold" style={{ width: `${progressRate}%` }} />
+                              </div>
+                              <div className="mt-3 flex items-center justify-between gap-2">
+                                <span className="text-[10px] text-emerald-200 font-black">{project.rewardLabel}</span>
+                                <button
+                                  className={`px-3 py-1.5 rounded-xl text-[10px] font-black ${project.isClaimable ? "btn-gold text-business-dark" : "bg-slate-800 text-slate-500"}`}
+                                  disabled={!project.isClaimable}
+                                  type="button"
+                                  onClick={() => void claimGuildProjectReward(project.id)}
+                                >
+                                  {project.isClaimed ? "已领取" : project.isClaimable ? "领奖" : "推进中"}
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
                       </div>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">

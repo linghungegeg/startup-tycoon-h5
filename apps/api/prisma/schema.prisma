@@ -686,6 +686,7 @@ model Guild {
   helpRequests GuildHelpRequest[]
   joinRequests GuildJoinRequest[]
   activityLogs GuildActivityLog[]
+  projectProgress GuildProjectProgress[]
 
   @@unique([serverId, name])
   @@index([serverId, contributionScore])
@@ -788,6 +789,17 @@ model GuildActivityLog {
 
   @@index([guildId, createdAt])
   @@index([guildId, profileId, createdAt])
+}
+
+model GuildProjectProgress {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  guildId     String        @db.VarChar(36)
+  projectId   String        @db.VarChar(40)
+  progress    Int           @default(0)
+  claimedAt   DateTime?
+  guild       Guild         @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, projectId])
 }
 
 model PlatformCoinLedger {

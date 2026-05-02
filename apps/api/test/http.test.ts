@@ -1828,6 +1828,7 @@ const createTestRepository = (): GameRepository => {
   const guildActivityLogs = new Map<string, { id: string; guildId: string; profileId: string; action: string; createdAt: string }>();
   const guildTaskClaims = new Map<string, { guildId: string; taskId: string; claimedAt: string }>();
   const guildTechStates = new Map<string, { guildId: string; techId: string; level: number }>();
+  const guildProjectProgresses = new Map<string, { guildId: string; projectId: string; progress: number; claimedAt: string | null }>();
   const telemetryEvents = new Map<string, { id: string; accountId: string; serverId: string; eventName: string; targetId: string | null; metadata: Record<string, string | number | boolean | null> }>();
   const apiRequestLogs: Array<{ traceId: string; method: string; path: string; statusCode: number; durationMs: number }> = [];
   const seasonConfig = {
@@ -2222,12 +2223,25 @@ const createTestRepository = (): GameRepository => {
     }
     return "参与商会协作";
   };
+  const guildProjectConfigs = [
+    { id: "joint-roadshow", name: "联合路演", description: "成员通过互助、任务和科技推进路演材料共创。", target: 3, rewardReputation: 60 },
+    { id: "risk-review-week", name: "风险复核周", description: "集中完成合同、资金和运营风险复核协作。", target: 6, rewardReputation: 80 },
+    { id: "market-co-creation", name: "市场共创", description: "围绕市场洞察和增长策略沉淀商会共创成果。", target: 8, rewardReputation: 100 }
+  ];
+  const advanceGuildProjects = (guildId: string): void => {
+    for (const project of guildProjectConfigs) {
+      const key = `${guildId}:${project.id}`;
+      const progress = guildProjectProgresses.get(key) ?? { guildId, projectId: project.id, progress: 0, claimedAt: null };
+      progress.progress += 1;
+      guildProjectProgresses.set(key, progress);
+    }
+  };
   const getProfileById = (profileId: string): PlayerProfileRecord | undefined =>
     [...profiles.values()].find((profile) => profile.id === profileId);
   const toGuildCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): GuildCenterRecord => {
     const member = guildMembers.get(profile.id);
     if (member === undefined) {
-      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], todayActiveMemberCount: 0, todayCollaborationCount: 0, recentActivities: [], leaderboard: [] };
+      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], projects: [], todayActiveMemberCount: 0, todayCollaborationCount: 0, recentActivities: [], leaderboard: [] };
     }
     const guild = guilds.get(member.guildId);
     const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
@@ -2278,6 +2292,22 @@ const createTestRepository = (): GameRepository => {
           createdAt: request.createdAt,
           fulfilledAt: request.fulfilledAt,
           canFulfill: request.status === "open" && request.profileId !== profile.id
+        };
+      }),
+      projects: guildProjectConfigs.map((project) => {
+        const progress = guildProjectProgresses.get(`${member.guildId}:${project.id}`);
+        const currentProgress = progress?.progress ?? 0;
+        const isClaimed = progress?.claimedAt !== null && progress?.claimedAt !== undefined;
+        return {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          progress: Math.min(currentProgress, project.target),
+          target: project.target,
+          rewardReputation: project.rewardReputation,
+          rewardLabel: `声望 +${project.rewardReputation}`,
+          isClaimed,
+          isClaimable: currentProgress >= project.target && !isClaimed
         };
       }),
       todayActiveMemberCount: new Set(todayActivities.map((activity) => activity.profileId)).size,
@@ -4531,6 +4561,7 @@ const createTestRepository = (): GameRepository => {
         guild.contributionScore += 20;
       }
       guildActivityLogs.set(`${request.id}:help_requested`, { id: `${request.id}:help_requested`, guildId: member.guildId, profileId: profile.id, action: "help_requested", createdAt: `${today}T12:00:00.000Z` });
+      advanceGuildProjects(member.guildId);
       return { guildCenter: toGuildCenter(profile, today), result: "商会互助已发布。" } satisfies GuildActionRecord;
     },
     async fulfillGuildHelp(accountId, serverId, requestId, today) {
@@ -4560,6 +4591,7 @@ const createTestRepository = (): GameRepository => {
         guild.contributionScore += 15;
       }
       guildActivityLogs.set(`${request.id}:help_fulfilled`, { id: `${request.id}:help_fulfilled`, guildId: member.guildId, profileId: profile.id, action: "help_fulfilled", createdAt: `${today}T12:00:00.000Z` });
+      advanceGuildProjects(member.guildId);
       return { guildCenter: toGuildCenter(profile, today), result: "商会协作已完成，贡献 +15。" } satisfies GuildActionRecord;
     },
     async claimGuildTask(accountId, serverId, taskId, today) {
@@ -4591,6 +4623,7 @@ const createTestRepository = (): GameRepository => {
       }
       guildTaskClaims.set(claimKey, { guildId: member.guildId, taskId, claimedAt: `${today}T12:00:00.000Z` });
       guildActivityLogs.set(`${member.guildId}:${profile.id}:${taskId}:task_claimed:${today}`, { id: `${member.guildId}:${profile.id}:${taskId}:task_claimed:${today}`, guildId: member.guildId, profileId: profile.id, action: "task_claimed", createdAt: `${today}T12:00:00.000Z` });
+      advanceGuildProjects(member.guildId);
       return { guildCenter: toGuildCenter(profile, today), result: "商会任务已领取，贡献 +20。" } satisfies GuildActionRecord;
     },
     async upgradeGuildTech(accountId, serverId, techId, today) {
@@ -4622,7 +4655,34 @@ const createTestRepository = (): GameRepository => {
       guildTechStates.set(stateKey, { guildId: member.guildId, techId, level: nextLevel });
       guild.level = Math.max(guild.level, 1 + nextLevel);
       guildActivityLogs.set(`${member.guildId}:${profile.id}:${techId}:tech_upgraded:${today}`, { id: `${member.guildId}:${profile.id}:${techId}:tech_upgraded:${today}`, guildId: member.guildId, profileId: profile.id, action: "tech_upgraded", createdAt: `${today}T12:00:00.000Z` });
+      advanceGuildProjects(member.guildId);
       return { guildCenter: toGuildCenter(profile, today), result: `联合办公 已升级到 Lv.${nextLevel}。` } satisfies GuildActionRecord;
+    },
+    async claimGuildProjectReward(accountId, serverId, projectId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const member = guildMembers.get(profile.id);
+      if (member === undefined) {
+        return "GUILD_NOT_JOINED";
+      }
+      const project = guildProjectConfigs.find((item) => item.id === projectId);
+      if (project === undefined) {
+        return "GUILD_PROJECT_NOT_FOUND";
+      }
+      const progress = guildProjectProgresses.get(`${member.guildId}:${projectId}`);
+      if (progress?.claimedAt !== null && progress?.claimedAt !== undefined) {
+        return "GUILD_PROJECT_REWARD_CLAIMED";
+      }
+      if ((progress?.progress ?? 0) < project.target) {
+        return "GUILD_PROJECT_NOT_READY";
+      }
+      if (progress !== undefined) {
+        progress.claimedAt = `${today}T12:00:00.000Z`;
+      }
+      profile.reputation += project.rewardReputation;
+      return { guildCenter: toGuildCenter(profile, today), result: `${project.name} 已完成，声望 +${project.rewardReputation}。` } satisfies GuildActionRecord;
     },
     async settleGuildLeaderboard(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -8288,6 +8348,96 @@ test("guild announcement rules and member activity summarize daily collaboration
       "tech_upgraded"
     ]);
     assert.ok(center.body.data?.recentActivities.every((activity) => activity.createdAt.startsWith("2026-05-05")));
+  });
+});
+
+test("guild collaboration projects progress from activity and claim reputation rewards", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "guildprojectleader");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-06" };
+    type GuildProjectCenter = GuildCenterRecord & {
+      projects: Array<{
+        id: string;
+        name: string;
+        progress: number;
+        target: number;
+        rewardReputation: number;
+        rewardLabel: string;
+        isClaimable: boolean;
+        isClaimed: boolean;
+      }>;
+    };
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", guildName: "项目创业会" })
+    });
+
+    const initialCenter = await requestJson<GuildProjectCenter>(baseUrl, "/guild?serverId=s1", {
+      headers
+    });
+    assert.equal(initialCenter.status, 200, JSON.stringify(initialCenter.body));
+    assert.deepEqual(initialCenter.body.data?.projects.map((project) => project.id), [
+      "joint-roadshow",
+      "risk-review-week",
+      "market-co-creation"
+    ]);
+    assert.equal(initialCenter.body.data?.projects[0]?.progress, 0);
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/tasks/guild-daily-help/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/techs/shared-office/upgrade", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const readyCenter = await requestJson<GuildProjectCenter>(baseUrl, "/guild?serverId=s1", {
+      headers
+    });
+    const roadshow = readyCenter.body.data?.projects.find((project) => project.id === "joint-roadshow");
+    assert.equal(readyCenter.status, 200, JSON.stringify(readyCenter.body));
+    assert.equal(roadshow?.progress, 3);
+    assert.equal(roadshow?.target, 3);
+    assert.equal(roadshow?.isClaimable, true);
+    assert.equal(roadshow?.rewardLabel, "声望 +60");
+
+    const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers
+    });
+    assert.equal(beforeProfile.status, 200);
+    const claimed = await requestJson<{ guildCenter: GuildProjectCenter; result: string }>(baseUrl, "/guild/projects/joint-roadshow/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    assert.equal(claimed.body.data?.guildCenter.projects.find((project) => project.id === "joint-roadshow")?.isClaimed, true);
+
+    const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers
+    });
+    assert.equal(afterProfile.status, 200);
+    assert.equal(afterProfile.body.data?.reputation, (beforeProfile.body.data?.reputation ?? 0) + 60);
+    assert.equal(afterProfile.body.data?.cash, beforeProfile.body.data?.cash);
+    assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
+
+    const duplicate = await requestJson(baseUrl, "/guild/projects/joint-roadshow/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.body.error?.code, "GUILD_PROJECT_REWARD_CLAIMED");
   });
 });
 
