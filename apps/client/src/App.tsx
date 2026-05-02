@@ -265,6 +265,23 @@ type RandomTaskActionResult = {
   };
 };
 
+type BusinessClockPulse = {
+  serverNow: string;
+  syncedAt: string;
+  previousSyncedAt: string | null;
+  elapsedMinutes: number;
+  settledMinutes: number;
+  settledTicks: number;
+  cashDelta: number;
+  valuationDelta: number;
+  employeeSatisfactionDelta: number;
+  customerSatisfactionDelta: number;
+  platformCoinsDelta: 0;
+  vipExperienceDelta: 0;
+  leaderboardRewardDelta: 0;
+  summary: string;
+};
+
 type CompanyFinance = {
   profileId: string;
   companyName: string;
@@ -290,6 +307,7 @@ type CompanyFinance = {
   expense?: number;
   endingCash?: number;
   createdAt?: string;
+  businessClock?: BusinessClockPulse;
 };
 
 type EventOption = {
@@ -1798,6 +1816,19 @@ function App() {
     () => tasks.find((task) => task.isClaimable && !task.isClaimed) ?? currentMainTask,
     [currentMainTask, tasks]
   );
+  const businessClockHint = useMemo(() => {
+    const pulse = companyFinance?.businessClock;
+    if (pulse === undefined) {
+      return null;
+    }
+    if (pulse.settledTicks <= 0) {
+      return "经营时钟已同步";
+    }
+
+    const prefix = pulse.elapsedMinutes > pulse.settledMinutes ? "离线经营" : "经营波动";
+    const cashLabel = pulse.cashDelta >= 0 ? `+${compactNumber(pulse.cashDelta)}` : compactNumber(pulse.cashDelta);
+    return `${prefix} ${cashLabel}`;
+  }, [companyFinance?.businessClock]);
   const pendingRandomTasks = useMemo(
     () => randomTaskCenter?.tasks.filter((task) => task.status === "pending") ?? [],
     [randomTaskCenter?.tasks]
@@ -4357,6 +4388,12 @@ function App() {
                 </span>
               ))}
             </div>
+            {businessClockHint && (
+              <button className="pointer-events-auto inline-flex w-fit items-center gap-1.5 rounded-xl border border-emerald-400/20 bg-slate-950/70 px-3 py-1 text-[10px] font-black text-emerald-200" type="button" onClick={() => openHomePanel("财务")}>
+                <Icon name="clock" className="w-3 h-3" />
+                {businessClockHint}
+              </button>
+            )}
           </header>
 
           <main id="home-scene" className="flex-1 main-bg relative flex flex-col items-center justify-center">
@@ -4491,6 +4528,32 @@ function App() {
                         ))}
                       </div>
                     </section>
+
+                    {companyFinance.businessClock && (
+                      <section className="glass-panel rounded-3xl p-4" aria-label="最近经营脉冲">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <strong className="block text-sm text-white font-black">最近经营脉冲</strong>
+                            <span className="text-[10px] text-slate-500">经营时钟使用服务器时间懒同步</span>
+                          </div>
+                          <span className="text-[10px] font-black text-emerald-200">平台币 / VIP / 榜单不变</span>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-300 font-bold leading-5">{companyFinance.businessClock.summary}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          {[
+                            ["同步分钟", `${companyFinance.businessClock.settledMinutes} 分钟`],
+                            ["现金变化", companyFinance.businessClock.cashDelta >= 0 ? `+${compactNumber(companyFinance.businessClock.cashDelta)}` : compactNumber(companyFinance.businessClock.cashDelta)],
+                            ["估值变化", companyFinance.businessClock.valuationDelta >= 0 ? `+${compactNumber(companyFinance.businessClock.valuationDelta)}` : compactNumber(companyFinance.businessClock.valuationDelta)],
+                            ["离线经营", `${companyFinance.businessClock.elapsedMinutes} 分钟`]
+                          ].map(([label, value]) => (
+                            <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={label}>
+                              <div className="text-[10px] text-slate-500 font-bold">{label}</div>
+                              <div className="mt-1 text-sm text-white font-black">{value}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
 
                     {companyFinance.reportMonth !== undefined && (
                       <section className="glass-panel rounded-3xl p-4" aria-label="月度经营报告">

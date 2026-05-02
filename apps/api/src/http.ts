@@ -281,6 +281,19 @@ const readToday = (request: IncomingMessage): string => {
     : new Date().toISOString().slice(0, 10);
 };
 
+const readServerNow = (request: IncomingMessage): Date => {
+  const header = request.headers["x-server-now"];
+  const candidate = Array.isArray(header) ? header[0] : header;
+  if (typeof candidate === "string") {
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+
+  return new Date();
+};
+
 const readClientKey = (request: IncomingMessage): string => {
   const forwardedFor = request.headers["x-forwarded-for"];
   const forwardedClient = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
@@ -3219,7 +3232,7 @@ export const createApiServer = (
         return;
       }
 
-      const finance = await repository.getCompanyFinance(account.id, serverId);
+      const finance = await repository.getCompanyFinance(account.id, serverId, readServerNow(request));
       if (finance === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;

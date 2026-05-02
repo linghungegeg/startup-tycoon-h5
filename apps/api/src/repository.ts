@@ -63,6 +63,8 @@ export type PlayerProfileRecord = {
   pendingEventCount: number;
   unreadMailCount: number;
   debtWarning: string;
+  businessClockSyncedAt: string | null;
+  lastBusinessPulseSummaryJson: string | null;
   createdAt: string;
 };
 
@@ -283,6 +285,24 @@ export type CompanyFinanceRecord = {
   operatingDay: number;
   riskStatus: "稳健" | "预警" | "资金紧张";
   riskTips: string[];
+  businessClock?: BusinessClockPulseRecord;
+};
+
+export type BusinessClockPulseRecord = {
+  serverNow: string;
+  syncedAt: string;
+  previousSyncedAt: string | null;
+  elapsedMinutes: number;
+  settledMinutes: number;
+  settledTicks: number;
+  cashDelta: number;
+  valuationDelta: number;
+  employeeSatisfactionDelta: number;
+  customerSatisfactionDelta: number;
+  platformCoinsDelta: 0;
+  vipExperienceDelta: 0;
+  leaderboardRewardDelta: 0;
+  summary: string;
 };
 
 export type CompanyFinanceSettlementRecord = CompanyFinanceRecord & {
@@ -1858,7 +1878,7 @@ export type GameRepository = {
   listRandomTasks(accountId: string, serverId: string, today: string): Promise<RandomTaskCenterRecord | "PLAYER_NOT_FOUND">;
   resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string, modifierItemId?: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
   dismissRandomTask(accountId: string, serverId: string, randomTaskId: string, today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED">;
-  getCompanyFinance(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
+  getCompanyFinance(accountId: string, serverId: string, now: Date): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyMonth(accountId: string, serverId: string, reportMonth: number): Promise<CompanyFinanceSettlementRecord | "PLAYER_NOT_FOUND">;
   listEmployees(accountId: string, serverId: string): Promise<EmployeeRecord[] | "PLAYER_NOT_FOUND">;
@@ -2014,10 +2034,13 @@ const toProfileRecord = (profile: {
   pendingEventCount: number;
   unreadMailCount: number;
   debtWarning: string;
+  businessClockSyncedAt: Date | null;
+  lastBusinessPulseSummaryJson: string | null;
   createdAt: Date;
 }): PlayerProfileRecord => ({
   ...profile,
   actionPowerRecoveredAt: profile.actionPowerRecoveredAt.toISOString(),
+  businessClockSyncedAt: profile.businessClockSyncedAt?.toISOString() ?? null,
   createdAt: profile.createdAt.toISOString()
 });
 
@@ -3474,6 +3497,10 @@ const COMPANY_MAX_LEVEL = 80;
 const COMPANY_EXPERIENCE_PER_LEVEL = 100;
 const ACTION_POWER_RECOVERY_INTERVAL_MS = 10 * 60 * 1000;
 const ACTION_POWER_RECOVERY_AMOUNT = 10;
+const BUSINESS_CLOCK_TICK_MS = 5 * 60 * 1000;
+const BUSINESS_CLOCK_MAX_OFFLINE_MINUTES = 8 * 60;
+const BUSINESS_CLOCK_MONTHLY_MINUTES = 30 * 24 * 60;
+const BUSINESS_CLOCK_MAX_CASH_DELTA = 80000;
 const RANDOM_TASK_VISIBLE_COUNT = 3;
 const RANDOM_TASK_PASS_VISIBLE_BONUS = 1;
 const RANDOM_TASK_BASE_DAILY_LIMIT = 6;
@@ -3488,6 +3515,83 @@ const FULL_LEVEL_CHEST_REWARD_ACTION_POWER = 40;
 const FULL_LEVEL_CHEST_REWARD_ITEM_ID = "season-exp-ticket";
 const FULL_LEVEL_CHEST_REWARD_ITEM_QUANTITY = 1;
 const VIP3_START_EXPERIENCE = 3000;
+
+const clampNumber = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
+
+export const calculateBusinessClockPulse = (
+  profile: Pick<PlayerProfileRecord, "businessClockSyncedAt" | "monthlyIncome" | "monthlyExpense" | "cash" | "valuation" | "employeeSatisfaction" | "customerSatisfaction" | "riskStatus">,
+  now: Date
+): BusinessClockPulseRecord => {
+  const previousSyncedAt = profile.businessClockSyncedAt;
+  if (previousSyncedAt === null) {
+    return {
+      serverNow: now.toISOString(),
+      syncedAt: now.toISOString(),
+      previousSyncedAt,
+      elapsedMinutes: 0,
+      settledMinutes: 0,
+      settledTicks: 0,
+      cashDelta: 0,
+      valuationDelta: 0,
+      employeeSatisfactionDelta: 0,
+      customerSatisfactionDelta: 0,
+      platformCoinsDelta: 0,
+      vipExperienceDelta: 0,
+      leaderboardRewardDelta: 0,
+      summary: "经营时钟已建立，等待下一次经营脉冲。"
+    };
+  }
+
+  const elapsedMs = Math.max(0, now.getTime() - new Date(previousSyncedAt).getTime());
+  const settledTicks = Math.min(
+    Math.floor(elapsedMs / BUSINESS_CLOCK_TICK_MS),
+    Math.floor(BUSINESS_CLOCK_MAX_OFFLINE_MINUTES / 5)
+  );
+  if (settledTicks <= 0) {
+    return {
+      serverNow: now.toISOString(),
+      syncedAt: previousSyncedAt,
+      previousSyncedAt,
+      elapsedMinutes: Math.floor(elapsedMs / 60000),
+      settledMinutes: 0,
+      settledTicks: 0,
+      cashDelta: 0,
+      valuationDelta: 0,
+      employeeSatisfactionDelta: 0,
+      customerSatisfactionDelta: 0,
+      platformCoinsDelta: 0,
+      vipExperienceDelta: 0,
+      leaderboardRewardDelta: 0,
+      summary: "经营时钟冷却中，5 分钟内不重复结算。"
+    };
+  }
+
+  const settledMinutes = settledTicks * 5;
+  const netCashFlow = profile.monthlyIncome - profile.monthlyExpense;
+  const rawCashDelta = Math.round((netCashFlow * settledMinutes) / BUSINESS_CLOCK_MONTHLY_MINUTES);
+  const cashDelta = clampNumber(rawCashDelta, -BUSINESS_CLOCK_MAX_CASH_DELTA, BUSINESS_CLOCK_MAX_CASH_DELTA);
+  const valuationDelta = Math.round(cashDelta * 0.4);
+  const employeeSatisfactionDelta = cashDelta >= 0 ? 1 : -1;
+  const customerSatisfactionDelta = cashDelta >= 0 ? 1 : -1;
+  const signedCash = cashDelta >= 0 ? `+${cashDelta}` : `${cashDelta}`;
+
+  return {
+    serverNow: now.toISOString(),
+    syncedAt: now.toISOString(),
+    previousSyncedAt,
+    elapsedMinutes: Math.floor(elapsedMs / 60000),
+    settledMinutes,
+    settledTicks,
+    cashDelta,
+    valuationDelta,
+    employeeSatisfactionDelta,
+    customerSatisfactionDelta,
+    platformCoinsDelta: 0,
+    vipExperienceDelta: 0,
+    leaderboardRewardDelta: 0,
+    summary: `经营时钟同步 ${settledMinutes} 分钟，现金 ${signedCash}，平台币/VIP/榜单奖励不变。`
+  };
+};
 
 const readCompanyLevel = (experience: number): number =>
   Math.max(1, Math.min(COMPANY_MAX_LEVEL, Math.floor(Math.max(0, experience) / COMPANY_EXPERIENCE_PER_LEVEL) + 1));
@@ -5797,7 +5901,7 @@ export const createPrismaGameRepository = (
     return toTaskRecord(config, progress, today);
   },
 
-  async getCompanyFinance(accountId, serverId) {
+  async getCompanyFinance(accountId, serverId, now) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -5807,7 +5911,35 @@ export const createPrismaGameRepository = (
       }
     });
 
-    return profile === null ? "PLAYER_NOT_FOUND" : toCompanyFinanceRecord(toProfileRecord(profile));
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const currentProfile = toProfileRecord(profile);
+    const pulse = calculateBusinessClockPulse(currentProfile, now);
+    if (pulse.previousSyncedAt !== null && pulse.settledTicks <= 0) {
+      return {
+        ...toCompanyFinanceRecord(currentProfile),
+        businessClock: pulse
+      };
+    }
+
+    const updated = await prisma.playerProfile.update({
+      where: { id: profile.id },
+      data: {
+        businessClockSyncedAt: new Date(pulse.syncedAt),
+        lastBusinessPulseSummaryJson: JSON.stringify(pulse),
+        cash: { increment: pulse.cashDelta },
+        valuation: { increment: pulse.valuationDelta },
+        employeeSatisfaction: { increment: pulse.employeeSatisfactionDelta },
+        customerSatisfaction: { increment: pulse.customerSatisfactionDelta }
+      }
+    });
+
+    return {
+      ...toCompanyFinanceRecord(toProfileRecord(updated)),
+      businessClock: pulse
+    };
   },
 
   async settleCompanyDay(accountId, serverId) {

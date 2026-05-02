@@ -2382,6 +2382,20 @@ VIP 权益：
 - 前台主页资源条显示轻提示，例如“离线经营 +3.2万”“经营波动 -0.8万”；财务页展示最近经营脉冲。
 - 验收标准：经营数据有变化感，但不会替代项目、产品、任务和事件结算。
 
+##### Phase 26 第一实施批次总结：经营时钟与懒同步基础
+
+- 完成内容：扩展 `GET /company/status` 懒同步经营时钟，新增 `businessClockSyncedAt` 和 `lastBusinessPulseSummaryJson` 持久字段，返回最近经营脉冲摘要。
+- 结算边界：首次访问只建立时钟；5 分钟内重复访问不结算；超过 5 分钟按 5 分钟 tick 同步，离线最多累计 8 小时；现金、估值、员工满意度和客户满意度只做轻量变化；平台币、VIP 经验和榜单奖励始终为 0。
+- 前台接入：主页 HUD 下方增加短提示，点击进入现有财务页；财务页新增“最近经营脉冲”只读卡片，展示同步分钟、现金变化、估值变化和离线经营分钟，不新增主页一级入口、不新增弹窗。
+- 边界检查：本批不修改月结/日结按钮语义，不改变支付回调、平台币购买、后台发币、VIP 经验、通行证购买、活动商店、排行榜结算、活动榜结算和商会/跨服结算。
+- 四插件检查：
+  - Superpowers：按 TDD 先写 `/company/status` 经营时钟红灯测试和前台文案红灯检查，确认失败后实现最小代码并转绿。
+  - Browser Use：本地浏览器验收主页 HUD、资源条、任务条、底部导航和财务页“最近经营脉冲”；API 重启后 fresh console error 为 0。
+  - Build Web Apps：前台沿用深色商务手游 UI、资源轻提示和财务页玻璃面板，不新增营销式页面和复杂层级。
+  - Game Studio：经营时钟提示不遮挡左右入口、主线任务条、底部导航和财务页主操作；全覆盖内页仍可滚动。
+- 验证命令：`node --test --test-reporter spec --test-name-pattern "phase 26 company status|loads and settles company finance|platform coin spending upgrades VIP|phase 25 long-term goals|phase 25 admin monetization boundaries" --import tsx apps/api/test/http.test.ts`、`node --test apps/client/test/phase26-business-clock.test.mjs apps/client/test/phase25-honor-center.test.mjs`、`npm run db:generate -w @wenziyouxi/api`、`npm run db:push -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/api`、`npm run typecheck -w @wenziyouxi/client`、`npm run lint -w @wenziyouxi/api`、`npm run lint -w @wenziyouxi/client`、`npm run build -w @wenziyouxi/api`、`npm run build -w @wenziyouxi/client`。
+- 下一批入口：Phase 26 第二实施批次“夜间经营简报”。
+
 #### Phase 26 第二实施批次：夜间经营简报
 
 - 离线超过 30 分钟生成夜间经营简报。

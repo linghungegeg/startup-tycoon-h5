@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, buildLongTermGoalsRecord, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildLongTermGoalsRecord, calculateBusinessClockPulse, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -3946,6 +3946,9 @@ const createTestRepository = (): GameRepository => {
         pendingEventCount: 2,
         unreadMailCount: 1,
         debtWarning: "低",
+        actionPowerRecoveredAt: new Date().toISOString(),
+        businessClockSyncedAt: null,
+        lastBusinessPulseSummaryJson: null,
         ...profile
       };
       profiles.set(key, created);
@@ -4166,9 +4169,26 @@ const createTestRepository = (): GameRepository => {
       assert.notEqual(center, "PLAYER_NOT_FOUND");
       return { center, task, profile, result: task.resultSummary } satisfies RandomTaskActionRecord;
     },
-    async getCompanyFinance(accountId, serverId) {
+    async getCompanyFinance(accountId, serverId, now) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
-      return profile === undefined ? "PLAYER_NOT_FOUND" : toCompanyFinanceRecord(profile);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const pulse = calculateBusinessClockPulse(profile, now);
+      if (pulse.previousSyncedAt === null || pulse.settledTicks > 0) {
+        profile.businessClockSyncedAt = pulse.syncedAt;
+        profile.lastBusinessPulseSummaryJson = JSON.stringify(pulse);
+        profile.cash += pulse.cashDelta;
+        profile.valuation += pulse.valuationDelta;
+        profile.employeeSatisfaction += pulse.employeeSatisfactionDelta;
+        profile.customerSatisfaction += pulse.customerSatisfactionDelta;
+      }
+
+      return {
+        ...toCompanyFinanceRecord(profile),
+        businessClock: pulse
+      };
     },
     async settleCompanyDay(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -6334,6 +6354,63 @@ test("loads and settles company finance without duplicate monthly settlement", a
     });
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.data?.endingCash, settlement.endingCash);
+  });
+});
+
+test("phase 26 company status lazily syncs business clock within safe bounds", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "phase26clock", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "时钟验收",
+        companyName: "懒同步科技"
+      })
+    });
+
+    const first = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.success, true);
+    assert.ok(first.body.data?.businessClock);
+    assert.equal(first.body.data.businessClock.settledTicks, 0);
+    assert.equal(first.body.data.businessClock.cashDelta, 0);
+    assert.equal(first.body.data.businessClock.summary, "经营时钟已建立，等待下一次经营脉冲。");
+
+    const quickRepeat = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T00:04:00.000Z" }
+    });
+    assert.equal(quickRepeat.status, 200);
+    assert.equal(quickRepeat.body.data?.businessClock.settledTicks, 0);
+    assert.equal(quickRepeat.body.data?.businessClock.cashDelta, 0);
+    assert.equal(quickRepeat.body.data?.cash, first.body.data?.cash);
+
+    const synced = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...auth, "x-server-now": "2026-05-02T12:00:00.000Z" }
+    });
+    assert.equal(synced.status, 200);
+    const clock = synced.body.data?.businessClock;
+    assert.ok(clock);
+    assert.equal(clock.elapsedMinutes, 720);
+    assert.equal(clock.settledMinutes, 480);
+    assert.equal(clock.settledTicks, 96);
+    assert.ok(clock.cashDelta > 0);
+    assert.ok(clock.cashDelta <= 80000);
+    assert.equal(clock.platformCoinsDelta, 0);
+    assert.equal(clock.vipExperienceDelta, 0);
+    assert.equal(clock.leaderboardRewardDelta, 0);
+    assert.equal(synced.body.data?.cash, (first.body.data?.cash ?? 0) + clock.cashDelta);
   });
 });
 

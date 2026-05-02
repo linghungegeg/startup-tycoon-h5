@@ -217,6 +217,8 @@ model PlayerProfile {
   pendingEventCount Int    @default(2)
   unreadMailCount Int      @default(1)
   debtWarning String       @default("低") @db.VarChar(8)
+  businessClockSyncedAt DateTime?
+  lastBusinessPulseSummaryJson String? @db.Text
   status      String       @default("active") @db.VarChar(16)
   createdAt   DateTime     @default(now())
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
