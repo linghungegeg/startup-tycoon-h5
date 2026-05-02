@@ -2221,6 +2221,33 @@ const titleConfigs = [
     bonusLabel: "赛季活动展示",
     durationDays: 30,
     sortOrder: 6
+  },
+  {
+    id: "season-cashflow-pioneer",
+    name: "现金流先锋",
+    category: "season",
+    source: "season",
+    bonusLabel: "活动荣誉展示",
+    durationDays: 30,
+    sortOrder: 7
+  },
+  {
+    id: "season-market-runner",
+    name: "市场冲刺官",
+    category: "season",
+    source: "season",
+    bonusLabel: "活动荣誉展示",
+    durationDays: 30,
+    sortOrder: 8
+  },
+  {
+    id: "season-team-coach",
+    name: "团队教练",
+    category: "season",
+    source: "season",
+    bonusLabel: "活动荣誉展示",
+    durationDays: 30,
+    sortOrder: 9
   }
 ];
 
@@ -2456,6 +2483,76 @@ const activityConfigs = [
     rewardPoints: 260,
     rewardTitleId: "season-ai-pioneer",
     sortOrder: 1
+  },
+  {
+    id: "cashflow-sprint",
+    seasonId: "season-ai-agent-2026",
+    name: "现金流挑战周",
+    startDate: "2026-05-05",
+    endDate: "2026-05-28",
+    leaderboardKey: "activity-cashflow-sprint",
+    targetScore: 240,
+    rewardCash: 0,
+    rewardReputation: 90,
+    rewardPoints: 140,
+    rewardTitleId: "season-cashflow-pioneer",
+    sortOrder: 2
+  },
+  {
+    id: "market-expansion-race",
+    seasonId: "season-ai-agent-2026",
+    name: "市场拓展冲刺",
+    startDate: "2026-05-08",
+    endDate: "2026-05-30",
+    leaderboardKey: "activity-market-expansion-race",
+    targetScore: 300,
+    rewardCash: 0,
+    rewardReputation: 110,
+    rewardPoints: 160,
+    rewardTitleId: "season-market-runner",
+    sortOrder: 3
+  },
+  {
+    id: "team-growth-camp",
+    seasonId: "season-ai-agent-2026",
+    name: "团队培养营",
+    startDate: "2026-05-10",
+    endDate: "2026-05-26",
+    leaderboardKey: "activity-team-growth-camp",
+    targetScore: 220,
+    rewardCash: 0,
+    rewardReputation: 80,
+    rewardPoints: 120,
+    rewardTitleId: "season-team-coach",
+    sortOrder: 4
+  },
+  {
+    id: "compliance-ops-week",
+    seasonId: "season-ai-agent-2026",
+    name: "合规经营周",
+    startDate: "2026-06-01",
+    endDate: "2026-06-14",
+    leaderboardKey: "activity-compliance-ops-week",
+    targetScore: 180,
+    rewardCash: 0,
+    rewardReputation: 70,
+    rewardPoints: 110,
+    rewardTitleId: null,
+    sortOrder: 5
+  },
+  {
+    id: "funding-roadshow-week",
+    seasonId: "season-ai-agent-2026",
+    name: "融资路演周",
+    startDate: "2026-06-15",
+    endDate: "2026-06-28",
+    leaderboardKey: "activity-funding-roadshow-week",
+    targetScore: 260,
+    rewardCash: 0,
+    rewardReputation: 100,
+    rewardPoints: 150,
+    rewardTitleId: null,
+    sortOrder: 6
   }
 ];
 

@@ -1678,7 +1678,10 @@ const createTestRepository = (): GameRepository => {
     { id: "cashflow-master", name: "现金流大师", category: "finance", source: "achievement", bonusLabel: "现金流榜展示", durationDays: 0 },
     { id: "server-richest", name: "本服首富", category: "rank", source: "leaderboard", bonusLabel: "排行榜展示", durationDays: 7 },
     { id: "cross-unicorn", name: "跨服独角兽", category: "rank", source: "cross_server", bonusLabel: "跨服榜展示", durationDays: 7 },
-    { id: "season-ai-pioneer", name: "AI风口先锋", category: "season", source: "season", bonusLabel: "赛季活动展示", durationDays: 30 }
+    { id: "season-ai-pioneer", name: "AI风口先锋", category: "season", source: "season", bonusLabel: "赛季活动展示", durationDays: 30 },
+    { id: "season-cashflow-pioneer", name: "现金流先锋", category: "season", source: "season", bonusLabel: "活动荣誉展示", durationDays: 30 },
+    { id: "season-market-runner", name: "市场冲刺官", category: "season", source: "season", bonusLabel: "活动荣誉展示", durationDays: 30 },
+    { id: "season-team-coach", name: "团队教练", category: "season", source: "season", bonusLabel: "活动荣誉展示", durationDays: 30 }
   ];
   const achievementConfigs = [
     {
@@ -1849,10 +1852,17 @@ const createTestRepository = (): GameRepository => {
     { id: "season-daily-project", title: "推进一次风口项目", description: "完成一次项目或产品推进。", target: 1, rewardPoints: 120 }
   ];
   const activityConfigs = [
-    { id: "ai-agent-growth", name: "AI Agent 风口榜", startDate: "2026-05-01", endDate: "2026-05-20", leaderboardKey: "activity-ai-agent-growth", targetScore: 200, rewardCash: 120000, rewardReputation: 600, rewardPoints: 260, rewardTitleId: "season-ai-pioneer" }
+    { id: "ai-agent-growth", name: "AI Agent 风口榜", startDate: "2026-05-01", endDate: "2026-05-20", leaderboardKey: "activity-ai-agent-growth", targetScore: 200, rewardCash: 120000, rewardReputation: 600, rewardPoints: 260, rewardTitleId: "season-ai-pioneer" },
+    { id: "cashflow-sprint", name: "现金流挑战周", startDate: "2026-05-05", endDate: "2026-05-28", leaderboardKey: "activity-cashflow-sprint", targetScore: 240, rewardCash: 0, rewardReputation: 90, rewardPoints: 140, rewardTitleId: "season-cashflow-pioneer" },
+    { id: "market-expansion-race", name: "市场拓展冲刺", startDate: "2026-05-08", endDate: "2026-05-30", leaderboardKey: "activity-market-expansion-race", targetScore: 300, rewardCash: 0, rewardReputation: 110, rewardPoints: 160, rewardTitleId: "season-market-runner" },
+    { id: "team-growth-camp", name: "团队培养营", startDate: "2026-05-10", endDate: "2026-05-26", leaderboardKey: "activity-team-growth-camp", targetScore: 220, rewardCash: 0, rewardReputation: 80, rewardPoints: 120, rewardTitleId: "season-team-coach" },
+    { id: "compliance-ops-week", name: "合规经营周", startDate: "2026-06-01", endDate: "2026-06-14", leaderboardKey: "activity-compliance-ops-week", targetScore: 180, rewardCash: 0, rewardReputation: 70, rewardPoints: 110, rewardTitleId: null },
+    { id: "funding-roadshow-week", name: "融资路演周", startDate: "2026-06-15", endDate: "2026-06-28", leaderboardKey: "activity-funding-roadshow-week", targetScore: 260, rewardCash: 0, rewardReputation: 100, rewardPoints: 150, rewardTitleId: null }
   ];
   const activityShopItems = [
-    { id: "activity-risk-insurance", name: "风口风险保险", costPoints: 180, summary: "降低一次经营波动。", rewardActionPower: 30, rewardReputation: 120, purchaseLimit: 1 }
+    { id: "activity-risk-insurance", name: "风口风险保险", costPoints: 180, summary: "降低一次经营波动。", rewardActionPower: 30, rewardReputation: 120, purchaseLimit: 1 },
+    { id: "activity-season-exp", name: "赛季经验补给", costPoints: 120, summary: "补足赛季任务追赶进度。", rewardActionPower: 10, rewardReputation: 80, purchaseLimit: 3 },
+    { id: "activity-founder-title-shard", name: "先锋称号碎片", costPoints: 260, summary: "用于兑换赛季展示荣誉。", rewardActionPower: 0, rewardReputation: 180, purchaseLimit: 2 }
   ];
   const scenarioConfigs = [
     { id: "cashflow-rescue", name: "现金流 15 天救援", summary: "现金紧张、负债率高、员工波动和客户延期付款。", rewardCash: 90000, rewardReputation: 500, rewardTitleId: "cashflow-master" }
@@ -1964,7 +1974,7 @@ const createTestRepository = (): GameRepository => {
       }),
       activities: activityConfigs.map((activity) => {
         const state = activityStates.get(activityKey(profile.id, activity.id));
-        return { id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, today), isJoined: state?.isJoined ?? false, score: state?.score ?? 0, targetScore: activity.targetScore, rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined };
+        return { id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, today), leaderboardKey: activity.leaderboardKey, isJoined: state?.isJoined ?? false, score: state?.score ?? 0, targetScore: activity.targetScore, rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined };
       }),
       activityBoards: boards,
       activityRecaps,
@@ -4954,7 +4964,9 @@ const createTestRepository = (): GameRepository => {
       const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
       progress.points += activity.rewardPoints;
       seasonProgresses.set(seasonKey(profile.id), progress);
-      addTitle(profile.id, activity.rewardTitleId, "season", today);
+      if (activity.rewardTitleId !== null) {
+        addTitle(profile.id, activity.rewardTitleId, "season", today);
+      }
       achievements.set(achievementKey(profile.id, "season-ai-agent-growth"), { profileId: profile.id, achievementId: "season-ai-agent-growth", progress: 1, completedAt: today, claimedAt: null });
       const center = toSeasonCenter(profile, today);
       return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
@@ -9775,10 +9787,10 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
       headers: { ...firstHeaders, "x-server-date": "2026-05-05" }
     });
     assert.equal(active.status, 200, JSON.stringify(active.body));
-    assert.equal(active.body.data?.activityBoards.length, 1);
-    assert.equal(active.body.data?.activityBoards[0]?.rows[0]?.profileId, second.profile.id);
-    assert.equal(active.body.data?.activityBoards[0]?.rows[0]?.value, 140);
-    assert.equal(active.body.data?.activityBoards[0]?.rows[1]?.profileId, first.profile.id);
+    const activeAiBoard = active.body.data?.activityBoards.find((board) => board.key === "activity-ai-agent-growth");
+    assert.equal(activeAiBoard?.rows[0]?.profileId, second.profile.id);
+    assert.equal(activeAiBoard?.rows[0]?.value, 140);
+    assert.equal(activeAiBoard?.rows[1]?.profileId, first.profile.id);
 
     const ended = await requestJson<{
       activityBoards: LeaderboardCenterRecord["activityBoards"];
@@ -9793,7 +9805,7 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
       headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
     });
     assert.equal(ended.status, 200, JSON.stringify(ended.body));
-    assert.equal(ended.body.data?.activityBoards.length, 0);
+    assert.equal(ended.body.data?.activityBoards.some((board) => board.key === "activity-ai-agent-growth"), false);
     assert.equal(ended.body.data?.activityRecaps[0]?.activityId, "ai-agent-growth");
     assert.equal(ended.body.data?.activityRecaps[0]?.personalRank, 2);
     assert.equal(ended.body.data?.activityRecaps[0]?.personalScore, 80);
@@ -9802,7 +9814,7 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
       headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
     });
     assert.equal(hiddenAfterEnd.status, 200, JSON.stringify(hiddenAfterEnd.body));
-    assert.equal(hiddenAfterEnd.body.data?.activityBoards.length, 0);
+    assert.equal(hiddenAfterEnd.body.data?.activityBoards.some((board) => board.key === "activity-ai-agent-growth"), false);
 
     const blocked = await requestJson(baseUrl, "/admin/activities/ai-agent-growth/leaderboard/settle", {
       method: "POST",
@@ -10238,7 +10250,7 @@ test("phase 24 operation configs expose season and activity operations read-only
       season.id === "season-ai-agent-2026" &&
       season.status === "active" &&
       season.passPricePlatformCoins === 880 &&
-      season.activityCount === 1
+      season.activityCount >= 6
     ));
     const activity = configs.body.data?.activities.find((item) => item.id === "ai-agent-growth");
     assert.equal(activity?.status, "ended");
@@ -10375,6 +10387,110 @@ test("phase 24 operation config alerts expose read-only admin inspections", asyn
     assert.equal(afterSettle.status, 200);
     assert.equal(afterSettle.body.data?.summary.unsettledActivityCount, 0);
     assert.equal(afterSettle.body.data?.alerts.some((alert) => alert.type === "activity_ended_unsettled" && alert.targetId === "ai-agent-growth"), false);
+  });
+});
+
+test("phase 24 activity content pool rotates multiple startup activities", async () => {
+  await withServer(async (baseUrl) => {
+    const playerA = await createPlayerSession(baseUrl, "activitypoola");
+    const playerB = await createPlayerSession(baseUrl, "activitypoolb");
+    const playerC = await createPlayerSession(baseUrl, "activitypoolc");
+    const playerHeaders = (token: string) => ({ authorization: `Bearer ${token}`, "x-server-date": "2026-05-10" });
+
+    const season = await requestJson<{
+      activities: Array<{ id: string; name: string; status: string; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+      activityBoards: Array<{ key: string; name: string; rows: Array<{ profileId: string; rank: number; value: number }> }>;
+      shopItems: Array<{ id: string; name: string; costPoints: number }>;
+    }>(baseUrl, "/season?serverId=s1", {
+      headers: playerHeaders(playerA.token)
+    });
+    assert.equal(season.status, 200, JSON.stringify(season.body));
+    const activityIds = new Set(season.body.data?.activities.map((activity) => activity.id));
+    assert.ok((season.body.data?.activities.length ?? 0) >= 6);
+    assert.ok(activityIds.has("ai-agent-growth"));
+    assert.ok(activityIds.has("cashflow-sprint"));
+    assert.ok(activityIds.has("market-expansion-race"));
+    assert.ok(activityIds.has("team-growth-camp"));
+    assert.ok(activityIds.has("compliance-ops-week"));
+    assert.ok(activityIds.has("funding-roadshow-week"));
+    assert.equal(season.body.data?.activities.find((activity) => activity.id === "cashflow-sprint")?.status, "active");
+    assert.equal(season.body.data?.activities.find((activity) => activity.id === "compliance-ops-week")?.status, "upcoming");
+    assert.ok((season.body.data?.shopItems.length ?? 0) >= 3);
+
+    const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: playerHeaders(playerA.token)
+    });
+    await requestJson(baseUrl, "/activities/cashflow-sprint/join", {
+      method: "POST",
+      headers: playerHeaders(playerA.token),
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/cashflow-sprint/progress", {
+      method: "POST",
+      headers: playerHeaders(playerA.token),
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
+    });
+    const claimed = await requestJson(baseUrl, "/activities/cashflow-sprint/claim", {
+      method: "POST",
+      headers: playerHeaders(playerA.token),
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: playerHeaders(playerA.token)
+    });
+    assert.equal(afterProfile.body.data?.cash, beforeProfile.body.data?.cash);
+    assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
+    assert.ok((afterProfile.body.data?.reputation ?? 0) > (beforeProfile.body.data?.reputation ?? 0));
+
+    for (const [session, scoreDelta] of [[playerA, 310], [playerB, 150], [playerC, 220]] as const) {
+      await requestJson(baseUrl, "/activities/market-expansion-race/join", {
+        method: "POST",
+        headers: playerHeaders(session.token),
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      await requestJson(baseUrl, "/activities/market-expansion-race/progress", {
+        method: "POST",
+        headers: playerHeaders(session.token),
+        body: JSON.stringify({ serverId: "s1", scoreDelta })
+      });
+    }
+
+    const leaderboards = await requestJson<{
+      activityBoards: Array<{ key: string; rows: Array<{ profileId: string; rank: number; value: number }> }>;
+    }>(baseUrl, "/leaderboards?serverId=s1", {
+      headers: playerHeaders(playerA.token)
+    });
+    assert.equal(leaderboards.status, 200, JSON.stringify(leaderboards.body));
+    const boardKeys = new Set(leaderboards.body.data?.activityBoards.map((board) => board.key));
+    assert.ok(boardKeys.has("activity-cashflow-sprint"));
+    assert.ok(boardKeys.has("activity-market-expansion-race"));
+    assert.ok(boardKeys.has("activity-team-growth-camp"));
+    const marketBoard = leaderboards.body.data?.activityBoards.find((board) => board.key === "activity-market-expansion-race");
+    assert.equal(marketBoard?.rows[0]?.value, 310);
+    assert.equal(marketBoard?.rows[1]?.value, 220);
+    assert.equal(marketBoard?.rows[2]?.value, 150);
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token}`, "x-server-date": "2026-05-10" };
+    const configs = await requestJson<{
+      seasons: Array<{ id: string; activityCount: number }>;
+      activities: Array<{ id: string; status: string; rewardBoundary: string }>;
+      activityShopItems: Array<{ id: string; isActive: boolean }>;
+    }>(baseUrl, "/admin/config-center", {
+      headers: adminHeaders
+    });
+    assert.equal(configs.status, 200, JSON.stringify(configs.body));
+    assert.ok((configs.body.data?.seasons.find((item) => item.id === "season-ai-agent-2026")?.activityCount ?? 0) >= 6);
+    const cashflowConfig = configs.body.data?.activities.find((activity) => activity.id === "cashflow-sprint");
+    assert.equal(cashflowConfig?.status, "active");
+    assert.equal(cashflowConfig?.rewardBoundary, "leaderboard_no_cash_no_platform_coins");
+    assert.equal(configs.body.data?.activities.find((activity) => activity.id === "compliance-ops-week")?.status, "upcoming");
+    assert.ok(configs.body.data?.activityShopItems.some((item) => item.id === "activity-founder-title-shard" && item.isActive));
   });
 });
 

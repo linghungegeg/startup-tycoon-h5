@@ -676,7 +676,7 @@ type SeasonCenter = {
     pass: { isPurchased: boolean; pricePlatformCoins: number };
   };
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: { id: string; name: string; quantity: number } | null; isClaimed: boolean }>;
-  activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activities: Array<{ id: string; name: string; status: SeasonStatus; leaderboardKey: string; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
   activityBoards: LeaderboardCenter["activityBoards"];
   activityRecaps: Array<{
     activityId: string;
@@ -1934,10 +1934,10 @@ function App() {
   const guildAnnouncement = guildCenter?.guild?.announcement.trim() || "暂无公告";
   const guildRules = guildCenter?.guild?.collaborationRules.trim() || "暂无协作规则";
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
-  const primarySeasonActivity = seasonCenter?.activities[0] ?? null;
-  const primaryActivityBoard = seasonCenter?.activityBoards[0] ?? null;
-  const latestActivityRecap = seasonCenter?.activityRecaps[0] ?? null;
-  const primaryActivityShopItem = seasonCenter?.shopItems[0] ?? null;
+  const seasonActivities = seasonCenter?.activities ?? [];
+  const activeActivityBoards = seasonCenter?.activityBoards ?? [];
+  const latestActivityRecaps = seasonCenter?.activityRecaps.slice(0, 2) ?? [];
+  const activityShopItems = seasonCenter?.shopItems ?? [];
   const primaryScenario = seasonCenter?.scenarios[0] ?? null;
   const activeTaskTip =
     activeTaskType === "daily"
@@ -4533,67 +4533,94 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">{primarySeasonActivity?.name ?? "限时活动"}</strong>
+                      <strong className="block text-sm text-white font-black">限时活动轮换</strong>
                       <span className="text-[9px] text-slate-500">活动榜随活动开放显示。</span>
                     </div>
-                    <span className="text-[10px] text-business-gold">{primarySeasonActivity ? `${primarySeasonActivity.score}/${primarySeasonActivity.targetScore}` : "0/0"}</span>
+                    <span className="text-[10px] text-business-gold">{seasonActivities.filter((activity) => activity.status === "active").length} 个进行中</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={!primarySeasonActivity || primarySeasonActivity.isJoined} type="button" onClick={() => primarySeasonActivity && void joinSeasonActivity(primarySeasonActivity.id)}>
-                      {primarySeasonActivity?.isJoined ? "已报名" : "报名"}
-                    </button>
-                    <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!primarySeasonActivity || !primarySeasonActivity.isJoined || primarySeasonActivity.rewardClaimed} type="button" onClick={() => primarySeasonActivity && void progressSeasonActivity(primarySeasonActivity.id)}>
-                      推进
-                    </button>
-                    <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={!primarySeasonActivity || primarySeasonActivity.score < primarySeasonActivity.targetScore || primarySeasonActivity.rewardClaimed} type="button" onClick={() => primarySeasonActivity && void claimSeasonActivity(primarySeasonActivity.id)}>
-                      {primarySeasonActivity?.rewardClaimed ? "已领" : "领奖"}
-                    </button>
+                  <div className="space-y-2">
+                    {seasonActivities.map((activity) => (
+                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={activity.id}>
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div className="min-w-0">
+                            <strong className="block text-xs text-white font-black truncate">{activity.name}</strong>
+                            <span className="text-[9px] text-slate-500">{activity.score}/{activity.targetScore}</span>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                            {activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={activity.status !== "active" || activity.isJoined} type="button" onClick={() => void joinSeasonActivity(activity.id)}>
+                            {activity.isJoined ? "已报名" : "报名"}
+                          </button>
+                          <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={activity.status !== "active" || !activity.isJoined || activity.rewardClaimed} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
+                            推进
+                          </button>
+                          <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={activity.status !== "active" || activity.score < activity.targetScore || activity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(activity.id)}>
+                            {activity.rewardClaimed ? "已领" : "领奖"}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {seasonCenter && seasonActivities.length === 0 && <p className="text-xs text-slate-400 font-bold">暂无活动配置。</p>}
                   </div>
                   <div className="mt-3 space-y-2">
-                    {(primaryActivityBoard?.rows ?? []).slice(0, 3).map((row) => (
-                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
-                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                        <div className="flex-1 min-w-0">
-                          <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                          <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动称号待争夺"}</span>
+                    {activeActivityBoards.slice(0, 3).map((board) => (
+                      <div className="rounded-2xl bg-slate-950/50 border border-white/5 p-3" key={board.key}>
+                        <div className="mb-2 flex items-center justify-between">
+                          <strong className="text-xs text-white font-black">{board.name}</strong>
+                          <span className="text-[9px] text-business-gold">榜单</span>
                         </div>
-                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                        <div className="space-y-2">
+                          {board.rows.slice(0, 3).map((row) => (
+                            <div className="flex items-center gap-3" key={row.profileId}>
+                              <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                              <div className="flex-1 min-w-0">
+                                <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                                <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动称号待争夺"}</span>
+                              </div>
+                              <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                            </div>
+                          ))}
+                          {board.rows.length === 0 && <p className="text-[10px] text-slate-500 font-bold">暂无上榜玩家。</p>}
+                        </div>
                       </div>
                     ))}
-                    {seasonCenter && seasonCenter.activityBoards.length === 0 && <p className="text-xs text-slate-400 font-bold">活动榜未开启。</p>}
+                    {seasonCenter && activeActivityBoards.length === 0 && <p className="text-xs text-slate-400 font-bold">活动榜未开启。</p>}
                   </div>
                 </section>
-                {latestActivityRecap && (
+                {latestActivityRecaps.length > 0 && (
                   <section className="glass-panel rounded-3xl p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <strong className="block text-sm text-white font-black">活动回顾</strong>
-                        <span className="text-[9px] text-slate-500">{latestActivityRecap.name} / {latestActivityRecap.endDate}</span>
-                      </div>
-                      <span className="text-[10px] text-business-gold">
-                        {latestActivityRecap.personalRank === null ? "未上榜" : `第 ${latestActivityRecap.personalRank} 名`}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mb-3 text-center">
-                      <div className="rounded-2xl bg-slate-900/60 p-2">
-                        <strong className="block text-sm text-white">{latestActivityRecap.personalScore}</strong>
-                        <span className="text-[9px] text-slate-500">个人积分</span>
-                      </div>
-                      <div className="rounded-2xl bg-slate-900/60 p-2">
-                        <strong className="block text-sm text-business-gold">{latestActivityRecap.isSettled ? "已结算" : "待结算"}</strong>
-                        <span className="text-[9px] text-slate-500">榜单状态</span>
-                      </div>
+                      <strong className="block text-sm text-white font-black">活动回顾</strong>
+                      <span className="text-[10px] text-business-gold">{latestActivityRecaps.length} 场</span>
                     </div>
                     <div className="space-y-2">
-                      {latestActivityRecap.rows.slice(0, 3).map((row) => (
-                        <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
-                          <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                          <div className="flex-1 min-w-0">
-                            <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                            <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动回顾"}</span>
+                      {latestActivityRecaps.map((recap) => (
+                        <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={recap.activityId}>
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <div className="min-w-0">
+                              <strong className="block text-xs text-white font-black truncate">{recap.name}</strong>
+                              <span className="text-[9px] text-slate-500">{recap.endDate} / {recap.isSettled ? "已结算" : "待结算"}</span>
+                            </div>
+                            <span className="shrink-0 text-[10px] text-business-gold font-black">
+                              {recap.personalRank === null ? "未上榜" : `第 ${recap.personalRank} 名`}
+                            </span>
                           </div>
-                          <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                        </div>
+                          <div className="space-y-2">
+                            {recap.rows.slice(0, 3).map((row) => (
+                              <div className="flex items-center gap-3" key={row.profileId}>
+                                <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                                <div className="flex-1 min-w-0">
+                                  <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                                  <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动回顾"}</span>
+                                </div>
+                                <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
                       ))}
                     </div>
                   </section>
@@ -4601,14 +4628,27 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">{primaryActivityShopItem?.name ?? "活动商店"}</strong>
-                      <span className="text-[9px] text-slate-500">{primaryActivityShopItem?.summary ?? "用活动积分兑换限时资源。"}</span>
+                      <strong className="block text-sm text-white font-black">活动商店</strong>
+                      <span className="text-[9px] text-slate-500">用活动积分兑换限时资源。</span>
                     </div>
-                    <span className="text-[10px] text-business-gold">{primaryActivityShopItem?.costPoints ?? 0} 分</span>
+                    <span className="text-[10px] text-business-gold">{activityShopItems.length} 项</span>
                   </div>
-                  <button className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45" disabled={!primaryActivityShopItem || !primaryActivityShopItem.isAvailable} type="button" onClick={() => primaryActivityShopItem && void purchaseActivityShopItem(primaryActivityShopItem.id)}>
-                    {primaryActivityShopItem?.lockedReason ?? "兑换"}
-                  </button>
+                  <div className="space-y-2">
+                    {activityShopItems.map((item) => (
+                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={item.id}>
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div className="min-w-0">
+                            <strong className="block text-xs text-white font-black truncate">{item.name}</strong>
+                            <span className="text-[9px] text-slate-500">{item.summary}</span>
+                          </div>
+                          <span className="shrink-0 text-[10px] text-business-gold font-black">{item.costPoints} 分</span>
+                        </div>
+                        <button className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45" disabled={!item.isAvailable} type="button" onClick={() => void purchaseActivityShopItem(item.id)}>
+                          {item.lockedReason ?? "兑换"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -4692,19 +4732,30 @@ function App() {
                 {(leaderboardCenter?.activityBoards.length ?? 0) > 0 && (
                   <section className="glass-panel rounded-3xl p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <strong className="text-sm text-white font-black">{leaderboardCenter?.activityBoards[0]?.name ?? "活动榜"}</strong>
-                      <span className="text-[10px] text-business-gold">进行中</span>
+                      <strong className="text-sm text-white font-black">活动榜轮换</strong>
+                      <span className="text-[10px] text-business-gold">{leaderboardCenter?.activityBoards.length ?? 0} 张进行中</span>
                     </div>
-                    <div className="space-y-2">
-                      {(leaderboardCenter?.activityBoards[0]?.rows ?? []).slice(0, 3).map((row) => (
-                        <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
-                          <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                          <div className="flex-1 min-w-0">
-                            <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                            <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "限时活动冲榜"}</span>
+                    <div className="space-y-3">
+                      {(leaderboardCenter?.activityBoards ?? []).slice(0, 3).map((board) => (
+                        <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={board.key}>
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <strong className="text-xs text-white font-black truncate">{board.name}</strong>
+                            <span className="text-[9px] text-business-gold">{board.snapshotDate}</span>
                           </div>
-                          <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                        </article>
+                          <div className="space-y-2">
+                            {board.rows.slice(0, 3).map((row) => (
+                              <article className="flex items-center gap-3" key={row.profileId}>
+                                <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                                <div className="flex-1 min-w-0">
+                                  <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                                  <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "限时活动冲榜"}</span>
+                                </div>
+                                <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                              </article>
+                            ))}
+                            {board.rows.length === 0 && <p className="text-[10px] text-slate-500 font-bold">暂无上榜玩家。</p>}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </section>

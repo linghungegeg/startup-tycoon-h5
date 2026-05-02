@@ -1266,7 +1266,7 @@ export type SeasonCenterRecord = {
     pass: { isPurchased: boolean; pricePlatformCoins: number };
   };
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: ItemRewardRecord | null; isClaimed: boolean }>;
-  activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activities: Array<{ id: string; name: string; status: SeasonStatus; leaderboardKey: string; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
   activityBoards: LeaderboardBoardRecord[];
   activityRecaps: ActivityRecapRecord[];
   shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; rewardItem: ItemRewardRecord | null; isAvailable: boolean; lockedReason: string | null }>;
@@ -2757,6 +2757,7 @@ const toSeasonCenterRecord = async (
         id: activity.id,
         name: activity.name,
         status: readSeasonStatus(activity.startDate, activity.endDate, today),
+        leaderboardKey: activity.leaderboardKey,
         isJoined: state?.isJoined ?? false,
         score: state?.score ?? 0,
         targetScore: activity.targetScore,
