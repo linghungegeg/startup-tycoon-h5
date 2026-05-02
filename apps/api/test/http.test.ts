@@ -1904,6 +1904,13 @@ const createTestRepository = (): GameRepository => {
   const toSeasonCenter = (profile: PlayerProfileRecord, today: string) => {
     const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
     const wallet = ensureWallet(profile);
+    const activityRows = (activityId: string) => [...activityStates.values()]
+      .filter((state) => state.activityId === activityId && state.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .map((state, index) => {
+        const rowProfile = [...profiles.values()].find((item) => item.id === state.profileId)!;
+        return { rank: index + 1, profileId: state.profileId, founderName: rowProfile.founderName, companyName: rowProfile.companyName, value: state.score, valueLabel: `活动积分 ${state.score}`, equippedTitle: null };
+      });
     const boards = activityConfigs
       .filter((activity) => seasonStatus(activity.startDate, activity.endDate, today) === "active")
       .map((activity) => ({
@@ -1911,15 +1918,27 @@ const createTestRepository = (): GameRepository => {
         name: activity.name,
         scope: "activity" as const,
         isActive: true,
-        rows: [...activityStates.values()]
-          .filter((state) => state.activityId === activity.id && state.score > 0)
-          .sort((left, right) => right.score - left.score)
-          .map((state, index) => {
-            const rowProfile = [...profiles.values()].find((item) => item.id === state.profileId)!;
-            return { rank: index + 1, profileId: state.profileId, founderName: rowProfile.founderName, companyName: rowProfile.companyName, value: state.score, valueLabel: `${state.score} 分`, equippedTitle: null };
-          }),
+        rows: activityRows(activity.id),
         snapshotDate: today
       }));
+    const activityRecaps = activityConfigs
+      .filter((activity) => seasonStatus(activity.startDate, activity.endDate, today) === "ended")
+      .map((activity) => {
+        const rows = activityRows(activity.id);
+        const personalRow = rows.find((row) => row.profileId === profile.id);
+        const state = activityStates.get(activityKey(profile.id, activity.id));
+        return {
+          activityId: activity.id,
+          name: activity.name,
+          status: "ended" as const,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          isSettled: [...leaderboardRewards].some((key) => key.includes(`:${activity.leaderboardKey}:${activity.endDate}`)),
+          personalRank: personalRow?.rank ?? null,
+          personalScore: state?.score ?? 0,
+          rows
+        };
+      });
     return {
       season: {
         id: seasonConfig.id,
@@ -1943,6 +1962,7 @@ const createTestRepository = (): GameRepository => {
         return { id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, today), isJoined: state?.isJoined ?? false, score: state?.score ?? 0, targetScore: activity.targetScore, rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined };
       }),
       activityBoards: boards,
+      activityRecaps,
       shopItems: activityShopItems.map((item) => {
         const count = [...activityShopPurchases.values()].filter((purchase) => purchase.profileId === profile.id && purchase.itemId === item.id).length;
         const limitReached = item.purchaseLimit > 0 && count >= item.purchaseLimit;
@@ -2165,6 +2185,23 @@ const createTestRepository = (): GameRepository => {
       })
       .sort((left, right) => right.value - left.value)
       .map((row, index) => ({ ...row, rank: index + 1 }));
+    const activityBoards = activityConfigs
+      .filter((activity) => seasonStatus(activity.startDate, activity.endDate, today) === "active")
+      .map((activity) => ({
+        key: activity.leaderboardKey,
+        name: activity.name,
+        scope: "activity" as const,
+        isActive: true,
+        rows: [...activityStates.values()]
+          .filter((state) => state.activityId === activity.id && state.score > 0)
+          .sort((left, right) => right.score - left.score)
+          .map((state, index) => {
+            const rowProfile = getProfileById(state.profileId)!;
+            return { rank: index + 1, profileId: state.profileId, founderName: rowProfile.founderName, companyName: rowProfile.companyName, value: state.score, valueLabel: `活动积分 ${state.score}`, equippedTitle: toTitleCenter(rowProfile, today).equippedTitle?.name ?? null };
+          }),
+        snapshotDate: today
+      }));
+
     return {
       boards: [
         { key: "company-value", name: "公司估值榜", scope: "server", isActive: true, rows: rowsFor("company-value"), snapshotDate: today },
@@ -2172,7 +2209,7 @@ const createTestRepository = (): GameRepository => {
         { key: "product-growth", name: "产品增长榜", scope: "server", isActive: true, rows: rowsFor("product-growth"), snapshotDate: today },
         { key: "guild", name: "商会榜", scope: "server", isActive: true, rows: rowsFor("guild"), snapshotDate: today }
       ],
-      activityBoards: []
+      activityBoards
     };
   };
   const buildCrossServerCenter = (profile: PlayerProfileRecord, today: string): CrossServerCenterRecord | "CROSS_SERVER_GROUP_NOT_FOUND" => {
@@ -2792,6 +2829,93 @@ const createTestRepository = (): GameRepository => {
           isActive: true
         },
         auditLogId: `${adminUserId}:${groupId}:${serverId}:${reason}`
+      };
+    },
+    async listAdminActivities(today) {
+      return {
+        rows: activityConfigs.map((activity) => {
+          const states = [...activityStates.values()].filter((state) => state.activityId === activity.id && state.score > 0);
+          const topRows = states
+            .sort((left, right) => right.score - left.score)
+            .slice(0, 3)
+            .map((state, index) => {
+              const profile = getProfileById(state.profileId)!;
+              return { rank: index + 1, profileId: state.profileId, founderName: profile.founderName, companyName: profile.companyName, value: state.score, valueLabel: `活动积分 ${state.score}`, equippedTitle: null };
+            });
+          return {
+            id: activity.id,
+            name: activity.name,
+            status: seasonStatus(activity.startDate, activity.endDate, today),
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            leaderboardKey: activity.leaderboardKey,
+            participantCount: states.length,
+            totalScore: states.reduce((total, state) => total + state.score, 0),
+            isSettled: [...leaderboardRewards].some((key) => key.includes(`:${activity.leaderboardKey}:${activity.endDate}`)),
+            topRows
+          };
+        })
+      };
+    },
+    async settleAdminActivityLeaderboard(adminUserId, activityId, today, reason) {
+      const activity = activityConfigs.find((item) => item.id === activityId);
+      if (activity === undefined) {
+        return "ACTIVITY_NOT_FOUND";
+      }
+      if (seasonStatus(activity.startDate, activity.endDate, today) !== "ended") {
+        return "ACTIVITY_NOT_ENDED";
+      }
+      const rows = [...activityStates.values()]
+        .filter((state) => state.activityId === activityId && state.score > 0)
+        .sort((left, right) => right.score - left.score)
+        .map((state, index) => {
+          const profile = getProfileById(state.profileId)!;
+          return { rank: index + 1, profileId: state.profileId, founderName: profile.founderName, companyName: profile.companyName, value: state.score, valueLabel: `活动积分 ${state.score}`, equippedTitle: null };
+        });
+      const rewards = rows.slice(0, 3).map((row, index) => ({
+        profileId: row.profileId,
+        founderName: row.founderName,
+        companyName: row.companyName,
+        rank: row.rank,
+        reputationReward: [120, 80, 50][index] ?? 0
+      })).filter((reward) => reward.reputationReward > 0);
+      let deliveredRewards = 0;
+      for (const reward of rewards) {
+        const key = `${reward.profileId}:${activity.leaderboardKey}:${activity.endDate}`;
+        if (leaderboardRewards.has(key)) {
+          continue;
+        }
+        leaderboardRewards.add(key);
+        const profile = getProfileById(reward.profileId);
+        if (profile !== undefined) {
+          profile.reputation += reward.reputationReward;
+        }
+        deliveredRewards += 1;
+      }
+      const auditLogId = `${adminUserId}:${activityId}:${reason}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_activity_leaderboard_settle",
+        targetType: "activity_leaderboard",
+        targetId: activityId,
+        detail: JSON.stringify({ activityId, today, reason, deliveredRewards }),
+        createdAt: new Date().toISOString()
+      });
+      const activities = await this.listAdminActivities(today);
+      return {
+        activity: activities.rows.find((row) => row.id === activityId)!,
+        leaderboard: {
+          key: activity.leaderboardKey,
+          name: activity.name,
+          scope: "activity",
+          isActive: false,
+          rows,
+          snapshotDate: activity.endDate
+        },
+        deliveredRewards,
+        rewards: deliveredRewards > 0 ? rewards : [],
+        auditLogId
       };
     },
     async listAdminGuilds(filters, today) {
@@ -8138,7 +8262,8 @@ test("phase 14 leaderboards snapshot rewards and title expiry are idempotent", a
     });
     assert.equal(leaderboards.status, 200);
     assert.equal(leaderboards.body.data?.boards.length, 4);
-    assert.equal(leaderboards.body.data?.activityBoards.length, 0);
+    assert.equal(leaderboards.body.data?.activityBoards.length, 1);
+    assert.equal(leaderboards.body.data?.activityBoards[0]?.scope, "activity");
     assert.ok(leaderboards.body.data?.boards.every((board) => board.scope === "server"));
 
     const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/leaderboards/settle", {
@@ -9172,5 +9297,150 @@ test("admin guild operations lists details and settles guild rewards idempotentl
     assert.equal(logs.status, 200);
     assert.ok(logs.body.data?.some((log) => log.action === "admin_guild_leaderboard_settle"));
     assert.ok(logs.body.data?.some((log) => log.action === "admin_cross_guild_season_settle"));
+  });
+});
+
+test("phase 24 activity leaderboard opens recaps and settles idempotently", async () => {
+  await withServer(async (baseUrl) => {
+    const first = await createPlayerSession(baseUrl, "activityleader01");
+    const second = await createPlayerSession(baseUrl, "activityleader02");
+    const firstHeaders = { authorization: `Bearer ${first.token}` };
+    const secondHeaders = { authorization: `Bearer ${second.token}` };
+
+    const upcoming = await requestJson<LeaderboardCenterRecord>(baseUrl, "/leaderboards?serverId=s1", {
+      headers: { ...firstHeaders, "x-server-date": "2026-04-30" }
+    });
+    assert.equal(upcoming.status, 200, JSON.stringify(upcoming.body));
+    assert.equal(upcoming.body.data?.activityBoards.length, 0);
+
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { ...firstHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 80 })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { ...secondHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 140 })
+    });
+
+    const active = await requestJson<LeaderboardCenterRecord>(baseUrl, "/leaderboards?serverId=s1", {
+      headers: { ...firstHeaders, "x-server-date": "2026-05-05" }
+    });
+    assert.equal(active.status, 200, JSON.stringify(active.body));
+    assert.equal(active.body.data?.activityBoards.length, 1);
+    assert.equal(active.body.data?.activityBoards[0]?.rows[0]?.profileId, second.profile.id);
+    assert.equal(active.body.data?.activityBoards[0]?.rows[0]?.value, 140);
+    assert.equal(active.body.data?.activityBoards[0]?.rows[1]?.profileId, first.profile.id);
+
+    const ended = await requestJson<{
+      activityBoards: LeaderboardCenterRecord["activityBoards"];
+      activityRecaps: Array<{
+        activityId: string;
+        isSettled: boolean;
+        personalRank: number | null;
+        personalScore: number;
+        rows: LeaderboardCenterRecord["activityBoards"][number]["rows"];
+      }>;
+    }>(baseUrl, "/season?serverId=s1", {
+      headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(ended.status, 200, JSON.stringify(ended.body));
+    assert.equal(ended.body.data?.activityBoards.length, 0);
+    assert.equal(ended.body.data?.activityRecaps[0]?.activityId, "ai-agent-growth");
+    assert.equal(ended.body.data?.activityRecaps[0]?.personalRank, 2);
+    assert.equal(ended.body.data?.activityRecaps[0]?.personalScore, 80);
+
+    const hiddenAfterEnd = await requestJson<LeaderboardCenterRecord>(baseUrl, "/leaderboards?serverId=s1", {
+      headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(hiddenAfterEnd.status, 200, JSON.stringify(hiddenAfterEnd.body));
+    assert.equal(hiddenAfterEnd.body.data?.activityBoards.length, 0);
+
+    const blocked = await requestJson(baseUrl, "/admin/activities/ai-agent-growth/leaderboard/settle", {
+      method: "POST",
+      headers: { "x-server-date": "2026-05-21" },
+      body: JSON.stringify({ reason: "阶段24活动榜结算" })
+    });
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const adminActivities = await requestJson<{ rows: Array<{ id: string; participantCount: number; isSettled: boolean }> }>(baseUrl, "/admin/activities", {
+      headers: { ...adminHeaders, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(adminActivities.status, 200, JSON.stringify(adminActivities.body));
+    assert.equal(adminActivities.body.data?.rows.find((activity) => activity.id === "ai-agent-growth")?.participantCount, 2);
+
+    const beforeFirst = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: firstHeaders
+    });
+    const beforeSecond = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: secondHeaders
+    });
+
+    const settled = await requestJson<{ deliveredRewards: number; auditLogId: string }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "阶段24活动榜结算" })
+      }
+    );
+    assert.equal(settled.status, 200, JSON.stringify(settled.body));
+    assert.equal(settled.body.data?.deliveredRewards, 2);
+    assert.ok(settled.body.data?.auditLogId);
+
+    const duplicate = await requestJson<{ deliveredRewards: number }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "阶段24活动榜结算重试" })
+      }
+    );
+    assert.equal(duplicate.status, 200, JSON.stringify(duplicate.body));
+    assert.equal(duplicate.body.data?.deliveredRewards, 0);
+
+    const afterFirst = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: firstHeaders
+    });
+    const afterSecond = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: secondHeaders
+    });
+    assert.equal(afterFirst.body.data?.cash, beforeFirst.body.data?.cash);
+    assert.equal(afterFirst.body.data?.platformCoins, beforeFirst.body.data?.platformCoins);
+    assert.equal(afterSecond.body.data?.cash, beforeSecond.body.data?.cash);
+    assert.equal(afterSecond.body.data?.platformCoins, beforeSecond.body.data?.platformCoins);
+    assert.ok((afterSecond.body.data?.reputation ?? 0) > (beforeSecond.body.data?.reputation ?? 0));
+
+    const recapAfterSettle = await requestJson<{ activityRecaps: Array<{ isSettled: boolean }> }>(baseUrl, "/season?serverId=s1", {
+      headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(recapAfterSettle.body.data?.activityRecaps[0]?.isSettled, true);
+
+    const logs = await requestJson<Array<{ action: string }>>(baseUrl, "/admin/audit-logs", {
+      headers: adminHeaders
+    });
+    assert.equal(logs.status, 200);
+    assert.ok(logs.body.data?.some((log) => log.action === "admin_activity_leaderboard_settle"));
   });
 });

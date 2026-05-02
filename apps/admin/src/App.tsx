@@ -154,6 +154,33 @@ type AdminGuildDetail = {
   };
 };
 
+type LeaderboardRow = {
+  rank: number;
+  profileId: string;
+  founderName: string;
+  companyName: string;
+  value: number;
+  valueLabel: string;
+  equippedTitle: string | null;
+};
+
+type AdminActivityRow = {
+  id: string;
+  name: string;
+  status: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+  participantCount: number;
+  totalScore: number;
+  isSettled: boolean;
+  topRows: LeaderboardRow[];
+};
+
+type AdminActivityList = {
+  rows: AdminActivityRow[];
+};
+
 type WalletAdjustment = {
   wallet: {
     balance: number;
@@ -285,7 +312,7 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
-type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "configs" | "knowledge" | "audit";
+type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "analytics", label: "数据看板" },
@@ -294,6 +321,7 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "titles", label: "称号 / 补偿" },
   { id: "cross", label: "跨服分组" },
   { id: "guilds", label: "商会运营" },
+  { id: "activities", label: "活动运营" },
   { id: "configs", label: "配置清单" },
   { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
@@ -414,6 +442,8 @@ export default function App() {
   const [guilds, setGuilds] = useState<AdminGuildRow[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("");
   const [selectedGuildDetail, setSelectedGuildDetail] = useState<AdminGuildDetail | null>(null);
+  const [activities, setActivities] = useState<AdminActivityRow[]>([]);
+  const [selectedActivityId, setSelectedActivityId] = useState("");
   const [guildKeyword, setGuildKeyword] = useState("");
   const [guildServerId, setGuildServerId] = useState("");
   const [guildCrossRegistered, setGuildCrossRegistered] = useState("");
@@ -421,6 +451,7 @@ export default function App() {
   const [guildSettleReason, setGuildSettleReason] = useState("运营手动结算商会贡献榜");
   const [crossGuildSettleServerId, setCrossGuildSettleServerId] = useState("s1");
   const [crossGuildSettleReason, setCrossGuildSettleReason] = useState("运营手动结算跨服商会赛季");
+  const [activitySettleReason, setActivitySettleReason] = useState("运营手动结算活动榜");
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeList>({ rows: [], total: 0, categories: [] });
   const [configCenter, setConfigCenter] = useState<ConfigCenter>({
     titles: [],
@@ -474,6 +505,10 @@ export default function App() {
     () => guilds.find((guild) => guild.id === selectedGuildId) ?? guilds[0] ?? null,
     [guilds, selectedGuildId]
   );
+  const selectedActivity = useMemo(
+    () => activities.find((activity) => activity.id === selectedActivityId) ?? activities[0] ?? null,
+    [activities, selectedActivityId]
+  );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
     setKnowledgeList(data);
@@ -502,11 +537,12 @@ export default function App() {
         guildParams.set("activeStatus", guildActiveStatus);
       }
 
-      const [playerList, vipList, groupList, guildList] = await Promise.all([
+      const [playerList, vipList, groupList, guildList, activityList] = await Promise.all([
         apiRequest<AdminPlayerList>(`/admin/players?keyword=${encodeURIComponent(searchKeyword.trim())}`, {}, token),
         apiRequest<VipConfig[]>("/admin/vip/configs", {}, token),
         apiRequest<CrossServerGroupList>("/admin/cross-server/groups", {}, token),
-        apiRequest<AdminGuildList>(`/admin/guilds?${guildParams.toString()}`, {}, token)
+        apiRequest<AdminGuildList>(`/admin/guilds?${guildParams.toString()}`, {}, token),
+        apiRequest<AdminActivityList>("/admin/activities", {}, token)
       ]);
 
       if (!playerList.success) {
@@ -525,13 +561,19 @@ export default function App() {
         setError(guildList.error.message);
         return;
       }
+      if (!activityList.success) {
+        setError(activityList.error.message);
+        return;
+      }
 
       setPlayers(playerList.data.rows);
       setVipConfigs(vipList.data);
       setCrossGroups(groupList.data.groups);
       setGuilds(guildList.data.rows);
+      setActivities(activityList.data.rows);
       const firstGuildId = guildList.data.rows[0]?.id ?? "";
       setSelectedGuildId((current) => guildList.data.rows.some((guild) => guild.id === current) ? current : firstGuildId);
+      setSelectedActivityId((current) => activityList.data.rows.some((activity) => activity.id === current) ? current : activityList.data.rows[0]?.id ?? "");
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
@@ -676,7 +718,9 @@ export default function App() {
     setVipConfigs([]);
     setCrossGroups([]);
     setGuilds([]);
+    setActivities([]);
     setSelectedGuildId("");
+    setSelectedActivityId("");
     setSelectedGuildDetail(null);
     setKnowledgeList({ rows: [], total: 0, categories: [] });
     setConfigCenter({ titles: [], achievements: [], knowledgeEntries: [], shopProducts: [], leaderboardSnapshots: [], mailCompensations: [], seasons: [], activities: [], scenarios: [] });
@@ -799,6 +843,35 @@ export default function App() {
       return;
     }
     setActionMessage(`跨服商会赛季结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+    await loadAdminData(session.token, keyword);
+  };
+
+  const submitActivitySettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+    event.preventDefault();
+    if (session === null || selectedActivity === null) {
+      return;
+    }
+    if (activitySettleReason.trim().length < 2) {
+      setError("请输入活动榜结算原因。");
+      return;
+    }
+    if (!window.confirm(`确认手动结算 ${selectedActivity.name} 活动榜？`)) {
+      return;
+    }
+
+    const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
+      `/admin/activities/${encodeURIComponent(selectedActivity.id)}/leaderboard/settle`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason: activitySettleReason.trim() })
+      },
+      session.token
+    );
+    if (!result.success) {
+      setError(result.error.message);
+      return;
+    }
+    setActionMessage(`活动榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
     await loadAdminData(session.token, keyword);
   };
 
@@ -1141,7 +1214,7 @@ export default function App() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p>Phase 23 运营收口</p>
+            <p>Phase 24 运营深化</p>
             <h1>{menuItems.find((item) => item.id === activeSection)?.label}</h1>
           </div>
           <div className="operator-bar">
@@ -1662,6 +1735,92 @@ export default function App() {
                 </section>
               </section>
             )}
+          </section>
+        )}
+
+        {activeSection === "activities" && (
+          <section className="stacked-sections" aria-label="活动运营">
+            <section className="operation-grid" aria-label="活动榜操作">
+              <form className="operation-panel" onSubmit={(event) => void submitActivitySettlement(event)}>
+                <h2>活动榜手动结算</h2>
+                <p className="panel-note">
+                  当前活动：{selectedActivity === null ? "暂无活动" : `${selectedActivity.name}，${selectedActivity.status}，参与 ${selectedActivity.participantCount} 人`}
+                </p>
+                <label>
+                  活动
+                  <select onChange={(event) => setSelectedActivityId(event.target.value)} value={selectedActivity?.id ?? ""}>
+                    {activities.map((activity) => (
+                      <option key={activity.id} value={activity.id}>
+                        {activity.name} / {activity.status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  结算原因
+                  <input onChange={(event) => setActivitySettleReason(event.target.value)} value={activitySettleReason} />
+                </label>
+                <button disabled={selectedActivity === null} type="submit">二次确认后结算</button>
+              </form>
+
+              <section className="table-section compact-table" aria-label="活动榜前三">
+                <div className="table-toolbar">
+                  <strong>{selectedActivity?.name ?? "活动榜"} 前三</strong>
+                  <span>{selectedActivity?.isSettled ? "已结算" : "未结算"}</span>
+                </div>
+                <div className="config-grid">
+                  {(selectedActivity?.topRows ?? []).length === 0 ? (
+                    <div>
+                      <h3>榜单</h3>
+                      <p>暂无活动积分。</p>
+                    </div>
+                  ) : selectedActivity?.topRows.map((row) => (
+                    <div key={row.profileId}>
+                      <h3>第 {row.rank} 名</h3>
+                      <p>{row.companyName} / {row.founderName}</p>
+                      <p>{row.valueLabel}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </section>
+
+            <section className="table-section" aria-label="活动运营列表">
+              <div className="table-toolbar">
+                <strong>活动运营列表</strong>
+                <span>共 {activities.length} 个活动</span>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>活动</th>
+                      <th>周期</th>
+                      <th>状态</th>
+                      <th>参与 / 积分</th>
+                      <th>榜单 Key</th>
+                      <th>结算</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activities.map((activity) => (
+                      <tr
+                        className={activity.id === selectedActivity?.id ? "selected-row" : undefined}
+                        key={activity.id}
+                        onClick={() => setSelectedActivityId(activity.id)}
+                      >
+                        <td>{activity.name}</td>
+                        <td>{activity.startDate} - {activity.endDate}</td>
+                        <td>{activity.status}</td>
+                        <td>{activity.participantCount} / {formatNumber(activity.totalScore)}</td>
+                        <td>{activity.leaderboardKey}</td>
+                        <td>{activity.isSettled ? "已结算" : "未结算"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </section>
         )}
 

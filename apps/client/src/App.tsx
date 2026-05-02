@@ -678,6 +678,17 @@ type SeasonCenter = {
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: { id: string; name: string; quantity: number } | null; isClaimed: boolean }>;
   activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
   activityBoards: LeaderboardCenter["activityBoards"];
+  activityRecaps: Array<{
+    activityId: string;
+    name: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    isSettled: boolean;
+    personalRank: number | null;
+    personalScore: number;
+    rows: LeaderboardRow[];
+  }>;
   shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; rewardItem: { id: string; name: string; quantity: number } | null; isAvailable: boolean; lockedReason: string | null }>;
   scenarios: Array<{ id: string; name: string; summary: string; bestScore: number | null }>;
   wallet: PlatformWallet;
@@ -1877,6 +1888,7 @@ function App() {
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
   const primarySeasonActivity = seasonCenter?.activities[0] ?? null;
   const primaryActivityBoard = seasonCenter?.activityBoards[0] ?? null;
+  const latestActivityRecap = seasonCenter?.activityRecaps[0] ?? null;
   const primaryActivityShopItem = seasonCenter?.shopItems[0] ?? null;
   const primaryScenario = seasonCenter?.scenarios[0] ?? null;
   const activeTaskTip =
@@ -4493,6 +4505,41 @@ function App() {
                     {seasonCenter && seasonCenter.activityBoards.length === 0 && <p className="text-xs text-slate-400 font-bold">活动榜未开启。</p>}
                   </div>
                 </section>
+                {latestActivityRecap && (
+                  <section className="glass-panel rounded-3xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <strong className="block text-sm text-white font-black">活动回顾</strong>
+                        <span className="text-[9px] text-slate-500">{latestActivityRecap.name} / {latestActivityRecap.endDate}</span>
+                      </div>
+                      <span className="text-[10px] text-business-gold">
+                        {latestActivityRecap.personalRank === null ? "未上榜" : `第 ${latestActivityRecap.personalRank} 名`}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3 text-center">
+                      <div className="rounded-2xl bg-slate-900/60 p-2">
+                        <strong className="block text-sm text-white">{latestActivityRecap.personalScore}</strong>
+                        <span className="text-[9px] text-slate-500">个人积分</span>
+                      </div>
+                      <div className="rounded-2xl bg-slate-900/60 p-2">
+                        <strong className="block text-sm text-business-gold">{latestActivityRecap.isSettled ? "已结算" : "待结算"}</strong>
+                        <span className="text-[9px] text-slate-500">榜单状态</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {latestActivityRecap.rows.slice(0, 3).map((row) => (
+                        <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
+                          <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                          <div className="flex-1 min-w-0">
+                            <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                            <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动回顾"}</span>
+                          </div>
+                          <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -4561,7 +4608,7 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <strong className="text-sm text-white font-black">{primaryLeaderboard?.name ?? "公司估值榜"}</strong>
-                    <span className="text-[10px] text-slate-500">活动榜未开启</span>
+                    <span className="text-[10px] text-slate-500">{leaderboardCenter?.activityBoards.length ? "活动榜进行中" : "活动榜未开启"}</span>
                   </div>
                   <div className="space-y-3">
                 {(primaryLeaderboard?.rows ?? []).slice(0, 5).map((row) => (
@@ -4584,6 +4631,26 @@ function App() {
                 ))}
                   </div>
                 </section>
+                {(leaderboardCenter?.activityBoards.length ?? 0) > 0 && (
+                  <section className="glass-panel rounded-3xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <strong className="text-sm text-white font-black">{leaderboardCenter?.activityBoards[0]?.name ?? "活动榜"}</strong>
+                      <span className="text-[10px] text-business-gold">进行中</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(leaderboardCenter?.activityBoards[0]?.rows ?? []).slice(0, 3).map((row) => (
+                        <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
+                          <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
+                          <div className="flex-1 min-w-0">
+                            <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
+                            <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "限时活动冲榜"}</span>
+                          </div>
+                          <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div>

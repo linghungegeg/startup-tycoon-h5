@@ -991,6 +991,57 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/activities") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(await repository.listAdminActivities(readToday(request)), traceId));
+      return;
+    }
+
+    const adminActivitySettleMatch = request.method === "POST" ? /^\/admin\/activities\/([^/]+)\/leaderboard\/settle$/.exec(url.pathname) : null;
+    if (adminActivitySettleMatch !== null) {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const reason = readString(body, "reason");
+        if (reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "reason is required.", traceId));
+          return;
+        }
+
+        const result = await repository.settleAdminActivityLeaderboard(admin.id, decodeURIComponent(adminActivitySettleMatch[1] ?? ""), readToday(request), reason);
+        if (result === "ACTIVITY_NOT_FOUND") {
+          sendJson(response, 404, failure("ACTIVITY_NOT_FOUND", "Activity not found.", traceId));
+          return;
+        }
+        if (result === "ACTIVITY_NOT_ENDED") {
+          sendJson(response, 409, failure("ACTIVITY_NOT_ENDED", "Activity leaderboard can be settled after the activity ends.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/guilds") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);

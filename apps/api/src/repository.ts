@@ -780,6 +780,35 @@ export type AdminCrossServerGuildSettlementRecord = CrossServerGuildSettlementRe
   auditLogId: string;
 };
 
+export type AdminActivityListRecord = {
+  rows: Array<{
+    id: string;
+    name: string;
+    status: SeasonStatus;
+    startDate: string;
+    endDate: string;
+    leaderboardKey: string;
+    participantCount: number;
+    totalScore: number;
+    isSettled: boolean;
+    topRows: LeaderboardRowRecord[];
+  }>;
+};
+
+export type AdminActivitySettlementRecord = {
+  activity: AdminActivityListRecord["rows"][number];
+  leaderboard: LeaderboardBoardRecord;
+  deliveredRewards: number;
+  rewards: Array<{
+    profileId: string;
+    founderName: string;
+    companyName: string;
+    rank: number;
+    reputationReward: number;
+  }>;
+  auditLogId: string;
+};
+
 export type AdminAuditLogRecord = {
   id: string;
   adminUsername: string;
@@ -973,6 +1002,18 @@ export type LeaderboardSettlementRecord = {
 
 export type SeasonStatus = "upcoming" | "active" | "ended";
 
+export type ActivityRecapRecord = {
+  activityId: string;
+  name: string;
+  status: SeasonStatus;
+  startDate: string;
+  endDate: string;
+  isSettled: boolean;
+  personalRank: number | null;
+  personalScore: number;
+  rows: LeaderboardRowRecord[];
+};
+
 export type SeasonCenterRecord = {
   season: {
     id: string;
@@ -987,6 +1028,7 @@ export type SeasonCenterRecord = {
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: ItemRewardRecord | null; isClaimed: boolean }>;
   activities: Array<{ id: string; name: string; status: SeasonStatus; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
   activityBoards: LeaderboardBoardRecord[];
+  activityRecaps: ActivityRecapRecord[];
   shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; rewardItem: ItemRewardRecord | null; isAvailable: boolean; lockedReason: string | null }>;
   scenarios: Array<{ id: string; name: string; summary: string; bestScore: number | null }>;
   wallet: PlatformWalletRecord;
@@ -1320,6 +1362,8 @@ export type GameRepository = {
   settleAdminLeaderboards(adminUserId: string, serverId: string, today: string, reason: string): Promise<(LeaderboardSettlementRecord & { auditLogId: string }) | "PLAYER_NOT_FOUND">;
   listAdminCrossServerGroups(): Promise<AdminCrossServerGroupListRecord>;
   assignAdminCrossServerGroup(adminUserId: string, serverId: string, groupId: string, reason: string): Promise<AdminCrossServerGroupAssignmentRecord | "SERVER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  listAdminActivities(today: string): Promise<AdminActivityListRecord>;
+  settleAdminActivityLeaderboard(adminUserId: string, activityId: string, today: string, reason: string): Promise<AdminActivitySettlementRecord | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_ENDED">;
   listAdminGuilds(filters: { keyword: string; serverId: string; crossRegistered: string; activeStatus: string }, today: string): Promise<AdminGuildListRecord>;
   getAdminGuildDetail(guildId: string, today: string): Promise<AdminGuildDetailRecord | "GUILD_NOT_FOUND">;
   settleAdminGuildLeaderboard(adminUserId: string, guildId: string, today: string, reason: string): Promise<AdminGuildSettlementRecord | "GUILD_NOT_FOUND" | "PLAYER_NOT_FOUND">;
@@ -2220,6 +2264,81 @@ const readSeasonStatus = (startDate: string, endDate: string, today: string): Se
   return today > endDate ? "ended" : "active";
 };
 
+type ActivityLeaderboardConfigLike = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  leaderboardKey: string;
+};
+
+const activityLeaderboardRewards = [120, 80, 50];
+
+const toActivityLeaderboardRows = async (
+  prisma: PrismaClient,
+  activityId: string,
+  serverId?: string
+): Promise<LeaderboardRowRecord[]> => {
+  const states = await prisma.playerActivityState.findMany({
+    where: {
+      activityId,
+      score: { gt: 0 },
+      ...(serverId === undefined ? {} : { profile: { serverId } })
+    },
+    include: {
+      profile: {
+        include: {
+          titleEquipment: true,
+          playerTitles: { include: { title: true } }
+        }
+      }
+    },
+    orderBy: [{ score: "desc" }, { updatedAt: "asc" }]
+  });
+
+  return states.map((state, index) => {
+    const equipped = state.profile.playerTitles.find((title) => title.titleId === state.profile.titleEquipment?.titleId);
+    return {
+      rank: index + 1,
+      profileId: state.profileId,
+      founderName: state.profile.founderName,
+      companyName: state.profile.companyName,
+      value: state.score,
+      valueLabel: formatLeaderboardValue("activity", state.score),
+      equippedTitle: equipped?.title.name ?? null
+    };
+  });
+};
+
+const toActivityLeaderboardBoard = async (
+  prisma: PrismaClient,
+  activity: ActivityLeaderboardConfigLike,
+  today: string,
+  serverId?: string
+): Promise<LeaderboardBoardRecord> => ({
+  key: activity.leaderboardKey,
+  name: activity.name,
+  scope: "activity",
+  isActive: readSeasonStatus(activity.startDate, activity.endDate, today) === "active",
+  rows: (await toActivityLeaderboardRows(prisma, activity.id, serverId)).slice(0, 20),
+  snapshotDate: today
+});
+
+const isActivityLeaderboardSettled = async (
+  prisma: PrismaClient,
+  activity: ActivityLeaderboardConfigLike
+): Promise<boolean> => {
+  const delivery = await prisma.leaderboardRewardDelivery.findFirst({
+    where: {
+      boardKey: activity.leaderboardKey,
+      snapshotDate: activity.endDate
+    },
+    select: { id: true }
+  });
+
+  return delivery !== null;
+};
+
 const readScenarioState = (initialStateJson: string): ScenarioRunRecord["run"]["initialState"] => {
   const fallback = {
     cashDays: 15,
@@ -2294,30 +2413,25 @@ const toSeasonCenterRecord = async (
     return scores;
   }, new Map());
 
-  const activityBoards = await Promise.all(activities.map(async (activity) => {
-    const states = await prisma.playerActivityState.findMany({
-      where: { activityId: activity.id, score: { gt: 0 } },
-      include: { profile: true },
-      orderBy: [{ score: "desc" }],
-      take: 20
-    });
-    return {
-      key: activity.leaderboardKey,
-      name: activity.name,
-      scope: "activity" as const,
-      isActive: readSeasonStatus(activity.startDate, activity.endDate, today) === "active",
-      rows: states.map((state, index) => ({
-        rank: index + 1,
-        profileId: state.profileId,
-        founderName: state.profile.founderName,
-        companyName: state.profile.companyName,
-        value: state.score,
-        valueLabel: `${state.score} 分`,
-        equippedTitle: null
-      })),
-      snapshotDate: today
-    };
-  }));
+  const activityBoards = await Promise.all(activities.map((activity) => toActivityLeaderboardBoard(prisma, activity, today, profile.serverId)));
+  const activityRecaps = await Promise.all(activities
+    .filter((activity) => readSeasonStatus(activity.startDate, activity.endDate, today) === "ended")
+    .map(async (activity) => {
+      const rows = await toActivityLeaderboardRows(prisma, activity.id, profile.serverId);
+      const personalRow = rows.find((row) => row.profileId === profile.id);
+      const personalState = activityStateById.get(activity.id);
+      return {
+        activityId: activity.id,
+        name: activity.name,
+        status: "ended" as const,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        isSettled: await isActivityLeaderboardSettled(prisma, activity),
+        personalRank: personalRow?.rank ?? null,
+        personalScore: personalState?.score ?? 0,
+        rows: rows.slice(0, 20)
+      };
+    }));
 
   return {
     season: {
@@ -2359,6 +2473,7 @@ const toSeasonCenterRecord = async (
       };
     }),
     activityBoards: activityBoards.filter((board) => board.isActive),
+    activityRecaps,
     shopItems: shopItems.map((item) => {
       const limitReached = item.purchaseLimit > 0 && (purchaseCounts.get(item.id) ?? 0) >= item.purchaseLimit;
       const hasEnoughPoints = progress.points >= item.costPoints;
@@ -2663,6 +2778,9 @@ const formatLeaderboardValue = (key: string, value: number): string => {
   }
   if (key === "cross-guild") {
     return `跨服贡献 ${value.toLocaleString("zh-CN")}`;
+  }
+  if (key === "activity") {
+    return `活动积分 ${value.toLocaleString("zh-CN")}`;
   }
 
   return `估值 ${value.toLocaleString("zh-CN")}`;
@@ -7191,6 +7309,127 @@ export const createPrismaGameRepository = (
     };
   },
 
+  async listAdminActivities(today) {
+    const activities = await prisma.activityConfig.findMany({
+      orderBy: [{ startDate: "desc" }, { sortOrder: "asc" }, { id: "asc" }]
+    });
+    const rows = await Promise.all(activities.map(async (activity) => {
+      const [states, topRows, isSettled] = await Promise.all([
+        prisma.playerActivityState.findMany({ where: { activityId: activity.id, score: { gt: 0 } }, select: { score: true } }),
+        toActivityLeaderboardRows(prisma, activity.id),
+        isActivityLeaderboardSettled(prisma, activity)
+      ]);
+
+      return {
+        id: activity.id,
+        name: activity.name,
+        status: readSeasonStatus(activity.startDate, activity.endDate, today),
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        leaderboardKey: activity.leaderboardKey,
+        participantCount: states.length,
+        totalScore: states.reduce((total, state) => total + state.score, 0),
+        isSettled,
+        topRows: topRows.slice(0, 3)
+      };
+    }));
+
+    return { rows };
+  },
+
+  async settleAdminActivityLeaderboard(adminUserId, activityId, today, reason) {
+    const activity = await prisma.activityConfig.findUnique({ where: { id: activityId } });
+    if (activity === null) {
+      return "ACTIVITY_NOT_FOUND";
+    }
+    if (readSeasonStatus(activity.startDate, activity.endDate, today) !== "ended") {
+      return "ACTIVITY_NOT_ENDED";
+    }
+
+    const rows = await toActivityLeaderboardRows(prisma, activity.id);
+    const rewards = rows.slice(0, 3).map((row, index) => ({
+      profileId: row.profileId,
+      founderName: row.founderName,
+      companyName: row.companyName,
+      rank: row.rank,
+      reputationReward: activityLeaderboardRewards[index] ?? 0
+    })).filter((reward) => reward.reputationReward > 0);
+
+    let deliveredRewards = 0;
+    for (const reward of rewards) {
+      const existing = await prisma.leaderboardRewardDelivery.findUnique({
+        where: {
+          profileId_boardKey_snapshotDate: {
+            profileId: reward.profileId,
+            boardKey: activity.leaderboardKey,
+            snapshotDate: activity.endDate
+          }
+        }
+      });
+      if (existing !== null) {
+        continue;
+      }
+      await prisma.$transaction([
+        prisma.playerProfile.update({
+          where: { id: reward.profileId },
+          data: { reputation: { increment: reward.reputationReward } }
+        }),
+        prisma.leaderboardRewardDelivery.create({
+          data: {
+            profileId: reward.profileId,
+            serverId: "activity",
+            boardKey: activity.leaderboardKey,
+            snapshotDate: activity.endDate,
+            rank: reward.rank,
+            rewardPlatformCoins: 0,
+            rewardTitleId: null,
+            mailSubject: `活动榜第 ${reward.rank} 名奖励`,
+            mailBody: `activity-leaderboard:${activity.id}`
+          }
+        })
+      ]);
+      deliveredRewards += 1;
+    }
+
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "admin_activity_leaderboard_settle",
+        targetType: "activity_leaderboard",
+        targetId: activity.id,
+        detail: JSON.stringify({ activityId: activity.id, today, reason, deliveredRewards })
+      }
+    });
+    const list = await this.listAdminActivities(today);
+    const activityRow = list.rows.find((row) => row.id === activity.id);
+
+    return {
+      activity: activityRow ?? {
+        id: activity.id,
+        name: activity.name,
+        status: readSeasonStatus(activity.startDate, activity.endDate, today),
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        leaderboardKey: activity.leaderboardKey,
+        participantCount: rows.length,
+        totalScore: rows.reduce((total, row) => total + row.value, 0),
+        isSettled: deliveredRewards > 0 || await isActivityLeaderboardSettled(prisma, activity),
+        topRows: rows.slice(0, 3)
+      },
+      leaderboard: {
+        key: activity.leaderboardKey,
+        name: activity.name,
+        scope: "activity",
+        isActive: false,
+        rows: rows.slice(0, 20),
+        snapshotDate: activity.endDate
+      },
+      deliveredRewards,
+      rewards: deliveredRewards > 0 ? rewards : [],
+      auditLogId: audit.id
+    };
+  },
+
   async listAdminGuilds(filters, today) {
     const dayStart = new Date(`${today}T00:00:00.000Z`);
     const dayEnd = new Date(`${today}T23:59:59.999Z`);
@@ -7675,9 +7914,18 @@ export const createPrismaGameRepository = (
       };
     }));
 
+    const activeActivities = await prisma.activityConfig.findMany({
+      where: {
+        startDate: { lte: today },
+        endDate: { gte: today }
+      },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+    });
+    const activityBoards = await Promise.all(activeActivities.map((activity) => toActivityLeaderboardBoard(prisma, activity, today, serverId)));
+
     return {
       boards,
-      activityBoards: []
+      activityBoards
     };
   },
 
