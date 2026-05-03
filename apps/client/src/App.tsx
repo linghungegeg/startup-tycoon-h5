@@ -820,6 +820,27 @@ type CrossServerCenter = {
     statusLabel: string;
     actionLabel: string;
   };
+  dailyGoals: Array<{
+    id: string;
+    title: string;
+    progress: number;
+    target: number;
+    isCompleted: boolean;
+    statusLabel: string;
+    rewardLabel: string;
+  }>;
+  seasonProgress: {
+    completedGoals: number;
+    targetGoals: number;
+    progressPercent: number;
+    statusLabel: string;
+  };
+  nextReward: {
+    title: string;
+    conditionLabel: string;
+    rewardLabel: string;
+    statusLabel: string;
+  };
   boards: LeaderboardCenter["boards"];
   guildSeason: {
     isGuildMember: boolean;
@@ -2147,7 +2168,6 @@ function App() {
   const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
   const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
   const todayGoalSection = longTermGoals?.sections.find((section) => section.key === "today") ?? null;
-  const seasonGoalSection = longTermGoals?.sections.find((section) => section.key === "season") ?? null;
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
   const activeChatMessages = useMemo(
     () => chatCenter?.messages.filter((message) => message.channel === activeChatChannel) ?? [],
@@ -5917,32 +5937,35 @@ function App() {
                     <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">+{crossServerCenter?.dailyReward.rewardReputation ?? 30}</strong><span className="text-[9px] text-slate-500">声望奖励</span></div>
                   </div>
                   <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
-                    今日任务：{todayGoalSection?.goals[0]?.statusLabel ?? "推进经营目标"} · 待领奖励 {longTermGoals?.summaries.todayClaimableCount ?? 0}
+                    今日任务：{crossServerCenter?.dailyGoals.find((goal) => goal.id === "cross-daily-reward")?.statusLabel ?? todayGoalSection?.goals[0]?.statusLabel ?? "推进经营目标"} · 待领奖励 {longTermGoals?.summaries.todayClaimableCount ?? 0}
                   </p>
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
                   <div className="flex items-center justify-between">
-                    <strong className="text-sm text-white font-black">赛季进度</strong>
-                    <span className="text-[9px] text-business-gold">{seasonCenter?.season.name ?? "赛季"}</span>
+                    <strong className="text-sm text-white font-black">跨服进度</strong>
+                    <span className="text-[9px] text-business-gold">{crossServerCenter?.seasonProgress.statusLabel ?? "0/3 目标完成"}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonCenter?.season.points ?? 0}</strong><span className="text-[9px] text-slate-500">积分</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonCenter?.season.pass.isPurchased ? "已开通" : "普通"}</strong><span className="text-[9px] text-slate-500">通行证</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{seasonGoalSection?.goals.length ?? 0}</strong><span className="text-[9px] text-slate-500">赛季目标</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.progressPercent ?? 0}%</strong><span className="text-[9px] text-slate-500">目标完成</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.completedGoals ?? 0}</strong><span className="text-[9px] text-slate-500">已完成</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.targetGoals ?? 3}</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
                   </div>
                 </section>
 
                 <section className="rounded-2xl border border-business-gold/20 bg-slate-950/35 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <strong className="text-sm text-white font-black">下一奖励</strong>
-                    <span className="text-[9px] text-business-gold">邮件发放</span>
+                    <span className="text-[9px] text-business-gold">下一档</span>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">参与</strong><span className="text-[9px] text-slate-500">报名参赛</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{highlightedTask ? "今日奖励" : "暂无"}</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{personalCrossRank}</strong><span className="text-[9px] text-slate-500">当前排名</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.title ?? "今日奖励"}</strong><span className="text-[9px] text-slate-500">奖励</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.statusLabel ?? "待领取"}</strong><span className="text-[9px] text-slate-500">状态</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.rewardLabel ?? "声望 +30"}</strong><span className="text-[9px] text-slate-500">内容</span></div>
                   </div>
+                  <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
+                    {crossServerCenter?.nextReward.conditionLabel ?? "完成今日跨服目标"}
+                  </p>
                   <button
                     className="mt-3 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark disabled:opacity-45"
                     disabled={!crossServerCenter?.dailyReward.canClaim}

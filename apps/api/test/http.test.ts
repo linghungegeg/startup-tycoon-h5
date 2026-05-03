@@ -2325,6 +2325,37 @@ const createTestRepository = (): GameRepository => {
     ];
     const isRegistered = crossServerSignups.has(`${profile.id}:${group.id}`);
     const isDailyRewardClaimed = leaderboardRewards.has(`${profile.id}:cross-daily-goal:${today}`);
+    const guildGoalProgress = Math.min(todayActiveMemberCount, seasonRequirements.minTodayActiveMembers);
+    const dailyGoals = [
+      {
+        id: "cross-register",
+        title: "报名跨服",
+        progress: isRegistered ? 1 : 0,
+        target: 1,
+        isCompleted: isRegistered,
+        statusLabel: isRegistered ? "已完成" : "待报名",
+        rewardLabel: "参赛资格"
+      },
+      {
+        id: "cross-daily-reward",
+        title: "领取今日奖励",
+        progress: isDailyRewardClaimed ? 1 : 0,
+        target: 1,
+        isCompleted: isDailyRewardClaimed,
+        statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
+        rewardLabel: "声望 +30"
+      },
+      {
+        id: "cross-guild-active",
+        title: "商会活跃达标",
+        progress: guildGoalProgress,
+        target: seasonRequirements.minTodayActiveMembers,
+        isCompleted: guildGoalProgress >= seasonRequirements.minTodayActiveMembers,
+        statusLabel: guildGoalProgress >= seasonRequirements.minTodayActiveMembers ? "已达标" : "推进中",
+        rewardLabel: "商会赛季资格"
+      }
+    ];
+    const completedGoals = dailyGoals.filter((goal) => goal.isCompleted).length;
     const center = {
       group,
       isRegistered,
@@ -2335,6 +2366,18 @@ const createTestRepository = (): GameRepository => {
         statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
         actionLabel: isDailyRewardClaimed ? "今日已领取" : "领取今日奖励"
       },
+      dailyGoals,
+      seasonProgress: {
+        completedGoals,
+        targetGoals: dailyGoals.length,
+        progressPercent: Math.round((completedGoals / dailyGoals.length) * 100),
+        statusLabel: `${completedGoals}/${dailyGoals.length} 目标完成`
+      },
+      nextReward: !isRegistered
+        ? { title: "今日跨服声望", conditionLabel: "报名跨服后领取", rewardLabel: "声望 +30", statusLabel: "报名后领取" }
+        : !isDailyRewardClaimed
+          ? { title: "今日跨服声望", conditionLabel: "完成今日跨服目标", rewardLabel: "声望 +30", statusLabel: "待领取" }
+          : { title: "冲击排名奖励", conditionLabel: "结算跨服榜单", rewardLabel: "称号与邮件奖励", statusLabel: "冲榜中" },
       boards,
       guildSeason: {
         isGuildMember: member !== undefined,
@@ -10709,6 +10752,9 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(center.body.data?.dailyReward.isClaimed, false);
     assert.equal(center.body.data?.dailyReward.canClaim, false);
     assert.equal(center.body.data?.dailyReward.statusLabel, "报名后领取");
+    assert.equal(center.body.data?.dailyGoals.length, 3);
+    assert.equal(center.body.data?.seasonProgress.completedGoals, 0);
+    assert.equal(center.body.data?.nextReward.statusLabel, "报名后领取");
     assert.equal(center.body.data?.battleReport.groupName, "开服成长池");
     assert.equal(center.body.data?.battleReport.personal.rewardStatus, "待结算");
     assert.ok((center.body.data?.battleReport.lines.length ?? 0) >= 3);
@@ -10723,6 +10769,8 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(registered.body.data?.dailyReward.isClaimed, false);
     assert.equal(registered.body.data?.dailyReward.canClaim, true);
     assert.equal(registered.body.data?.dailyReward.statusLabel, "待领取");
+    assert.equal(registered.body.data?.seasonProgress.completedGoals, 1);
+    assert.equal(registered.body.data?.nextReward.statusLabel, "待领取");
 
     const beforeDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
@@ -10739,6 +10787,8 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(dailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
     assert.equal(dailyReward.body.data?.crossServer.dailyReward.canClaim, false);
     assert.equal(dailyReward.body.data?.crossServer.dailyReward.statusLabel, "今日已领取");
+    assert.equal(dailyReward.body.data?.crossServer.seasonProgress.completedGoals, 2);
+    assert.equal(dailyReward.body.data?.crossServer.nextReward.title, "冲击排名奖励");
     const afterDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
     });

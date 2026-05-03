@@ -1977,6 +1977,27 @@ export type CrossServerCenterRecord = {
     statusLabel: string;
     actionLabel: string;
   };
+  dailyGoals: Array<{
+    id: string;
+    title: string;
+    progress: number;
+    target: number;
+    isCompleted: boolean;
+    statusLabel: string;
+    rewardLabel: string;
+  }>;
+  seasonProgress: {
+    completedGoals: number;
+    targetGoals: number;
+    progressPercent: number;
+    statusLabel: string;
+  };
+  nextReward: {
+    title: string;
+    conditionLabel: string;
+    rewardLabel: string;
+    statusLabel: string;
+  };
   boards: LeaderboardBoardRecord[];
   guildSeason: {
     isGuildMember: boolean;
@@ -11632,6 +11653,42 @@ export const createPrismaGameRepository = (
       todayActiveMemberCount >= crossServerGuildSeasonRequirements.minTodayActiveMembers;
     const isRegistered = signup?.status === "active";
     const isDailyRewardClaimed = dailyRewardDelivery !== null;
+    const guildGoalProgress = Math.min(todayActiveMemberCount, crossServerGuildSeasonRequirements.minTodayActiveMembers);
+    const dailyGoals = [
+      {
+        id: "cross-register",
+        title: "报名跨服",
+        progress: isRegistered ? 1 : 0,
+        target: 1,
+        isCompleted: isRegistered,
+        statusLabel: isRegistered ? "已完成" : "待报名",
+        rewardLabel: "参赛资格"
+      },
+      {
+        id: "cross-daily-reward",
+        title: "领取今日奖励",
+        progress: isDailyRewardClaimed ? 1 : 0,
+        target: 1,
+        isCompleted: isDailyRewardClaimed,
+        statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
+        rewardLabel: "声望 +30"
+      },
+      {
+        id: "cross-guild-active",
+        title: "商会活跃达标",
+        progress: guildGoalProgress,
+        target: crossServerGuildSeasonRequirements.minTodayActiveMembers,
+        isCompleted: guildGoalProgress >= crossServerGuildSeasonRequirements.minTodayActiveMembers,
+        statusLabel: guildGoalProgress >= crossServerGuildSeasonRequirements.minTodayActiveMembers ? "已达标" : "推进中",
+        rewardLabel: "商会赛季资格"
+      }
+    ];
+    const completedGoals = dailyGoals.filter((goal) => goal.isCompleted).length;
+    const nextReward = !isRegistered
+      ? { title: "今日跨服声望", conditionLabel: "报名跨服后领取", rewardLabel: "声望 +30", statusLabel: "报名后领取" }
+      : !isDailyRewardClaimed
+        ? { title: "今日跨服声望", conditionLabel: "完成今日跨服目标", rewardLabel: "声望 +30", statusLabel: "待领取" }
+        : { title: "冲击排名奖励", conditionLabel: "结算跨服榜单", rewardLabel: "称号与邮件奖励", statusLabel: "冲榜中" };
 
     const center = {
       group: {
@@ -11648,6 +11705,14 @@ export const createPrismaGameRepository = (
         statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
         actionLabel: isDailyRewardClaimed ? "今日已领取" : "领取今日奖励"
       },
+      dailyGoals,
+      seasonProgress: {
+        completedGoals,
+        targetGoals: dailyGoals.length,
+        progressPercent: Math.round((completedGoals / dailyGoals.length) * 100),
+        statusLabel: `${completedGoals}/${dailyGoals.length} 目标完成`
+      },
+      nextReward,
       boards,
       guildSeason: {
         isGuildMember: guildMember !== null,
