@@ -1999,6 +1999,46 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "POST" && url.pathname === "/cross-server/stage-reward/claim") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const stageId = readOptionalString(body, "stageId");
+      if (serverId === undefined || stageId === null) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and stageId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.claimCrossServerStageReward(account.id, serverId, stageId, readToday(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_NOT_REGISTERED") {
+        sendJson(response, 409, failure("CROSS_SERVER_NOT_REGISTERED", "Register cross-server season before claiming stage reward.", traceId));
+        return;
+      }
+      if (result === "CROSS_STAGE_REWARD_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_STAGE_REWARD_NOT_FOUND", "Cross-server stage reward not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_STAGE_REWARD_NOT_READY") {
+        sendJson(response, 409, failure("CROSS_STAGE_REWARD_NOT_READY", "Cross-server stage reward is not ready.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/cross-server/guild/settle") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));

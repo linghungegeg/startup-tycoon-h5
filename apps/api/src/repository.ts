@@ -1998,6 +1998,16 @@ export type CrossServerCenterRecord = {
     rewardLabel: string;
     statusLabel: string;
   };
+  stageRewards: Array<{
+    id: string;
+    title: string;
+    requiredDailyClaims: number;
+    currentDailyClaims: number;
+    rewardReputation: number;
+    isClaimable: boolean;
+    isClaimed: boolean;
+    statusLabel: string;
+  }>;
   boards: LeaderboardBoardRecord[];
   guildSeason: {
     isGuildMember: boolean;
@@ -2394,6 +2404,7 @@ export type GameRepository = {
   registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   claimCrossServerDailyReward(accountId: string, serverId: string, today: string): Promise<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_NOT_REGISTERED">;
+  claimCrossServerStageReward(accountId: string, serverId: string, stageId: string, today: string): Promise<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_NOT_REGISTERED" | "CROSS_STAGE_REWARD_NOT_FOUND" | "CROSS_STAGE_REWARD_NOT_READY">;
   registerCrossServerGuild(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED" | "GUILD_PERMISSION_DENIED" | "GUILD_SEASON_REQUIREMENT_NOT_MET">;
   settleCrossServerGuildRewards(accountId: string, serverId: string, today: string): Promise<CrossServerGuildSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   listTitles(accountId: string, serverId: string, today: string): Promise<TitleCenterRecord | "PLAYER_NOT_FOUND">;
@@ -4686,6 +4697,12 @@ const crossServerGuildSeasonRequirements = {
   rewardLabel: "前 3 名会长获得声望 180/120/80"
 };
 
+const crossServerStageRewardConfigs = [
+  { id: "cross-stage-3", title: "三日目标", requiredDailyClaims: 3, rewardReputation: 60 },
+  { id: "cross-stage-7", title: "七日目标", requiredDailyClaims: 7, rewardReputation: 120 },
+  { id: "cross-stage-14", title: "十四日目标", requiredDailyClaims: 14, rewardReputation: 240 }
+] as const;
+
 const guildLeaderboardRewards = [120, 80, 50];
 const crossServerGuildSeasonRewards = [180, 120, 80];
 
@@ -6320,11 +6337,13 @@ export const createPrismaGameRepository = (
         profileId: profile.id,
         channel: "reward",
         subject: delivery.mailSubject,
-        body: delivery.mailBody.startsWith("cross-daily-goal:") ? "今日跨服目标已完成。" : delivery.mailBody.includes("cross") ? "跨服奖励已送达邮箱。" : "榜单奖励已送达邮箱。",
+        body: delivery.mailBody.startsWith("cross-daily-goal:") ? "今日跨服目标已完成。" : delivery.mailBody.startsWith("cross-stage-reward:") ? "跨服阶段奖励已完成。" : delivery.mailBody.includes("cross") ? "跨服奖励已送达邮箱。" : "榜单奖励已送达邮箱。",
         rewardSummary: delivery.rewardPlatformCoins > 0
           ? `平台币 +${delivery.rewardPlatformCoins}`
           : delivery.mailBody.startsWith("cross-daily-goal:reputation:")
             ? `声望 +${delivery.mailBody.slice("cross-daily-goal:reputation:".length)}`
+            : delivery.mailBody.startsWith("cross-stage-reward:reputation:")
+              ? `声望 +${delivery.mailBody.slice("cross-stage-reward:reputation:".length)}`
             : delivery.rewardTitleId === null ? "荣誉奖励" : `称号 ${delivery.rewardTitleId}`,
         platformCoins: delivery.rewardPlatformCoins,
         canClaim: delivery.rewardPlatformCoins > 0 && !claimedReferenceIds.has(delivery.id),
@@ -11532,7 +11551,8 @@ export const createPrismaGameRepository = (
     const serverIds = groupServer.group.servers.map((item) => item.serverId);
     const dayStart = new Date(`${today}T00:00:00.000Z`);
     const dayEnd = new Date(`${today}T23:59:59.999Z`);
-    const [profiles, signup, dailyRewardDelivery, guildMember, guildSignups] = await Promise.all([
+    const stageBoardKeys = crossServerStageRewardConfigs.map((reward) => reward.id);
+    const [profiles, signup, rewardDeliveries, guildMember, guildSignups] = await Promise.all([
       prisma.playerProfile.findMany({
         where: { serverId: { in: serverIds } },
         include: {
@@ -11549,13 +11569,10 @@ export const createPrismaGameRepository = (
           }
         }
       }),
-      prisma.leaderboardRewardDelivery.findUnique({
+      prisma.leaderboardRewardDelivery.findMany({
         where: {
-          profileId_boardKey_snapshotDate: {
-            profileId: profile.id,
-            boardKey: "cross-daily-goal",
-            snapshotDate: today
-          }
+          profileId: profile.id,
+          boardKey: { in: ["cross-daily-goal", ...stageBoardKeys] }
         }
       }),
       prisma.guildMember.findUnique({
@@ -11652,6 +11669,9 @@ export const createPrismaGameRepository = (
       memberCount >= crossServerGuildSeasonRequirements.minMembers &&
       todayActiveMemberCount >= crossServerGuildSeasonRequirements.minTodayActiveMembers;
     const isRegistered = signup?.status === "active";
+    const dailyRewardDelivery = rewardDeliveries.find((delivery) => delivery.boardKey === "cross-daily-goal" && delivery.snapshotDate === today) ?? null;
+    const dailyClaimDays = new Set(rewardDeliveries.filter((delivery) => delivery.boardKey === "cross-daily-goal").map((delivery) => delivery.snapshotDate)).size;
+    const claimedStageRewardIds = new Set(rewardDeliveries.filter((delivery) => stageBoardKeys.includes(delivery.boardKey as typeof stageBoardKeys[number])).map((delivery) => delivery.boardKey));
     const isDailyRewardClaimed = dailyRewardDelivery !== null;
     const guildGoalProgress = Math.min(todayActiveMemberCount, crossServerGuildSeasonRequirements.minTodayActiveMembers);
     const dailyGoals = [
@@ -11689,6 +11709,20 @@ export const createPrismaGameRepository = (
       : !isDailyRewardClaimed
         ? { title: "今日跨服声望", conditionLabel: "完成今日跨服目标", rewardLabel: "声望 +30", statusLabel: "待领取" }
         : { title: "冲击排名奖励", conditionLabel: "结算跨服榜单", rewardLabel: "称号与邮件奖励", statusLabel: "冲榜中" };
+    const stageRewards = crossServerStageRewardConfigs.map((reward) => {
+      const isClaimed = claimedStageRewardIds.has(reward.id);
+      const isClaimable = isRegistered && dailyClaimDays >= reward.requiredDailyClaims && !isClaimed;
+      return {
+        id: reward.id,
+        title: reward.title,
+        requiredDailyClaims: reward.requiredDailyClaims,
+        currentDailyClaims: Math.min(dailyClaimDays, reward.requiredDailyClaims),
+        rewardReputation: reward.rewardReputation,
+        isClaimable,
+        isClaimed,
+        statusLabel: isClaimed ? "已领取" : isClaimable ? "可领取" : `${Math.min(dailyClaimDays, reward.requiredDailyClaims)}/${reward.requiredDailyClaims}`
+      };
+    });
 
     const center = {
       group: {
@@ -11713,6 +11747,7 @@ export const createPrismaGameRepository = (
         statusLabel: `${completedGoals}/${dailyGoals.length} 目标完成`
       },
       nextReward,
+      stageRewards,
       boards,
       guildSeason: {
         isGuildMember: guildMember !== null,
@@ -12004,6 +12039,71 @@ export const createPrismaGameRepository = (
           rewardTitleId: null,
           mailSubject: "跨服今日目标奖励",
           mailBody: `cross-daily-goal:reputation:${rewardReputation}`
+        }
+      })
+    ]);
+    const nextCenter = await this.getCrossServerCenter(accountId, serverId, today);
+    if (nextCenter === "PLAYER_NOT_FOUND" || nextCenter === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return nextCenter;
+    }
+    return { deliveredRewards: 1, rewardReputation, crossServer: nextCenter };
+  },
+
+  async claimCrossServerStageReward(accountId, serverId, stageId, today) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+    if (!center.isRegistered) {
+      return "CROSS_SERVER_NOT_REGISTERED";
+    }
+    const stageReward = center.stageRewards.find((reward) => reward.id === stageId) ?? null;
+    if (stageReward === null) {
+      return "CROSS_STAGE_REWARD_NOT_FOUND";
+    }
+    if (!stageReward.isClaimable && !stageReward.isClaimed) {
+      return "CROSS_STAGE_REWARD_NOT_READY";
+    }
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const existing = await prisma.leaderboardRewardDelivery.findUnique({
+      where: {
+        profileId_boardKey_snapshotDate: {
+          profileId: profile.id,
+          boardKey: stageId,
+          snapshotDate: "season"
+        }
+      }
+    });
+    if (existing !== null) {
+      return { deliveredRewards: 0, rewardReputation: 0, crossServer: center };
+    }
+    const rewardReputation = stageReward.rewardReputation;
+    await prisma.$transaction([
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: { reputation: { increment: rewardReputation }, unreadMailCount: { increment: 1 } }
+      }),
+      prisma.leaderboardRewardDelivery.create({
+        data: {
+          profileId: profile.id,
+          serverId,
+          boardKey: stageId,
+          snapshotDate: "season",
+          rank: stageReward.requiredDailyClaims,
+          rewardPlatformCoins: 0,
+          rewardTitleId: null,
+          mailSubject: `${stageReward.title}跨服阶段奖励`,
+          mailBody: `cross-stage-reward:reputation:${rewardReputation}`
         }
       })
     ]);

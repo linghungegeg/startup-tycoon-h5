@@ -2356,6 +2356,28 @@ const createTestRepository = (): GameRepository => {
       }
     ];
     const completedGoals = dailyGoals.filter((goal) => goal.isCompleted).length;
+    const dailyClaimDays = new Set([...leaderboardRewards]
+      .filter((key) => key.startsWith(`${profile.id}:cross-daily-goal:`))
+      .map((key) => key.split(":")[2] ?? "")).size;
+    const stageRewardConfigs = [
+      { id: "cross-stage-3", title: "三日目标", requiredDailyClaims: 3, rewardReputation: 60 },
+      { id: "cross-stage-7", title: "七日目标", requiredDailyClaims: 7, rewardReputation: 120 },
+      { id: "cross-stage-14", title: "十四日目标", requiredDailyClaims: 14, rewardReputation: 240 }
+    ];
+    const stageRewards = stageRewardConfigs.map((reward) => {
+      const isClaimed = leaderboardRewards.has(`${profile.id}:${reward.id}:season`);
+      const isClaimable = isRegistered && dailyClaimDays >= reward.requiredDailyClaims && !isClaimed;
+      return {
+        id: reward.id,
+        title: reward.title,
+        requiredDailyClaims: reward.requiredDailyClaims,
+        currentDailyClaims: Math.min(dailyClaimDays, reward.requiredDailyClaims),
+        rewardReputation: reward.rewardReputation,
+        isClaimable,
+        isClaimed,
+        statusLabel: isClaimed ? "已领取" : isClaimable ? "可领取" : `${Math.min(dailyClaimDays, reward.requiredDailyClaims)}/${reward.requiredDailyClaims}`
+      };
+    });
     const center = {
       group,
       isRegistered,
@@ -2378,6 +2400,7 @@ const createTestRepository = (): GameRepository => {
         : !isDailyRewardClaimed
           ? { title: "今日跨服声望", conditionLabel: "完成今日跨服目标", rewardLabel: "声望 +30", statusLabel: "待领取" }
           : { title: "冲击排名奖励", conditionLabel: "结算跨服榜单", rewardLabel: "称号与邮件奖励", statusLabel: "冲榜中" },
+      stageRewards,
       boards,
       guildSeason: {
         isGuildMember: member !== undefined,
@@ -6048,6 +6071,34 @@ const createTestRepository = (): GameRepository => {
       profile.reputation += 30;
       profile.unreadMailCount += 1;
       return { deliveredRewards: 1, rewardReputation: 30, crossServer: buildCrossServerCenter(profile, today) as CrossServerCenterRecord };
+    },
+    async claimCrossServerStageReward(accountId, serverId, stageId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const center = buildCrossServerCenter(profile, today);
+      if (center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return center;
+      }
+      if (!center.isRegistered) {
+        return "CROSS_SERVER_NOT_REGISTERED";
+      }
+      const stageReward = center.stageRewards.find((reward) => reward.id === stageId);
+      if (stageReward === undefined) {
+        return "CROSS_STAGE_REWARD_NOT_FOUND";
+      }
+      if (!stageReward.isClaimable && !stageReward.isClaimed) {
+        return "CROSS_STAGE_REWARD_NOT_READY";
+      }
+      const key = `${profile.id}:${stageId}:season`;
+      if (leaderboardRewards.has(key)) {
+        return { deliveredRewards: 0, rewardReputation: 0, crossServer: center };
+      }
+      leaderboardRewards.add(key);
+      profile.reputation += stageReward.rewardReputation;
+      profile.unreadMailCount += 1;
+      return { deliveredRewards: 1, rewardReputation: stageReward.rewardReputation, crossServer: buildCrossServerCenter(profile, today) as CrossServerCenterRecord };
     },
     async settleCrossServerGuildRewards(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -10789,6 +10840,7 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(dailyReward.body.data?.crossServer.dailyReward.statusLabel, "今日已领取");
     assert.equal(dailyReward.body.data?.crossServer.seasonProgress.completedGoals, 2);
     assert.equal(dailyReward.body.data?.crossServer.nextReward.title, "冲击排名奖励");
+    assert.equal(dailyReward.body.data?.crossServer.stageRewards[0]?.isClaimable, false);
     const afterDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
     });
@@ -10804,6 +10856,44 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(duplicateDailyReward.body.data?.rewardReputation, 0);
     assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
     assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.canClaim, false);
+
+    await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    const dayThreeDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(dayThreeDailyReward.body.data?.crossServer.stageRewards[0]?.isClaimable, true);
+    assert.equal(dayThreeDailyReward.body.data?.crossServer.stageRewards[0]?.statusLabel, "可领取");
+    const beforeStageReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
+    });
+    const stageReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/stage-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
+      body: JSON.stringify({ serverId: "s1", stageId: "cross-stage-3" })
+    });
+    assert.equal(stageReward.status, 200, JSON.stringify(stageReward.body));
+    assert.equal(stageReward.body.data?.deliveredRewards, 1);
+    assert.equal(stageReward.body.data?.rewardReputation, 60);
+    assert.equal(stageReward.body.data?.crossServer.stageRewards[0]?.isClaimed, true);
+    assert.equal(stageReward.body.data?.crossServer.stageRewards[0]?.statusLabel, "已领取");
+    const afterStageReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
+    });
+    assert.equal(afterStageReward.body.data?.reputation, (beforeStageReward.body.data?.reputation ?? 0) + 60);
+    const duplicateStageReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/stage-reward/claim", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
+      body: JSON.stringify({ serverId: "s1", stageId: "cross-stage-3" })
+    });
+    assert.equal(duplicateStageReward.status, 200);
+    assert.equal(duplicateStageReward.body.data?.deliveredRewards, 0);
+    assert.equal(duplicateStageReward.body.data?.rewardReputation, 0);
 
     const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",

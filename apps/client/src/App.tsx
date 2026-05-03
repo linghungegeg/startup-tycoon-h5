@@ -841,6 +841,16 @@ type CrossServerCenter = {
     rewardLabel: string;
     statusLabel: string;
   };
+  stageRewards: Array<{
+    id: string;
+    title: string;
+    requiredDailyClaims: number;
+    currentDailyClaims: number;
+    rewardReputation: number;
+    isClaimable: boolean;
+    isClaimed: boolean;
+    statusLabel: string;
+  }>;
   boards: LeaderboardCenter["boards"];
   guildSeason: {
     isGuildMember: boolean;
@@ -971,6 +981,12 @@ type MailClaimAttachmentsResult = {
 };
 
 type CrossServerDailyRewardResult = {
+  deliveredRewards: number;
+  rewardReputation: number;
+  crossServer: CrossServerCenter;
+};
+
+type CrossServerStageRewardResult = {
   deliveredRewards: number;
   rewardReputation: number;
   crossServer: CrossServerCenter;
@@ -2880,6 +2896,31 @@ function App() {
       setCrossServerCenter(response.data.crossServer);
       setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
       setPhase14Notice(response.data.deliveredRewards > 0 ? `今日跨服奖励已领取：声望 +${response.data.rewardReputation}` : "今日跨服奖励已领取。");
+      setPhase14Error("");
+      return;
+    }
+
+    setPhase14Error(response.error.message);
+  };
+
+  const claimCrossServerStageReward = async (stageId: string): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    const response = await apiRequest<CrossServerStageRewardResult>(
+      "/cross-server/stage-reward/claim",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, stageId })
+      },
+      account.token
+    );
+
+    if (response.success) {
+      setCrossServerCenter(response.data.crossServer);
+      setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
+      setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服阶段奖励已领取：声望 +${response.data.rewardReputation}` : "跨服阶段奖励已领取。");
       setPhase14Error("");
       return;
     }
@@ -6126,8 +6167,29 @@ function App() {
                   <strong className="text-sm text-white font-black">奖励规则</strong>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">参与奖励</strong><span className="text-[9px] text-slate-500">声望 +30</span></div>
-                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">阶段奖励</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
+                    <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">阶段奖励</strong><span className="text-[9px] text-slate-500">三日目标</span></div>
                     <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">排名奖励</strong><span className="text-[9px] text-slate-500">180/120/80</span></div>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {(crossServerCenter?.stageRewards ?? []).map((reward) => (
+                      <article className="rounded-2xl border border-white/5 bg-slate-950/70 p-3" key={reward.id}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <strong className="block truncate text-xs font-black text-white">{reward.title}</strong>
+                            <span className="text-[9px] text-slate-500">{reward.currentDailyClaims}/{reward.requiredDailyClaims} 今日目标 · 声望 +{reward.rewardReputation}</span>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{reward.statusLabel}</span>
+                        </div>
+                        <button
+                          className="mt-2 w-full rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45"
+                          disabled={!reward.isClaimable}
+                          type="button"
+                          onClick={() => void claimCrossServerStageReward(reward.id)}
+                        >
+                          {reward.isClaimed ? "阶段已领取" : "领取阶段奖励"}
+                        </button>
+                      </article>
+                    ))}
                   </div>
                   <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">奖励通过邮件发放，结算后查看邮件。</p>
                 </section>

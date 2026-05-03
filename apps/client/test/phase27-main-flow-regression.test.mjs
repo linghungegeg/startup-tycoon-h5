@@ -90,6 +90,8 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "完成今日目标",
     "参与奖励",
     "阶段奖励",
+    "三日目标",
+    "领取阶段奖励",
     "排名奖励",
     "赛季",
     "榜单",
@@ -143,6 +145,8 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /dailyReward\.actionLabel/, "cross-server daily reward button should show claimed state");
   assert.match(source, /seasonProgress\.completedGoals/, "cross-server season page should use cross-server progress aggregation");
   assert.match(source, /nextReward\.statusLabel/, "cross-server season page should use cross-server next reward aggregation");
+  assert.match(source, /stageRewards \?\? \[\]\)\.map/, "cross-server rewards page should render real stage rewards");
+  assert.match(source, /\/cross-server\/stage-reward\/claim/, "cross-server should claim real stage rewards");
   assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");
   assert.doesNotMatch(source, /跨服数据读取中，请确认 API 服务已启动。/, "player cross-server empty copy should avoid engineering wording");
   assert.doesNotMatch(source, /不改变跨服结算算法|奖励预览：|长期目标：/, "cross-server player UI should avoid backend-rule or long explanatory copy");
