@@ -237,6 +237,7 @@ model PlayerProfile {
   platformWallet PlayerPlatformWallet?
   platformCoinLedgers PlatformCoinLedger[]
   shopPurchases PlayerShopPurchase[]
+  privilegeDailyClaims PlayerPrivilegeDailyClaim[]
   paymentOrders ExternalPaymentOrder[]
   vipDailyGifts PlayerVipDailyGift[]
   leaderboardRewards LeaderboardRewardDelivery[]
@@ -913,12 +914,36 @@ model PlayerShopPurchase {
   rewardReputation Int
   status      String        @default("delivered") @db.VarChar(16)
   createdAt   DateTime      @default(now())
+  expiresAt   DateTime?
   profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   product     ShopProductConfig @relation(fields: [productId], references: [id], onDelete: Restrict)
+  privilegeDailyClaims PlayerPrivilegeDailyClaim[]
 
   @@unique([profileId, requestId])
   @@index([profileId, productId])
+  @@index([profileId, expiresAt])
   @@index([productId])
+}
+
+model PlayerPrivilegeDailyClaim {
+  id          String        @id @default(uuid()) @db.VarChar(36)
+  profileId   String        @db.VarChar(36)
+  purchaseId  String        @db.VarChar(36)
+  requestId   String        @db.VarChar(64)
+  claimDate   String        @db.VarChar(10)
+  rewardCash  Int
+  rewardActionPower Int
+  rewardReputation Int
+  rewardItemId String?      @db.VarChar(40)
+  rewardItemQuantity Int    @default(0)
+  createdAt   DateTime      @default(now())
+  profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  purchase    PlayerShopPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, purchaseId, claimDate])
+  @@unique([profileId, requestId])
+  @@index([purchaseId])
+  @@index([claimDate])
 }
 
 model ExternalPaymentOrder {

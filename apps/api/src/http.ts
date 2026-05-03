@@ -2876,13 +2876,63 @@ export const createApiServer = (
         return;
       }
 
-      const shop = await repository.listShop(account.id, serverId);
+      const shop = await repository.listShop(account.id, serverId, readToday(request));
       if (shop === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
       }
 
       sendJson(response, 200, success(shop, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/shop/privilege-claims") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readServerId(body);
+        const purchaseId = readString(body, "purchaseId");
+        const requestId = readString(body, "requestId");
+        if (serverId === undefined || purchaseId === "" || requestId.length < 8 || requestId.length > 64) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, purchaseId and requestId are required.", traceId));
+          return;
+        }
+
+        const result = await repository.claimPrivilegeDailyReward(account.id, serverId, purchaseId, requestId, readToday(request));
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+          return;
+        }
+        if (result === "PRIVILEGE_PURCHASE_NOT_FOUND") {
+          sendJson(response, 404, failure("PRIVILEGE_PURCHASE_NOT_FOUND", "Privilege purchase not found.", traceId));
+          return;
+        }
+        if (result === "PRIVILEGE_NOT_DAILY_CLAIMABLE") {
+          sendJson(response, 409, failure("PRIVILEGE_NOT_DAILY_CLAIMABLE", "Privilege is not daily claimable.", traceId));
+          return;
+        }
+        if (result === "PRIVILEGE_EXPIRED") {
+          sendJson(response, 409, failure("PRIVILEGE_EXPIRED", "Privilege has expired.", traceId));
+          return;
+        }
+        if (result === "PRIVILEGE_DAILY_ALREADY_CLAIMED") {
+          sendJson(response, 409, failure("PRIVILEGE_DAILY_ALREADY_CLAIMED", "Privilege daily reward already claimed.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
       return;
     }
 

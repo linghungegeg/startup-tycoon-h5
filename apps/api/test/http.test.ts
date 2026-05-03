@@ -60,6 +60,8 @@ import type {
   RandomTaskCenterRecord,
   ServerRecord,
   ShopCenterRecord,
+  ShopPurchaseRecord,
+  PrivilegeDailyClaimRecord,
   TaskRecord,
   TitleCenterRecord,
   VipCenterRecord
@@ -1911,6 +1913,20 @@ const createTestRepository = (): GameRepository => {
       summary: "绑定 D1-D7 主线节点，承接首周留存转化。"
     },
     {
+      id: "growth-fund-seed",
+      name: "种子期成长基金",
+      category: "growth_fund",
+      pricePlatformCoins: 1980,
+      rewardCash: 520000,
+      rewardActionPower: 120,
+      rewardReputation: 900,
+      rewardItemId: "finance-advisor-card",
+      rewardItemQuantity: 2,
+      durationDays: 0,
+      purchaseLimit: 1,
+      summary: "绑定公司等级、估值、产品和融资节点。"
+    },
+    {
       id: "headhunter-ticket",
       name: "猎头招募券",
       category: "recruit_ticket",
@@ -2297,7 +2313,20 @@ const createTestRepository = (): GameRepository => {
       summary: "最高身份与长期荣誉，只提供便利、展示和轻量效率。"
     }
   ];
-  const shopPurchases = new Map<string, ShopCenterRecord["purchases"][number] & { profileId: string }>();
+  type TestShopPurchase = {
+    id: string;
+    profileId: string;
+    productId: string;
+    requestId: string;
+    pricePlatformCoins: number;
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    createdAt: string;
+    expiresAt: string | null;
+  };
+  const shopPurchases = new Map<string, TestShopPurchase>();
+  const privilegeDailyClaims = new Map<string, { id: string; profileId: string; purchaseId: string; requestId: string; claimDate: string; rewardCash: number; rewardActionPower: number; rewardReputation: number; rewardItem: { id: string; name: string; quantity: number } | null; createdAt: string }>();
   const vipDailyGifts = new Set<string>();
   const titleConfigs = [
     { id: "startup-founder", name: "初创老板", category: "growth", source: "achievement", bonusLabel: "身份展示", durationDays: 0 },
@@ -2732,12 +2761,38 @@ const createTestRepository = (): GameRepository => {
       lockedReason: limitReached ? "购买次数已达上限" : !hasEnoughCoins ? "平台币不足" : null
     };
   };
-  const toShopCenter = (profile: PlayerProfileRecord): ShopCenterRecord => ({
+  const isPrivilegeProduct = (category: string) => category === "weekly_card" || category === "monthly_card" || category === "growth_fund";
+  const isDailyClaimPrivilege = (product: (typeof shopProducts)[number]) => isPrivilegeProduct(product.category) && product.durationDays > 0;
+  const toShopPurchase = (
+    purchase: TestShopPurchase,
+    today: string
+  ): ShopCenterRecord["purchases"][number] => {
+    const product = shopProducts.find((item) => item.id === purchase.productId);
+    const isPrivilege = product !== undefined && isPrivilegeProduct(product.category);
+    const isActive = purchase.expiresAt === null || purchase.expiresAt.slice(0, 10) >= today;
+    const isDailyClaimableProduct = product !== undefined && isDailyClaimPrivilege(product);
+    const isClaimedToday = [...privilegeDailyClaims.values()].some((claim) => claim.purchaseId === purchase.id && claim.claimDate === today);
+    const isClaimableToday = isDailyClaimableProduct && isActive && !isClaimedToday;
+    const { profileId: _profileId, ...basePurchase } = purchase;
+    return {
+      ...basePurchase,
+      isPrivilege,
+      isActive,
+      isClaimableToday,
+      isClaimedToday,
+      claimStatus: !isPrivilege ? "not_privilege" : !isDailyClaimableProduct ? "instant" : !isActive ? "expired" : isClaimedToday ? "claimed" : "claimable",
+      rewardCash: product?.rewardCash ?? purchase.rewardCash,
+      rewardActionPower: product?.rewardActionPower ?? purchase.rewardActionPower,
+      rewardReputation: product?.rewardReputation ?? purchase.rewardReputation,
+      rewardItem: product?.rewardItemId ? { id: product.rewardItemId, name: product.rewardItemId, quantity: product.rewardItemQuantity ?? 0 } : null
+    };
+  };
+  const toShopCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): ShopCenterRecord => ({
     wallet: ensureWallet(profile),
     products: shopProducts.map((product) => toShopProduct(profile, product)),
     purchases: [...shopPurchases.values()]
       .filter((purchase) => purchase.profileId === profile.id)
-      .map(({ profileId: _profileId, ...purchase }) => purchase)
+      .map((purchase) => toShopPurchase(purchase, today))
   });
   const toVipCenter = (profile: PlayerProfileRecord, today: string): VipCenterRecord => {
     const wallet = ensureWallet(profile);
@@ -6381,9 +6436,9 @@ const createTestRepository = (): GameRepository => {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       return profile === undefined ? "PLAYER_NOT_FOUND" : ensureWallet(profile);
     },
-    async listShop(accountId, serverId) {
+    async listShop(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
-      return profile === undefined ? "PLAYER_NOT_FOUND" : toShopCenter(profile);
+      return profile === undefined ? "PLAYER_NOT_FOUND" : toShopCenter(profile, today);
     },
     async listInventory(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -6464,11 +6519,10 @@ const createTestRepository = (): GameRepository => {
           wallet: ensureWallet(profile),
           product: toShopProduct(profile, product),
           purchase: {
-            id: existing.id,
-            productId: existing.productId,
-            requestId: existing.requestId,
-            pricePlatformCoins: existing.pricePlatformCoins,
-            createdAt: existing.createdAt
+            ...toShopPurchase(existing, today),
+            isClaimableToday: false,
+            isClaimedToday: isDailyClaimPrivilege(product),
+            claimStatus: isDailyClaimPrivilege(product) ? "claimed" : toShopPurchase(existing, today).claimStatus
           },
           profile,
           isDuplicate: true,
@@ -6495,33 +6549,81 @@ const createTestRepository = (): GameRepository => {
       wallet.totalSpent += product.pricePlatformCoins;
       wallet.vipExperience += product.pricePlatformCoins;
       profile.platformCoins = wallet.balance;
-      profile.cash += product.rewardCash;
-      profile.actionPower += product.rewardActionPower;
-      profile.reputation += product.rewardReputation;
-      grantInventoryItem(profile.id, product.rewardItemId ?? null, product.rewardItemQuantity ?? 0, "shop_purchase", `购买商品：${product.name}`);
+      const isDailyPrivilege = isDailyClaimPrivilege(product);
+      if (!isDailyPrivilege) {
+        profile.cash += product.rewardCash;
+        profile.actionPower += product.rewardActionPower;
+        profile.reputation += product.rewardReputation;
+        grantInventoryItem(profile.id, product.rewardItemId ?? null, product.rewardItemQuantity ?? 0, "shop_purchase", `购买商品：${product.name}`);
+      }
       const purchase = {
         id: randomUUID(),
         profileId: profile.id,
         productId: product.id,
         requestId,
         pricePlatformCoins: product.pricePlatformCoins,
-        createdAt: product.category === "daily_pack" ? `${today}T00:00:00.000Z` : new Date().toISOString()
+        rewardCash: product.rewardCash,
+        rewardActionPower: product.rewardActionPower,
+        rewardReputation: product.rewardReputation,
+        createdAt: product.category === "daily_pack" ? `${today}T00:00:00.000Z` : new Date().toISOString(),
+        expiresAt: product.durationDays > 0 ? new Date(Date.now() + product.durationDays * 24 * 60 * 60 * 1000).toISOString() : null
       };
       shopPurchases.set(purchase.id, purchase);
       addLedger(profile.id, -product.pricePlatformCoins, wallet.balance, "shop_purchase", purchase.id, `购买商品：${product.name}`);
       return {
         wallet,
         product: toShopProduct(profile, product),
-        purchase: {
-          id: purchase.id,
-          productId: purchase.productId,
-          requestId: purchase.requestId,
-          pricePlatformCoins: purchase.pricePlatformCoins,
-          createdAt: purchase.createdAt
-        },
+        purchase: toShopPurchase(purchase, today),
         profile,
         isDuplicate: false,
-        result: `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+        result: isDailyPrivilege
+          ? `${product.name} 已开通，今日权益可手动领取。`
+          : `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+      };
+    },
+    async claimPrivilegeDailyReward(accountId, serverId, purchaseId, requestId, today) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const purchase = [...shopPurchases.values()].find((item) => item.id === purchaseId && item.profileId === profile.id);
+      if (purchase === undefined) {
+        return "PRIVILEGE_PURCHASE_NOT_FOUND";
+      }
+      const product = shopProducts.find((item) => item.id === purchase.productId);
+      if (product === undefined || !isDailyClaimPrivilege(product)) {
+        return "PRIVILEGE_NOT_DAILY_CLAIMABLE";
+      }
+      if (purchase.expiresAt !== null && purchase.expiresAt.slice(0, 10) < today) {
+        return "PRIVILEGE_EXPIRED";
+      }
+      const requestClaim = [...privilegeDailyClaims.values()].find((claim) => claim.profileId === profile.id && claim.requestId === requestId);
+      const dailyClaim = [...privilegeDailyClaims.values()].find((claim) => claim.profileId === profile.id && claim.purchaseId === purchaseId && claim.claimDate === today);
+      if (requestClaim !== undefined || dailyClaim !== undefined) {
+        return "PRIVILEGE_DAILY_ALREADY_CLAIMED";
+      }
+      profile.cash += product.rewardCash;
+      profile.actionPower += product.rewardActionPower;
+      profile.reputation += product.rewardReputation;
+      grantInventoryItem(profile.id, product.rewardItemId ?? null, product.rewardItemQuantity ?? 0, "shop_purchase", `领取特权每日权益：${product.name}`);
+      const claim = {
+        id: randomUUID(),
+        profileId: profile.id,
+        purchaseId,
+        requestId,
+        claimDate: today,
+        rewardCash: product.rewardCash,
+        rewardActionPower: product.rewardActionPower,
+        rewardReputation: product.rewardReputation,
+        rewardItem: product.rewardItemId ? { id: product.rewardItemId, name: product.rewardItemId, quantity: product.rewardItemQuantity ?? 0 } : null,
+        createdAt: new Date().toISOString()
+      };
+      privilegeDailyClaims.set(claim.id, claim);
+      return {
+        shopCenter: toShopCenter(profile, today),
+        profile,
+        claim,
+        result: `${product.name} 今日权益已领取。`
       };
     },
     async adjustPlatformCoins(adminUserId, profileId, changeAmount, source, reason) {
@@ -10634,8 +10736,9 @@ test("phase 19 exposes season activity and scenario configs to admin", async () 
 test("lists wallet and buys shop products with idempotent platform coin deduction", async () => {
   await withServer(async (baseUrl) => {
     const { token, profile } = await createPlayerSession(baseUrl, "shopbuyer");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" };
     const shop = await requestJson<ShopCenterRecord>(baseUrl, "/shop?serverId=s1", {
-      headers: { authorization: `Bearer ${token}` }
+      headers
     });
     assert.equal(shop.status, 200);
     assert.equal(shop.body.data?.wallet.balance, profile.platformCoins);
@@ -10644,7 +10747,7 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
     const requestId = randomUUID();
     const bought = await requestJson(baseUrl, "/shop/purchase", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId })
     });
     assert.equal(bought.status, 201);
@@ -10652,17 +10755,23 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
     const boughtData = bought.body.data as {
       wallet: PlatformWalletRecord;
       profile: PlayerProfileRecord;
+      purchase: ShopCenterRecord["purchases"][number];
       isDuplicate: boolean;
     };
     assert.equal(boughtData.isDuplicate, false);
     assert.equal(boughtData.wallet.balance, profile.platformCoins - 1280);
     assert.equal(boughtData.wallet.vipExperience, 1280);
     assert.equal(boughtData.profile.platformCoins, boughtData.wallet.balance);
+    assert.equal(boughtData.profile.cash, profile.cash);
+    assert.equal(boughtData.profile.actionPower, profile.actionPower);
+    assert.equal(boughtData.profile.reputation, profile.reputation);
     assert.equal(boughtData.wallet.ledgers[0]?.source, "shop_purchase");
+    assert.match(boughtData.purchase.expiresAt ?? "", /^\d{4}-\d{2}-\d{2}T/, "duration privileges should return an expiry timestamp");
+    assert.equal(boughtData.purchase.isClaimableToday, true);
 
     const duplicate = await requestJson(baseUrl, "/shop/purchase", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId })
     });
     assert.equal(duplicate.status, 200);
@@ -10673,9 +10782,47 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
     assert.equal(duplicateData.isDuplicate, true);
     assert.equal(duplicateData.wallet.balance, boughtData.wallet.balance);
 
+    const afterBuyShop = await requestJson<ShopCenterRecord>(baseUrl, "/shop?serverId=s1", {
+      headers
+    });
+    assert.equal(afterBuyShop.status, 200);
+    const monthlyPurchase = afterBuyShop.body.data?.purchases.find((purchase) => purchase.productId === "monthly-card-basic");
+    assert.match(
+      monthlyPurchase?.expiresAt ?? "",
+      /^\d{4}-\d{2}-\d{2}T/,
+      "shop center should expose privilege expiry for client status"
+    );
+    assert.equal(monthlyPurchase?.claimStatus, "claimable");
+
+    const claimed = await requestJson<PrivilegeDailyClaimRecord>(baseUrl, "/shop/privilege-claims", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", purchaseId: monthlyPurchase?.id, requestId: "monthly-claim-20260501" })
+    });
+    assert.equal(claimed.status, 200, JSON.stringify(claimed.body));
+    assert.equal(claimed.body.data?.profile.cash, profile.cash + 260000);
+    assert.equal(claimed.body.data?.profile.actionPower, profile.actionPower + 80);
+    assert.equal(claimed.body.data?.profile.reputation, profile.reputation + 500);
+    assert.equal(claimed.body.data?.shopCenter.purchases.find((purchase) => purchase.id === monthlyPurchase?.id)?.claimStatus, "claimed");
+
+    const repeatedClaim = await requestJson(baseUrl, "/shop/privilege-claims", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", purchaseId: monthlyPurchase?.id, requestId: "monthly-claim-20260501-repeat" })
+    });
+    assert.equal(repeatedClaim.status, 409);
+    assert.equal(repeatedClaim.body.error?.code, "PRIVILEGE_DAILY_ALREADY_CLAIMED");
+
+    const nextDayClaim = await requestJson<PrivilegeDailyClaimRecord>(baseUrl, "/shop/privilege-claims", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" },
+      body: JSON.stringify({ serverId: "s1", purchaseId: monthlyPurchase?.id, requestId: "monthly-claim-20260502" })
+    });
+    assert.equal(nextDayClaim.status, 200, JSON.stringify(nextDayClaim.body));
+
     const limited = await requestJson(baseUrl, "/shop/purchase", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1", productId: "monthly-card-basic", requestId: randomUUID() })
     });
     assert.equal(limited.status, 409);
@@ -10683,30 +10830,38 @@ test("lists wallet and buys shop products with idempotent platform coin deductio
 
     const weekly = await requestJson(baseUrl, "/shop/purchase", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1", productId: "weekly-operation-card", requestId: "weekly-card-main-001" })
     });
     assert.equal(weekly.status, 201, JSON.stringify(weekly.body));
 
     const growthFund = await requestJson(baseUrl, "/shop/purchase", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1", productId: "growth-fund-weekly", requestId: "growth-fund-main-001" })
     });
     assert.equal(growthFund.status, 201, JSON.stringify(growthFund.body));
 
+    const seedFund = await requestJson<ShopPurchaseRecord>(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", productId: "growth-fund-seed", requestId: "growth-fund-seed-001" })
+    });
+    assert.equal(seedFund.status, 201, JSON.stringify(seedFund.body));
+    assert.equal(seedFund.body.data?.purchase.claimStatus, "instant");
+
     const vip = await requestJson<VipCenterRecord>(baseUrl, "/vip?serverId=s1", {
-      headers: { authorization: `Bearer ${token}` }
+      headers
     });
     assert.equal(vip.status, 200);
 
     const inventory = await requestJson<InventoryCenterRecord>(baseUrl, "/inventory?serverId=s1", {
-      headers: { authorization: `Bearer ${token}` }
+      headers
     });
     assert.equal(inventory.status, 200);
 
     const tasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", {
-      headers: { authorization: `Bearer ${token}` }
+      headers
     });
     assert.equal(tasks.status, 200);
     const claimableTasks = new Set((tasks.body.data ?? []).filter((task) => task.isClaimable).map((task) => task.id));

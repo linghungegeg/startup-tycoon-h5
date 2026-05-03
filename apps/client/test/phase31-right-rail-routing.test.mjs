@@ -112,6 +112,17 @@ test("phase 31 commerce privilege and pass drop entrance navigation copy", () =>
   assert.doesNotMatch(shopSource, /每日轮换|精选礼包/, "shop should not show unsupported rotation or fake featured pack sections");
   assert.doesNotMatch(shopSource, /cdn\.tailwindcss|unpkg\.com|fonts\.googleapis/, "native shop should not depend on external design CDNs");
   assert.match(shopSource, /shop-purchase-popup/, "shop purchase feedback should render as an overlay popup");
+  assert.match(privilegeSource, /我的特权/, "privilege page should summarize owned privilege status");
+  assert.match(privilegeSource, /已开通权益/, "privilege page should show active privilege benefits instead of purchase history");
+  assert.match(privilegeSource, /activePrivilegePurchases/, "privilege page should only treat unexpired purchases as active benefits");
+  assert.match(privilegeSource, /formatPrivilegeExpiresAt/, "privilege page should expose expiry status for duration products");
+  assert.match(privilegeSource, /privilegeBoostLabel/, "privilege page should expose the current business boost state");
+  assert.match(privilegeSource, /getPrivilegeProductRewardChips/, "privilege cards should show concrete rewards and VIP experience");
+  assert.match(privilegeSource, /领取今日权益/, "privilege page should expose daily manual claim action");
+  assert.match(privilegeSource, /今日未领将作废/, "privilege page should explain same-day expiry for manual claims");
+  assert.match(source, /claimablePrivilegePurchases/, "privilege red dot should be driven by claimable daily rewards");
+  assert.match(source, /item === "特权"/, "right rail should show privilege attention when rewards are claimable");
+  assert.doesNotMatch(privilegeSource, /特权购买记录/, "privilege should not show purchase history in the player-facing page");
   assert.match(privilegeSource, /shop-purchase-popup/, "privilege purchase feedback should render as an overlay popup");
   assert.match(shopPurchasePopupStyle, /position:\s*absolute/, "purchase popup should overlay the current native page");
   assert.match(shopPurchasePopupStyle, /top:\s*42%/, "purchase popup should match the left-side native action toast position");

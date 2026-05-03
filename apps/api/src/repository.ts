@@ -705,6 +705,16 @@ export type ShopCenterRecord = {
     requestId: string;
     pricePlatformCoins: number;
     createdAt: string;
+    expiresAt: string | null;
+    isPrivilege: boolean;
+    isActive: boolean;
+    isClaimableToday: boolean;
+    isClaimedToday: boolean;
+    claimStatus: "not_privilege" | "claimable" | "claimed" | "expired" | "instant";
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    rewardItem: ItemRewardRecord | null;
   }>;
 };
 
@@ -2330,6 +2340,22 @@ export type GuildActionRecord = {
   result: string;
 };
 
+export type PrivilegeDailyClaimRecord = {
+  shopCenter: ShopCenterRecord;
+  profile: PlayerProfileRecord;
+  claim: {
+    id: string;
+    purchaseId: string;
+    claimDate: string;
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    rewardItem: ItemRewardRecord | null;
+    createdAt: string;
+  };
+  result: string;
+};
+
 export type GuildJoinActionRecord = GuildActionRecord & {
   applicationStatus: "approved" | "pending";
 };
@@ -2413,8 +2439,9 @@ export type GameRepository = {
   getWallet(accountId: string, serverId: string): Promise<PlatformWalletRecord | "PLAYER_NOT_FOUND">;
   listInventory(accountId: string, serverId: string): Promise<InventoryCenterRecord | "PLAYER_NOT_FOUND">;
   useInventoryItem(accountId: string, serverId: string, itemId: string): Promise<InventoryUseRecord | "PLAYER_NOT_FOUND" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
-  listShop(accountId: string, serverId: string): Promise<ShopCenterRecord | "PLAYER_NOT_FOUND">;
+  listShop(accountId: string, serverId: string, today: string): Promise<ShopCenterRecord | "PLAYER_NOT_FOUND">;
   purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string, today: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
+  claimPrivilegeDailyReward(accountId: string, serverId: string, purchaseId: string, requestId: string, today: string): Promise<PrivilegeDailyClaimRecord | "PLAYER_NOT_FOUND" | "PRIVILEGE_PURCHASE_NOT_FOUND" | "PRIVILEGE_NOT_DAILY_CLAIMABLE" | "PRIVILEGE_EXPIRED" | "PRIVILEGE_DAILY_ALREADY_CLAIMED">;
   adjustPlatformCoins(adminUserId: string, profileId: string, changeAmount: number, source: PlatformCoinLedgerSource, reason: string): Promise<AdminWalletAdjustmentRecord | "PLAYER_NOT_FOUND" | "INVALID_PLATFORM_COIN_SOURCE" | "INSUFFICIENT_PLATFORM_COINS">;
   reserveExternalPayment(accountId: string, serverId: string, productId: string | null, amountCents: number, platformCoins: number): Promise<ExternalPaymentReservationRecord | "PLAYER_NOT_FOUND">;
   getVipCenter(accountId: string, serverId: string, today: string): Promise<VipCenterRecord | "PLAYER_NOT_FOUND">;
@@ -3552,12 +3579,84 @@ const toShopProductRecord = (
   };
 };
 
+const isActiveShopPurchase = (expiresAt: Date | null | undefined, now: Date): boolean =>
+  expiresAt === null || expiresAt === undefined || expiresAt >= now;
+const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+const toServerDate = (today: string): Date => new Date(`${today}T00:00:00.000Z`);
+const isPrivilegeProductCategory = (category: string): boolean =>
+  category === "weekly_card" || category === "monthly_card" || category === "growth_fund";
+const resolveShopPurchaseExpiresAt = (
+  createdAt: Date,
+  durationDays: number,
+  expiresAt: Date | null | undefined
+): Date | null => expiresAt ?? (durationDays > 0 ? addDays(createdAt, durationDays) : null);
+const isDailyClaimPrivilegeProduct = (product: { category: string; durationDays: number }): boolean =>
+  isPrivilegeProductCategory(product.category) && product.durationDays > 0;
+const toShopPurchaseRecord = (
+  purchase: {
+    id: string;
+    productId: string;
+    requestId: string;
+    pricePlatformCoins: number;
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    createdAt: Date;
+    expiresAt: Date | null;
+  },
+  product: {
+    category: string;
+    durationDays: number;
+    rewardCash: number;
+    rewardActionPower: number;
+    rewardReputation: number;
+    rewardItemQuantity: number;
+    rewardItem?: { id: string; name: string } | null;
+  },
+  today = new Date().toISOString().slice(0, 10),
+  state: { isClaimableToday?: boolean; isClaimedToday?: boolean } = {}
+): ShopCenterRecord["purchases"][number] => {
+  const expiresAt = resolveShopPurchaseExpiresAt(purchase.createdAt, product.durationDays, purchase.expiresAt);
+  const isPrivilege = isPrivilegeProductCategory(product.category);
+  const isDailyClaimableProduct = isDailyClaimPrivilegeProduct(product);
+  const isActive = isActiveShopPurchase(expiresAt, toServerDate(today));
+  const isClaimedToday = state.isClaimedToday ?? false;
+  const isClaimableToday = state.isClaimableToday ?? (isDailyClaimableProduct && isActive && !isClaimedToday);
+  return {
+    id: purchase.id,
+    productId: purchase.productId,
+    requestId: purchase.requestId,
+    pricePlatformCoins: purchase.pricePlatformCoins,
+    createdAt: purchase.createdAt.toISOString(),
+    expiresAt: expiresAt?.toISOString() ?? null,
+    isPrivilege,
+    isActive,
+    isClaimableToday,
+    isClaimedToday,
+    claimStatus: !isPrivilege
+      ? "not_privilege"
+      : !isDailyClaimableProduct
+        ? "instant"
+        : !isActive
+          ? "expired"
+          : isClaimedToday
+            ? "claimed"
+            : "claimable",
+    rewardCash: product.rewardCash,
+    rewardActionPower: product.rewardActionPower,
+    rewardReputation: product.rewardReputation,
+    rewardItem: toItemRewardRecord(product.rewardItem, product.rewardItemQuantity)
+  };
+};
+
 const toShopCenterRecord = async (
   prisma: PrismaClient,
-  profile: PlayerProfileRecord
+  profile: PlayerProfileRecord,
+  today: string
 ): Promise<ShopCenterRecord> => {
   const wallet = await toPlatformWalletRecord(prisma, profile);
-  const [products, purchases] = await Promise.all([
+  const now = toServerDate(today);
+  const [products, purchases, dailyClaims] = await Promise.all([
     prisma.shopProductConfig.findMany({
       where: { isActive: true },
       include: { rewardItem: true },
@@ -3566,9 +3665,19 @@ const toShopCenterRecord = async (
     prisma.playerShopPurchase.findMany({
       where: { profileId: profile.id },
       orderBy: [{ createdAt: "desc" }]
+    }),
+    prisma.playerPrivilegeDailyClaim.findMany({
+      where: { profileId: profile.id, claimDate: today }
     })
   ]);
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  const claimedPurchaseIds = new Set(dailyClaims.map((claim) => claim.purchaseId));
   const purchaseCounts = purchases.reduce<Map<string, number>>((counts, purchase) => {
+    const product = productsById.get(purchase.productId);
+    const expiresAt = resolveShopPurchaseExpiresAt(purchase.createdAt, product?.durationDays ?? 0, purchase.expiresAt);
+    if (product?.durationDays !== undefined && product.durationDays > 0 && !isActiveShopPurchase(expiresAt, now)) {
+      return counts;
+    }
     counts.set(purchase.productId, (counts.get(purchase.productId) ?? 0) + 1);
     return counts;
   }, new Map());
@@ -3576,13 +3685,11 @@ const toShopCenterRecord = async (
   return {
     wallet,
     products: products.map((product) => toShopProductRecord(product, wallet.balance, purchaseCounts.get(product.id) ?? 0)),
-    purchases: purchases.map((purchase) => ({
-      id: purchase.id,
-      productId: purchase.productId,
-      requestId: purchase.requestId,
-      pricePlatformCoins: purchase.pricePlatformCoins,
-      createdAt: purchase.createdAt.toISOString()
-    }))
+    purchases: purchases.map((purchase) => {
+      const product = productsById.get(purchase.productId);
+      const isClaimedToday = claimedPurchaseIds.has(purchase.id);
+      return toShopPurchaseRecord(purchase, product ?? { category: "", durationDays: 0, rewardCash: purchase.rewardCash, rewardActionPower: purchase.rewardActionPower, rewardReputation: purchase.rewardReputation, rewardItemQuantity: 0, rewardItem: null }, today, { isClaimedToday });
+    })
   };
 };
 
@@ -5418,8 +5525,6 @@ const debtRatioBand = (totalDebt: number, valuation: number): string => {
   return "90%+";
 };
 
-const addDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
-
 const isExpiredAt = (expiresAt: Date | null | undefined, today: string): boolean =>
   expiresAt !== null && expiresAt !== undefined && expiresAt.toISOString().slice(0, 10) < today;
 
@@ -5943,7 +6048,8 @@ const grantCompanyExperience = async (
     return toProfileRecord(profile);
   }
 
-  const activePrivileges = await tx.playerShopPurchase.findMany({
+  const now = new Date();
+  const privilegePurchases = await tx.playerShopPurchase.findMany({
     where: {
       profileId,
       product: {
@@ -5953,6 +6059,9 @@ const grantCompanyExperience = async (
     include: { product: true },
     orderBy: { createdAt: "desc" }
   });
+  const activePrivileges = privilegePurchases.filter((purchase) =>
+    isActiveShopPurchase(resolveShopPurchaseExpiresAt(purchase.createdAt, purchase.product.durationDays, purchase.expiresAt), now)
+  );
   const hasGrowthFund = activePrivileges.some((purchase) => purchase.product.category === "growth_fund");
   const hasCard = activePrivileges.some((purchase) => purchase.product.category === "weekly_card" || purchase.product.category === "monthly_card");
   const multiplierBasisPoints = hasGrowthFund ? 20000 : hasCard ? 15000 : 10000;
@@ -9772,7 +9881,7 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async listShop(accountId, serverId) {
+  async listShop(accountId, serverId, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -9785,7 +9894,7 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
 
-    return toShopCenterRecord(prisma, toProfileRecord(profile));
+    return toShopCenterRecord(prisma, toProfileRecord(profile), today);
   },
 
   async purchaseShopProduct(accountId, serverId, productId, requestId, today) {
@@ -9816,13 +9925,10 @@ export const createPrismaGameRepository = (
       return {
         wallet,
         product: toShopProductRecord(existingPurchase.product, wallet.balance, 1),
-        purchase: {
-          id: existingPurchase.id,
-          productId: existingPurchase.productId,
-          requestId: existingPurchase.requestId,
-          pricePlatformCoins: existingPurchase.pricePlatformCoins,
-          createdAt: existingPurchase.createdAt.toISOString()
-        },
+        purchase: toShopPurchaseRecord(existingPurchase, existingPurchase.product, today, {
+          isClaimableToday: false,
+          isClaimedToday: isDailyClaimPrivilegeProduct(existingPurchase.product)
+        }),
         profile: toProfileRecord(currentProfile),
         isDuplicate: true,
         result: "重复请求已识别，未重复扣除平台币。"
@@ -9833,24 +9939,28 @@ export const createPrismaGameRepository = (
     if (product === null || !product.isActive) {
       return "SHOP_PRODUCT_NOT_FOUND";
     }
-    const purchaseLimitWindow =
-      product.category === "daily_pack"
-        ? {
-            gte: new Date(`${today}T00:00:00.000Z`),
-            lt: new Date(`${today}T23:59:59.999Z`)
+    const now = toServerDate(today);
+    const purchaseCount = product.category === "daily_pack"
+      ? await prisma.playerShopPurchase.count({
+          where: {
+            profileId: profile.id,
+            productId,
+            createdAt: {
+              gte: new Date(`${today}T00:00:00.000Z`),
+              lt: new Date(`${today}T23:59:59.999Z`)
+            }
           }
-        : undefined;
-    const purchaseCount = await prisma.playerShopPurchase.count({
-      where: {
-        profileId: profile.id,
-        productId,
-        createdAt: purchaseLimitWindow
-      }
-    });
+        })
+      : product.durationDays > 0
+        ? (await prisma.playerShopPurchase.findMany({ where: { profileId: profile.id, productId }, select: { createdAt: true, expiresAt: true } }))
+            .filter((purchase) => isActiveShopPurchase(resolveShopPurchaseExpiresAt(purchase.createdAt, product.durationDays, purchase.expiresAt), now))
+            .length
+        : await prisma.playerShopPurchase.count({ where: { profileId: profile.id, productId } });
     if (product.purchaseLimit > 0 && purchaseCount >= product.purchaseLimit) {
       return "PURCHASE_LIMIT_REACHED";
     }
 
+    const isDailyPrivilege = isDailyClaimPrivilegeProduct(product);
     const result = await prisma.$transaction(async (tx) => {
       const wallet = await tx.playerPlatformWallet.upsert({
         where: { profileId: profile.id },
@@ -9884,18 +9994,21 @@ export const createPrismaGameRepository = (
           rewardCash: product.rewardCash,
           rewardActionPower: product.rewardActionPower,
           rewardReputation: product.rewardReputation,
+          expiresAt: product.durationDays > 0 ? addDays(now, product.durationDays) : null,
           createdAt: product.category === "daily_pack" ? new Date(`${today}T00:00:00.000Z`) : undefined
         }
       });
-      await grantInventoryItem(
-        tx,
-        profile.id,
-        product.rewardItemId,
-        product.rewardItemQuantity,
-        "shop_purchase",
-        purchase.id,
-        `购买商品：${product.name}`
-      );
+      if (!isDailyPrivilege) {
+        await grantInventoryItem(
+          tx,
+          profile.id,
+          product.rewardItemId,
+          product.rewardItemQuantity,
+          "shop_purchase",
+          purchase.id,
+          `购买商品：${product.name}`
+        );
+      }
       await tx.platformCoinLedger.create({
         data: {
           profileId: profile.id,
@@ -9911,9 +10024,9 @@ export const createPrismaGameRepository = (
         where: { id: profile.id },
         data: {
           platformCoins: nextBalance,
-          cash: { increment: product.rewardCash },
-          actionPower: { increment: product.rewardActionPower },
-          reputation: { increment: product.rewardReputation }
+          cash: isDailyPrivilege ? undefined : { increment: product.rewardCash },
+          actionPower: isDailyPrivilege ? undefined : { increment: product.rewardActionPower },
+          reputation: isDailyPrivilege ? undefined : { increment: product.rewardReputation }
         }
       });
 
@@ -9933,16 +10046,116 @@ export const createPrismaGameRepository = (
     return {
       wallet: toWalletRecord(result.wallet, ledgers),
       product: toShopProductRecord(product, result.wallet.balance, nextPurchaseCount),
-      purchase: {
-        id: result.purchase.id,
-        productId: result.purchase.productId,
-        requestId: result.purchase.requestId,
-        pricePlatformCoins: result.purchase.pricePlatformCoins,
-        createdAt: result.purchase.createdAt.toISOString()
-      },
+      purchase: toShopPurchaseRecord(result.purchase, product, today, { isClaimableToday: isDailyPrivilege }),
       profile: toProfileRecord(result.profile),
       isDuplicate: false,
-      result: `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+      result: isDailyPrivilege
+        ? `${product.name} 已开通，今日权益可手动领取。`
+        : `${product.name} 已发货，平台币扣减和奖励发放已记录流水。`
+    };
+  },
+
+  async claimPrivilegeDailyReward(accountId, serverId, purchaseId, requestId, today) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const purchase = await prisma.playerShopPurchase.findFirst({
+      where: { id: purchaseId, profileId: profile.id },
+      include: { product: { include: { rewardItem: true } } }
+    });
+    if (purchase === null) {
+      return "PRIVILEGE_PURCHASE_NOT_FOUND";
+    }
+    if (!isDailyClaimPrivilegeProduct(purchase.product)) {
+      return "PRIVILEGE_NOT_DAILY_CLAIMABLE";
+    }
+    const expiresAt = resolveShopPurchaseExpiresAt(purchase.createdAt, purchase.product.durationDays, purchase.expiresAt);
+    if (!isActiveShopPurchase(expiresAt, toServerDate(today))) {
+      return "PRIVILEGE_EXPIRED";
+    }
+
+    const existingRequest = await prisma.playerPrivilegeDailyClaim.findUnique({
+      where: {
+        profileId_requestId: {
+          profileId: profile.id,
+          requestId
+        }
+      }
+    });
+    if (existingRequest !== null) {
+      return "PRIVILEGE_DAILY_ALREADY_CLAIMED";
+    }
+
+    const existingDailyClaim = await prisma.playerPrivilegeDailyClaim.findUnique({
+      where: {
+        profileId_purchaseId_claimDate: {
+          profileId: profile.id,
+          purchaseId,
+          claimDate: today
+        }
+      }
+    });
+    if (existingDailyClaim !== null) {
+      return "PRIVILEGE_DAILY_ALREADY_CLAIMED";
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const claim = await tx.playerPrivilegeDailyClaim.create({
+        data: {
+          profileId: profile.id,
+          purchaseId,
+          requestId,
+          claimDate: today,
+          rewardCash: purchase.product.rewardCash,
+          rewardActionPower: purchase.product.rewardActionPower,
+          rewardReputation: purchase.product.rewardReputation,
+          rewardItemId: purchase.product.rewardItemId,
+          rewardItemQuantity: purchase.product.rewardItemQuantity
+        }
+      });
+      await grantInventoryItem(
+        tx,
+        profile.id,
+        purchase.product.rewardItemId,
+        purchase.product.rewardItemQuantity,
+        "shop_purchase",
+        claim.id,
+        `领取特权每日权益：${purchase.product.name}`
+      );
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: purchase.product.rewardCash },
+          actionPower: { increment: purchase.product.rewardActionPower },
+          reputation: { increment: purchase.product.rewardReputation }
+        }
+      });
+      return { claim, profile: updatedProfile };
+    });
+
+    return {
+      shopCenter: await toShopCenterRecord(prisma, toProfileRecord(result.profile), today),
+      profile: toProfileRecord(result.profile),
+      claim: {
+        id: result.claim.id,
+        purchaseId: result.claim.purchaseId,
+        claimDate: result.claim.claimDate,
+        rewardCash: result.claim.rewardCash,
+        rewardActionPower: result.claim.rewardActionPower,
+        rewardReputation: result.claim.rewardReputation,
+        rewardItem: toItemRewardRecord(purchase.product.rewardItem, purchase.product.rewardItemQuantity),
+        createdAt: result.claim.createdAt.toISOString()
+      },
+      result: `${purchase.product.name} 今日权益已领取。`
     };
   },
 
