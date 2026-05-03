@@ -394,6 +394,9 @@ type PlayerLoan = {
   overduePeriods: number;
   penaltyAccrued: number;
   onTimeRepayPeriods: number;
+  periodProgressTicks: number;
+  nextDueTicks: number;
+  nextDueText: string;
   status: "active" | "overdue" | "settled";
   createdAt: string;
   settledAt: string | null;
@@ -1661,7 +1664,7 @@ const loanOfferStatusLabel = (offer: LoanOffer, activeLoan: PlayerLoan | undefin
 
 const loanPrimaryActionLabel = (offer: LoanOffer | undefined, activeLoan: PlayerLoan | undefined): string => {
   if (activeLoan !== undefined) {
-    return "偿还本期账单";
+    return activeLoan.status === "overdue" ? "补缴逾期账单" : "提前还本期";
   }
   if (offer === undefined) {
     return "暂无授信";
@@ -3846,6 +3849,58 @@ function App() {
     void loadProjects(account.token, selectedServer.id);
     reportTelemetry(account.token, selectedServer.id, "tutorial_step", "home-entered", { step: "home_entered" });
   }, [step, account?.token, selectedServer?.id, reportTelemetry]);
+
+  useEffect(() => {
+    if (!loanNotice && !loanError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setLoanNotice("");
+      setLoanError("");
+    }, loanError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [loanNotice, loanError]);
+
+  useEffect(() => {
+    if (!fundingNotice && !fundingError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setFundingNotice("");
+      setFundingError("");
+    }, fundingError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [fundingNotice, fundingError]);
+
+  useEffect(() => {
+    if (!productNotice && !productError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setProductNotice("");
+      setProductError("");
+    }, productError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [productNotice, productError]);
+
+  useEffect(() => {
+    if (!marketNotice && !marketError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMarketNotice("");
+      setMarketError("");
+    }, marketError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [marketNotice, marketError]);
 
   useEffect(() => {
     setGuildAnnouncementDraft(guildCenter?.guild?.announcement ?? "");
@@ -7851,8 +7906,11 @@ function App() {
                 <span>现金 {compactNumber(productCenter?.finance.cash ?? profile.cash)}</span>
                 <span>风险 {productCenter?.finance.riskStatus ?? profile.riskStatus}</span>
               </section>
-              {productNotice && <p className="funding-notice">{productNotice}</p>}
-              {productError && <p className="funding-error">{productError}</p>}
+              {(productNotice || productError) && (
+                <div className={`operation-toast is-product ${productError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {productError || productNotice}
+                </div>
+              )}
 
               <section className="funding-layout">
                 <div className="funding-list" aria-label="产品方向列表">
@@ -7970,8 +8028,11 @@ function App() {
                 <span>热度 {selectedMarket?.industryHeat ?? selectedMarketOffer?.industryHeat ?? 0}</span>
                 <span>风险 {marketCenter?.finance.riskStatus ?? profile.riskStatus}</span>
               </section>
-              {marketNotice && <p className="funding-notice">{marketNotice}</p>}
-              {marketError && <p className="funding-error">{marketError}</p>}
+              {(marketNotice || marketError) && (
+                <div className={`operation-toast is-market ${marketError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {marketError || marketNotice}
+                </div>
+              )}
 
               <section className="funding-layout">
                 <div className="funding-list" aria-label="赛道列表">
@@ -8111,8 +8172,11 @@ function App() {
                 </div>
               </section>
 
-              {fundingNotice && <p className="finance-funding-notice">{fundingNotice}</p>}
-              {fundingError && <p className="finance-funding-error">{fundingError}</p>}
+              {(fundingNotice || fundingError) && (
+                <div className={`finance-funding-toast ${fundingError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {fundingError || fundingNotice}
+                </div>
+              )}
 
               <section className="finance-funding-layout">
                 <div className="finance-funding-list" aria-label="融资方案列表">
@@ -8304,7 +8368,7 @@ function App() {
                 </button>
               </header>
 
-              <section className="loan-native-scroll">
+              <section className="loan-native-fixed">
                 <section className="loan-native-dashboard" aria-label="授信状态">
                   <div className="loan-native-metric">
                     <span>当前信用评级</span>
@@ -8321,11 +8385,11 @@ function App() {
                   <div className={`loan-native-debt-bar ${loanCenter?.crisis.isActive ? "is-crisis" : ""}`}>
                     <div>
                       <span>总负债额度</span>
-                      <strong>{compactNumber(loanCenter?.finance.totalDebt ?? profile.totalDebt)}</strong>
+                      <strong>¥{compactNumber(loanCenter?.finance.totalDebt ?? profile.totalDebt)}</strong>
                     </div>
                     <div>
                       <span>本期应还</span>
-                      <strong>{compactNumber(activeLoans.reduce((total, item) => total + item.monthlyPayment + item.penaltyAccrued, 0))}</strong>
+                      <strong>¥{compactNumber(activeLoans.reduce((total, item) => total + item.monthlyPayment + item.penaltyAccrued, 0))}</strong>
                     </div>
                   </div>
                 </section>
@@ -8346,9 +8410,15 @@ function App() {
                   </section>
                 )}
 
-                {loanNotice && <p className="loan-notice">{loanNotice}</p>}
-                {loanError && <p className="loan-error">{loanError}</p>}
+              </section>
 
+              {(loanNotice || loanError) && (
+                <div className={`loan-native-toast ${loanError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {loanError || loanNotice}
+                </div>
+              )}
+
+              <section className="loan-native-scroll">
                 <section className="loan-native-products" aria-label="可用授信产品">
                   <header>
                     <Icon name="package" className="loan-native-small-icon" />
@@ -8376,7 +8446,7 @@ function App() {
                             <small>{offer.lender}</small>
                           </span>
                           <span>
-                            <strong>{formatWan(offer.principal)}</strong>
+                            <strong>¥{formatWan(offer.principal)}</strong>
                             <small className={offer.isAvailable || activeLoan !== undefined ? "is-open" : "is-locked"}>{statusLabel}</small>
                           </span>
                         </button>
@@ -8399,11 +8469,11 @@ function App() {
                     <dl>
                       <div>
                         <dt>到账金额</dt>
-                        <dd>{compactNumber(selectedLoanOffer.principal)}</dd>
+                        <dd>¥{compactNumber(selectedLoanOffer.principal)}</dd>
                       </div>
                       <div>
                         <dt>月供账单</dt>
-                        <dd>{compactNumber(selectedLoanOffer.monthlyPayment)}</dd>
+                        <dd>¥{compactNumber(selectedLoanOffer.monthlyPayment)}</dd>
                       </div>
                       <div>
                         <dt>授信期限</dt>
@@ -8418,7 +8488,7 @@ function App() {
                       <section className="loan-native-active">
                         <div>
                           <span>剩余本金</span>
-                          <strong>{compactNumber(selectedOfferLoan.remainingPrincipal)}</strong>
+                          <strong>¥{compactNumber(selectedOfferLoan.remainingPrincipal)}</strong>
                         </div>
                         <div>
                           <span>剩余期数</span>
@@ -8426,9 +8496,12 @@ function App() {
                         </div>
                         <div>
                           <span>罚息</span>
-                          <strong>{compactNumber(selectedOfferLoan.penaltyAccrued)}</strong>
+                          <strong>¥{compactNumber(selectedOfferLoan.penaltyAccrued)}</strong>
                         </div>
                       </section>
+                    )}
+                    {selectedOfferLoan && (
+                      <p className="loan-native-due-text">下期账单：{selectedOfferLoan.nextDueText || `还差 ${selectedOfferLoan.nextDueTicks} 次经营脉冲`}</p>
                     )}
                     <p>{selectedLoanOffer.summary}</p>
                     <small className="loan-native-impact-note">月供压力高 · 逾期会降信用</small>
@@ -8452,9 +8525,6 @@ function App() {
                   >
                     提前结清
                   </button>
-                  <button type="button" disabled={activeLoans.length === 0} onClick={() => void runLoanAction("/finance/loans/settle-period")}>
-                    推进账期
-                  </button>
                 </div>
                 <button
                   type="button"
@@ -8469,7 +8539,7 @@ function App() {
                     }
                   }}
                 >
-                  {selectedOfferLoan ? "偿还本期账单" : selectedLoanOffer?.isAvailable ? "申请签约拨备" : loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan)}
+                  {selectedOfferLoan ? loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan) : selectedLoanOffer?.isAvailable ? "申请签约拨备" : loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan)}
                 </button>
               </footer>
 

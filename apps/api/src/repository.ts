@@ -444,6 +444,9 @@ export type LoanRecord = {
   overduePeriods: number;
   penaltyAccrued: number;
   onTimeRepayPeriods: number;
+  periodProgressTicks: number;
+  nextDueTicks: number;
+  nextDueText: string;
   status: "active" | "overdue" | "settled";
   createdAt: string;
   settledAt: string | null;
@@ -2740,6 +2743,26 @@ const calculatePrincipalPayment = (loan: { remainingPrincipal: number; remaining
   return Math.min(loan.remainingPrincipal, Math.max(1, Math.ceil(loan.remainingPrincipal / Math.max(loan.remainingMonths, 1))));
 };
 
+const LOAN_PERIOD_TICKS = 72;
+
+const readLoanNextDueTicks = (loan: { status: string; periodProgressTicks: number }): number => {
+  if (loan.status === "settled" || loan.status === "overdue") {
+    return 0;
+  }
+  return Math.max(0, LOAN_PERIOD_TICKS - loan.periodProgressTicks);
+};
+
+const readLoanNextDueText = (loan: { status: string; periodProgressTicks: number }): string => {
+  if (loan.status === "overdue") {
+    return "已逾期";
+  }
+  if (loan.status === "settled") {
+    return "已结清";
+  }
+  const nextDueTicks = readLoanNextDueTicks(loan);
+  return nextDueTicks <= 0 ? "已到期" : `还差 ${nextDueTicks} 次经营脉冲`;
+};
+
 const toLoanRecord = (loan: {
   id: string;
   configId: string;
@@ -2754,6 +2777,7 @@ const toLoanRecord = (loan: {
   overduePeriods: number;
   penaltyAccrued: number;
   onTimeRepayPeriods: number;
+  periodProgressTicks: number;
   status: string;
   createdAt: Date;
   settledAt: Date | null;
@@ -2771,6 +2795,9 @@ const toLoanRecord = (loan: {
   overduePeriods: loan.overduePeriods,
   penaltyAccrued: loan.penaltyAccrued,
   onTimeRepayPeriods: loan.onTimeRepayPeriods,
+  periodProgressTicks: loan.periodProgressTicks,
+  nextDueTicks: readLoanNextDueTicks(loan),
+  nextDueText: readLoanNextDueText(loan),
   status: readLoanStatus(loan.status),
   createdAt: loan.createdAt.toISOString(),
   settledAt: loan.settledAt?.toISOString() ?? null
@@ -4181,6 +4208,7 @@ const BUSINESS_CLOCK_TICK_MS = 5 * 60 * 1000;
 const BUSINESS_CLOCK_MAX_OFFLINE_MINUTES = 8 * 60;
 const BUSINESS_CLOCK_MONTHLY_MINUTES = 30 * 24 * 60;
 const BUSINESS_CLOCK_MAX_CASH_DELTA = 80000;
+const BUSINESS_CLOCK_LOAN_PERIOD_TICKS = LOAN_PERIOD_TICKS;
 const NIGHT_BUSINESS_BRIEFING_MINUTES = 30;
 const BUSINESS_CLOCK_MANAGER_TODO_EXPIRES_HOURS = 6;
 const RANDOM_TASK_VISIBLE_COUNT = 3;
@@ -7310,8 +7338,8 @@ export const createPrismaGameRepository = (
       };
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const savedProfile = await tx.playerProfile.update({
+    const { profile: updated, loanSummaries } = await prisma.$transaction(async (tx) => {
+      let savedProfile = await tx.playerProfile.update({
         where: { id: profile.id },
         data: {
           businessClockSyncedAt: new Date(pulse.syncedAt),
@@ -7322,13 +7350,107 @@ export const createPrismaGameRepository = (
           customerSatisfaction: { increment: pulse.customerSatisfactionDelta }
         }
       });
-      await createBusinessClockManagerTodo(tx, currentProfile, pulse);
-      return savedProfile;
+
+      const loanSummaries: string[] = [];
+      if (pulse.settledTicks > 0) {
+        const loans = await tx.playerLoan.findMany({
+          where: {
+            profileId: profile.id,
+            status: { in: ["active", "overdue"] }
+          },
+          orderBy: [{ overduePeriods: "desc" }, { createdAt: "asc" }]
+        });
+
+        for (const loan of loans) {
+          const nextProgress = loan.periodProgressTicks + pulse.settledTicks;
+          if (loan.status !== "overdue" && nextProgress < BUSINESS_CLOCK_LOAN_PERIOD_TICKS) {
+            await tx.playerLoan.update({
+              where: { id: loan.id },
+              data: { periodProgressTicks: nextProgress }
+            });
+            continue;
+          }
+
+          const carryProgress =
+            loan.status === "overdue"
+              ? 0
+              : Math.min(nextProgress - BUSINESS_CLOCK_LOAN_PERIOD_TICKS, BUSINESS_CLOCK_LOAN_PERIOD_TICKS - 1);
+          const payment = loan.monthlyPayment + loan.penaltyAccrued;
+          if (savedProfile.cash >= payment) {
+            const principalPayment = calculatePrincipalPayment(loan);
+            const remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
+            const status = remainingPrincipal === 0 ? "settled" : "active";
+            const nextOnTimeRepayPeriods = loan.onTimeRepayPeriods + 1;
+            await tx.playerLoan.update({
+              where: { id: loan.id },
+              data: {
+                remainingPrincipal,
+                remainingMonths: status === "settled" ? 0 : Math.max(0, loan.remainingMonths - 1),
+                penaltyAccrued: 0,
+                overduePeriods: status === "settled" ? loan.overduePeriods : 0,
+                onTimeRepayPeriods: nextOnTimeRepayPeriods,
+                periodProgressTicks: status === "settled" ? 0 : carryProgress,
+                status,
+                settledAt: status === "settled" ? new Date() : null
+              }
+            });
+            savedProfile = await tx.playerProfile.update({
+              where: { id: profile.id },
+              data: {
+                cash: { decrement: payment },
+                totalDebt: { decrement: Math.min(savedProfile.totalDebt, principalPayment + loan.penaltyAccrued) },
+                riskStatus: nextOnTimeRepayPeriods >= 3 && savedProfile.riskStatus === "资金紧张" ? "预警" : savedProfile.riskStatus,
+                debtWarning: remainingPrincipal === 0 ? "低" : savedProfile.debtWarning
+              }
+            });
+            loanSummaries.push(`贷款自动扣款 ${payment.toLocaleString("zh-CN")}，${loan.name} 已还本期。`);
+            continue;
+          }
+
+          const penalty = Math.max(1000, Math.round(loan.monthlyPayment * 0.08));
+          await tx.playerLoan.update({
+            where: { id: loan.id },
+            data: {
+              status: "overdue",
+              overduePeriods: { increment: 1 },
+              onTimeRepayPeriods: 0,
+              penaltyAccrued: { increment: penalty },
+              periodProgressTicks: 0
+            }
+          });
+          savedProfile = await tx.playerProfile.update({
+            where: { id: profile.id },
+            data: {
+              totalDebt: { increment: penalty },
+              creditRating: downgradeCredit(savedProfile.creditRating),
+              riskStatus: "资金紧张",
+              debtWarning: "高",
+              pendingEventCount: { increment: 1 }
+            }
+          });
+          loanSummaries.push(`现金不足，${loan.name} 已逾期。`);
+        }
+      }
+
+      const settledPulse = loanSummaries.length > 0 ? { ...pulse, summary: `${pulse.summary} ${loanSummaries.join(" ")}` } : pulse;
+      if (loanSummaries.length > 0) {
+        savedProfile = await tx.playerProfile.update({
+          where: { id: profile.id },
+          data: {
+            lastBusinessPulseSummaryJson: JSON.stringify(settledPulse)
+          }
+        });
+      }
+      await createBusinessClockManagerTodo(tx, toProfileRecord(savedProfile), settledPulse);
+
+      return { profile: savedProfile, loanSummaries };
     });
+
+    const businessClock = loanSummaries.length > 0 ? { ...pulse, summary: `${pulse.summary} ${loanSummaries.join(" ")}` } : pulse;
 
     return {
       ...toCompanyFinanceRecord(toProfileRecord(updated)),
-      businessClock: pulse
+      businessClock
     };
   },
 
@@ -8204,7 +8326,7 @@ export const createPrismaGameRepository = (
     return {
       loan: toLoanRecord(result.loan),
       loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
-      result: `${config.name} 已放款，现金增加 ${config.principal.toLocaleString("zh-CN")}。`
+      result: `${config.name} 放款 +${config.principal.toLocaleString("zh-CN")}`
     };
   },
 
@@ -8251,6 +8373,7 @@ export const createPrismaGameRepository = (
           penaltyAccrued: 0,
           overduePeriods: status === "settled" ? loan.overduePeriods : 0,
           onTimeRepayPeriods: nextOnTimeRepayPeriods,
+          periodProgressTicks: 0,
           status,
           settledAt: status === "settled" ? new Date() : null
         }
@@ -8270,7 +8393,7 @@ export const createPrismaGameRepository = (
     return {
       loan: toLoanRecord(result.loan),
       loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
-      result: mode === "full" ? "提前结清完成，后续月供压力解除。" : "本期还款完成，剩余本金和期数已更新。"
+      result: mode === "full" ? "贷款已结清" : "本期已还"
     };
   },
 
@@ -8313,6 +8436,7 @@ export const createPrismaGameRepository = (
             penaltyAccrued: 0,
             overduePeriods: status === "settled" ? loan.overduePeriods : 0,
             onTimeRepayPeriods: nextOnTimeRepayPeriods,
+            periodProgressTicks: 0,
             status,
             settledAt: status === "settled" ? new Date() : null
           }
@@ -8332,7 +8456,7 @@ export const createPrismaGameRepository = (
       return {
         loan: toLoanRecord(result.loan),
         loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
-        result: "本期还款完成，剩余本金和期数已更新。"
+        result: "本期已还"
       };
     }
 
@@ -8344,7 +8468,8 @@ export const createPrismaGameRepository = (
           status: "overdue",
           overduePeriods: { increment: 1 },
           onTimeRepayPeriods: 0,
-          penaltyAccrued: { increment: penalty }
+          penaltyAccrued: { increment: penalty },
+          periodProgressTicks: 0
         }
       });
       const updatedProfile = await tx.playerProfile.update({
@@ -8363,7 +8488,7 @@ export const createPrismaGameRepository = (
     return {
       loan: toLoanRecord(result.loan),
       loanCenter: await toLoanCenterRecord(prisma, toProfileRecord(result.profile)),
-      result: `现金不足，本期逾期并产生罚息 ${penalty.toLocaleString("zh-CN")}。`
+      result: `现金不足，已逾期 +罚息 ${penalty.toLocaleString("zh-CN")}`
     };
   },
 

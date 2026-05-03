@@ -1659,6 +1659,23 @@ const createTestRepository = (): GameRepository => {
   const calculatePrincipalPayment = (loan: LoanRecord): number => {
     return Math.min(loan.remainingPrincipal, Math.max(1, Math.ceil(loan.remainingPrincipal / Math.max(loan.remainingMonths, 1))));
   };
+  const loanPeriodTicks = 72;
+  const readLoanNextDueTicks = (loan: Pick<LoanRecord, "status" | "periodProgressTicks">): number => {
+    if (loan.status === "settled" || loan.status === "overdue") {
+      return 0;
+    }
+    return Math.max(0, loanPeriodTicks - loan.periodProgressTicks);
+  };
+  const readLoanNextDueText = (loan: Pick<LoanRecord, "status" | "periodProgressTicks">): string => {
+    if (loan.status === "overdue") {
+      return "已逾期";
+    }
+    if (loan.status === "settled") {
+      return "已结清";
+    }
+    const nextDueTicks = readLoanNextDueTicks(loan);
+    return nextDueTicks <= 0 ? "已到期" : `还差 ${nextDueTicks} 次经营脉冲`;
+  };
   const loansForProfile = (profileId: string): LoanRecord[] =>
     [...playerLoans.values()].filter((loan) => loan.id.startsWith(`${profileId}:`));
   const loanApplicationImpact = (config: { principal: number; monthlyPayment: number; termMonths: number; annualRateBasisPoints: number; isHighRisk: boolean; purposeTag: string }): string[] => {
@@ -1671,6 +1688,56 @@ const createTestRepository = (): GameRepository => {
     }
     impact.push(config.purposeTag, "逾期会降信用");
     return impact;
+  };
+  const advanceLoanPeriodsByBusinessClock = (profile: PlayerProfileRecord, settledTicks: number): string[] => {
+    const summaries: string[] = [];
+    const loans = loansForProfile(profile.id)
+      .filter((loan) => loan.status === "active" || loan.status === "overdue")
+      .sort((left, right) => right.overduePeriods - left.overduePeriods || left.createdAt.localeCompare(right.createdAt));
+
+    for (const loan of loans) {
+      const nextProgress = loan.periodProgressTicks + settledTicks;
+      if (loan.status !== "overdue" && nextProgress < loanPeriodTicks) {
+        loan.periodProgressTicks = nextProgress;
+        continue;
+      }
+
+      const carryProgress = loan.status === "overdue" ? 0 : Math.min(nextProgress - loanPeriodTicks, loanPeriodTicks - 1);
+      const payment = loan.monthlyPayment + loan.penaltyAccrued;
+      if (profile.cash >= payment) {
+        const principalPayment = calculatePrincipalPayment(loan);
+        profile.cash -= payment;
+        profile.totalDebt = Math.max(0, profile.totalDebt - principalPayment - loan.penaltyAccrued);
+        loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
+        loan.remainingMonths = loan.remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
+        loan.penaltyAccrued = 0;
+        loan.overduePeriods = loan.remainingPrincipal === 0 ? loan.overduePeriods : 0;
+        loan.onTimeRepayPeriods += 1;
+        loan.status = loan.remainingPrincipal === 0 ? "settled" : "active";
+        loan.periodProgressTicks = loan.status === "settled" ? 0 : carryProgress;
+        loan.settledAt = loan.status === "settled" ? new Date().toISOString() : null;
+        if (loan.onTimeRepayPeriods >= 3 && profile.riskStatus === "资金紧张") {
+          profile.riskStatus = "预警";
+        }
+        summaries.push(`贷款自动扣款 ${payment}，${loan.name} 已还本期。`);
+        continue;
+      }
+
+      const penalty = Math.max(1000, Math.round(loan.monthlyPayment * 0.08));
+      loan.status = "overdue";
+      loan.overduePeriods += 1;
+      loan.onTimeRepayPeriods = 0;
+      loan.penaltyAccrued += penalty;
+      loan.periodProgressTicks = 0;
+      profile.totalDebt += penalty;
+      profile.creditRating = downgradeCredit(profile.creditRating);
+      profile.riskStatus = "资金紧张";
+      profile.debtWarning = "高";
+      profile.pendingEventCount += 1;
+      summaries.push(`现金不足，${loan.name} 已逾期。`);
+    }
+
+    return summaries;
   };
   const toLoanCenterRecord = (profile: PlayerProfileRecord): LoanCenterRecord => {
     const loans = loansForProfile(profile.id);
@@ -1709,7 +1776,11 @@ const createTestRepository = (): GameRepository => {
           lockedReason: blockers[0] ?? null
         };
       }),
-      loans,
+      loans: loans.map((loan) => ({
+        ...loan,
+        nextDueTicks: readLoanNextDueTicks(loan),
+        nextDueText: readLoanNextDueText(loan)
+      })),
       finance,
       crisis: {
         isActive: crisisLevel !== "none",
@@ -5228,6 +5299,11 @@ const createTestRepository = (): GameRepository => {
         profile.employeeSatisfaction += pulse.employeeSatisfactionDelta;
         profile.customerSatisfaction += pulse.customerSatisfactionDelta;
         if (pulse.settledTicks > 0) {
+          const loanSummaries = advanceLoanPeriodsByBusinessClock(profile, pulse.settledTicks);
+          if (loanSummaries.length > 0) {
+            pulse.summary = `${pulse.summary} ${loanSummaries.join(" ")}`;
+            profile.lastBusinessPulseSummaryJson = JSON.stringify(pulse);
+          }
           const today = pulse.syncedAt.slice(0, 10);
           const report = calculateFinanceReport(profile);
           const configId =
@@ -5650,6 +5726,9 @@ const createTestRepository = (): GameRepository => {
         overduePeriods: 0,
         penaltyAccrued: 0,
         onTimeRepayPeriods: 0,
+        periodProgressTicks: 0,
+        nextDueTicks: loanPeriodTicks,
+        nextDueText: `还差 ${loanPeriodTicks} 次经营脉冲`,
         status: "active",
         createdAt: new Date().toISOString(),
         settledAt: null
@@ -5664,7 +5743,7 @@ const createTestRepository = (): GameRepository => {
         profile.creditRating = downgradeCredit(profile.creditRating);
       }
       profile.debtWarning = "中";
-      return { loan, loanCenter: toLoanCenterRecord(profile), result: `${config.name} 已放款。` } satisfies LoanActionRecord;
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: `${config.name} 放款 +${config.principal}` } satisfies LoanActionRecord;
     },
     async repayLoan(accountId, serverId, loanId, mode) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5685,6 +5764,7 @@ const createTestRepository = (): GameRepository => {
       loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
       loan.remainingMonths = mode === "full" || loan.remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
       loan.penaltyAccrued = 0;
+      loan.periodProgressTicks = 0;
       if (mode === "scheduled") {
         loan.onTimeRepayPeriods += 1;
       }
@@ -5693,7 +5773,7 @@ const createTestRepository = (): GameRepository => {
       if (mode === "scheduled" && loan.onTimeRepayPeriods >= 3 && profile.riskStatus === "资金紧张") {
         profile.riskStatus = "预警";
       }
-      return { loan, loanCenter: toLoanCenterRecord(profile), result: mode === "full" ? "提前结清完成。" : "本期还款完成。" } satisfies LoanActionRecord;
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: mode === "full" ? "贷款已结清" : "本期已还" } satisfies LoanActionRecord;
     },
     async settleLoanPeriod(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -5712,12 +5792,13 @@ const createTestRepository = (): GameRepository => {
       loan.overduePeriods += 1;
       loan.onTimeRepayPeriods = 0;
       loan.penaltyAccrued += penalty;
+      loan.periodProgressTicks = 0;
       profile.totalDebt += penalty;
       profile.creditRating = downgradeCredit(profile.creditRating);
       profile.riskStatus = "资金紧张";
       profile.debtWarning = "高";
       profile.pendingEventCount += 1;
-      return { loan, loanCenter: toLoanCenterRecord(profile), result: `现金不足，本期逾期并产生罚息 ${penalty}。` } satisfies LoanActionRecord;
+      return { loan, loanCenter: toLoanCenterRecord(profile), result: `现金不足，已逾期 +罚息 ${penalty}` } satisfies LoanActionRecord;
     },
     async resolveCrisis(accountId, serverId, route) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -8969,6 +9050,94 @@ test("settles loan periods, supports early repayment, and blocks insufficient ca
       body: JSON.stringify({ serverId: "s1", mode: "full" })
     });
     assert.equal(duplicate.status, 404);
+  });
+});
+
+test("business clock automatically advances loan periods by game ticks", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "loanautoclock");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const first = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...headers, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+    assert.equal(first.status, 200);
+
+    const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "short-cashflow-loan" })
+    });
+    assert.equal(applied.status, 201);
+    const loanId = applied.body.data?.loan?.id;
+    assert.ok(loanId);
+
+    const beforeDue = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...headers, "x-server-now": "2026-05-02T05:55:00.000Z" }
+    });
+    assert.equal(beforeDue.status, 200);
+    assert.equal(beforeDue.body.data?.businessClock?.settledTicks, 71);
+
+    const beforeDueLoans = await requestJson<LoanCenterRecord>(baseUrl, "/finance/loans?serverId=s1", { headers });
+    const beforeDueLoan = beforeDueLoans.body.data?.loans.find((loan) => loan.id === loanId);
+    assert.equal(beforeDueLoan?.remainingMonths, 6);
+    assert.equal((beforeDueLoan as { periodProgressTicks?: number } | undefined)?.periodProgressTicks, 71);
+    assert.equal((beforeDueLoan as { nextDueTicks?: number } | undefined)?.nextDueTicks, 1);
+
+    const due = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...headers, "x-server-now": "2026-05-02T06:00:00.000Z" }
+    });
+    assert.equal(due.status, 200);
+    assert.match(due.body.data?.businessClock?.summary ?? "", /贷款自动扣款/);
+
+    const afterDue = await requestJson<LoanCenterRecord>(baseUrl, "/finance/loans?serverId=s1", { headers });
+    const paidLoan = afterDue.body.data?.loans.find((loan) => loan.id === loanId);
+    assert.equal(paidLoan?.remainingMonths, 5);
+    assert.equal((paidLoan as { periodProgressTicks?: number } | undefined)?.periodProgressTicks, 0);
+    assert.equal((paidLoan as { nextDueTicks?: number } | undefined)?.nextDueTicks, 72);
+    assert.equal(afterDue.body.data?.finance.cash, (beforeDue.body.data?.cash ?? 0) + (due.body.data?.businessClock?.cashDelta ?? 0) - 53200);
+    assert.ok((paidLoan?.remainingPrincipal ?? profile.totalDebt) < 300000);
+  });
+});
+
+test("business clock marks due loans overdue when cash is insufficient", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "loanautooverdue");
+    const headers = { authorization: `Bearer ${token}` };
+
+    await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...headers, "x-server-now": "2026-05-02T00:00:00.000Z" }
+    });
+
+    const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    assert.equal(applied.status, 201);
+    const loanId = applied.body.data?.loan?.id;
+    assert.ok(loanId);
+
+    for (let index = 0; index < 9; index += 1) {
+      await requestJson<LoanActionRecord>(baseUrl, `/finance/loans/${encodeURIComponent(loanId)}/repay`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ serverId: "s1", mode: "scheduled" })
+      });
+    }
+
+    const due = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", {
+      headers: { ...headers, "x-server-now": "2026-05-02T06:00:00.000Z" }
+    });
+    assert.equal(due.status, 200);
+    assert.match(due.body.data?.businessClock?.summary ?? "", /现金不足/);
+
+    const loans = await requestJson<LoanCenterRecord>(baseUrl, "/finance/loans?serverId=s1", { headers });
+    const overdueLoan = loans.body.data?.loans.find((loan) => loan.id === loanId);
+    assert.equal(overdueLoan?.status, "overdue");
+    assert.equal(overdueLoan?.overduePeriods, 1);
+    assert.ok((overdueLoan?.penaltyAccrued ?? 0) > 0);
+    assert.equal(loans.body.data?.finance.riskStatus, "资金紧张");
   });
 });
 

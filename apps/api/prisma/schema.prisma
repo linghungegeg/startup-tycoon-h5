@@ -1128,6 +1128,7 @@ model PlayerLoan {
   overduePeriods Int      @default(0)
   penaltyAccrued Int      @default(0)
   onTimeRepayPeriods Int   @default(0)
+  periodProgressTicks Int  @default(0)
   status    String       @default("active") @db.VarChar(16)
   createdAt DateTime     @default(now())
   settledAt DateTime?
