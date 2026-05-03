@@ -101,6 +101,16 @@ test("phase 31 commerce privilege and pass drop entrance navigation copy", () =>
   assert.doesNotMatch(shopSource, /商业入口导航|去特权|去通行证|去背包/, "shop should not explain other entrances");
   assert.doesNotMatch(privilegeSource, /特权入口导航|去商城|去通行证|去背包/, "privilege should not explain other entrances");
   assert.doesNotMatch(passSource, /通行证入口导航|去商城|去特权|去背包/, "pass should not explain other entrances");
+  assert.match(source, /game-shop-native" aria-label="商城" data-testid="native-shop"/, "shop should use the migrated H5 game shop shell");
+  assert.match(shopSource, /game-shop-tabs/, "shop should keep horizontal category tabs from the design");
+  assert.match(shopSource, /game-shop-card/, "shop should render compact item cards");
+  assert.match(shopSource, /game-shop-detail/, "shop should open an in-page item detail popup");
+  assert.match(shopSource, /game-shop-reward-list/, "shop detail should show rewards as compact item chips");
+  assert.doesNotMatch(shopSource, /<dt>分类<\/dt>|shopCategoryLabels\[selectedShopProduct\.category\]/, "shop detail should not show backend category as a modal field");
+  assert.match(shopSource, /推荐补给/, "shop should keep the primary game shop content section");
+  assert.doesNotMatch(shopSource, /最近购买|game-shop-history/, "shop should not show purchase history in the player-facing shop");
+  assert.doesNotMatch(shopSource, /每日轮换|精选礼包/, "shop should not show unsupported rotation or fake featured pack sections");
+  assert.doesNotMatch(shopSource, /cdn\.tailwindcss|unpkg\.com|fonts\.googleapis/, "native shop should not depend on external design CDNs");
   assert.match(shopSource, /shop-purchase-popup/, "shop purchase feedback should render as an overlay popup");
   assert.match(privilegeSource, /shop-purchase-popup/, "privilege purchase feedback should render as an overlay popup");
   assert.match(shopPurchasePopupStyle, /position:\s*absolute/, "purchase popup should overlay the current native page");

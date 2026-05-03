@@ -3478,6 +3478,402 @@ input {
   color: #ffd1d1;
 }
 
+.game-shop-native {
+  background:
+    radial-gradient(circle at 50% -18%, rgba(251, 191, 36, 0.1), transparent 34%),
+    linear-gradient(180deg, #111827 0%, #090d14 42%, #070a10 100%);
+  color: #e2e8f0;
+}
+
+.game-shop-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 40px 24px 14px;
+}
+
+.game-shop-wallets {
+  display: flex;
+  gap: 8px;
+}
+
+.game-shop-wallets span {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.58);
+  padding: 0 10px;
+  color: #f8e7b8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.game-shop-wallets span:last-child {
+  color: #fde68a;
+}
+
+.game-shop-close {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.68);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.game-shop-ticker {
+  height: 24px;
+  overflow: hidden;
+  border-block: 1px solid rgba(251, 191, 36, 0.08);
+  background: rgba(2, 6, 23, 0.4);
+}
+
+.game-shop-ticker span {
+  display: inline-block;
+  min-width: 100%;
+  padding-top: 5px;
+  color: rgba(253, 230, 138, 0.82);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  animation: game-shop-ticker 20s linear infinite;
+}
+
+.game-shop-title {
+  padding: 14px 24px 10px;
+}
+
+.game-shop-title h2 {
+  margin: 0;
+  background: linear-gradient(90deg, #fff8dc, #ffd700 52%, #f59e0b);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.game-shop-title p {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.game-shop-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 24px 14px;
+}
+
+.game-shop-tabs button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 6px 12px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  font-weight: 900;
+  transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.game-shop-tabs button:active {
+  transform: scale(0.96);
+}
+
+.game-shop-tabs button.is-active {
+  border-color: rgba(255, 215, 0, 0.48);
+  background: linear-gradient(180deg, #f9d86b, #d99b2b);
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.28);
+  color: #1b1204;
+}
+
+.game-shop-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 24px 96px;
+}
+
+.game-shop-section {
+  margin-bottom: 22px;
+}
+
+.game-shop-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.game-shop-section > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #ffd700;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.game-shop-section:nth-of-type(2) > header span {
+  color: #fb923c;
+}
+
+.game-shop-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.game-shop-card {
+  position: relative;
+  display: flex;
+  min-height: 122px;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(8, 13, 24, 0.9));
+  padding: 8px;
+  text-align: center;
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+
+.game-shop-card:active {
+  transform: scale(0.96);
+}
+
+.game-shop-card em {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 0 0 8px;
+  background: #ef4444;
+  padding: 2px 6px;
+  color: #fff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.game-shop-card strong {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 950;
+  transform: rotate(-14deg);
+}
+
+.game-shop-card.is-locked {
+  filter: grayscale(1);
+  opacity: 0.68;
+}
+
+.game-shop-card-icon,
+.game-shop-detail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.1), rgba(15, 23, 42, 0.72) 64%);
+}
+
+.game-shop-card-icon {
+  width: 48px;
+  height: 48px;
+  margin: 12px 0 8px;
+  border-radius: 10px;
+}
+
+.game-shop-card.is-legendary .game-shop-card-icon,
+.game-shop-detail-icon.is-legendary {
+  color: #f59e0b;
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.18);
+}
+
+.game-shop-card.is-epic .game-shop-card-icon,
+.game-shop-detail-icon.is-epic {
+  color: #fbbf24;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.16);
+}
+
+.game-shop-card.is-rare .game-shop-card-icon,
+.game-shop-detail-icon.is-rare {
+  color: #34d399;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.16);
+}
+
+.game-shop-card.is-basic .game-shop-card-icon,
+.game-shop-detail-icon.is-basic {
+  color: #e5e7eb;
+}
+
+.game-shop-card b {
+  min-height: 28px;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.game-shop-card-price {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: auto;
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.58);
+  padding: 4px 2px;
+  color: #fff7cc;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.game-shop-empty {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.48);
+  padding: 12px;
+}
+
+.game-shop-empty {
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.game-shop-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.game-shop-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.game-shop-detail section {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 310px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.5);
+  padding: 20px;
+  text-align: center;
+}
+
+.game-shop-detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.game-shop-detail-icon {
+  width: 68px;
+  height: 68px;
+  margin: 8px auto 12px;
+  border-radius: 18px;
+}
+
+.game-shop-detail h3 {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.game-shop-detail p {
+  margin-top: 8px;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+.game-shop-reward-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.game-shop-reward-chip {
+  border: 1px solid rgba(251, 191, 36, 0.16);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.08);
+  padding: 6px 10px;
+  color: #f8e7b8;
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.game-shop-buy {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f9d86b, #d99b2b);
+  padding: 11px;
+  color: #1b1204;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.game-shop-buy:disabled {
+  filter: grayscale(1);
+  opacity: 0.58;
+}
+
+@keyframes game-shop-ticker {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
 @keyframes operationToastIn {
   from {
     opacity: 0;

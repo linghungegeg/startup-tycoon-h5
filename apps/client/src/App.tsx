@@ -654,6 +654,7 @@ type ShopPurchaseResult = {
   isDuplicate: boolean;
   result: string;
 };
+type ShopCategoryFilter = "recommended" | "supplies" | "items";
 
 type InventoryCenter = {
   items: Array<{
@@ -1272,17 +1273,14 @@ const competitorActionLabels: Record<CompetitorActionType, string> = {
   patent: "专利诉讼"
 };
 
-const shopCategoryLabels: Record<string, string> = {
-  first_charge: "首充",
-  daily_pack: "每日",
-  weekly_card: "周卡",
-  monthly_card: "月卡",
-  growth_fund: "基金",
-  recruit_ticket: "猎头",
-  employee_pack: "员工",
-  operation_pack: "经营",
-  risk_insurance: "保险",
-  activity_shop: "活动"
+const shopCategoryTabs: Array<{ id: ShopCategoryFilter; label: string }> = [
+  { id: "recommended", label: "推荐" },
+  { id: "supplies", label: "补给" },
+  { id: "items", label: "道具" }
+];
+const shopCategoryGroups: Record<Exclude<ShopCategoryFilter, "recommended">, string[]> = {
+  supplies: ["first_charge", "daily_pack", "operation_pack", "risk_insurance"],
+  items: ["recruit_ticket", "employee_pack"]
 };
 
 const VIP_LEVEL_WINDOW_SIZE = 5;
@@ -1513,7 +1511,7 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
   },
   "商城": {
     title: "商城",
-    lines: ["首充、礼包、猎头和保险等商品集中展示。", "购买商品会消耗平台币，并记录到最近购买。"],
+    lines: ["首充、礼包、猎头和保险等商品集中展示。", "购买商品会消耗平台币，并计入平台消费记录。"],
     action: "进入商城"
   },
   "七日目标": {
@@ -1669,6 +1667,49 @@ const shopProductSummaryOverrides: Record<string, string> = {
 };
 
 const getShopProductSummary = (productId: string, summary: string): string => shopProductSummaryOverrides[productId] ?? summary;
+const getShopProductIcon = (category: string): string => {
+  if (category === "risk_insurance") {
+    return "shield-check";
+  }
+  if (category === "recruit_ticket" || category === "employee_pack") {
+    return "file-search";
+  }
+  if (category === "operation_pack" || category === "daily_pack") {
+    return "zap";
+  }
+  if (category === "first_charge") {
+    return "gift";
+  }
+  return "package";
+};
+const getShopProductRarityClass = (category: string): string => {
+  if (category === "first_charge" || category === "operation_pack") {
+    return "is-legendary";
+  }
+  if (category === "recruit_ticket" || category === "employee_pack") {
+    return "is-epic";
+  }
+  if (category === "risk_insurance") {
+    return "is-rare";
+  }
+  return "is-basic";
+};
+const getShopProductRewardChips = (product: ShopProduct): string[] => {
+  const chips: string[] = [];
+  if (product.rewardItem) {
+    chips.push(`${product.rewardItem.name} x${product.rewardItem.quantity}`);
+  }
+  if (product.rewardCash > 0) {
+    chips.push(`资金 +${compactNumber(product.rewardCash)}`);
+  }
+  if (product.rewardActionPower > 0) {
+    chips.push(`行动力 +${product.rewardActionPower}`);
+  }
+  if (product.rewardReputation > 0) {
+    chips.push(`声望 +${product.rewardReputation}`);
+  }
+  return chips;
+};
 
 const formatWan = (value: number): string => `${(value / 10000).toFixed(1)}万`;
 const FUNDING_HIGH_RISK_BOARD_PRESSURE = 30;
@@ -2139,6 +2180,7 @@ function App() {
   const [marketNotice, setMarketNotice] = useState("");
   const [shopCenter, setShopCenter] = useState<ShopCenter | null>(null);
   const [selectedShopProductId, setSelectedShopProductId] = useState("");
+  const [activeShopCategory, setActiveShopCategory] = useState<ShopCategoryFilter>("recommended");
   const [shopError, setShopError] = useState("");
   const [shopNotice, setShopNotice] = useState("");
   const [inventoryCenter, setInventoryCenter] = useState<InventoryCenter | null>(null);
@@ -2454,7 +2496,7 @@ function App() {
     [pendingCompetitorActions, selectedCompetitorActionId]
   );
   const selectedShopProduct = useMemo(
-    () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? shopCenter?.products[0],
+    () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? null,
     [selectedShopProductId, shopCenter?.products]
   );
   const privilegeProducts = useMemo(
@@ -2465,13 +2507,15 @@ function App() {
     () => shopCenter?.products.filter((item) => item.category !== "monthly_card" && item.category !== "weekly_card" && item.category !== "growth_fund") ?? [],
     [shopCenter?.products]
   );
-  const commercePurchases = useMemo(
+  const visibleCommerceProducts = useMemo(
     () =>
-      shopCenter?.purchases.filter((purchase) => {
-        const product = shopCenter.products.find((item) => item.id === purchase.productId);
-        return product !== undefined && product.category !== "monthly_card" && product.category !== "weekly_card" && product.category !== "growth_fund";
-      }) ?? [],
-    [shopCenter]
+      commerceProducts.filter((item) => {
+        if (activeShopCategory === "recommended") {
+          return true;
+        }
+        return shopCategoryGroups[activeShopCategory].includes(item.category);
+      }),
+    [activeShopCategory, commerceProducts]
   );
   const privilegePurchases = useMemo(
     () =>
@@ -3053,7 +3097,7 @@ function App() {
 
   const applyShopCenter = (nextShopCenter: ShopCenter): void => {
     setShopCenter(nextShopCenter);
-    setSelectedShopProductId((currentId) => nextShopCenter.products.find((item) => item.id === currentId)?.id ?? nextShopCenter.products[0]?.id ?? "");
+    setSelectedShopProductId((currentId) => nextShopCenter.products.find((item) => item.id === currentId)?.id ?? "");
     setProfile((currentProfile) =>
       currentProfile === null
         ? currentProfile
@@ -4551,6 +4595,7 @@ function App() {
     if (panelName === "商业" || panelName === "商城" || panelName === "特惠商城") {
       reportCurrentTelemetry("commercial_entry_click", "shop");
       setActivePanel(null);
+      setSelectedShopProductId("");
       setNativeHomePage("shop");
       if (account && selectedServer) {
         void loadShopCenter(account.token, selectedServer.id);
@@ -7314,98 +7359,120 @@ function App() {
           )}
 
           {nativeHomePage === "shop" && (
-            <section className="page-container page-active" aria-label="商城" data-testid="native-shop">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="shopping-bag" className="w-7 h-7 text-pink-400" />
-                  <h2 className="text-xl font-black text-white">商城</h2>
+            <section className="page-container page-active game-shop-native" aria-label="商城" data-testid="native-shop">
+              <header className="game-shop-header">
+                <div className="game-shop-wallets" aria-label="商城货币">
+                  <span>
+                    <Icon name="gem" className="h-3 w-3" />
+                    {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}
+                  </span>
+                  <span>
+                    <Icon name="circle-dollar-sign" className="h-3 w-3" />
+                    {compactNumber(profile.cash)}
+                  </span>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭商城" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
+                <button className="game-shop-close" type="button" aria-label="关闭商城" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="h-5 w-5" />
                 </button>
               </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                <section className="w-full h-28 rounded-3xl overflow-hidden relative" aria-label="商城余额">
-                  <img src="/game-ui/html-design/main-bg.jpg" alt="" className="w-full h-full object-cover" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
-                    <h3 className="text-lg font-black italic text-white">平台币余额 {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}</h3>
-                    <p className="text-[10px] text-business-gold font-bold">
-                      首充、礼包、猎头与保险
-                    </p>
-                  </div>
-                </section>
-                <div className="grid grid-cols-2 gap-4">
-                  {commerceProducts.map((product) => (
-                    <article
-                      className={`glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative ${selectedShopProduct?.id === product.id ? "border-business-gold/60" : ""}`}
-                      key={product.id}
-                      onClick={() => {
-                        setSelectedShopProductId(product.id);
-                        if (account && selectedServer) {
-                          reportTelemetry(account.token, selectedServer.id, "shop_product_click", product.id, { category: product.category });
-                        }
-                      }}
-                    >
-                      <div className="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">
-                        {shopCategoryLabels[product.category] ?? "商城"}
-                      </div>
-                      <div className="w-16 h-16 flex items-center justify-center">
-                        <Icon
-                          name={product.category === "risk_insurance" ? "shield-check" : product.category === "recruit_ticket" ? "file-search" : "gift"}
-                          className={`w-10 h-10 ${product.category === "risk_insurance" ? "text-emerald-400" : "text-business-gold"}`}
-                        />
-                      </div>
-                      <div className="text-xs font-black text-white text-center">{product.name}</div>
-                      <p className="h-8 overflow-hidden text-[9px] text-slate-400 font-bold text-center leading-4">{getShopProductSummary(product.id, product.summary)}</p>
-                      {product.rewardItem && (
-                        <span className="rounded-full bg-business-gold/10 px-2 py-1 text-[9px] font-black text-business-gold">
-                          {product.rewardItem.name} x{product.rewardItem.quantity}
-                        </span>
-                      )}
-                      <div className="flex items-center gap-1">
-                        <Icon name="gem" className="w-3 h-3 text-business-gold" />
-                        <span className="text-sm font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
-                      </div>
-                      <button
-                        className="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
-                        type="button"
-                        disabled={!product.isAvailable}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (account && selectedServer) {
-                            reportTelemetry(account.token, selectedServer.id, "shop_product_click", product.id, { category: product.category });
-                          }
-                          void purchaseShopProduct(product.id);
-                        }}
-                      >
-                        {product.lockedReason ?? "购买"}
-                      </button>
-                    </article>
-                  ))}
-                </div>
-                {shopCenter && commerceProducts.length === 0 && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无可购买商品。</p>
-                )}
-                {shopCenter && commercePurchases.length > 0 && (
-                  <section className="glass-panel rounded-3xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <strong className="text-sm text-white font-black">最近购买</strong>
-                      <span className="text-[10px] text-business-gold font-bold">{commercePurchases.length} 笔</span>
-                    </div>
-                    <div className="space-y-2">
-                      {commercePurchases.slice(0, 3).map((purchase) => (
-                        <div className="flex items-center justify-between text-[10px] font-bold text-slate-300" key={purchase.id}>
-                          <span>{shopCenter.products.find((product) => product.id === purchase.productId)?.name ?? purchase.productId}</span>
-                          <span className="text-business-gold">-{purchase.pricePlatformCoins}</span>
-                        </div>
+
+              <div className="game-shop-ticker" aria-label="商城公告">
+                <span>经营补给上架中 · 平台币可兑换启动资源、猎头道具和风险保障 · 点击商品查看详情</span>
+              </div>
+
+              <div className="game-shop-title">
+                <h2>商城</h2>
+                <p>资源中心 · 经营补给</p>
+              </div>
+
+              <nav className="game-shop-tabs" aria-label="商城分类">
+                {shopCategoryTabs.map((tab) => (
+                  <button
+                    className={activeShopCategory === tab.id ? "is-active" : ""}
+                    type="button"
+                    key={tab.id}
+                    onClick={() => setActiveShopCategory(tab.id)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+
+              <div className="game-shop-scroll scroll-hide" id="items-container">
+                {visibleCommerceProducts.length > 0 && (
+                  <section className="game-shop-section" aria-label="推荐补给">
+                    <header>
+                      <span><Icon name="shopping-bag" className="h-3 w-3" />推荐补给</span>
+                    </header>
+                    <div className="game-shop-grid">
+                      {visibleCommerceProducts.map((product) => (
+                        <article
+                          className={`game-shop-card ${getShopProductRarityClass(product.category)} ${product.isAvailable ? "" : "is-locked"}`}
+                          key={product.id}
+                          onClick={() => {
+                            setSelectedShopProductId(product.id);
+                            if (account && selectedServer) {
+                              reportTelemetry(account.token, selectedServer.id, "shop_product_click", product.id, { category: product.category });
+                            }
+                          }}
+                        >
+                          {product.purchaseLimit > 0 && <em>限购</em>}
+                          {!product.isAvailable && <strong>{product.lockedReason ?? "已售罄"}</strong>}
+                          <span className="game-shop-card-icon">
+                            <Icon name={getShopProductIcon(product.category)} className="h-8 w-8" />
+                          </span>
+                          <b>{product.name}</b>
+                          <span className="game-shop-card-price">
+                            <Icon name="gem" className="h-3 w-3" />
+                            {product.pricePlatformCoins.toLocaleString("zh-CN")}
+                          </span>
+                        </article>
                       ))}
                     </div>
                   </section>
                 )}
+
+                {shopCenter && visibleCommerceProducts.length === 0 && (
+                  <p className="game-shop-empty">当前分类暂无可购买商品。</p>
+                )}
+
                 {!shopCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城暂未开放。</p>
+                  <p className="game-shop-empty">商城暂未开放。</p>
                 )}
               </div>
+
+              {selectedShopProduct && (
+                <div className="game-shop-detail" role="dialog" aria-modal="true" aria-label="商品详情">
+                  <button className="game-shop-detail-backdrop" type="button" aria-label="关闭商品详情" onClick={() => setSelectedShopProductId("")} />
+                  <section>
+                    <button className="game-shop-detail-close" type="button" aria-label="关闭商品详情" onClick={() => setSelectedShopProductId("")}>
+                      <Icon name="x" className="h-4 w-4" />
+                    </button>
+                    <span className={`game-shop-detail-icon ${getShopProductRarityClass(selectedShopProduct.category)}`}>
+                      <Icon name={getShopProductIcon(selectedShopProduct.category)} className="h-10 w-10" />
+                    </span>
+                    <h3>{selectedShopProduct.name}</h3>
+                    <p>{getShopProductSummary(selectedShopProduct.id, selectedShopProduct.summary)}</p>
+                    <div className="game-shop-reward-list" aria-label="获得内容">
+                      {getShopProductRewardChips(selectedShopProduct).map((chip) => (
+                        <span className="game-shop-reward-chip" key={chip}>
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      className="game-shop-buy"
+                      type="button"
+                      disabled={!selectedShopProduct.isAvailable}
+                      onClick={() => void purchaseShopProduct(selectedShopProduct.id)}
+                    >
+                      <Icon name="gem" className="h-4 w-4" />
+                      {selectedShopProduct.lockedReason ?? `${selectedShopProduct.pricePlatformCoins.toLocaleString("zh-CN")} 购买`}
+                    </button>
+                  </section>
+                </div>
+              )}
+
               {(shopNotice || shopError) && (
                 <div className={`shop-purchase-popup ${shopError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
                   {shopError || shopNotice}
