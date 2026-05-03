@@ -122,7 +122,6 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "普通成员贡献计入商会排名",
     "行动力、通行证、VIP 和商会协作",
     "我的排名",
-    "前往跨服",
     "暂无跨服数据"
   ]) {
     assert.ok(source.includes(copy), `missing cross-server independent UI copy: ${copy}`);

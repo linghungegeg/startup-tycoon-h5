@@ -2055,7 +2055,7 @@ function App() {
   const [randomTaskError, setRandomTaskError] = useState("");
   const [randomTaskNotice, setRandomTaskNotice] = useState("");
   const [selectedRandomTaskId, setSelectedRandomTaskId] = useState("");
-  const [managerTab, setManagerTab] = useState<"events" | "random">("events");
+  const [managerTab, setManagerTab] = useState<"events" | "random" | "goals">("events");
   const [randomTaskModalId, setRandomTaskModalId] = useState("");
   const [randomTaskModifierItemId, setRandomTaskModifierItemId] = useState("");
   const [snoozedRandomTaskIds, setSnoozedRandomTaskIds] = useState<string[]>([]);
@@ -2152,18 +2152,6 @@ function App() {
     () => avatars.find((avatar) => avatar.id === avatarId) ?? avatars[0],
     [avatarId, avatars]
   );
-  const knowledgeByCategory = useMemo(() => {
-    const groups: Array<{ category: string; entries: KnowledgeEntry[] }> = [];
-    for (const entry of knowledgeEntries) {
-      const group = groups.find((item) => item.category === entry.category);
-      if (group) {
-        group.entries.push(entry);
-      } else {
-        groups.push({ category: entry.category, entries: [entry] });
-      }
-    }
-    return groups;
-  }, [knowledgeEntries]);
   const selectedKnowledgeEntry = useMemo(
     () => knowledgeEntries.find((entry) => entry.id === selectedKnowledgeEntryId) ?? knowledgeEntries.find((entry) => entry.isUnlocked) ?? knowledgeEntries[0],
     [knowledgeEntries, selectedKnowledgeEntryId]
@@ -2549,6 +2537,27 @@ function App() {
   const claimableAchievementCount = achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
   const bestActivityRecap = seasonCenter?.activityRecaps.find((recap) => recap.personalRank !== null) ?? seasonCenter?.activityRecaps[0] ?? null;
   const activityShopItems = seasonCenter?.shopItems ?? [];
+  const hasActivityAttention = seasonActivities.some((activity) =>
+    activity.status === "active" && (!activity.isJoined || activity.score >= activity.targetScore && !activity.rewardClaimed)
+  ) || activityShopItems.some((item) => item.isAvailable);
+  const hasPassAttention = (seasonCenter?.tasks ?? []).some((task) => task.progress >= task.target && !task.isClaimed)
+    || companyGrowth !== null && companyGrowth.fullLevelChest.claimableCount > 0;
+  const hasManagerAttention = pendingEvents.length > 0
+    || pendingRandomTasks.length > 0
+    || (profile?.pendingEventCount ?? 0) > 0
+    || longTermGoals !== null && longTermGoals.summaries.todayClaimableCount > 0;
+  const shouldShowRightActionRedDot = (item: string): boolean => {
+    if (item === "活动") {
+      return hasActivityAttention;
+    }
+    if (item === "通行证") {
+      return hasPassAttention;
+    }
+    if (item === "专属经理") {
+      return hasManagerAttention;
+    }
+    return false;
+  };
   const primaryScenario = seasonCenter?.scenarios[0] ?? null;
   const activeTaskTip =
     activeTaskType === "daily"
@@ -3341,34 +3350,6 @@ function App() {
       setPhase14Notice(`${response.data.guildSeason.guildName ?? "商会"} 已报名跨服商会赛季。`);
       setPhase14Error("");
       await loadPhase14Center(account.token, selectedServer.id);
-      return;
-    }
-
-    setPhase14Error(response.error.message);
-  };
-
-  const settleCrossServerGuild = async (): Promise<void> => {
-    if (!account || !selectedServer) {
-      return;
-    }
-
-    const response = await apiRequest<LeaderboardSettlement>(
-      "/cross-server/guild/settle",
-      {
-        method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
-      },
-      account.token
-    );
-
-    if (response.success) {
-      setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服商会赛季已结算 ${response.data.deliveredRewards} 份声望奖励。` : "跨服商会赛季已结算，本日没有重复发放。");
-      setPhase14Error("");
-      setActiveCrossServerMode("history");
-      await loadPhase14Center(account.token, selectedServer.id);
-      if (response.data.battleReport) {
-        setCrossServerCenter((current) => current === null ? current : { ...current, battleReport: response.data.battleReport! });
-      }
       return;
     }
 
@@ -4365,6 +4346,10 @@ function App() {
     if (panelName === "个人中心") {
       setActivePanel(null);
       setNativeHomePage("profile");
+      if (account && selectedServer) {
+        void loadSeasonCenter(account.token, selectedServer.id);
+        void loadPhase14Center(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -4436,6 +4421,42 @@ function App() {
     setActivePanel(null);
     setNativeHomePage(null);
     setActiveNav("任务");
+  };
+
+  const openLongTermGoalAction = (goal: LongTermGoal): void => {
+    if (goal.action.href === "#tasks") {
+      openTaskScreen();
+      return;
+    }
+    if (goal.action.href === "#finance") {
+      openHomePanel("财务");
+      return;
+    }
+    if (goal.action.href === "#season") {
+      openHomePanel("活动");
+      return;
+    }
+    if (goal.action.href === "#leaderboard") {
+      openHomePanel("排行");
+      return;
+    }
+    if (goal.action.href === "#guild") {
+      openHomePanel("商会");
+      return;
+    }
+    if (goal.action.href === "#pass") {
+      openHomePanel("通行证");
+      return;
+    }
+    if (goal.action.href === "#cross-server") {
+      openHomePanel("跨服");
+      return;
+    }
+    if (goal.action.href === "#titles" || goal.action.href === "#achievements" || goal.action.href === "#company-growth") {
+      openHomePanel("个人中心");
+      return;
+    }
+    openHomePanel(goal.action.label);
   };
 
   const openEventScreen = (): void => {
@@ -5256,7 +5277,7 @@ function App() {
             </div>
 
             <div className="absolute right-4 top-28 space-y-4">
-              {rightActions.map((item, index) => (
+              {rightActions.map((item) => (
                 <button
                   className="flex flex-col items-center gap-1 group relative"
                   data-testid={item === "跨服" ? "home-cross-server-entry" : undefined}
@@ -5264,7 +5285,7 @@ function App() {
                   key={item}
                   onClick={() => openHomePanel(item)}
                 >
-                  {[0, 3, 4].includes(index) && <span className="red-dot" />}
+                  {shouldShowRightActionRedDot(item) && <span className="red-dot" />}
                   <span className="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
                     <Icon name={homeActionIcons[item] ?? "box"} className={`w-6 h-6 ${homeActionIconClasses[item] ?? ""}`} />
                   </span>
@@ -5400,6 +5421,116 @@ function App() {
                         </div>
                       ))}
                     </div>
+
+                    <section className="mt-4 border-y border-business-gold/20 py-3" aria-label="我的荣誉">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="block text-sm font-black text-white">我的荣誉</strong>
+                          <span className="text-[9px] font-bold text-slate-500">称号、成就和经营回顾</span>
+                        </div>
+                        <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
+                          {activeTitleCount} 称号
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {[
+                          ["当前称号", titleCenter?.equippedTitle?.name ?? "未装备称号", titleCenter?.equippedTitle?.bonusLabel ?? "完成榜单或成就后装备"],
+                          ["已获得称号", `${activeTitleCount}/${titleCenter?.titles.length ?? 0}`, (titleCenter?.titles ?? [])[0]?.name ?? "暂无称号"],
+                          ["成就进度", `${completedAchievementCount}/${achievements.length}`, claimableAchievementCount > 0 ? `${claimableAchievementCount} 个可领取` : "继续推进经营"],
+                          ["赛季荣誉", seasonCenter?.season.name ?? "赛季读取中", `${seasonCenter?.season.points ?? 0} 积分`],
+                          ["活动回顾", bestActivityRecap?.name ?? "暂无已结束活动", bestActivityRecap?.personalRank === null || bestActivityRecap === null ? "活动结算后生成" : `第 ${bestActivityRecap.personalRank} 名`],
+                          ["商会历史", guildHistory?.guild?.name ?? guildCenter?.guild?.name ?? "未加入商会", latestGuildSettlement === null ? "贡献榜结算后生成" : `${latestGuildSettlement.snapshotDate} / 发放 ${latestGuildSettlement.deliveredRewards}`],
+                          ["跨服历史", crossServerGuildHistory?.guild.name ?? crossServerCenter?.guildSeason.guildName ?? "跨服报名后生成", latestCrossGuildSettlement === null ? "赛季结算后回顾" : `${latestCrossGuildSettlement.snapshotDate} / 第 ${latestCrossGuildSettlement.finalRank ?? "-"}`],
+                          ["知识卡", `${knowledgeEntries.filter((entry) => entry.isUnlocked).length}/${knowledgeEntries.length} 张`, selectedKnowledgeEntry?.title ?? "经营事件和成就解锁"]
+                        ].map(([label, value, hint]) => (
+                          <div className="border-b border-white/5 px-1 py-2.5 last:border-b-0" key={label}>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[10px] font-black text-slate-400">{label}</span>
+                              <strong className="min-w-0 truncate text-xs font-black text-white">{value}</strong>
+                            </div>
+                            <span className="mt-1 block truncate text-[9px] font-bold text-business-gold">{hint}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+
+                    <section className="mt-4 space-y-3" aria-label="称号成就知识卡">
+                      {(titleCenter?.titles.length ?? 0) > 0 && (
+                        <div className="border-y border-white/10 py-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <strong className="text-xs font-black text-white">称号</strong>
+                            <span className="text-[9px] font-bold text-slate-500">{titleCenter?.equippedTitle?.name ?? "未装备"}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {(titleCenter?.titles ?? []).slice(0, 3).map((title) => (
+                              <button
+                                className={`w-full border px-3 py-2 text-left ${title.isEquipped ? "border-business-gold bg-business-gold/10" : "border-white/10 bg-slate-950/55"}`}
+                                disabled={title.isExpired}
+                                key={title.id}
+                                type="button"
+                                onClick={() => void equipTitle(title.id)}
+                              >
+                                <strong className="block text-[11px] font-black text-white">{title.name}</strong>
+                                <span className="text-[9px] font-bold text-slate-500">{title.isExpired ? "已过期" : title.bonusLabel}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {achievements.length > 0 && (
+                        <div className="border-y border-white/10 py-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <strong className="text-xs font-black text-white">成就</strong>
+                            <span className="text-[9px] font-bold text-slate-500">{completedAchievementCount}/{achievements.length}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {achievements.slice(0, 3).map((achievement) => (
+                              <div className="border-b border-white/5 px-1 py-2 last:border-b-0" key={achievement.id}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <strong className="truncate text-[11px] font-black text-white">{achievement.name}</strong>
+                                  <span className="text-[9px] font-bold text-slate-500">{achievement.progress}/{achievement.target}</span>
+                                </div>
+                                <p className="mt-1 truncate text-[9px] font-bold text-slate-500">{achievement.description}</p>
+                                <button
+                                  className="mt-2 rounded-lg bg-business-gold px-3 py-1 text-[9px] font-black text-business-dark disabled:opacity-45"
+                                  disabled={!achievement.isCompleted || achievement.isClaimed}
+                                  type="button"
+                                  onClick={() => void claimAchievement(achievement.id)}
+                                >
+                                  {achievement.isClaimed ? "已领取" : achievement.isCompleted ? "领取" : "未完成"}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {knowledgeEntries.length > 0 && (
+                        <div className="border-y border-white/10 py-3">
+                          <div className="mb-2 flex items-center justify-between">
+                            <strong className="text-xs font-black text-white">知识卡</strong>
+                            <span className="text-[9px] font-bold text-business-gold">{knowledgeEntries.filter((entry) => entry.isUnlocked).length}/{knowledgeEntries.length} 张</span>
+                          </div>
+                          <div className="space-y-2">
+                            {knowledgeEntries.slice(0, 3).map((entry) => (
+                              <button
+                                className={`w-full border px-3 py-2 text-left ${entry.id === selectedKnowledgeEntry?.id ? "border-business-gold bg-business-gold/10" : "border-white/10 bg-slate-950/55"}`}
+                                key={entry.id}
+                                type="button"
+                                onClick={() => setSelectedKnowledgeEntryId(entry.id)}
+                              >
+                                <strong className="block truncate text-[11px] font-black text-white">{entry.title}</strong>
+                                <span className={`mt-1 block text-[9px] font-black ${entry.isUnlocked ? "text-business-gold" : "text-slate-500"}`}>{entry.isUnlocked ? "已解锁" : "未解锁"}</span>
+                              </button>
+                            ))}
+                          </div>
+                          {selectedKnowledgeEntry && (
+                            <p className="mt-3 text-[10px] font-bold leading-5 text-slate-300">{selectedKnowledgeEntry.summary}</p>
+                          )}
+                        </div>
+                      )}
+                    </section>
 
                     <button className="mt-4 w-full rounded-2xl border border-white/5 bg-slate-950/70 py-3 text-xs font-black text-slate-200" type="button" onClick={leaveGame}>
                       切换账号
@@ -5949,7 +6080,7 @@ function App() {
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="award" className="w-7 h-7 text-business-gold" />
-                  <h2 className="text-xl font-black text-white italic uppercase">Rank 荣誉中心</h2>
+                  <h2 className="text-xl font-black text-white italic uppercase">排行榜</h2>
                 </div>
                 <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭排行榜" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
@@ -5969,114 +6100,6 @@ function App() {
                     {phase14Error || phase14Notice}
                   </p>
                 )}
-                {longTermGoals && (
-                  <section className="glass-panel rounded-3xl p-4" aria-label="长期目标中心">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <strong className="block text-sm text-white font-black">长期目标</strong>
-                        <span className="text-[9px] text-slate-500">今天做什么，本周追什么，赛季争什么，长期收集什么</span>
-                      </div>
-                      <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                        LV.{longTermGoals.profile.companyLevel}/{longTermGoals.profile.maxLevel}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {longTermGoals.sections.map((section) => (
-                        <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3" key={section.key}>
-                          <div className="mb-2 flex items-center justify-between gap-2">
-                            <strong className="text-xs text-white font-black">{section.title}</strong>
-                            <span className="text-[9px] text-business-gold">{section.goals.filter((goal) => goal.isCompleted || goal.isClaimable).length}/{section.goals.length}</span>
-                          </div>
-                          <p className="mb-3 text-[9px] leading-4 text-slate-500 font-bold">{section.summary}</p>
-                          <div className="space-y-2">
-                            {section.goals.slice(0, 3).map((goal) => (
-                              <div className="rounded-xl bg-slate-950/70 px-3 py-2" key={goal.id}>
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="min-w-0 truncate text-[10px] text-slate-200 font-black">{goal.title}</span>
-                                  <span className={`shrink-0 text-[9px] font-black ${goal.isClaimable ? "text-business-gold" : goal.isCompleted ? "text-emerald-300" : "text-slate-500"}`}>
-                                    {goal.statusLabel}
-                                  </span>
-                                </div>
-                                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
-                                  <div
-                                    className="h-full rounded-full bg-business-gold"
-                                    style={{ width: `${Math.min(100, Math.round((goal.progress / Math.max(1, goal.target)) * 100))}%` }}
-                                  />
-                                </div>
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                  <span className="min-w-0 truncate text-[9px] text-slate-500">{goal.description}</span>
-                                  <span className="shrink-0 text-[9px] text-business-gold">{goal.action.label}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                      <div className="rounded-2xl bg-slate-900/60 p-2">
-                        <strong className="block text-sm text-white">{longTermGoals.summaries.achievementCompletedCount}</strong>
-                        <span className="text-[9px] text-slate-500">成就</span>
-                      </div>
-                      <div className="rounded-2xl bg-slate-900/60 p-2">
-                        <strong className="block text-sm text-white">{longTermGoals.summaries.titleCount}</strong>
-                        <span className="text-[9px] text-slate-500">称号</span>
-                      </div>
-                      <div className="rounded-2xl bg-slate-900/60 p-2">
-                        <strong className="block text-sm text-white">{longTermGoals.summaries.fullLevelChestClaimableCount}</strong>
-                        <span className="text-[9px] text-slate-500">宝箱</span>
-                      </div>
-                    </div>
-                  </section>
-                )}
-                <section className="glass-panel rounded-3xl p-4" aria-label="我的荣誉">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <strong className="block text-sm text-white font-black">我的荣誉</strong>
-                      <span className="text-[9px] text-slate-500">称号、成就、赛季、活动、商会和跨服历史集中回顾</span>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                      {activeTitleCount} 称号
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">当前装备</span>
-                      <strong className="mt-1 block truncate text-xs text-white font-black">{titleCenter?.equippedTitle?.name ?? "未装备称号"}</strong>
-                      <span className="mt-1 block truncate text-[9px] text-business-gold">{titleCenter?.equippedTitle?.bonusLabel ?? "完成榜单、活动或成就后装备"}</span>
-                    </article>
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">已获得称号</span>
-                      <strong className="mt-1 block text-xs text-white font-black">{activeTitleCount}/{titleCenter?.titles.length ?? 0}</strong>
-                      <span className="mt-1 block truncate text-[9px] text-business-gold">{(titleCenter?.titles ?? [])[0]?.name ?? "暂无称号"}</span>
-                    </article>
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">成就进度</span>
-                      <strong className="mt-1 block text-xs text-white font-black">{completedAchievementCount}/{achievements.length}</strong>
-                      <span className="mt-1 block text-[9px] text-business-gold">{claimableAchievementCount > 0 ? `${claimableAchievementCount} 个可领取` : "继续推进经营目标"}</span>
-                    </article>
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">赛季荣誉</span>
-                      <strong className="mt-1 block truncate text-xs text-white font-black">{seasonCenter?.season.name ?? "赛季读取中"}</strong>
-                      <span className="mt-1 block text-[9px] text-business-gold">{seasonCenter?.season.points ?? 0} 积分 / {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : "普通进度"}</span>
-                    </article>
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">活动回顾</span>
-                      <strong className="mt-1 block truncate text-xs text-white font-black">{bestActivityRecap?.name ?? "暂无已结束活动"}</strong>
-                      <span className="mt-1 block text-[9px] text-business-gold">{bestActivityRecap?.personalRank === null || bestActivityRecap === null ? "活动结算后生成排名" : `第 ${bestActivityRecap.personalRank} 名 / ${bestActivityRecap.personalScore} 分`}</span>
-                    </article>
-                    <article className="rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">商会历史</span>
-                      <strong className="mt-1 block truncate text-xs text-white font-black">{guildHistory?.guild?.name ?? guildCenter?.guild?.name ?? "未加入商会"}</strong>
-                      <span className="mt-1 block text-[9px] text-business-gold">{latestGuildSettlement === null ? "贡献榜结算后生成" : `${latestGuildSettlement.snapshotDate} / 发放 ${latestGuildSettlement.deliveredRewards}`}</span>
-                    </article>
-                    <article className="col-span-2 rounded-2xl border border-white/5 bg-slate-900/60 p-3">
-                      <span className="block text-[9px] text-slate-500 font-black">跨服历史</span>
-                      <strong className="mt-1 block truncate text-xs text-white font-black">{crossServerGuildHistory?.guild.name ?? crossServerCenter?.guildSeason.guildName ?? "跨服报名后生成"}</strong>
-                      <span className="mt-1 block text-[9px] text-business-gold">{latestCrossGuildSettlement === null ? "跨服商会赛季结算后回顾" : `${latestCrossGuildSettlement.snapshotDate} / 最终名次 ${latestCrossGuildSettlement.finalRank ?? "-"}`}</span>
-                    </article>
-                  </div>
-                </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
                     <strong className="text-sm text-white font-black">{primaryLeaderboard?.name ?? "公司估值榜"}</strong>
@@ -6134,291 +6157,14 @@ function App() {
                     </div>
                   </section>
                 )}
-                <section className="glass-panel rounded-3xl p-4" aria-label="跨服摘要">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <strong className="block text-sm text-white font-black">跨服摘要</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "暂无跨服数据"}</span>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                      {crossServerCenter?.isRegistered ? "已报名" : "未报名"}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</strong>
-                      <span className="text-[9px] text-slate-500">我的排名</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{currentCrossGuildRank}</strong>
-                      <span className="text-[9px] text-slate-500">商会排名</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.statusLabel ?? "读取中"}</strong>
-                      <span className="text-[9px] text-slate-500">商会赛季</span>
-                    </div>
-                  </div>
-                  <button className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => setNativeHomePage("cross-server")}>
-                    前往跨服
-                  </button>
-                </section>
-                <section className="hidden">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "跨服分组读取中"}</span>
-                    </div>
-                    <span className="text-[10px] text-business-gold">{crossServerCenter?.isRegistered ? "已报名" : "未报名"}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    {(crossServerCenter?.boards ?? []).map((board) => (
-                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={board.key}>
-                        <strong className="block text-xs text-white font-black">{board.name}</strong>
-                        <span className="text-[9px] text-slate-500">{board.snapshotDate}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-2">
-                    {(primaryCrossLeaderboard?.rows ?? []).slice(0, 3).map((row) => (
-                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.profileId}>
-                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                        <div className="flex-1 min-w-0">
-                          <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                          <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "跨服称号待争夺"}</span>
-                        </div>
-                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
-                      disabled={crossServerCenter?.isRegistered}
-                      type="button"
-                      onClick={() => void registerCrossServer()}
-                    >
-                      {crossServerCenter?.isRegistered ? "已报名" : "报名跨服"}
-                    </button>
-                    <button className="rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleCrossServer()}>
-                      结算跨服
-                    </button>
-                  </div>
-                </section>
-                <section className="hidden">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">跨服商会赛季</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerCenter?.guildSeason.guildName ?? "加入商会后参与"}</span>
-                    </div>
-                    <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                      {crossServerCenter?.guildSeason.statusLabel ?? "读取中"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.memberCount ?? 0}/{crossServerCenter?.guildSeason.minMembers ?? 2}</strong>
-                      <span className="text-[9px] text-slate-500">成员</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{crossServerCenter?.guildSeason.todayActiveMemberCount ?? 0}/{crossServerCenter?.guildSeason.minTodayActiveMembers ?? 2}</strong>
-                      <span className="text-[9px] text-slate-500">活跃</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/60 p-2">
-                      <strong className="block text-sm text-white">{currentCrossGuildRank}</strong>
-                      <span className="text-[9px] text-slate-500">排名</span>
-                    </div>
-                  </div>
-                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-emerald-200 font-bold">
-                    {crossServerCenter?.guildSeason.rewardLabel ?? "前 3 名会长获得声望奖励"}
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {(crossServerCenter?.guildBoard.rows ?? []).slice(0, 3).map((row) => (
-                      <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3 flex items-center gap-3" key={row.guildId}>
-                        <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                        <div className="flex-1 min-w-0">
-                          <strong className="block text-xs text-white font-black truncate">{row.guildName}</strong>
-                          <span className="text-[9px] text-slate-500">会长 {row.leaderFounderName} · {row.memberCount} 人</span>
-                        </div>
-                        <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                      </article>
-                    ))}
-                    {(crossServerCenter?.guildBoard.rows.length ?? 0) === 0 && (
-                      <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">暂无已报名商会。</p>
-                    )}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button
-                      className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
-                      disabled={!crossServerCenter?.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
-                      type="button"
-                      onClick={() => void registerCrossServerGuild()}
-                    >
-                      {crossServerCenter?.guildSeason.isRegistered ? "已报名" : "报名商会赛季"}
-                    </button>
-                    <button className="rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold" type="button" onClick={() => void settleCrossServerGuild()}>
-                      结算商会赛季
-                    </button>
-                  </div>
-                  <div className="mt-4 rounded-2xl bg-slate-900/60 border border-white/5 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <strong className="text-xs text-white font-black">赛季回顾</strong>
-                      <span className="text-[9px] text-business-gold">{crossServerGuildHistory?.isRegistered ? "已报名" : "未报名"}</span>
-                    </div>
-                    {latestCrossGuildSettlement === null ? (
-                      <p className="mt-3 text-[10px] leading-5 text-slate-500 font-bold">跨服商会赛季结算后生成回顾。</p>
-                    ) : (
-                      <div className="mt-3 space-y-2">
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.finalRank ?? "-"}</strong><span className="text-[9px] text-slate-500">最终名次</span></div>
-                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.deliveredRewards}</strong><span className="text-[9px] text-slate-500">发放</span></div>
-                          <div className="rounded-xl bg-slate-950/70 p-2"><strong className="block text-sm text-white">{latestCrossGuildSettlement.snapshotDate.slice(5)}</strong><span className="text-[9px] text-slate-500">赛季日</span></div>
-                        </div>
-                        {latestCrossGuildSettlement.topGuilds.slice(0, 3).map((row) => (
-                          <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-950/70 px-3 py-2" key={`${row.guildId}:${row.rank}`}>
-                            <span className="min-w-0 truncate text-[10px] text-slate-300 font-bold">#{row.rank} {row.guildName}</span>
-                            <span className="shrink-0 text-[9px] text-business-gold">声望 +{row.reputationReward}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <strong className="text-sm text-white font-black">称号</strong>
-                    <span className="text-[10px] text-business-gold">{titleCenter?.equippedTitle?.name ?? "未装备"}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(titleCenter?.titles ?? []).slice(0, 4).map((title) => (
-                      <button
-                        className={`rounded-2xl border p-3 text-left ${title.isEquipped ? "border-business-gold bg-business-gold/10" : "border-white/10 bg-slate-900/60"}`}
-                        disabled={title.isExpired}
-                        key={title.id}
-                        type="button"
-                        onClick={() => void equipTitle(title.id)}
-                      >
-                        <strong className="block text-xs text-white font-black">{title.name}</strong>
-                        <span className="text-[9px] text-slate-500">{title.isExpired ? "已过期" : title.bonusLabel}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <strong className="text-sm text-white font-black">成就</strong>
-                    <span className="text-[10px] text-slate-500">{achievements.filter((item) => item.isCompleted).length}/{achievements.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {achievements.slice(0, 4).map((achievement) => (
-                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={achievement.id}>
-                        <div className="flex items-center justify-between">
-                          <strong className="text-xs text-white font-black">{achievement.name}</strong>
-                          <span className="text-[9px] text-slate-500">{achievement.progress}/{achievement.target}</span>
-                        </div>
-                        <p className="mt-1 text-[9px] text-slate-400">{achievement.description}</p>
-                        <button
-                          className="mt-2 btn-gold px-3 py-1 rounded-lg text-[10px] font-black text-business-dark disabled:opacity-45"
-                          disabled={!achievement.isCompleted || achievement.isClaimed}
-                          type="button"
-                          onClick={() => void claimAchievement(achievement.id)}
-                        >
-                          {achievement.isClaimed ? "已领取" : achievement.isCompleted ? "领取" : "未完成"}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <strong className="text-sm text-white font-black">知识库</strong>
-                    <span className="text-[10px] text-business-gold">{knowledgeEntries.filter((entry) => entry.isUnlocked).length}/{knowledgeEntries.length} 张</span>
-                  </div>
-                  {knowledgeEntries.length === 0 ? (
-                    <p className="text-xs text-slate-400 font-bold">领取成就后解锁知识卡。</p>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex gap-2 overflow-x-auto pb-1 scroll-hide">
-                        {knowledgeByCategory.map((group) => (
-                          <button
-                            className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-black border ${selectedKnowledgeEntry?.category === group.category ? "bg-business-gold text-business-dark border-business-gold" : "bg-slate-900/60 text-slate-300 border-white/5"}`}
-                            key={group.category}
-                            type="button"
-                            onClick={() => setSelectedKnowledgeEntryId(group.entries[0]?.id ?? "")}
-                          >
-                            {group.category} {group.entries.filter((entry) => entry.isUnlocked).length}/{group.entries.length}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(knowledgeByCategory.find((group) => group.category === selectedKnowledgeEntry?.category)?.entries ?? knowledgeEntries).map((entry) => (
-                          <button
-                            className={`min-h-16 rounded-2xl border p-3 text-left ${entry.id === selectedKnowledgeEntry?.id ? "border-business-gold bg-business-gold/10" : "border-white/5 bg-slate-900/60"}`}
-                            key={entry.id}
-                            type="button"
-                            onClick={() => setSelectedKnowledgeEntryId(entry.id)}
-                          >
-                            <strong className="block text-[11px] text-white font-black leading-4">{entry.title}</strong>
-                            <span className={`mt-1 block text-[9px] font-black ${entry.isUnlocked ? "text-business-gold" : "text-slate-500"}`}>{entry.isUnlocked ? "已解锁" : "未解锁"}</span>
-                          </button>
-                        ))}
-                      </div>
-                      {selectedKnowledgeEntry && (
-                        <article className="rounded-2xl bg-slate-900/70 border border-white/5 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <strong className="block text-sm text-white font-black">{selectedKnowledgeEntry.title}</strong>
-                              <span className="mt-1 block text-[9px] text-business-gold">{selectedKnowledgeEntry.category} · {selectedKnowledgeEntry.contentVersion}</span>
-                            </div>
-                            <span className={`shrink-0 rounded-full px-2 py-1 text-[9px] font-black ${selectedKnowledgeEntry.isUnlocked ? "bg-business-gold text-business-dark" : "bg-slate-800 text-slate-400"}`}>{selectedKnowledgeEntry.isUnlocked ? "完整" : "锁定"}</span>
-                          </div>
-                          <p className="mt-3 text-xs text-slate-300 font-bold leading-5">{selectedKnowledgeEntry.summary}</p>
-                          {selectedKnowledgeEntry.isUnlocked && (
-                            <dl className="mt-3 space-y-2">
-                              {[
-                                ["经营场景", selectedKnowledgeEntry.scenarioText],
-                                ["风险提示", selectedKnowledgeEntry.riskText],
-                                ["游戏影响", selectedKnowledgeEntry.gameImpactText],
-                                ["行动建议", selectedKnowledgeEntry.actionTipText]
-                              ].map(([label, value]) => (
-                                <div className="rounded-xl bg-slate-950/60 border border-white/5 p-3" key={label}>
-                                  <dt className="text-[9px] text-business-gold font-black">{label}</dt>
-                                  <dd className="mt-1 text-[11px] text-slate-300 font-bold leading-5">{value}</dd>
-                                </div>
-                              ))}
-                            </dl>
-                          )}
-                          <a className="mt-3 block text-[9px] text-business-gold underline decoration-business-gold/40" href={selectedKnowledgeEntry.sourceUrl} target="_blank" rel="noreferrer">
-                            {selectedKnowledgeEntry.sourceName} · {selectedKnowledgeEntry.collectedAt}
-                          </a>
-                          <span className="mt-2 block text-[8px] text-slate-500">{selectedKnowledgeEntry.disclaimer}</span>
-                        </article>
-                      )}
-                    </div>
-                  )}
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <strong className="text-sm text-white font-black">商会</strong>
-                    <span className="text-[10px] text-business-gold">{guildCenter?.guild?.name ?? "未加入"}</span>
-                  </div>
-                  {guildCenter?.guild ? (
-                    <>
-                      <div className="grid grid-cols-3 gap-2 text-center">
-                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.guild.level}</strong><span className="text-[9px] text-slate-500">等级</span></div>
-                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.members.length}</strong><span className="text-[9px] text-slate-500">成员</span></div>
-                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildCenter.guild.contributionScore}</strong><span className="text-[9px] text-slate-500">贡献</span></div>
-                      </div>
-                      <button className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void requestGuildHelp()}>发布互助</button>
-                    </>
-                  ) : (
-                    <button className="w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark" type="button" onClick={() => void joinGuild()}>加入本服商会</button>
-                  )}
-                </section>
                 {!leaderboardCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无排行榜数据。</p>}
               </div>
               <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                 <div className="flex items-center gap-4 px-2">
-                  <div className="w-8 text-center text-business-gold font-black italic">{primaryLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</div>
+                  <div className="w-12 text-center">
+                    <span className="block text-[8px] font-bold text-slate-500">我的排名</span>
+                    <strong className="block text-business-gold font-black italic">{primaryLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</strong>
+                  </div>
                   <div className="w-10 h-10 rounded-full border-2 border-business-gold p-0.5">
                     <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full rounded-full object-cover" />
                   </div>
@@ -7097,17 +6843,6 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
-                <section className="glass-panel rounded-3xl p-4" aria-label="商业入口导航">
-                  <strong className="block text-sm text-white font-black">商业入口导航</strong>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
-                    普通商品用于缓解经营压力；周卡、月卡和成长基金用于提高效率；赛季通行证承接赛季奖励线；背包保存已获得的道具和材料。
-                  </p>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
-                  </div>
-                </section>
                 <div className="grid grid-cols-2 gap-4">
                   {commerceProducts.map((product) => (
                     <article
@@ -7215,17 +6950,6 @@ function App() {
                     {shopError || shopNotice}
                   </p>
                 )}
-                <section className="glass-panel rounded-3xl p-4" aria-label="特权入口导航">
-                  <strong className="block text-sm text-white font-black">特权入口导航</strong>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
-                    周卡、月卡和成长基金用于提高效率，普通商品留在商业，赛季奖励线留在通行证，已获得道具回到背包查看。
-                  </p>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
-                  </div>
-                </section>
                 <div className="grid grid-cols-1 gap-3">
                   {privilegeProducts.map((product) => (
                     <article className="glass-panel rounded-3xl p-4 border-business-gold/20" key={product.id}>
@@ -7381,17 +7105,6 @@ function App() {
                       开通即得赛季经验券、限定称号碎片和办公室皮肤券，后续奖励线继续承接员工与外观深度。
                     </p>
                   </article>
-                </section>
-                <section className="glass-panel rounded-3xl p-4" aria-label="通行证入口导航">
-                  <strong className="block text-sm text-white font-black">通行证入口导航</strong>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
-                    赛季通行证承接赛季奖励线和赛季任务，活动材料进入背包；普通补给去商业，周卡和成长基金去特权。
-                  </p>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
-                  </div>
                 </section>
                 <section className="glass-panel rounded-3xl p-4">
                   <div className="flex items-center justify-between mb-3">
@@ -8649,6 +8362,7 @@ function App() {
                     if (account && selectedServer) {
                       void loadEvents(account.token, selectedServer.id);
                       void loadRandomTasks(account.token, selectedServer.id);
+                      void loadPhase14Center(account.token, selectedServer.id);
                     }
                   }}
                 >
@@ -8669,9 +8383,66 @@ function App() {
               <nav className="business-tabs manager-tabs" aria-label="专属经理待办分类">
                 <button className={managerTab === "events" ? "active" : undefined} type="button" onClick={() => setManagerTab("events")}>经营提醒</button>
                 <button className={managerTab === "random" ? "active" : undefined} type="button" onClick={() => setManagerTab("random")}>随机任务</button>
+                <button className={managerTab === "goals" ? "active" : undefined} type="button" onClick={() => setManagerTab("goals")}>成长目标</button>
               </nav>
 
-              {managerTab === "events" ? (
+              {managerTab === "goals" ? (
+                <section className="event-layout">
+                  <div className="event-list" aria-label="成长目标列表">
+                    {longTermGoals === null ? (
+                      <div className="event-empty">成长目标读取中，请稍候。</div>
+                    ) : longTermGoals.sections.map((section) => (
+                      <button
+                        className={section.key === "today" ? "selected" : undefined}
+                        key={section.key}
+                        type="button"
+                        onClick={() => undefined}
+                      >
+                        <span>{section.goals.filter((goal) => goal.isCompleted || goal.isClaimable).length}/{section.goals.length}</span>
+                        <strong>{section.title}</strong>
+                        <em>{section.summary}</em>
+                        <small>{section.goals.some((goal) => goal.isClaimable) ? "可领取" : "推进中"}</small>
+                      </button>
+                    ))}
+                  </div>
+
+                  <article className="event-detail" aria-label="成长目标详情">
+                    {longTermGoals ? (
+                      <>
+                        <div className="event-title">
+                          <span>目</span>
+                          <strong>成长目标</strong>
+                          <em>今天做什么，本周追什么，赛季争什么，长期收集什么</em>
+                        </div>
+                        <dl className="event-risk">
+                          <div>
+                            <dt>公司等级</dt>
+                            <dd>LV.{longTermGoals.profile.companyLevel}/{longTermGoals.profile.maxLevel}</dd>
+                          </div>
+                          <div>
+                            <dt>今日待领</dt>
+                            <dd>{longTermGoals.summaries.todayClaimableCount}</dd>
+                          </div>
+                          <div>
+                            <dt>长期收集</dt>
+                            <dd>成就 {longTermGoals.summaries.achievementCompletedCount} · 称号 {longTermGoals.summaries.titleCount} · 宝箱 {longTermGoals.summaries.fullLevelChestClaimableCount}</dd>
+                          </div>
+                        </dl>
+                        <div className="event-options">
+                          {longTermGoals.sections.flatMap((section) => section.goals.slice(0, 3).map((goal) => (
+                            <button key={goal.id} type="button" onClick={() => openLongTermGoalAction(goal)}>
+                              <strong>{goal.title}</strong>
+                              <span>{goal.statusLabel} · {goal.description}</span>
+                            </button>
+                          )))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="event-empty">成长目标读取中，请稍候。</div>
+                    )}
+                  </article>
+                </section>
+              ) : managerTab === "events" ? (
                 <section className="event-layout">
                   <div className="event-list" aria-label="提醒列表">
                     {events.length === 0 ? (
