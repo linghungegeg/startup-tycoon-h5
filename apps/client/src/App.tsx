@@ -1748,6 +1748,36 @@ const getPrivilegeProductRewardChips = (product: ShopProduct): string[] => {
   const chips = [product.durationDays > 0 ? `${product.durationDays}天权益` : "阶段权益", `VIP经验 +${product.pricePlatformCoins.toLocaleString("zh-CN")}`];
   return [...chips, ...getShopProductRewardChips(product)];
 };
+const getPrivilegeProductIcon = (category: string): string => {
+  if (category === "monthly_card") return "calendar";
+  if (category === "growth_fund") return "landmark";
+  return "award";
+};
+const getPrivilegeProductTypeLabel = (product: ShopProduct): string =>
+  product.durationDays > 0 ? `${product.durationDays}天权益` : "成长基金";
+const getPrivilegeDailyRewardChips = (reward: Pick<ShopProduct, "rewardCash" | "rewardActionPower" | "rewardReputation" | "rewardItem">): string[] => {
+  const chips: string[] = [];
+  if (reward.rewardItem) {
+    chips.push(`${reward.rewardItem.name} x${reward.rewardItem.quantity}`);
+  }
+  if (reward.rewardCash > 0) {
+    chips.push(`资金 +${compactNumber(reward.rewardCash)}`);
+  }
+  if (reward.rewardActionPower > 0) {
+    chips.push(`行动力 +${reward.rewardActionPower}`);
+  }
+  if (reward.rewardReputation > 0) {
+    chips.push(`声望 +${reward.rewardReputation}`);
+  }
+  return chips;
+};
+const getPrivilegeClaimStatusClass = (purchase: ShopCenter["purchases"][number] | undefined): string => {
+  if (purchase === undefined) return "is-locked";
+  if (purchase.claimStatus === "claimable") return "is-claimable";
+  if (purchase.claimStatus === "claimed") return "is-claimed";
+  if (purchase.claimStatus === "expired") return "is-expired";
+  return "is-active";
+};
 const isActivePrivilegePurchase = (purchase: { expiresAt: string | null }): boolean =>
   purchase.expiresAt === null || Date.parse(purchase.expiresAt) >= Date.now();
 const formatPrivilegeExpiresAt = (expiresAt: string | null): string =>
@@ -7596,133 +7626,119 @@ function App() {
           )}
 
           {nativeHomePage === "privilege" && (
-            <section className="page-container page-active" aria-label="特权" data-testid="native-privilege">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="award" className="w-7 h-7 text-business-gold" />
-                  <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Privilege 特权</h2>
-                    <span className="text-[10px] text-slate-500">月卡、成长基金与 VIP 经验</span>
-                  </div>
+            <section className="page-container page-active game-privilege-native" aria-label="特权" data-testid="native-privilege">
+              <header className="game-privilege-header">
+                <div className="game-shop-wallets" aria-label="特权货币">
+                  <span>
+                    <Icon name="gem" className="h-3 w-3" />
+                    {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}
+                  </span>
+                  <span>
+                    <Icon name="gift" className="h-3 w-3" />
+                    今日可领 {claimablePrivilegePurchases.length}
+                  </span>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭特权" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
+                <button className="game-shop-close" type="button" aria-label="关闭特权" onClick={closeNativeHomePage}>
+                  <Icon name="x" className="h-5 w-5" />
                 </button>
               </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-[10px] text-business-gold font-black uppercase">我的特权</div>
-                      <h3 className="mt-1 text-2xl font-black italic text-white">
-                        {activePrivilegeProducts.length > 0 ? `已开通 ${activePrivilegeProducts.length} 项` : "未开通特权"}
-                      </h3>
-                      <p className="mt-1 text-xs leading-5 text-slate-300 font-bold">购买后立即发放奖励，平台币消费计入 VIP 经验。</p>
-                    </div>
-                    <span className="w-14 h-14 rounded-2xl bg-business-gold/15 border border-business-gold/30 flex items-center justify-center">
-                      <Icon name="landmark" className="w-8 h-8 text-business-gold" />
-                    </span>
+
+              <div className="game-shop-title game-privilege-title">
+                <span className="game-privilege-eyebrow">我的特权</span>
+                <h2>特权中心</h2>
+                <p>经营权益领取台</p>
+              </div>
+
+              <div className="game-privilege-scroll scroll-hide">
+                <section className="game-privilege-ledger" aria-label="今日权益">
+                  <div>
+                    <span>今日领取台</span>
+                    <strong>{claimablePrivilegePurchases.length > 0 ? `${claimablePrivilegePurchases.length} 项待领取` : "今日权益已处理"}</strong>
+                    <p>{privilegeNextAction}</p>
                   </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-2xl bg-slate-950/60 p-3">
-                      <strong className="block text-sm text-white">{compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}</strong>
-                      <span className="text-[9px] text-slate-500">平台币</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-950/60 p-3">
-                      <strong className="block text-sm text-white">{compactNumber(shopCenter?.wallet.vipExperience ?? vipCenter?.wallet.vipExperience ?? 0)}</strong>
-                      <span className="text-[9px] text-slate-500">VIP经验</span>
-                    </div>
-                    <div className="rounded-2xl bg-slate-950/60 p-3">
-                      <strong className="block text-sm text-business-gold">{privilegeBoostLabel}</strong>
-                      <span className="text-[9px] text-slate-500">经营加速</span>
-                    </div>
-                  </div>
-                  <p className="mt-3 rounded-2xl border border-business-gold/15 bg-slate-950/50 px-3 py-2 text-[11px] leading-5 text-slate-300 font-bold">
-                    {privilegeNextAction}
-                  </p>
+                  <em className={claimablePrivilegePurchases.length > 0 ? "is-hot" : ""}>
+                    {claimablePrivilegePurchases.length > 0 ? "可领" : "已核对"}
+                  </em>
                 </section>
-                {activePrivilegeProducts.length > 0 && (
-                  <section className="glass-panel rounded-3xl p-4 border-business-gold/20" aria-label="已开通权益">
-                    <div className="flex items-center justify-between">
-                      <strong className="text-sm text-white font-black">已开通权益</strong>
-                      <span className="text-[10px] text-business-gold font-bold">{activePrivilegeProducts.length} 项</span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {activePrivilegeProducts.map((product) => (
-                        <span className="rounded-full bg-business-gold/10 px-3 py-1 text-[10px] font-black text-business-gold" key={product.id}>
-                          {product.name} · {getPrivilegeProductBenefit(product.category)} · {getPrivilegeClaimStatusLabel(activePrivilegePurchases.find((purchase) => purchase.productId === product.id))} · {formatPrivilegeExpiresAt(activePrivilegePurchases.find((purchase) => purchase.productId === product.id)?.expiresAt ?? null)}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
-                )}
-                <div className="grid grid-cols-1 gap-3">
+
+                <section className="game-privilege-summary" aria-label="已开通权益">
+                  <h3>已开通权益</h3>
+                  <span>
+                    <b>{activePrivilegeProducts.length}</b>
+                    生效合约
+                  </span>
+                  <span className={claimablePrivilegePurchases.length > 0 ? "is-hot" : ""}>
+                    <b>{claimablePrivilegePurchases.length}</b>
+                    今日可领
+                  </span>
+                  <span>
+                    <b>{privilegeBoostLabel}</b>
+                    经营加速
+                  </span>
+                </section>
+
+                <section className="game-privilege-section" aria-label="权益卡">
+                  <header>
+                    <span>权益合约</span>
+                    <em>今日未领将作废</em>
+                  </header>
                   {privilegeProducts.map((product) => {
                     const activePurchase = activePrivilegePurchases.find((purchase) => purchase.productId === product.id);
                     const isPurchased = activePurchase !== undefined;
+                    const productRewardChips = getPrivilegeProductRewardChips(product);
                     return (
-                      <article className="glass-panel rounded-3xl p-4 border-business-gold/20" key={product.id}>
-                        <div className="flex items-start gap-3">
-                          <span className="w-12 h-12 rounded-2xl bg-business-gold/10 border border-business-gold/20 flex items-center justify-center">
-                            <Icon name={product.category === "monthly_card" ? "calendar" : "landmark"} className="w-7 h-7 text-business-gold" />
+                      <article className={`game-privilege-card ${getPrivilegeClaimStatusClass(activePurchase)}`} key={product.id}>
+                        <i className="game-privilege-card-spine" aria-hidden="true" />
+                        <div className="game-privilege-card-main">
+                          <span className="game-privilege-card-icon">
+                            <Icon name={getPrivilegeProductIcon(product.category)} className="h-7 w-7" />
                           </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-3">
-                              <strong className="text-sm text-white font-black">{product.name}</strong>
-                              <span className="text-sm text-business-gold font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
+                          <div className="game-privilege-card-copy">
+                            <div className="game-privilege-card-title">
+                              <strong>{product.name}</strong>
+                              <span>{isPurchased ? getPrivilegeClaimStatusLabel(activePurchase) : getPrivilegeProductBenefit(product.category)}</span>
                             </div>
-                            <div className="mt-1 flex items-center gap-2">
-                              <span className={`rounded-full px-2 py-1 text-[9px] font-black ${isPurchased ? "bg-business-gold/15 text-business-gold" : "bg-slate-900/70 text-slate-300"}`}>
-                                {isPurchased ? getPrivilegeClaimStatusLabel(activePurchase) : getPrivilegeProductBenefit(product.category)}
-                              </span>
-                            </div>
-                            <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">{getShopProductSummary(product.id, product.summary)}</p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {getPrivilegeProductRewardChips(product).map((chip) => (
-                                <span className="rounded-full bg-slate-900/70 px-2 py-1 text-[9px] font-black text-slate-300" key={chip}>
-                                  {chip}
-                                </span>
+                            <p>{getShopProductSummary(product.id, product.summary)}</p>
+                            <div className="game-privilege-rewards" aria-label="每日奖励">
+                              {getPrivilegeDailyRewardChips(activePurchase ?? product).map((chip) => (
+                                <em key={chip}>{chip}</em>
                               ))}
-                              {isPurchased && (
-                                <span className="rounded-full bg-business-gold/10 px-2 py-1 text-[9px] font-black text-business-gold">
-                                  {formatPrivilegeExpiresAt(activePurchase.expiresAt)}
-                                </span>
-                              )}
-                              {isPurchased && activePurchase.claimStatus === "claimable" && (
-                                <span className="rounded-full bg-red-500/10 px-2 py-1 text-[9px] font-black text-red-200">
-                                  今日未领将作废
-                                </span>
-                              )}
                             </div>
-                            <button
-                              className="mt-3 w-full btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
-                              type="button"
-                              disabled={isPurchased ? !activePurchase.isClaimableToday : !product.isAvailable}
-                              onClick={() => {
-                                if (isPurchased) {
-                                  void claimPrivilegeDailyReward(activePurchase.id);
-                                  return;
-                                }
-                                void purchaseShopProduct(product.id);
-                              }}
-                            >
-                              {isPurchased
-                                ? activePurchase.isClaimableToday
-                                  ? "领取今日权益"
-                                  : getPrivilegeClaimStatusLabel(activePurchase)
-                                : product.lockedReason ?? "开通特权"}
-                            </button>
                           </div>
+                        </div>
+                        <div className="game-privilege-card-foot">
+                          <span>
+                            {isPurchased
+                              ? formatPrivilegeExpiresAt(activePurchase.expiresAt)
+                              : `${getPrivilegeProductTypeLabel(product)} · ${productRewardChips[1] ?? `VIP经验 +${product.pricePlatformCoins.toLocaleString("zh-CN")}`}`}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={isPurchased ? !activePurchase.isClaimableToday : !product.isAvailable}
+                            onClick={() => {
+                              if (isPurchased) {
+                                void claimPrivilegeDailyReward(activePurchase.id);
+                                return;
+                              }
+                              void purchaseShopProduct(product.id);
+                            }}
+                          >
+                            {isPurchased
+                              ? activePurchase.isClaimableToday
+                                ? "领取今日权益"
+                                : getPrivilegeClaimStatusLabel(activePurchase)
+                              : product.lockedReason ?? `${product.pricePlatformCoins.toLocaleString("zh-CN")} 开通`}
+                          </button>
                         </div>
                       </article>
                     );
                   })}
-                </div>
+                </section>
                 {shopCenter && privilegeProducts.length === 0 && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">月卡和成长基金暂未配置。</p>
+                  <p className="game-shop-empty">月卡和成长基金暂未配置。</p>
                 )}
                 {!shopCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无特权配置。</p>
+                  <p className="game-shop-empty">暂无特权配置。</p>
                 )}
               </div>
               {(shopNotice || shopError) && (
