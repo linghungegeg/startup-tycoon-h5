@@ -3446,6 +3446,38 @@ input {
   color: #ffd1d1;
 }
 
+.shop-purchase-popup {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  z-index: 18;
+  width: min(70%, 300px);
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(246, 204, 116, 0.48);
+  border-left-width: 4px;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.46);
+  padding: 10px 14px;
+  color: #fff1c9;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  animation: operationToastIn 0.18s ease-out;
+}
+
+.shop-purchase-popup.is-success {
+  background: rgba(33, 26, 14, 0.96);
+  color: #fff1c9;
+}
+
+.shop-purchase-popup.is-error {
+  border-color: rgba(239, 68, 68, 0.56);
+  background: rgba(48, 20, 20, 0.96);
+  color: #ffd1d1;
+}
+
 @keyframes operationToastIn {
   from {
     opacity: 0;

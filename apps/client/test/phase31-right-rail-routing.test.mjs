@@ -32,6 +32,7 @@ const rightRailSource = source.slice(
   source.indexOf("{rightActions.map"),
   source.indexOf('<div aria-label="少年三国志式快捷入口"')
 );
+const shopPurchasePopupStyle = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8").match(/\.shop-purchase-popup \{[\s\S]*?\n\}/)?.[0] ?? "";
 
 test("phase 31 right rail keeps leaderboard focused on rankings", () => {
   assert.match(leaderboardSource, /财富巅峰/, "leaderboard page should use the native leaderboard title");
@@ -96,9 +97,17 @@ test("phase 31 manager owns long-term goals", () => {
 });
 
 test("phase 31 commerce privilege and pass drop entrance navigation copy", () => {
+  assert.match(source, /const rightActions = \["活动", "排行", "商城", "特权", "通行证", "专属经理"\]/, "right rail should expose shop as 商城");
   assert.doesNotMatch(shopSource, /商业入口导航|去特权|去通行证|去背包/, "shop should not explain other entrances");
-  assert.doesNotMatch(privilegeSource, /特权入口导航|去商业|去通行证|去背包/, "privilege should not explain other entrances");
-  assert.doesNotMatch(passSource, /通行证入口导航|去商业|去特权|去背包/, "pass should not explain other entrances");
+  assert.doesNotMatch(privilegeSource, /特权入口导航|去商城|去通行证|去背包/, "privilege should not explain other entrances");
+  assert.doesNotMatch(passSource, /通行证入口导航|去商城|去特权|去背包/, "pass should not explain other entrances");
+  assert.match(shopSource, /shop-purchase-popup/, "shop purchase feedback should render as an overlay popup");
+  assert.match(privilegeSource, /shop-purchase-popup/, "privilege purchase feedback should render as an overlay popup");
+  assert.match(shopPurchasePopupStyle, /position:\s*absolute/, "purchase popup should overlay the current native page");
+  assert.match(shopPurchasePopupStyle, /top:\s*42%/, "purchase popup should match the left-side native action toast position");
+  assert.match(shopPurchasePopupStyle, /left:\s*50%/, "purchase popup should be horizontally centered");
+  assert.match(shopPurchasePopupStyle, /border-left-width:\s*4px/, "purchase popup should match the left-side native action toast shape");
+  assert.match(source, /setShopNotice\(""\);\s*setShopError\(""\);[\s\S]*shopError \? 3200 : 2200/, "shop purchase popup should auto dismiss like left-side action toasts");
 });
 
 test("phase 31 right rail red dots are state driven", () => {

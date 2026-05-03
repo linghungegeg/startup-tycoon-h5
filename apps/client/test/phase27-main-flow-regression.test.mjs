@@ -28,7 +28,7 @@ test("phase 27 client preserves pre-launch player main flow coverage", () => {
     "跨服创业大赛",
     "活动",
     "排行榜",
-    "商业",
+    "商城",
     "特权",
     "赛季通行证",
     "背包",

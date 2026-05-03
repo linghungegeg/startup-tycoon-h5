@@ -1287,7 +1287,7 @@ const shopCategoryLabels: Record<string, string> = {
 
 const VIP_LEVEL_WINDOW_SIZE = 5;
 const sideActions = ["VIP", "财务", "融资", "贷款"];
-const rightActions = ["活动", "排行", "商业", "特权", "通行证", "专属经理"];
+const rightActions = ["活动", "排行", "商城", "特权", "通行证", "专属经理"];
 const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
@@ -1302,6 +1302,7 @@ const homeActionIcons: Record<string, string> = {
   "活动": "calendar",
   "排行": "trophy",
   "跨服": "trophy",
+  "商城": "shopping-bag",
   "商业": "shopping-bag",
   "特权": "award",
   "通行证": "ticket",
@@ -1335,6 +1336,7 @@ const homeActionIconClasses: Record<string, string> = {
   "活动": "text-blue-400",
   "排行": "text-amber-400",
   "跨服": "text-cyan-400",
+  "商城": "text-business-gold",
   "商业": "text-business-gold",
   "特权": "text-business-gold",
   "通行证": "text-emerald-400",
@@ -1485,9 +1487,9 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
     action: "查看排行"
   },
   "商业": {
-    title: "商业",
-    lines: ["首充、礼包、猎头和保险等普通商品集中展示。", "月卡基金归特权，赛季付费归通行证。"],
-    action: "进入商业"
+    title: "商城",
+    lines: ["首充、礼包、猎头和保险等商品集中展示。", "月卡和成长基金在特权页，赛季奖励在通行证页。"],
+    action: "进入商城"
   },
   "特权": {
     title: "特权",
@@ -1510,8 +1512,8 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
     action: "领取福利"
   },
   "商城": {
-    title: "特惠商城",
-    lines: ["月卡、成长基金、猎头契约和经营保险集中展示。", "平台币消费会计入 VIP 经验，后台发放平台币不直接计入。"],
+    title: "商城",
+    lines: ["首充、礼包、猎头和保险等商品集中展示。", "购买商品会消耗平台币，并记录到最近购买。"],
     action: "进入商城"
   },
   "七日目标": {
@@ -1652,6 +1654,21 @@ const compactNumber = (value: number): string => {
 
   return value.toLocaleString("zh-CN");
 };
+
+const shopProductSummaryOverrides: Record<string, string> = {
+  "first-charge-starter": "首日启动资源，包含现金、行动力和首次猎头机会。",
+  "daily-founder-pack": "补足今日项目推进和经营事件所需资源。",
+  "weekly-operation-card": "连续 7 天获得行动力和员工培养材料。",
+  "monthly-card-basic": "30 天经营补贴，包含每日领取和即时启动材料。",
+  "growth-fund-weekly": "完成首周目标后领取成长奖励，帮助补齐员工和资源。",
+  "growth-fund-seed": "围绕公司等级、估值、产品和融资节点提供成长奖励。",
+  "targeted-headhunt-pack": "提供岗位定向选择机会，帮助补齐关键员工。",
+  "risk-insurance-trial": "降低早期经营波动，提供一段时间的风险保障。",
+  "market-sprint-pack": "提供市场情报和行动力，帮助推进市场竞争。",
+  "project-delivery-pack": "补足项目交付资源，帮助推进主线和赛季任务。"
+};
+
+const getShopProductSummary = (productId: string, summary: string): string => shopProductSummaryOverrides[productId] ?? summary;
 
 const formatWan = (value: number): string => `${(value / 10000).toFixed(1)}万`;
 const FUNDING_HIGH_RISK_BOARD_PRESSURE = 30;
@@ -4095,6 +4112,19 @@ function App() {
   }, [marketNotice, marketError]);
 
   useEffect(() => {
+    if (!shopNotice && !shopError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShopNotice("");
+      setShopError("");
+    }, shopError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [shopNotice, shopError]);
+
+  useEffect(() => {
     setGuildAnnouncementDraft(guildCenter?.guild?.announcement ?? "");
     setGuildRulesDraft(guildCenter?.guild?.collaborationRules ?? "");
   }, [guildCenter?.guild?.id, guildCenter?.guild?.announcement, guildCenter?.guild?.collaborationRules]);
@@ -5284,7 +5314,7 @@ function App() {
     }
 
     if (task.guideAction.includes("商业")) {
-      openHomePanel("商业");
+      openHomePanel("商城");
       return;
     }
 
@@ -7284,13 +7314,13 @@ function App() {
           )}
 
           {nativeHomePage === "shop" && (
-            <section className="page-container page-active" aria-label="钱包商城" data-testid="native-shop">
+            <section className="page-container page-active" aria-label="商城" data-testid="native-shop">
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="shopping-bag" className="w-7 h-7 text-pink-400" />
-                  <h2 className="text-xl font-black text-white italic uppercase">Wallet 钱包商城</h2>
+                  <h2 className="text-xl font-black text-white">商城</h2>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭钱包商城" onClick={closeNativeHomePage}>
+                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭商城" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
@@ -7300,15 +7330,10 @@ function App() {
                   <div className="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
                     <h3 className="text-lg font-black italic text-white">平台币余额 {compactNumber(shopCenter?.wallet.balance ?? profile.platformCoins)}</h3>
                     <p className="text-[10px] text-business-gold font-bold">
-                      普通商品商城 · 首充、礼包、猎头与保险
+                      首充、礼包、猎头与保险
                     </p>
                   </div>
                 </section>
-                {(shopNotice || shopError) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${shopError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {shopError || shopNotice}
-                  </p>
-                )}
                 <div className="grid grid-cols-2 gap-4">
                   {commerceProducts.map((product) => (
                     <article
@@ -7331,7 +7356,7 @@ function App() {
                         />
                       </div>
                       <div className="text-xs font-black text-white text-center">{product.name}</div>
-                      <p className="h-8 overflow-hidden text-[9px] text-slate-400 font-bold text-center leading-4">{product.summary}</p>
+                      <p className="h-8 overflow-hidden text-[9px] text-slate-400 font-bold text-center leading-4">{getShopProductSummary(product.id, product.summary)}</p>
                       {product.rewardItem && (
                         <span className="rounded-full bg-business-gold/10 px-2 py-1 text-[9px] font-black text-business-gold">
                           {product.rewardItem.name} x{product.rewardItem.quantity}
@@ -7359,7 +7384,7 @@ function App() {
                   ))}
                 </div>
                 {shopCenter && commerceProducts.length === 0 && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">普通商城商品暂未配置。</p>
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无可购买商品。</p>
                 )}
                 {shopCenter && commercePurchases.length > 0 && (
                   <section className="glass-panel rounded-3xl p-4">
@@ -7378,9 +7403,14 @@ function App() {
                   </section>
                 )}
                 {!shopCenter && (
-                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无商城配置。</p>
+                  <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">商城暂未开放。</p>
                 )}
               </div>
+              {(shopNotice || shopError) && (
+                <div className={`shop-purchase-popup ${shopError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {shopError || shopNotice}
+                </div>
+              )}
             </section>
           )}
 
@@ -7411,11 +7441,6 @@ function App() {
                     </span>
                   </div>
                 </section>
-                {(shopNotice || shopError) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${shopError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {shopError || shopNotice}
-                  </p>
-                )}
                 <div className="grid grid-cols-1 gap-3">
                   {privilegeProducts.map((product) => (
                     <article className="glass-panel rounded-3xl p-4 border-business-gold/20" key={product.id}>
@@ -7428,7 +7453,7 @@ function App() {
                             <strong className="text-sm text-white font-black">{product.name}</strong>
                             <span className="text-sm text-business-gold font-black">{product.pricePlatformCoins.toLocaleString("zh-CN")}</span>
                           </div>
-                          <p className="mt-1 text-[10px] leading-4 text-slate-400 font-bold">{product.summary}</p>
+                          <p className="mt-1 text-[10px] leading-4 text-slate-400 font-bold">{getShopProductSummary(product.id, product.summary)}</p>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <span className="rounded-full bg-slate-900/70 px-2 py-1 text-[9px] font-black text-slate-300">
                               {product.durationDays > 0 ? `${product.durationDays}天权益` : "阶段领取"}
@@ -7475,6 +7500,11 @@ function App() {
                   <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无特权配置。</p>
                 )}
               </div>
+              {(shopNotice || shopError) && (
+                <div className={`shop-purchase-popup ${shopError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {shopError || shopNotice}
+                </div>
+              )}
             </section>
           )}
 
@@ -7749,10 +7779,10 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4 mb-4" aria-label="背包入口导航">
                   <strong className="block text-sm text-white font-black">背包入口导航</strong>
                   <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
-                    背包保存已获得的道具和材料；需要普通补给去商业，需要效率权益去特权，需要赛季奖励线去通行证。
+                    背包保存已获得的道具和材料；需要普通补给去商城，需要效率权益去特权，需要赛季奖励线去通行证。
                   </p>
                   <div className="mt-3 grid grid-cols-3 gap-2">
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
+                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商城")}>去商城</button>
                     <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
                     <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
                   </div>
