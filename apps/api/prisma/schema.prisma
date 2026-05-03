@@ -401,6 +401,10 @@ model ActivityConfig {
   endDate     String   @db.VarChar(10)
   leaderboardKey String @db.VarChar(48)
   targetScore Int
+  progressMode String   @default("target") @db.VarChar(16)
+  progressScore Int     @default(100)
+  dailyProgressLimit Int @default(1)
+  actionPowerCost Int   @default(0)
   rewardCash  Int      @default(0)
   rewardReputation Int @default(0)
   rewardPoints Int     @default(0)
@@ -420,6 +424,10 @@ model ActivityConfigDraft {
   endDate     String   @db.VarChar(10)
   leaderboardKey String @db.VarChar(48)
   targetScore Int
+  progressMode String   @default("target") @db.VarChar(16)
+  progressScore Int     @default(100)
+  dailyProgressLimit Int @default(1)
+  actionPowerCost Int   @default(0)
   rewardCash  Int      @default(0)
   rewardPlatformCoins Int @default(0)
   rewardReputation Int @default(0)
@@ -444,6 +452,8 @@ model PlayerActivityState {
   activityId  String   @db.VarChar(48)
   isJoined    Boolean  @default(false)
   score       Int      @default(0)
+  dailyProgressDate String? @db.VarChar(10)
+  dailyProgressCount Int @default(0)
   rewardClaimedAt DateTime?
   updatedAt   DateTime @updatedAt
   profile     PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)

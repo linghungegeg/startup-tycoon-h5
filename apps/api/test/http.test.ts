@@ -2482,12 +2482,12 @@ const createTestRepository = (): GameRepository => {
     { id: "season-daily-project", title: "推进一次风口项目", description: "完成一次项目或产品推进。", target: 1, rewardPoints: 120 }
   ];
   const activityConfigs = [
-    { id: "ai-agent-growth", name: "AI Agent 风口榜", startDate: "2026-05-01", endDate: "2026-05-20", leaderboardKey: "activity-ai-agent-growth", targetScore: 200, rewardCash: 120000, rewardReputation: 600, rewardPoints: 260, rewardTitleId: "season-ai-pioneer" },
-    { id: "cashflow-sprint", name: "现金流挑战周", startDate: "2026-05-05", endDate: "2026-05-28", leaderboardKey: "activity-cashflow-sprint", targetScore: 240, rewardCash: 0, rewardReputation: 90, rewardPoints: 140, rewardTitleId: "season-cashflow-pioneer" },
-    { id: "market-expansion-race", name: "市场拓展冲刺", startDate: "2026-05-08", endDate: "2026-05-30", leaderboardKey: "activity-market-expansion-race", targetScore: 300, rewardCash: 0, rewardReputation: 110, rewardPoints: 160, rewardTitleId: "season-market-runner" },
-    { id: "team-growth-camp", name: "团队培养营", startDate: "2026-05-10", endDate: "2026-05-26", leaderboardKey: "activity-team-growth-camp", targetScore: 220, rewardCash: 0, rewardReputation: 80, rewardPoints: 120, rewardTitleId: "season-team-coach" },
-    { id: "compliance-ops-week", name: "合规经营周", startDate: "2026-06-01", endDate: "2026-06-14", leaderboardKey: "activity-compliance-ops-week", targetScore: 180, rewardCash: 0, rewardReputation: 70, rewardPoints: 110, rewardTitleId: null },
-    { id: "funding-roadshow-week", name: "融资路演周", startDate: "2026-06-15", endDate: "2026-06-28", leaderboardKey: "activity-funding-roadshow-week", targetScore: 260, rewardCash: 0, rewardReputation: 100, rewardPoints: 150, rewardTitleId: null }
+    { id: "ai-agent-growth", name: "AI Agent 风口榜", startDate: "2026-05-01", endDate: "2026-05-20", leaderboardKey: "activity-ai-agent-growth", targetScore: 200, progressMode: "target", progressScore: 200, dailyProgressLimit: 1, actionPowerCost: 0, rewardCash: 120000, rewardReputation: 600, rewardPoints: 260, rewardTitleId: "season-ai-pioneer" },
+    { id: "cashflow-sprint", name: "现金流挑战周", startDate: "2026-05-05", endDate: "2026-05-28", leaderboardKey: "activity-cashflow-sprint", targetScore: 240, progressMode: "target", progressScore: 120, dailyProgressLimit: 2, actionPowerCost: 5, rewardCash: 0, rewardReputation: 90, rewardPoints: 140, rewardTitleId: "season-cashflow-pioneer" },
+    { id: "market-expansion-race", name: "市场拓展冲刺", startDate: "2026-05-08", endDate: "2026-05-30", leaderboardKey: "activity-market-expansion-race", targetScore: 300, progressMode: "leaderboard", progressScore: 80, dailyProgressLimit: 3, actionPowerCost: 8, rewardCash: 0, rewardReputation: 110, rewardPoints: 160, rewardTitleId: "season-market-runner" },
+    { id: "team-growth-camp", name: "团队培养营", startDate: "2026-05-10", endDate: "2026-05-26", leaderboardKey: "activity-team-growth-camp", targetScore: 220, progressMode: "leaderboard", progressScore: 70, dailyProgressLimit: 3, actionPowerCost: 6, rewardCash: 0, rewardReputation: 80, rewardPoints: 120, rewardTitleId: "season-team-coach" },
+    { id: "compliance-ops-week", name: "合规经营周", startDate: "2026-06-01", endDate: "2026-06-14", leaderboardKey: "activity-compliance-ops-week", targetScore: 180, progressMode: "target", progressScore: 90, dailyProgressLimit: 2, actionPowerCost: 4, rewardCash: 0, rewardReputation: 70, rewardPoints: 110, rewardTitleId: null },
+    { id: "funding-roadshow-week", name: "融资路演周", startDate: "2026-06-15", endDate: "2026-06-28", leaderboardKey: "activity-funding-roadshow-week", targetScore: 260, progressMode: "target", progressScore: 130, dailyProgressLimit: 2, actionPowerCost: 6, rewardCash: 0, rewardReputation: 100, rewardPoints: 150, rewardTitleId: null }
   ];
   const activityDrafts = new Map<string, {
     draftId: string;
@@ -2497,6 +2497,10 @@ const createTestRepository = (): GameRepository => {
     endDate: string;
     leaderboardKey: string;
     targetScore: number;
+    progressMode: "target" | "leaderboard" | "scenario";
+    progressScore: number;
+    dailyProgressLimit: number;
+    actionPowerCost: number;
     rewardCash: number;
     rewardPlatformCoins: number;
     rewardReputation: number;
@@ -2523,7 +2527,7 @@ const createTestRepository = (): GameRepository => {
   const seasonProgresses = new Map<string, { points: number }>();
   const seasonTaskProgresses = new Map<string, { progress: number; claimedAt: string | null }>();
   const seasonPassPurchases = new Map<string, { profileId: string; seasonId: string; requestId: string; pricePlatformCoins: number }>();
-  const activityStates = new Map<string, { profileId: string; activityId: string; isJoined: boolean; score: number; rewardClaimedAt: string | null }>();
+  const activityStates = new Map<string, { profileId: string; activityId: string; isJoined: boolean; score: number; dailyProgressDate: string | null; dailyProgressCount: number; rewardClaimedAt: string | null }>();
   const activityShopPurchases = new Map<string, { profileId: string; itemId: string; requestId: string; costPoints: number }>();
   const scenarioRuns = new Map<string, { id: string; profileId: string; scenarioId: string; choices: string[]; score: number | null; grade: string | null; rewardClaimed: boolean }>();
   const seasonStatus = (startDate: string, endDate: string, today: string) => today < startDate ? "upcoming" : today > endDate ? "ended" : "active";
@@ -2627,7 +2631,39 @@ const createTestRepository = (): GameRepository => {
       }),
       activities: activityConfigs.map((activity) => {
         const state = activityStates.get(activityKey(profile.id, activity.id));
-        return { id: activity.id, name: activity.name, status: seasonStatus(activity.startDate, activity.endDate, today), leaderboardKey: activity.leaderboardKey, isJoined: state?.isJoined ?? false, score: state?.score ?? 0, targetScore: activity.targetScore, rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined };
+        const status = seasonStatus(activity.startDate, activity.endDate, today);
+        const dailyProgressCount = state?.dailyProgressDate === today ? state.dailyProgressCount : 0;
+        const isJoined = state?.isJoined ?? false;
+        const score = state?.score ?? 0;
+        const targetReached = activity.progressMode === "target" && score >= activity.targetScore;
+        const progressLockedReason = status !== "active"
+          ? "活动未开放"
+          : !isJoined
+            ? "先报名"
+            : targetReached
+              ? "目标已达成"
+              : activity.dailyProgressLimit > 0 && dailyProgressCount >= activity.dailyProgressLimit
+                ? "今日次数已用完"
+                : activity.actionPowerCost > 0 && profile.actionPower < activity.actionPowerCost
+                  ? "行动力不足"
+                  : null;
+        return {
+          id: activity.id,
+          name: activity.name,
+          status,
+          leaderboardKey: activity.leaderboardKey,
+          isJoined,
+          score,
+          targetScore: activity.targetScore,
+          progressMode: activity.progressMode,
+          progressScore: activity.progressScore,
+          dailyProgressLimit: activity.dailyProgressLimit,
+          dailyProgressCount,
+          actionPowerCost: activity.actionPowerCost,
+          rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined,
+          canProgress: progressLockedReason === null,
+          progressLockedReason
+        };
       }),
       activityBoards: boards,
       activityRecaps,
@@ -3942,6 +3978,10 @@ const createTestRepository = (): GameRepository => {
         endDate: draft.endDate,
         leaderboardKey: draft.leaderboardKey,
         targetScore: draft.targetScore,
+        progressMode: draft.progressMode,
+        progressScore: draft.progressScore,
+        dailyProgressLimit: draft.dailyProgressLimit,
+        actionPowerCost: draft.actionPowerCost,
         rewardCash: draft.rewardCash,
         rewardPlatformCoins: draft.rewardPlatformCoins,
         rewardReputation: draft.rewardReputation,
@@ -4060,6 +4100,10 @@ const createTestRepository = (): GameRepository => {
         endDate: draft.endDate,
         leaderboardKey: draft.leaderboardKey,
         targetScore: draft.targetScore,
+        progressMode: draft.progressMode,
+        progressScore: draft.progressScore,
+        dailyProgressLimit: draft.dailyProgressLimit,
+        actionPowerCost: draft.actionPowerCost,
         rewardCash: draft.rewardCash,
         rewardReputation: draft.rewardReputation,
         rewardPoints: draft.rewardPoints,
@@ -6620,20 +6664,35 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) return "PLAYER_NOT_FOUND";
       const activity = activityConfigs.find((item) => item.id === activityId);
       if (activity === undefined) return "ACTIVITY_NOT_FOUND";
-      const state = activityStates.get(activityKey(profile.id, activityId)) ?? { profileId: profile.id, activityId, isJoined: false, score: 0, rewardClaimedAt: null };
+      const state = activityStates.get(activityKey(profile.id, activityId)) ?? { profileId: profile.id, activityId, isJoined: false, score: 0, dailyProgressDate: null, dailyProgressCount: 0, rewardClaimedAt: null };
       state.isJoined = true;
       activityStates.set(activityKey(profile.id, activityId), state);
       const center = toSeasonCenter(profile, today);
       return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
     },
     async progressActivity(accountId, serverId, activityId, scoreDelta, today) {
+      void scoreDelta;
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) return "PLAYER_NOT_FOUND";
+      const activity = activityConfigs.find((item) => item.id === activityId);
+      if (activity === undefined) return "ACTIVITY_NOT_FOUND";
       const state = activityStates.get(activityKey(profile.id, activityId));
       if (state === undefined || !state.isJoined) return "ACTIVITY_NOT_JOINED";
-      state.score += scoreDelta;
+      if (activity.progressMode === "scenario") return "ACTIVITY_SCENARIO_ONLY";
+      if (activity.progressMode === "target" && state.score >= activity.targetScore) return "ACTIVITY_TARGET_REACHED";
+      const dailyProgressCount = state.dailyProgressDate === today ? state.dailyProgressCount : 0;
+      if (activity.dailyProgressLimit > 0 && dailyProgressCount >= activity.dailyProgressLimit) return "ACTIVITY_DAILY_LIMIT_REACHED";
+      if (activity.actionPowerCost > 0 && profile.actionPower < activity.actionPowerCost) return "ACTIVITY_ACTION_POWER_NOT_ENOUGH";
+      const effectiveScoreDelta = activity.progressMode === "target"
+        ? Math.max(0, Math.min(activity.progressScore, activity.targetScore - state.score))
+        : activity.progressScore;
+      if (effectiveScoreDelta <= 0) return "ACTIVITY_TARGET_REACHED";
+      state.score += effectiveScoreDelta;
+      state.dailyProgressDate = today;
+      state.dailyProgressCount = dailyProgressCount + 1;
+      profile.actionPower -= activity.actionPowerCost;
       const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
-      progress.points += scoreDelta;
+      progress.points += effectiveScoreDelta;
       seasonProgresses.set(seasonKey(profile.id), progress);
       const center = toSeasonCenter(profile, today);
       return { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile };
@@ -10385,8 +10444,8 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
       }
     );
     assert.equal(progressed.status, 200, JSON.stringify(progressed.body));
-    assert.equal(progressed.body.data?.activity.score, 260);
-    assert.equal(progressed.body.data?.season.points, 380);
+    assert.equal(progressed.body.data?.activity.score, 200);
+    assert.equal(progressed.body.data?.season.points, 320);
 
     const claimed = await requestJson<{ activity: { rewardClaimed: boolean }; profile: { cash: number; reputation: number } }>(
       baseUrl,
@@ -10475,6 +10534,77 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
     assert.equal(settled.body.data?.run.score, 92);
     assert.equal(settled.body.data?.run.grade, "S");
     assert.equal(settled.body.data?.run.rewardClaimed, true);
+  });
+});
+
+test("phase 32 caps activity progress and rejects target-complete repeat pushes", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "activitycap");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const joined = await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(joined.status, 200, JSON.stringify(joined.body));
+
+    const progressed = await requestJson<{ activity: { score: number; targetScore: number }; season: { points: number } }>(
+      baseUrl,
+      "/activities/ai-agent-growth/progress",
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ serverId: "s1", scoreDelta: 999999 })
+      }
+    );
+    assert.equal(progressed.status, 200, JSON.stringify(progressed.body));
+    assert.equal(progressed.body.data?.activity.score, progressed.body.data?.activity.targetScore);
+    assert.equal(progressed.body.data?.season.points, progressed.body.data?.activity.targetScore);
+
+    const repeated = await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
+    });
+    assert.equal(repeated.status, 409);
+    assert.equal(repeated.body.error?.code, "ACTIVITY_TARGET_REACHED");
+  });
+});
+
+test("phase 32 limits leaderboard activity pushes by daily attempts and action power", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "activitydaily");
+    const headers = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/activities/market-expansion-race/join", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    for (let index = 1; index <= 3; index += 1) {
+      const progressed = await requestJson<{ activity: { score: number; dailyProgressCount: number }; profile: { actionPower: number } }>(
+        baseUrl,
+        "/activities/market-expansion-race/progress",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ serverId: "s1", scoreDelta: 999999 })
+        }
+      );
+      assert.equal(progressed.status, 200, JSON.stringify(progressed.body));
+      assert.equal(progressed.body.data?.activity.score, 80 * index);
+      assert.equal(progressed.body.data?.activity.dailyProgressCount, index);
+    }
+
+    const blocked = await requestJson(baseUrl, "/activities/market-expansion-race/progress", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 80 })
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.error?.code, "ACTIVITY_DAILY_LIMIT_REACHED");
   });
 });
 
@@ -12501,9 +12631,9 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
     });
     assert.equal(active.status, 200, JSON.stringify(active.body));
     const activeAiBoard = active.body.data?.activityBoards.find((board) => board.key === "activity-ai-agent-growth");
-    assert.equal(activeAiBoard?.rows[0]?.profileId, second.profile.id);
-    assert.equal(activeAiBoard?.rows[0]?.value, 140);
-    assert.equal(activeAiBoard?.rows[1]?.profileId, first.profile.id);
+    assert.deepEqual(new Set(activeAiBoard?.rows.slice(0, 2).map((row) => row.profileId)), new Set([first.profile.id, second.profile.id]));
+    assert.equal(activeAiBoard?.rows[0]?.value, 200);
+    assert.equal(activeAiBoard?.rows[1]?.value, 200);
 
     const ended = await requestJson<{
       activityBoards: LeaderboardCenterRecord["activityBoards"];
@@ -12520,8 +12650,8 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
     assert.equal(ended.status, 200, JSON.stringify(ended.body));
     assert.equal(ended.body.data?.activityBoards.some((board) => board.key === "activity-ai-agent-growth"), false);
     assert.equal(ended.body.data?.activityRecaps[0]?.activityId, "ai-agent-growth");
-    assert.equal(ended.body.data?.activityRecaps[0]?.personalRank, 2);
-    assert.equal(ended.body.data?.activityRecaps[0]?.personalScore, 80);
+    assert.equal(ended.body.data?.activityRecaps[0]?.personalRank, 1);
+    assert.equal(ended.body.data?.activityRecaps[0]?.personalScore, 200);
 
     const hiddenAfterEnd = await requestJson<LeaderboardCenterRecord>(baseUrl, "/leaderboards?serverId=s1", {
       headers: { ...firstHeaders, "x-server-date": "2026-05-21" }
@@ -12969,7 +13099,7 @@ test("phase 24 operation configs expose season and activity operations read-only
     assert.equal(activity?.status, "ended");
     assert.equal(activity?.leaderboardKey, "activity-ai-agent-growth");
     assert.equal(activity?.participantCount, 2);
-    assert.equal(activity?.totalScore, 380);
+    assert.equal(activity?.totalScore, 400);
     assert.equal(activity?.isSettled, true);
     assert.equal(activity?.deliveredRewards, 2);
     assert.equal(activity?.rewardBoundary, "leaderboard_no_cash_no_platform_coins");
@@ -13226,6 +13356,11 @@ test("phase 24 activity content pool rotates multiple startup activities", async
       headers: playerHeaders(playerA.token),
       body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
     });
+    await requestJson(baseUrl, "/activities/cashflow-sprint/progress", {
+      method: "POST",
+      headers: playerHeaders(playerA.token),
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 260 })
+    });
     const claimed = await requestJson(baseUrl, "/activities/cashflow-sprint/claim", {
       method: "POST",
       headers: playerHeaders(playerA.token),
@@ -13239,17 +13374,19 @@ test("phase 24 activity content pool rotates multiple startup activities", async
     assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
     assert.ok((afterProfile.body.data?.reputation ?? 0) > (beforeProfile.body.data?.reputation ?? 0));
 
-    for (const [session, scoreDelta] of [[playerA, 310], [playerB, 150], [playerC, 220]] as const) {
+    for (const [session, attemptCount] of [[playerA, 3], [playerB, 1], [playerC, 2]] as const) {
       await requestJson(baseUrl, "/activities/market-expansion-race/join", {
         method: "POST",
         headers: playerHeaders(session.token),
         body: JSON.stringify({ serverId: "s1" })
       });
-      await requestJson(baseUrl, "/activities/market-expansion-race/progress", {
-        method: "POST",
-        headers: playerHeaders(session.token),
-        body: JSON.stringify({ serverId: "s1", scoreDelta })
-      });
+      for (let index = 0; index < attemptCount; index += 1) {
+        await requestJson(baseUrl, "/activities/market-expansion-race/progress", {
+          method: "POST",
+          headers: playerHeaders(session.token),
+          body: JSON.stringify({ serverId: "s1", scoreDelta: 999999 })
+        });
+      }
     }
 
     const leaderboards = await requestJson<{
@@ -13263,9 +13400,9 @@ test("phase 24 activity content pool rotates multiple startup activities", async
     assert.ok(boardKeys.has("activity-market-expansion-race"));
     assert.ok(boardKeys.has("activity-team-growth-camp"));
     const marketBoard = leaderboards.body.data?.activityBoards.find((board) => board.key === "activity-market-expansion-race");
-    assert.equal(marketBoard?.rows[0]?.value, 310);
-    assert.equal(marketBoard?.rows[1]?.value, 220);
-    assert.equal(marketBoard?.rows[2]?.value, 150);
+    assert.equal(marketBoard?.rows[0]?.value, 240);
+    assert.equal(marketBoard?.rows[1]?.value, 160);
+    assert.equal(marketBoard?.rows[2]?.value, 80);
 
     const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
       method: "POST",
@@ -14157,7 +14294,7 @@ test("phase 24 activity operation release chain regresses publish observe settle
     assert.ok(observationRow);
     assert.equal(observationRow.status, "ended");
     assert.equal(observationRow.participantCount, 2);
-    assert.equal(observationRow.totalScore, 300);
+    assert.equal(observationRow.totalScore, 200);
     assert.equal(observationRow.isSettled, false);
     assert.equal(observationRow.deliveredRewards, 0);
     assert.equal(observationRow.publishAuditLogId, publishAuditLogId);

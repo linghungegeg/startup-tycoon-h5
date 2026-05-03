@@ -1486,6 +1486,10 @@ export type AdminActivityConfigDraftInput = {
   endDate: string;
   leaderboardKey: string;
   targetScore: number;
+  progressMode: ActivityProgressMode;
+  progressScore: number;
+  dailyProgressLimit: number;
+  actionPowerCost: number;
   rewardReputation: number;
   rewardPoints: number;
   rewardTitleId: string | null;
@@ -1522,6 +1526,10 @@ export type AdminActivityConfigDraftValidationRecord = {
     endDate: string;
     leaderboardKey: string;
     targetScore: number;
+    progressMode: ActivityProgressMode;
+    progressScore: number;
+    dailyProgressLimit: number;
+    actionPowerCost: number;
     rewardLabel: string;
     concurrentActiveCount: number;
   };
@@ -1535,6 +1543,10 @@ export type AdminActivityConfigDraftRecord = {
   endDate: string;
   leaderboardKey: string;
   targetScore: number;
+  progressMode: ActivityProgressMode;
+  progressScore: number;
+  dailyProgressLimit: number;
+  actionPowerCost: number;
   rewardCash: number;
   rewardPlatformCoins: number;
   rewardReputation: number;
@@ -1571,6 +1583,10 @@ export type AdminActivityConfigDraftPublishedActivityRecord = {
   endDate: string;
   leaderboardKey: string;
   targetScore: number;
+  progressMode: ActivityProgressMode;
+  progressScore: number;
+  dailyProgressLimit: number;
+  actionPowerCost: number;
   rewardCash: number;
   rewardReputation: number;
   rewardPoints: number;
@@ -1921,6 +1937,7 @@ export type LeaderboardSettlementRecord = {
 };
 
 export type SeasonStatus = "upcoming" | "active" | "ended";
+export type ActivityProgressMode = "target" | "leaderboard" | "scenario";
 
 export type ActivityRecapRecord = {
   activityId: string;
@@ -1946,7 +1963,23 @@ export type SeasonCenterRecord = {
     pass: { isPurchased: boolean; pricePlatformCoins: number };
   };
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: ItemRewardRecord | null; isClaimed: boolean }>;
-  activities: Array<{ id: string; name: string; status: SeasonStatus; leaderboardKey: string; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activities: Array<{
+    id: string;
+    name: string;
+    status: SeasonStatus;
+    leaderboardKey: string;
+    isJoined: boolean;
+    score: number;
+    targetScore: number;
+    progressMode: ActivityProgressMode;
+    progressScore: number;
+    dailyProgressLimit: number;
+    dailyProgressCount: number;
+    actionPowerCost: number;
+    rewardClaimed: boolean;
+    canProgress: boolean;
+    progressLockedReason: string | null;
+  }>;
   activityBoards: LeaderboardBoardRecord[];
   activityRecaps: ActivityRecapRecord[];
   shopItems: Array<{ id: string; name: string; costPoints: number; summary: string; rewardItem: ItemRewardRecord | null; isAvailable: boolean; lockedReason: string | null }>;
@@ -2426,7 +2459,7 @@ export type GameRepository = {
   progressSeasonTask(accountId: string, serverId: string, taskId: string, today: string): Promise<SeasonTaskProgressRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "SEASON_TASK_NOT_FOUND" | "SEASON_NOT_ACTIVE">;
   purchaseSeasonPass(accountId: string, serverId: string, seasonId: string, requestId: string, today: string): Promise<SeasonPassPurchaseRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "SEASON_NOT_ACTIVE" | "INSUFFICIENT_PLATFORM_COINS">;
   joinActivity(accountId: string, serverId: string, activityId: string, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_ACTIVE">;
-  progressActivity(accountId: string, serverId: string, activityId: string, scoreDelta: number, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_JOINED" | "ACTIVITY_NOT_ACTIVE">;
+  progressActivity(accountId: string, serverId: string, activityId: string, scoreDelta: number, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_JOINED" | "ACTIVITY_NOT_ACTIVE" | "ACTIVITY_TARGET_REACHED" | "ACTIVITY_DAILY_LIMIT_REACHED" | "ACTIVITY_ACTION_POWER_NOT_ENOUGH" | "ACTIVITY_SCENARIO_ONLY">;
   claimActivityReward(accountId: string, serverId: string, activityId: string, today: string): Promise<ActivityActionRecord | "PLAYER_NOT_FOUND" | "ACTIVITY_NOT_FOUND" | "ACTIVITY_NOT_JOINED" | "ACTIVITY_INCOMPLETE" | "ACTIVITY_REWARD_ALREADY_CLAIMED" | "ACTIVITY_NOT_ACTIVE">;
   purchaseActivityShopItem(accountId: string, serverId: string, itemId: string, requestId: string, today: string): Promise<ActivityShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SEASON_NOT_FOUND" | "ACTIVITY_SHOP_ITEM_NOT_FOUND" | "INSUFFICIENT_ACTIVITY_POINTS" | "PURCHASE_LIMIT_REACHED">;
   startScenario(accountId: string, serverId: string, scenarioId: string): Promise<ScenarioRunRecord | "PLAYER_NOT_FOUND" | "SCENARIO_NOT_FOUND">;
@@ -3560,6 +3593,46 @@ const readSeasonStatus = (startDate: string, endDate: string, today: string): Se
   return today > endDate ? "ended" : "active";
 };
 
+const readActivityProgressMode = (mode: string): ActivityProgressMode =>
+  mode === "leaderboard" || mode === "scenario" ? mode : "target";
+
+const getActivityDailyProgressCount = (state: { dailyProgressDate: string | null; dailyProgressCount: number } | undefined, today: string): number =>
+  state?.dailyProgressDate === today ? state.dailyProgressCount : 0;
+
+const getActivityDisplayScore = (
+  activity: { progressMode: string; targetScore: number } | null,
+  score: number
+): number => activity !== null && readActivityProgressMode(activity.progressMode) === "target"
+  ? Math.min(score, activity.targetScore)
+  : score;
+
+const getActivityProgressLock = (
+  activity: { progressMode: string; targetScore: number; dailyProgressLimit: number; actionPowerCost: number },
+  state: { isJoined: boolean; score: number; dailyProgressDate: string | null; dailyProgressCount: number } | undefined,
+  profile: Pick<PlayerProfileRecord, "actionPower">,
+  today: string,
+  status: SeasonStatus
+): string | null => {
+  const mode = readActivityProgressMode(activity.progressMode);
+  if (status !== "active") return "活动未开放";
+  if (state === undefined || !state.isJoined) return "先报名";
+  if (mode === "scenario") return "剧本结算";
+  if (mode === "target" && state.score >= activity.targetScore) return "目标已达成";
+  if (activity.dailyProgressLimit > 0 && getActivityDailyProgressCount(state, today) >= activity.dailyProgressLimit) return "今日次数已用完";
+  if (activity.actionPowerCost > 0 && profile.actionPower < activity.actionPowerCost) return "行动力不足";
+  return null;
+};
+
+const calculateActivityScoreIncrement = (
+  activity: { progressMode: string; targetScore: number; progressScore: number },
+  state: { score: number }
+): number => {
+  const progressScore = Math.max(1, activity.progressScore);
+  return readActivityProgressMode(activity.progressMode) === "target"
+    ? Math.max(0, Math.min(progressScore, activity.targetScore - state.score))
+    : progressScore;
+};
+
 const ACTIVITY_SCHEDULE_MAX_RECOMMENDED_ACTIVE = 3;
 
 type ActivityScheduleConfigLike = {
@@ -3568,6 +3641,9 @@ type ActivityScheduleConfigLike = {
   startDate: string;
   endDate: string;
   leaderboardKey: string;
+  progressMode?: string;
+  dailyProgressLimit?: number;
+  actionPowerCost?: number;
   rewardCash: number;
   rewardReputation: number;
   rewardPoints: number;
@@ -3576,9 +3652,14 @@ type ActivityScheduleConfigLike = {
 
 type ActivityDraftExistingConfigLike = ActivityScheduleConfigLike & {
   targetScore: number;
+  progressMode: string;
+  progressScore: number;
+  dailyProgressLimit: number;
+  actionPowerCost: number;
 };
 
-type ActivityConfigDraftSource = AdminActivityConfigDraftInput & {
+type ActivityConfigDraftSource = Omit<AdminActivityConfigDraftInput, "progressMode"> & {
+  progressMode: string;
   draftId: string;
   status: AdminActivityConfigDraftStatus;
   createdByAdminUserId: string;
@@ -3758,6 +3839,21 @@ export const validateAdminActivityConfigDraft = (
   if (!Number.isInteger(draft.targetScore) || draft.targetScore <= 0) {
     pushError("invalid_target_score", "targetScore", "目标分必须是大于 0 的整数。");
   }
+  if (!["target", "leaderboard", "scenario"].includes(draft.progressMode)) {
+    pushError("invalid_progress_mode", "progressMode", "活动类型必须是 target、leaderboard 或 scenario。");
+  }
+  if (!Number.isInteger(draft.progressScore) || draft.progressScore <= 0) {
+    pushError("invalid_progress_score", "progressScore", "单次推进分必须是大于 0 的整数。");
+  }
+  if (!Number.isInteger(draft.dailyProgressLimit) || draft.dailyProgressLimit < 0) {
+    pushError("invalid_daily_progress_limit", "dailyProgressLimit", "每日推进次数不能小于 0。");
+  }
+  if (draft.progressMode !== "target" && draft.dailyProgressLimit <= 0) {
+    pushError("missing_activity_limit", "dailyProgressLimit", "冲榜或剧本活动必须配置每日次数上限。");
+  }
+  if (!Number.isInteger(draft.actionPowerCost) || draft.actionPowerCost < 0) {
+    pushError("invalid_action_power_cost", "actionPowerCost", "行动力消耗不能小于 0。");
+  }
   if (draft.rewardReputation < 0 || draft.rewardPoints < 0) {
     pushError("invalid_reward_amount", "rewardReputation", "声望和活动积分奖励必须为非负数。");
   }
@@ -3809,6 +3905,10 @@ export const validateAdminActivityConfigDraft = (
       endDate: draft.endDate,
       leaderboardKey: draft.leaderboardKey,
       targetScore: draft.targetScore,
+      progressMode: draft.progressMode,
+      progressScore: draft.progressScore,
+      dailyProgressLimit: draft.dailyProgressLimit,
+      actionPowerCost: draft.actionPowerCost,
       rewardLabel,
       concurrentActiveCount
     }
@@ -3822,6 +3922,10 @@ const toAdminActivityConfigDraftInput = (draft: ActivityConfigDraftSource): Admi
   endDate: draft.endDate,
   leaderboardKey: draft.leaderboardKey,
   targetScore: draft.targetScore,
+  progressMode: readActivityProgressMode(draft.progressMode),
+  progressScore: draft.progressScore,
+  dailyProgressLimit: draft.dailyProgressLimit,
+  actionPowerCost: draft.actionPowerCost,
   rewardReputation: draft.rewardReputation,
   rewardPoints: draft.rewardPoints,
   rewardTitleId: draft.rewardTitleId,
@@ -3845,6 +3949,10 @@ export const toAdminActivityConfigDraftRecord = (
     endDate: draft.endDate,
     leaderboardKey: draft.leaderboardKey,
     targetScore: draft.targetScore,
+    progressMode: readActivityProgressMode(draft.progressMode),
+    progressScore: draft.progressScore,
+    dailyProgressLimit: draft.dailyProgressLimit,
+    actionPowerCost: draft.actionPowerCost,
     rewardCash: draft.rewardCash,
     rewardPlatformCoins: draft.rewardPlatformCoins,
     rewardReputation: draft.rewardReputation,
@@ -3871,6 +3979,10 @@ const toAdminActivityConfigDraftPublishedActivityRecord = (activity: ActivityDra
   endDate: activity.endDate,
   leaderboardKey: activity.leaderboardKey,
   targetScore: activity.targetScore,
+  progressMode: readActivityProgressMode(activity.progressMode),
+  progressScore: activity.progressScore,
+  dailyProgressLimit: activity.dailyProgressLimit,
+  actionPowerCost: activity.actionPowerCost,
   rewardCash: activity.rewardCash,
   rewardReputation: activity.rewardReputation,
   rewardPoints: activity.rewardPoints,
@@ -3917,6 +4029,8 @@ type ActivityLeaderboardConfigLike = {
   startDate: string;
   endDate: string;
   leaderboardKey: string;
+  progressMode: string;
+  targetScore: number;
 };
 
 const activityLeaderboardRewards = [120, 80, 50];
@@ -3924,9 +4038,14 @@ const activityLeaderboardRewards = [120, 80, 50];
 const toActivityLeaderboardRows = async (
   prisma: PrismaClient,
   activityId: string,
-  serverId?: string
+  serverId?: string,
+  activityConfig?: { progressMode: string; targetScore: number }
 ): Promise<LeaderboardRowRecord[]> => {
-  const states = await prisma.playerActivityState.findMany({
+  const [activity, states] = await Promise.all([
+    activityConfig === undefined
+      ? prisma.activityConfig.findUnique({ where: { id: activityId }, select: { progressMode: true, targetScore: true } })
+      : Promise.resolve(activityConfig),
+    prisma.playerActivityState.findMany({
     where: {
       activityId,
       score: { gt: 0 },
@@ -3941,17 +4060,21 @@ const toActivityLeaderboardRows = async (
       }
     },
     orderBy: [{ score: "desc" }, { updatedAt: "asc" }]
-  });
+    })
+  ]);
 
-  return states.map((state, index) => {
+  return states
+    .map((state) => ({ state, displayScore: getActivityDisplayScore(activity, state.score) }))
+    .sort((left, right) => right.displayScore - left.displayScore || left.state.updatedAt.getTime() - right.state.updatedAt.getTime())
+    .map(({ state, displayScore }, index) => {
     const equipped = state.profile.playerTitles.find((title) => title.titleId === state.profile.titleEquipment?.titleId);
     return {
       rank: index + 1,
       profileId: state.profileId,
       founderName: state.profile.founderName,
       companyName: state.profile.companyName,
-      value: state.score,
-      valueLabel: formatLeaderboardValue("activity", state.score),
+      value: displayScore,
+      valueLabel: formatLeaderboardValue("activity", displayScore),
       equippedTitle: equipped?.title.name ?? null
     };
   });
@@ -3967,7 +4090,7 @@ const toActivityLeaderboardBoard = async (
   name: activity.name,
   scope: "activity",
   isActive: readSeasonStatus(activity.startDate, activity.endDate, today) === "active",
-  rows: (await toActivityLeaderboardRows(prisma, activity.id, serverId)).slice(0, 20),
+  rows: (await toActivityLeaderboardRows(prisma, activity.id, serverId, activity)).slice(0, 20),
   snapshotDate: today
 });
 
@@ -4064,7 +4187,7 @@ const toSeasonCenterRecord = async (
   const activityRecaps = await Promise.all(activities
     .filter((activity) => readSeasonStatus(activity.startDate, activity.endDate, today) === "ended")
     .map(async (activity) => {
-      const rows = await toActivityLeaderboardRows(prisma, activity.id, profile.serverId);
+      const rows = await toActivityLeaderboardRows(prisma, activity.id, profile.serverId, activity);
       const personalRow = rows.find((row) => row.profileId === profile.id);
       const personalState = activityStateById.get(activity.id);
       return {
@@ -4075,7 +4198,7 @@ const toSeasonCenterRecord = async (
         endDate: activity.endDate,
         isSettled: await isActivityLeaderboardSettled(prisma, activity),
         personalRank: personalRow?.rank ?? null,
-        personalScore: personalState?.score ?? 0,
+        personalScore: getActivityDisplayScore(activity, personalState?.score ?? 0),
         rows: rows.slice(0, 20)
       };
     }));
@@ -4109,14 +4232,24 @@ const toSeasonCenterRecord = async (
     }),
     activities: activities.map((activity) => {
       const state = activityStateById.get(activity.id);
+      const status = readSeasonStatus(activity.startDate, activity.endDate, today);
+      const progressLockedReason = getActivityProgressLock(activity, state, profile, today, status);
+      const score = getActivityDisplayScore(activity, state?.score ?? 0);
       return {
         id: activity.id,
         name: activity.name,
-        status: readSeasonStatus(activity.startDate, activity.endDate, today),
+        status,
         leaderboardKey: activity.leaderboardKey,
         isJoined: state?.isJoined ?? false,
-        score: state?.score ?? 0,
+        score,
         targetScore: activity.targetScore,
+        progressMode: readActivityProgressMode(activity.progressMode),
+        progressScore: activity.progressScore,
+        dailyProgressLimit: activity.dailyProgressLimit,
+        dailyProgressCount: getActivityDailyProgressCount(state, today),
+        actionPowerCost: activity.actionPowerCost,
+        canProgress: progressLockedReason === null,
+        progressLockedReason,
         rewardClaimed: state?.rewardClaimedAt !== null && state?.rewardClaimedAt !== undefined
       };
     }),
@@ -10579,6 +10712,10 @@ export const createPrismaGameRepository = (
           endDate: draft.endDate,
           leaderboardKey: draft.leaderboardKey,
           targetScore: draft.targetScore,
+          progressMode: draft.progressMode,
+          progressScore: draft.progressScore,
+          dailyProgressLimit: draft.dailyProgressLimit,
+          actionPowerCost: draft.actionPowerCost,
           rewardCash: draft.rewardCash,
           rewardPlatformCoins: draft.rewardPlatformCoins,
           rewardReputation: draft.rewardReputation,
@@ -10598,6 +10735,10 @@ export const createPrismaGameRepository = (
           endDate: draft.endDate,
           leaderboardKey: draft.leaderboardKey,
           targetScore: draft.targetScore,
+          progressMode: draft.progressMode,
+          progressScore: draft.progressScore,
+          dailyProgressLimit: draft.dailyProgressLimit,
+          actionPowerCost: draft.actionPowerCost,
           rewardCash: draft.rewardCash,
           rewardPlatformCoins: draft.rewardPlatformCoins,
           rewardReputation: draft.rewardReputation,
@@ -10789,6 +10930,10 @@ export const createPrismaGameRepository = (
           endDate: current.endDate,
           leaderboardKey: current.leaderboardKey,
           targetScore: current.targetScore,
+          progressMode: current.progressMode,
+          progressScore: current.progressScore,
+          dailyProgressLimit: current.dailyProgressLimit,
+          actionPowerCost: current.actionPowerCost,
           rewardCash: current.rewardCash,
           rewardReputation: current.rewardReputation,
           rewardPoints: current.rewardPoints,
@@ -11943,6 +12088,7 @@ export const createPrismaGameRepository = (
   },
 
   async progressActivity(accountId, serverId, activityId, scoreDelta, today) {
+    void scoreDelta;
     const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
     if (profile === null) return "PLAYER_NOT_FOUND";
     const activity = await prisma.activityConfig.findUnique({ where: { id: activityId } });
@@ -11950,16 +12096,34 @@ export const createPrismaGameRepository = (
     if (readSeasonStatus(activity.startDate, activity.endDate, today) !== "active") return "ACTIVITY_NOT_ACTIVE";
     const state = await prisma.playerActivityState.findUnique({ where: { profileId_activityId: { profileId: profile.id, activityId } } });
     if (state === null || !state.isJoined) return "ACTIVITY_NOT_JOINED";
-    await prisma.$transaction([
-      prisma.playerActivityState.update({ where: { id: state.id }, data: { score: { increment: scoreDelta } } }),
-      prisma.playerSeasonProgress.upsert({
+    const mode = readActivityProgressMode(activity.progressMode);
+    if (mode === "scenario") return "ACTIVITY_SCENARIO_ONLY";
+    if (mode === "target" && state.score >= activity.targetScore) return "ACTIVITY_TARGET_REACHED";
+    if (activity.dailyProgressLimit > 0 && getActivityDailyProgressCount(state, today) >= activity.dailyProgressLimit) return "ACTIVITY_DAILY_LIMIT_REACHED";
+    if (activity.actionPowerCost > 0 && profile.actionPower < activity.actionPowerCost) return "ACTIVITY_ACTION_POWER_NOT_ENOUGH";
+    const effectiveScoreDelta = calculateActivityScoreIncrement(activity, state);
+    if (effectiveScoreDelta <= 0) return "ACTIVITY_TARGET_REACHED";
+    const updatedProfile = await prisma.$transaction(async (tx) => {
+      await tx.playerActivityState.update({
+        where: { id: state.id },
+        data: {
+          score: { increment: effectiveScoreDelta },
+          dailyProgressDate: today,
+          dailyProgressCount: state.dailyProgressDate === today ? { increment: 1 } : 1
+        }
+      });
+      await tx.playerSeasonProgress.upsert({
         where: { profileId_seasonId: { profileId: profile.id, seasonId: activity.seasonId } },
-        update: { points: { increment: scoreDelta } },
-        create: { profileId: profile.id, seasonId: activity.seasonId, points: scoreDelta }
-      })
-    ]);
-    const center = await toSeasonCenterRecord(prisma, toProfileRecord(profile), today);
-    return center === "SEASON_NOT_FOUND" ? "ACTIVITY_NOT_FOUND" : { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile: toProfileRecord(profile) };
+        update: { points: { increment: effectiveScoreDelta } },
+        create: { profileId: profile.id, seasonId: activity.seasonId, points: effectiveScoreDelta }
+      });
+      return activity.actionPowerCost > 0
+        ? tx.playerProfile.update({ where: { id: profile.id }, data: { actionPower: { decrement: activity.actionPowerCost } } })
+        : profile;
+    });
+    const profileRecord = toProfileRecord(updatedProfile);
+    const center = await toSeasonCenterRecord(prisma, profileRecord, today);
+    return center === "SEASON_NOT_FOUND" ? "ACTIVITY_NOT_FOUND" : { season: center.season, activity: center.activities.find((item) => item.id === activityId)!, profile: profileRecord };
   },
 
   async claimActivityReward(accountId, serverId, activityId, today) {

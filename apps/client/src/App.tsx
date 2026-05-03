@@ -774,7 +774,23 @@ type SeasonCenter = {
     pass: { isPurchased: boolean; pricePlatformCoins: number };
   };
   tasks: Array<{ id: string; title: string; description: string; progress: number; target: number; rewardPoints: number; rewardItem: { id: string; name: string; quantity: number } | null; isClaimed: boolean }>;
-  activities: Array<{ id: string; name: string; status: SeasonStatus; leaderboardKey: string; isJoined: boolean; score: number; targetScore: number; rewardClaimed: boolean }>;
+  activities: Array<{
+    id: string;
+    name: string;
+    status: SeasonStatus;
+    leaderboardKey: string;
+    isJoined: boolean;
+    score: number;
+    targetScore: number;
+    progressMode: "target" | "leaderboard" | "scenario";
+    progressScore: number;
+    dailyProgressLimit: number;
+    dailyProgressCount: number;
+    actionPowerCost: number;
+    rewardClaimed: boolean;
+    canProgress: boolean;
+    progressLockedReason: string | null;
+  }>;
   activityBoards: LeaderboardCenter["activityBoards"];
   activityRecaps: Array<{
     activityId: string;
@@ -2537,6 +2553,26 @@ function App() {
   const claimableAchievementCount = achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
   const bestActivityRecap = seasonCenter?.activityRecaps.find((recap) => recap.personalRank !== null) ?? seasonCenter?.activityRecaps[0] ?? null;
   const activityShopItems = seasonCenter?.shopItems ?? [];
+  const claimableSeasonActivities = seasonActivities.filter((activity) =>
+    activity.status === "active" && activity.score >= activity.targetScore && !activity.rewardClaimed
+  );
+  const exchangeableActivityShopItems = activityShopItems.filter((item) => item.isAvailable);
+  const activityManagerReminders = [
+    ...claimableSeasonActivities.map((activity) => ({
+      id: `activity-claim:${activity.id}`,
+      source: "活动",
+      title: `${activity.name} 可领奖`,
+      summary: "活动目标已达成，先领取奖励再继续经营。",
+      status: "可领奖"
+    })),
+    ...exchangeableActivityShopItems.slice(0, 3).map((item) => ({
+      id: `activity-shop:${item.id}`,
+      source: "商店",
+      title: `${item.name} 可兑换`,
+      summary: "活动积分足够，适合兑换限时资源。",
+      status: "可兑换"
+    }))
+  ];
   const hasActivityAttention = seasonActivities.some((activity) =>
     activity.status === "active" && (!activity.isJoined || activity.score >= activity.targetScore && !activity.rewardClaimed)
   ) || activityShopItems.some((item) => item.isAvailable);
@@ -2545,7 +2581,8 @@ function App() {
   const hasManagerAttention = pendingEvents.length > 0
     || pendingRandomTasks.length > 0
     || (profile?.pendingEventCount ?? 0) > 0
-    || longTermGoals !== null && longTermGoals.summaries.todayClaimableCount > 0;
+    || longTermGoals !== null && longTermGoals.summaries.todayClaimableCount > 0
+    || activityManagerReminders.length > 0;
   const shouldShowRightActionRedDot = (item: string): boolean => {
     if (item === "活动") {
       return hasActivityAttention;
@@ -3115,7 +3152,7 @@ function App() {
   const progressSeasonActivity = async (activityId: string): Promise<void> => {
     await runSeasonAction<SeasonActivityActionResult>(
       `/activities/${encodeURIComponent(activityId)}/progress`,
-      { scoreDelta: 260 },
+      {},
       (data) => {
         setProfile(data.profile);
         setSeasonCenter((current) => current === null ? current : {
@@ -5934,30 +5971,40 @@ function App() {
                     {groupedSeasonActivities.map((group) => (
                       <div className="space-y-2" key={group.key}>
                         <strong className="block text-[10px] font-black text-slate-400">{group.title}</strong>
-                        {group.activities.map((activity) => (
+                        {group.activities.map((activity) => {
+                          const isClaimable = activity.status === "active" && activity.score >= activity.targetScore && !activity.rewardClaimed;
+                          const progressButtonLabel = activity.progressMode === "scenario"
+                            ? "剧本结算"
+                            : activity.progressLockedReason ?? (activity.progressMode === "leaderboard" ? "冲榜一次" : "完成目标");
+                          return (
                           <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={activity.id}>
                             <div className="flex items-center justify-between gap-3 mb-2">
                               <div className="min-w-0">
                                 <strong className="block text-xs text-white font-black truncate">{activity.name}</strong>
-                                <span className="text-[9px] text-slate-500">{activity.score}/{activity.targetScore}</span>
+                                <span className="text-[9px] text-slate-500">
+                                  {activity.score}/{activity.targetScore}
+                                  {activity.status === "active" && activity.dailyProgressLimit > 0 ? ` · 今日 ${activity.dailyProgressCount}/${activity.dailyProgressLimit}` : ""}
+                                  {activity.actionPowerCost > 0 ? ` · 消耗 ${activity.actionPowerCost} 行动力` : ""}
+                                </span>
                               </div>
                               <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                                {activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
+                                {activity.rewardClaimed ? "已完成" : isClaimable ? "可领奖" : activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
                               </span>
                             </div>
                             <div className="grid grid-cols-3 gap-2">
                               <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={activity.status !== "active" || activity.isJoined} type="button" onClick={() => void joinSeasonActivity(activity.id)}>
                                 {activity.isJoined ? "已报名" : "报名"}
                               </button>
-                              <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={activity.status !== "active" || !activity.isJoined || activity.rewardClaimed} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
-                                推进
+                              <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!activity.canProgress} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
+                                {progressButtonLabel}
                               </button>
                               <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={activity.status !== "active" || activity.score < activity.targetScore || activity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(activity.id)}>
                                 {activity.rewardClaimed ? "已领" : "领奖"}
                               </button>
                             </div>
                           </article>
-                        ))}
+                          );
+                        })}
                       </div>
                     ))}
                     {seasonCenter && seasonActivities.length === 0 && <p className="text-xs text-slate-400 font-bold">暂无活动配置。</p>}
@@ -8371,7 +8418,7 @@ function App() {
               </header>
 
               <section className="event-summary" aria-label="经营提醒概览">
-                <span>提醒待办 {pendingEvents.length}</span>
+                <span>提醒待办 {pendingEvents.length + activityManagerReminders.length}</span>
                 <span>随机待办 {pendingRandomTasks.length}</span>
                 <span>今日处理 {randomTaskCenter?.handledToday ?? 0}/{randomTaskCenter?.dailyLimit ?? 6}</span>
               </section>
@@ -8445,19 +8492,32 @@ function App() {
               ) : managerTab === "events" ? (
                 <section className="event-layout">
                   <div className="event-list" aria-label="提醒列表">
-                    {events.length === 0 ? (
+                    {events.length === 0 && activityManagerReminders.length === 0 ? (
                       <div className="event-empty">暂无经营提醒，继续推进公司后会出现新的待办。</div>
-                    ) : events.map((item) => (
+                    ) : [...activityManagerReminders, ...events.map((item) => ({
+                      id: item.id,
+                      source: item.source,
+                      title: item.title,
+                      summary: item.summary,
+                      status: item.status === "pending" ? "待决策" : "已处理"
+                    }))].map((item) => (
                       <button
                         className={item.id === selectedEvent?.id ? "selected" : undefined}
                         key={item.id}
                         type="button"
-                        onClick={() => setSelectedEventId(item.id)}
+                        onClick={() => {
+                          if (item.id.startsWith("activity-")) {
+                            setActiveNav("公司");
+                            setNativeHomePage("season");
+                          } else {
+                            setSelectedEventId(item.id);
+                          }
+                        }}
                       >
                         <span>{item.source}</span>
                         <strong>{item.title}</strong>
                         <em>{item.summary}</em>
-                        <small>{item.status === "pending" ? "待决策" : "已处理"}</small>
+                        <small>{item.status}</small>
                       </button>
                     ))}
                   </div>

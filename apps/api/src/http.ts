@@ -1001,6 +1001,10 @@ export const createApiServer = (
         endDate: readString(body, "endDate"),
         leaderboardKey: readString(body, "leaderboardKey"),
         targetScore: readInteger(body, "targetScore") ?? 0,
+        progressMode: (["target", "leaderboard", "scenario"].includes(readString(body, "progressMode")) ? readString(body, "progressMode") : "target") as AdminActivityConfigDraftInput["progressMode"],
+        progressScore: readInteger(body, "progressScore") ?? 100,
+        dailyProgressLimit: readInteger(body, "dailyProgressLimit") ?? 1,
+        actionPowerCost: readInteger(body, "actionPowerCost") ?? 0,
         rewardReputation: readInteger(body, "rewardReputation") ?? 0,
         rewardPoints: readInteger(body, "rewardPoints") ?? 0,
         rewardTitleId: readString(body, "rewardTitleId") || null,
@@ -1056,6 +1060,10 @@ export const createApiServer = (
         endDate: readString(body, "endDate"),
         leaderboardKey: readString(body, "leaderboardKey"),
         targetScore: readInteger(body, "targetScore") ?? 0,
+        progressMode: (["target", "leaderboard", "scenario"].includes(readString(body, "progressMode")) ? readString(body, "progressMode") : "target") as AdminActivityConfigDraftInput["progressMode"],
+        progressScore: readInteger(body, "progressScore") ?? 100,
+        dailyProgressLimit: readInteger(body, "dailyProgressLimit") ?? 1,
+        actionPowerCost: readInteger(body, "actionPowerCost") ?? 0,
         rewardReputation: readInteger(body, "rewardReputation") ?? 0,
         rewardPoints: readInteger(body, "rewardPoints") ?? 0,
         rewardTitleId: readString(body, "rewardTitleId") || null,
@@ -3138,11 +3146,7 @@ export const createApiServer = (
         }
         const activityId = decodeURIComponent(activityMatch[1] ?? "");
         const action = activityMatch[2] ?? "";
-        const scoreDelta = action === "progress" ? readPositiveInteger(body, "scoreDelta") : undefined;
-        if (action === "progress" && scoreDelta === undefined) {
-          sendJson(response, 400, failure("VALIDATION_ERROR", "scoreDelta is required.", traceId));
-          return;
-        }
+        const scoreDelta = action === "progress" ? readPositiveInteger(body, "scoreDelta") ?? 0 : undefined;
         const result = action === "join"
           ? await repository.joinActivity(account.id, serverId, activityId, readToday(request))
           : action === "progress"
