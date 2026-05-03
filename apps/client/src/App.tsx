@@ -742,6 +742,17 @@ type LeaderboardRow = {
   equippedTitle: string | null;
 };
 
+type LeaderboardPlayerCard = LeaderboardRow & {
+  boardName: string;
+  levelLabel: string;
+  achievementLabel: string;
+  avatarUrl: string;
+  displayValueLabel: string;
+  realAssetPercent: number;
+  techAssetPercent: number;
+  financeAssetPercent: number;
+};
+
 type LeaderboardCenter = {
   boards: Array<{
     key: string;
@@ -988,6 +999,7 @@ type ChatCenter = {
 type MailChannelId = "system" | "reward" | "compensation";
 type MailStatusFilter = "all" | "unread" | "read";
 type CrossServerMode = "season" | "board" | "guild" | "rewards" | "history";
+type LeaderboardScope = "server" | "activity" | "cross";
 
 type MailRecord = {
   id: string;
@@ -2148,6 +2160,9 @@ function App() {
   const [mailNotice, setMailNotice] = useState("");
   const [mailError, setMailError] = useState("");
   const [activeCrossServerMode, setActiveCrossServerMode] = useState<CrossServerMode>("season");
+  const [activeLeaderboardScope, setActiveLeaderboardScope] = useState<LeaderboardScope>("server");
+  const [selectedLeaderboardPlayer, setSelectedLeaderboardPlayer] = useState<LeaderboardPlayerCard | null>(null);
+  const [leaderboardToast, setLeaderboardToast] = useState("");
   const [phase14Error, setPhase14Error] = useState("");
   const [phase14Notice, setPhase14Notice] = useState("");
 
@@ -2536,6 +2551,8 @@ function App() {
     [activeMailChannel, activeMailStatus, mailCenter?.mails]
   );
   const selectedMail = visibleMails.find((mail) => mail.id === selectedMailId) ?? visibleMails[0] ?? null;
+  const rewardMails = mailCenter?.mails.filter((mail) => mail.channel === "reward") ?? [];
+  const pendingRewardMail = rewardMails.find((mail) => !mail.isRead || mail.canClaim) ?? rewardMails[0] ?? null;
   const canReviewGuildApplications = currentGuildMember?.role === "leader" || currentGuildMember?.role === "vice_leader";
   const canManageGuildMembers = currentGuildMember?.role === "leader";
   const guildRoleLabel = (role: string): string =>
@@ -2565,6 +2582,105 @@ function App() {
   const seasonPoints = seasonCenter?.season.points ?? 0;
   const selectedActivityShopItem = activityShopItems.find((item) => item.id === selectedActivityShopItemId) ?? null;
   const primaryActivityBoard = activeActivityBoards[0] ?? null;
+  const getLeaderboardSelfValue = (boardKey: string): number => {
+    if (boardKey === "cashflow") {
+      return (profile?.monthlyIncome ?? 0) - (profile?.monthlyExpense ?? 0);
+    }
+    if (boardKey === "product-growth") {
+      return activeProducts.reduce((total, product) => total + product.users + product.monthlyRevenue, 0);
+    }
+    if (boardKey === "guild") {
+      return currentGuildMember?.contributionScore ?? 0;
+    }
+    return profile?.valuation ?? 0;
+  };
+  const formatLeaderboardSelfValue = (boardKey: string, value: number): string => {
+    if (boardKey === "cashflow") {
+      return `净流 ${compactNumber(value)}`;
+    }
+    if (boardKey === "product-growth") {
+      return `增长 ${compactNumber(value)}`;
+    }
+    if (boardKey === "guild") {
+      return `贡献 ${compactNumber(value)}`;
+    }
+    return `估值 ${compactNumber(value)}`;
+  };
+  const getLeaderboardAction = (boardKey: string): { label: string; panel: string } => {
+    if (boardKey === "cashflow") {
+      return { label: "去财务", panel: "财务" };
+    }
+    if (boardKey === "product-growth") {
+      return { label: "去产品", panel: "产品" };
+    }
+    if (boardKey === "guild") {
+      return { label: "去商会", panel: "商会" };
+    }
+    return { label: "去业务", panel: "项目" };
+  };
+  const serverLeaderboardSummaries = (leaderboardCenter?.boards ?? []).map((board) => {
+    const selfRowIndex = profile === null ? -1 : board.rows.findIndex((row) => row.profileId === profile.id);
+    const selfRow = selfRowIndex >= 0 ? board.rows[selfRowIndex] ?? null : null;
+    const previousRow = selfRowIndex > 0 ? board.rows[selfRowIndex - 1] ?? null : null;
+    const selfValue = selfRow?.value ?? getLeaderboardSelfValue(board.key);
+    const action = getLeaderboardAction(board.key);
+    return {
+      board,
+      selfRank: selfRow?.rank ?? null,
+      selfValueLabel: selfRow?.valueLabel ?? formatLeaderboardSelfValue(board.key, selfValue),
+      gapLabel: selfRow === null
+        ? "冲进前20"
+        : previousRow === null
+          ? "领先中"
+          : `还差 ${formatLeaderboardSelfValue(board.key, Math.max(0, previousRow.value - selfRow.value))}`,
+      rewardStatus: selfRow !== null && selfRow.rank <= 3 ? "前3名邮件奖励" : "冲击前3名",
+      action
+    };
+  });
+  const primaryLeaderboardSummary = serverLeaderboardSummaries[0] ?? null;
+  const activitySelfRow = profile === null ? null : primaryActivityBoard?.rows.find((row) => row.profileId === profile.id) ?? null;
+  const crossRewardClaimable = Boolean(crossServerCenter?.dailyReward.canClaim || (crossServerCenter?.stageRewards ?? []).some((reward) => reward.isClaimable));
+  const activeLeaderboardBoard = activeLeaderboardScope === "activity"
+    ? primaryActivityBoard
+    : activeLeaderboardScope === "cross"
+      ? primaryCrossLeaderboard
+      : primaryLeaderboard;
+  const activeLeaderboardBoardName = activeLeaderboardBoard?.name ?? (activeLeaderboardScope === "activity" ? "活动榜" : activeLeaderboardScope === "cross" ? "跨服榜" : "公司估值榜");
+  const makeLeaderboardPlayerCard = (row: LeaderboardRow, boardName = activeLeaderboardBoardName): LeaderboardPlayerCard => {
+    const seed = Math.abs(row.value + row.rank * 17);
+    const realAssetPercent = 18 + (seed % 34);
+    const techAssetPercent = 22 + ((seed + row.rank * 11) % 38);
+    const financeAssetPercent = Math.max(8, 100 - realAssetPercent - techAssetPercent);
+    const avatarPool = [
+      "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=160&h=160&fit=crop",
+      "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=140&h=140&fit=crop",
+      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=140&h=140&fit=crop",
+      "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=120&h=120&fit=crop"
+    ];
+    const avatarUrl = avatarPool[(row.rank - 1) % avatarPool.length] ?? "https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=120&h=120&fit=crop";
+    const displayValueLabel = activeLeaderboardScope === "activity" ? `${row.value}分` : compactNumber(row.value);
+    return {
+      ...row,
+      boardName,
+      levelLabel: `LV.${Math.max(1, 100 - row.rank * 3)}`,
+      achievementLabel: row.equippedTitle ?? (row.rank <= 3 ? "巅峰席位" : activeLeaderboardScope === "activity" ? "活动新贵" : activeLeaderboardScope === "cross" ? "跨服强者" : "市场黑马"),
+      avatarUrl,
+      displayValueLabel,
+      realAssetPercent,
+      techAssetPercent,
+      financeAssetPercent
+    };
+  };
+  const activeLeaderboardCards = (activeLeaderboardBoard?.rows ?? []).map((row) => makeLeaderboardPlayerCard(row));
+  const podiumLeaderboardCards = activeLeaderboardCards.slice(0, 3);
+  const listedLeaderboardCards = activeLeaderboardCards.slice(3, 12);
+  const openLeaderboardPlayer = (player: LeaderboardPlayerCard): void => {
+    setSelectedLeaderboardPlayer(player);
+  };
+  const showLeaderboardToast = (message: string): void => {
+    setLeaderboardToast(message);
+    window.setTimeout(() => setLeaderboardToast(""), 2200);
+  };
   const currentActivityProgressPercent = currentSeasonActivity === null
     ? 0
     : Math.max(0, Math.min(100, (currentSeasonActivity.score * 100) / Math.max(1, currentSeasonActivity.targetScore)));
@@ -2629,6 +2745,10 @@ function App() {
   ) || activityShopItems.some((item) => item.isAvailable);
   const hasPassAttention = (seasonCenter?.tasks ?? []).some((task) => task.progress >= task.target && !task.isClaimed)
     || companyGrowth !== null && companyGrowth.fullLevelChest.claimableCount > 0;
+  const hasLeaderboardAttention = activeActivityBoards.length > 0
+    || crossRewardClaimable
+    || (pendingRewardMail !== null && (!pendingRewardMail.isRead || pendingRewardMail.canClaim))
+    || (mailCenter === null && (profile?.unreadMailCount ?? 0) > 0);
   const hasManagerAttention = pendingEvents.length > 0
     || pendingRandomTasks.length > 0
     || (profile?.pendingEventCount ?? 0) > 0
@@ -2640,6 +2760,9 @@ function App() {
     }
     if (item === "通行证") {
       return hasPassAttention;
+    }
+    if (item === "排行") {
+      return hasLeaderboardAttention;
     }
     if (item === "专属经理") {
       return hasManagerAttention;
@@ -4375,9 +4498,12 @@ function App() {
       reportCurrentTelemetry("commercial_entry_click", "rank");
       reportCurrentTelemetry("long_term_goal_click", "rank-center");
       setActivePanel(null);
+      setActiveLeaderboardScope("server");
       setNativeHomePage("leaderboard");
       if (account && selectedServer) {
         void loadPhase14Center(account.token, selectedServer.id);
+        void loadSeasonCenter(account.token, selectedServer.id);
+        void loadMailCenter(account.token, selectedServer.id);
       }
       return;
     }
@@ -6373,105 +6499,148 @@ function App() {
           )}
 
           {nativeHomePage === "leaderboard" && (
-            <section className="page-container page-active" aria-label="排行榜" data-testid="native-leaderboard">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="award" className="w-7 h-7 text-business-gold" />
-                  <h2 className="text-xl font-black text-white italic uppercase">排行榜</h2>
+            <section className="page-container page-active leaderboard-native-shell" aria-label="排行榜" data-testid="native-leaderboard">
+              <div className="leaderboard-orb" />
+              <header className="leaderboard-native-header">
+                <button className="leaderboard-icon-button" type="button" aria-label="关闭排行榜" onClick={closeNativeHomePage}>
+                  <Icon name="chevron-left" className="h-6 w-6" />
+                </button>
+                <div className="text-center">
+                  <h2>财富巅峰</h2>
+                  <span>商业精英榜</span>
                 </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭排行榜" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
+                <button className="leaderboard-icon-button" type="button" aria-label="榜单说明" onClick={() => showLeaderboardToast("榜单奖励将通过邮件发放。")}>
+                  <Icon name="help-circle" className="h-5 w-5" />
                 </button>
               </header>
-              <div className="px-6 grid grid-cols-4 gap-2 mb-4">
-                {(leaderboardCenter?.boards ?? []).map((board) => (
-                  <div className="glass-panel rounded-2xl p-2 text-center" key={board.key}>
-                    <strong className="block text-[10px] text-business-gold font-black">{board.name.replace("榜", "")}</strong>
-                    <span className="text-[8px] text-slate-500">{board.snapshotDate}</span>
-                  </div>
+
+              <nav className="leaderboard-tabs" aria-label="排行榜分类">
+                {[
+                  ["server", "本服榜"],
+                  ["activity", "活动榜"],
+                  ["cross", "跨服榜"]
+                ].map(([scope, label]) => (
+                  <button
+                    className={activeLeaderboardScope === scope ? "is-active" : ""}
+                    data-testid={`leaderboard-scope-${scope}`}
+                    key={scope}
+                    type="button"
+                    onClick={() => setActiveLeaderboardScope(scope as LeaderboardScope)}
+                  >
+                    {label}
+                  </button>
                 ))}
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
+              </nav>
+
+              <div className="leaderboard-content scroll-hide">
                 {(phase14Notice || phase14Error) && (
                   <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
                     {phase14Error || phase14Notice}
                   </p>
                 )}
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <strong className="text-sm text-white font-black">{primaryLeaderboard?.name ?? "公司估值榜"}</strong>
-                    <span className="text-[10px] text-slate-500">{leaderboardCenter?.activityBoards.length ? "活动榜进行中" : "活动榜未开启"}</span>
-                  </div>
+
+                <section className="leaderboard-podium" aria-label="巅峰席位">
+                  {podiumLeaderboardCards.length > 0 ? (
+                    <div className="leaderboard-podium-grid">
+                      {[podiumLeaderboardCards[1], podiumLeaderboardCards[0], podiumLeaderboardCards[2]].filter((player): player is LeaderboardPlayerCard => Boolean(player)).map((player) => (
+                        <button className={`leaderboard-podium-player rank-${player.rank}`} key={player.profileId} type="button" onClick={() => openLeaderboardPlayer(player)}>
+                          {player.rank === 1 && <Icon name="crown" className="leaderboard-crown" />}
+                          <span className="leaderboard-avatar"><img src={player.avatarUrl} alt="" /></span>
+                          <em>{player.rank === 1 ? "NO.1" : player.rank}</em>
+                          <strong>{player.founderName}</strong>
+                          <span>{player.displayValueLabel}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="leaderboard-empty">暂无上榜玩家。</p>
+                  )}
+                </section>
+
+                <section className="leaderboard-scroll-list" aria-label="排行榜列表">
                   <div className="space-y-3">
-                {(primaryLeaderboard?.rows ?? []).slice(0, 5).map((row) => (
-                  <article
-                    className={`p-3 rounded-2xl flex items-center gap-3 border ${row.rank === 1 ? "bg-business-gold/10 border-business-gold/30" : "bg-slate-900/60 border-white/5"}`}
-                    key={row.profileId}
-                  >
-                    <div className={row.rank === 1 ? "w-8 h-8 flex items-center justify-center" : "w-8 text-center text-slate-500 font-black text-lg italic"}>
-                      {row.rank === 1 ? <Icon name="crown" className="w-6 h-6 text-business-gold" /> : row.rank}
-                    </div>
-                    <div className={`w-10 h-10 rounded-full border-2 ${row.rank === 1 ? "border-business-gold" : "border-slate-700"} p-0.5`}>
-                      <span className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-xs font-black text-white">{row.founderName.slice(0, 1)}</span>
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs font-black text-white">{row.founderName} · {row.companyName}</div>
-                      <div className="text-[9px] text-slate-500">{row.equippedTitle ?? "未装备称号"}</div>
-                    </div>
-                    <div className="text-[10px] font-black text-business-gold">{row.valueLabel}</div>
-                  </article>
-                ))}
+                    {listedLeaderboardCards.map((player) => (
+                      <button className="leaderboard-list-item" key={player.profileId} type="button" onClick={() => openLeaderboardPlayer(player)}>
+                        <span className="leaderboard-rank-number">{String(player.rank).padStart(2, "0")}</span>
+                        <span className="leaderboard-list-avatar"><img src={player.avatarUrl} alt="" /></span>
+                        <span className="leaderboard-list-main">
+                          <strong>{player.founderName}</strong>
+                          <small>{player.companyName}</small>
+                        </span>
+                        <span className="leaderboard-list-value">
+                          <strong>{player.displayValueLabel}</strong>
+                          <small>{activeLeaderboardScope === "activity" ? "活动积分" : "商业净值"}</small>
+                        </span>
+                      </button>
+                    ))}
+                    {activeLeaderboardCards.length === 0 && <p className="leaderboard-empty">暂无榜单数据。</p>}
                   </div>
                 </section>
-                {(leaderboardCenter?.activityBoards.length ?? 0) > 0 && (
-                  <section className="glass-panel rounded-3xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <strong className="text-sm text-white font-black">活动榜轮换</strong>
-                      <span className="text-[10px] text-business-gold">{leaderboardCenter?.activityBoards.length ?? 0} 张进行中</span>
+              </div>
+
+              <footer className="leaderboard-footer">
+                <div className="leaderboard-footer-avatar">
+                  <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop" alt="" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p><span>我的排名: {activeLeaderboardScope === "activity" ? activitySelfRow?.rank ?? "-" : activeLeaderboardScope === "cross" ? personalCrossRank : primaryLeaderboardSummary?.selfRank ?? "-"}</span><i>|</i><span>距上一名: {activeLeaderboardScope === "server" ? primaryLeaderboardSummary?.gapLabel ?? "冲进前20" : activeLeaderboardScope === "activity" ? (activitySelfRow ? "继续冲榜" : "未上榜") : crossServerBattleReport?.personal.previousGapLabel ?? "报名后查看"}</span></p>
+                  <strong>{profile.founderName || account?.username || "首席执行官"} · 您</strong>
+                </div>
+                <div className="leaderboard-footer-value">
+                  <strong>{activeLeaderboardScope === "activity" ? activitySelfRow === null ? currentActivityProgressLabel : `${activitySelfRow.value}分` : activeLeaderboardScope === "cross" ? crossServerBattleReport?.personal.myValueLabel ?? "-" : compactNumber(profile.valuation)}</strong>
+                  <span>{activeLeaderboardScope === "activity" ? "活动积分" : "商业净值"}</span>
+                </div>
+              </footer>
+
+              {selectedLeaderboardPlayer && (
+                <div className="leaderboard-player-modal" role="dialog" aria-modal="true" aria-label="玩家资料">
+                  <section>
+                    <button className="leaderboard-modal-close" type="button" aria-label="关闭玩家资料" onClick={() => setSelectedLeaderboardPlayer(null)}>
+                      <Icon name="x" className="h-4 w-4" />
+                    </button>
+                    <header>
+                      <span className="leaderboard-modal-avatar"><img src={selectedLeaderboardPlayer.avatarUrl} alt="" /></span>
+                      <div>
+                        <h3>{selectedLeaderboardPlayer.founderName}</h3>
+                        <p>{selectedLeaderboardPlayer.companyName}</p>
+                        <div>
+                          <em>{selectedLeaderboardPlayer.levelLabel}</em>
+                          <em>{selectedLeaderboardPlayer.achievementLabel}</em>
+                        </div>
+                      </div>
+                    </header>
+                    <div className="leaderboard-modal-stats">
+                      <div><span>财富净值</span><strong>{selectedLeaderboardPlayer.displayValueLabel}</strong></div>
+                      <div><span>行业地位</span><strong>TOP-TIER</strong></div>
                     </div>
-                    <div className="space-y-3">
-                      {(leaderboardCenter?.activityBoards ?? []).slice(0, 3).map((board) => (
-                        <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={board.key}>
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <strong className="text-xs text-white font-black truncate">{board.name}</strong>
-                            <span className="text-[9px] text-business-gold">{board.snapshotDate}</span>
-                          </div>
-                          <div className="space-y-2">
-                            {board.rows.slice(0, 3).map((row) => (
-                              <article className="flex items-center gap-3" key={row.profileId}>
-                                <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                                <div className="flex-1 min-w-0">
-                                  <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                                  <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "限时活动冲榜"}</span>
-                                </div>
-                                <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                              </article>
-                            ))}
-                            {board.rows.length === 0 && <p className="text-[10px] text-slate-500 font-bold">暂无上榜玩家。</p>}
-                          </div>
+                    <div className="leaderboard-asset-panel">
+                      <h4><Icon name="trending-up" className="h-3 w-3" />资产结构分析</h4>
+                      {[
+                        ["地产资源", selectedLeaderboardPlayer.realAssetPercent, "gold"],
+                        ["科技研发", selectedLeaderboardPlayer.techAssetPercent, "blue"],
+                        ["金融衍生", selectedLeaderboardPlayer.financeAssetPercent, "purple"]
+                      ].map(([label, percent, tone]) => (
+                        <div className="leaderboard-asset-row" key={label}>
+                          <div><span>{label}</span><strong>{percent}%</strong></div>
+                          <span className="leaderboard-asset-bar"><i className={`leaderboard-asset-fill ${tone}`} style={{ width: `${percent}%` }} /></span>
                         </div>
                       ))}
                     </div>
+                    <div className="leaderboard-modal-actions">
+                      <button type="button" onClick={() => showLeaderboardToast(`已向 ${selectedLeaderboardPlayer.founderName} 发送好友申请。`)}><Icon name="user-plus" className="h-4 w-4" />添加好友</button>
+                      <button type="button" onClick={() => showLeaderboardToast("正在建立加密通信频道...")}><Icon name="message-circle" className="h-4 w-4" />私密会谈</button>
+                      <button type="button" onClick={() => showLeaderboardToast("商业拜访功能预留。")}>前往商业拜访</button>
+                    </div>
                   </section>
-                )}
-                {!leaderboardCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无排行榜数据。</p>}
-              </div>
-              <footer className="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
-                <div className="flex items-center gap-4 px-2">
-                  <div className="w-12 text-center">
-                    <span className="block text-[8px] font-bold text-slate-500">我的排名</span>
-                    <strong className="block text-business-gold font-black italic">{primaryLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-"}</strong>
-                  </div>
-                  <div className="w-10 h-10 rounded-full border-2 border-business-gold p-0.5">
-                    <img src="/game-ui/html-design/founder.jpg" alt="" className="w-full h-full rounded-full object-cover" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-xs font-black text-white">{profile.founderName || account?.username || "创业新星"} · {profile.companyName}</div>
-                    <div className="text-[9px] text-slate-400 italic">{titleCenter?.equippedTitle?.name ?? "创业履历收集中"}</div>
-                  </div>
-                  <div className="text-xs font-black text-business-gold">{compactNumber(profile.valuation)}</div>
                 </div>
-              </footer>
+              )}
+
+              {leaderboardToast && (
+                <div className="leaderboard-toast">
+                  <Icon name="check" className="h-4 w-4" />
+                  <span>{leaderboardToast}</span>
+                </div>
+              )}
             </section>
           )}
 

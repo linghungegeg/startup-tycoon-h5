@@ -34,13 +34,49 @@ const rightRailSource = source.slice(
 );
 
 test("phase 31 right rail keeps leaderboard focused on rankings", () => {
-  assert.match(leaderboardSource, />排行榜</, "leaderboard page should use a ranking title");
+  assert.match(leaderboardSource, /财富巅峰/, "leaderboard page should use the native leaderboard title");
+  assert.match(leaderboardSource, /商业精英榜/, "leaderboard page should keep ranking context visible");
   assert.match(leaderboardSource, /primaryLeaderboard/, "leaderboard should render the primary board");
-  assert.match(leaderboardSource, /activityBoards/, "leaderboard may render activity boards");
+  assert.match(source, /activeActivityBoards/, "leaderboard may render activity boards");
   assert.match(leaderboardSource, /我的排名/, "leaderboard should keep the player rank footer");
+  assert.match(source, /type LeaderboardScope = "server" \| "activity" \| "cross"/, "leaderboard should expose server activity and cross scopes");
+  assert.match(leaderboardSource, /本服榜/, "leaderboard should expose the server ranking scope");
+  assert.match(leaderboardSource, /活动榜/, "leaderboard should expose the activity ranking scope");
+  assert.match(leaderboardSource, /跨服榜/, "leaderboard should expose the cross ranking scope");
+  assert.match(leaderboardSource, /距上一名/, "leaderboard should show the gap to the previous rank");
+  assert.match(leaderboardSource, /榜单奖励将通过邮件发放/, "leaderboard should explain mail-based reward delivery");
+  assert.match(leaderboardSource, /leaderboard-footer/, "leaderboard should keep the generated footer structure");
 
   for (const copy of ["长期目标", "我的荣誉", "跨服摘要", "商会任务", "知识库"]) {
     assert.doesNotMatch(leaderboardSource, new RegExp(copy), `leaderboard should not include ${copy}`);
+  }
+});
+
+test("phase 31 leaderboard preserves generated native interaction slots", () => {
+  for (const copy of [
+    "财富巅峰",
+    "巅峰席位",
+    "资产结构分析",
+    "地产资源",
+    "科技研发",
+    "金融衍生",
+    "添加好友",
+    "私密会谈",
+    "前往商业拜访",
+    "TOP-TIER"
+  ]) {
+    assert.ok(leaderboardSource.includes(copy), `leaderboard native migration should include ${copy}`);
+  }
+
+  for (const marker of [
+    "selectedLeaderboardPlayer",
+    "leaderboardToast",
+    "openLeaderboardPlayer",
+    "leaderboard-podium",
+    "leaderboard-player-modal",
+    "leaderboard-asset-fill"
+  ]) {
+    assert.ok(source.includes(marker), `leaderboard native migration should preserve ${marker}`);
   }
 });
 
@@ -67,6 +103,8 @@ test("phase 31 commerce privilege and pass drop entrance navigation copy", () =>
 
 test("phase 31 right rail red dots are state driven", () => {
   assert.match(source, /const shouldShowRightActionRedDot = \(item: string\): boolean =>/, "right rail should use state-driven red dots");
+  assert.match(source, /hasLeaderboardAttention/, "right rail should include ranking attention state");
+  assert.match(source, /item === "排行"/, "rank entry should have state-driven red dot logic");
   assert.match(rightRailSource, /shouldShowRightActionRedDot\(item\)/, "right rail should render red dots from state");
   assert.doesNotMatch(rightRailSource, /\[0, 3, 4\]\.includes\(index\)/, "right rail should not hard-code red dot positions");
 });
