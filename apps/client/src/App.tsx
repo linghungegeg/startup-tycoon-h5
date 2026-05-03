@@ -8,6 +8,7 @@ const SESSION_VERSION = 1;
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
 type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "profile" | "guild" | "finance" | "chat" | "mail";
+type ActivityNativeView = "main" | "shop" | "leaderboard" | "buffs";
 
 type ApiSuccess<T> = {
   success: true;
@@ -2121,6 +2122,8 @@ function App() {
   const [seasonCenter, setSeasonCenter] = useState<SeasonCenter | null>(null);
   const [seasonError, setSeasonError] = useState("");
   const [seasonNotice, setSeasonNotice] = useState("");
+  const [activeActivityView, setActiveActivityView] = useState<ActivityNativeView>("main");
+  const [selectedActivityShopItemId, setSelectedActivityShopItemId] = useState("");
   const [scenarioRun, setScenarioRun] = useState<ScenarioRunResult["run"] | null>(null);
   const [leaderboardCenter, setLeaderboardCenter] = useState<LeaderboardCenter | null>(null);
   const [crossServerCenter, setCrossServerCenter] = useState<CrossServerCenter | null>(null);
@@ -2553,10 +2556,58 @@ function App() {
   const claimableAchievementCount = achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
   const bestActivityRecap = seasonCenter?.activityRecaps.find((recap) => recap.personalRank !== null) ?? seasonCenter?.activityRecaps[0] ?? null;
   const activityShopItems = seasonCenter?.shopItems ?? [];
+  const activeSeasonActivities = seasonActivities.filter((activity) => activity.status === "active");
+  const currentSeasonActivity = activeSeasonActivities[0] ?? seasonActivities.find((activity) => activity.status === "upcoming") ?? seasonActivities[0] ?? null;
   const claimableSeasonActivities = seasonActivities.filter((activity) =>
     activity.status === "active" && activity.score >= activity.targetScore && !activity.rewardClaimed
   );
   const exchangeableActivityShopItems = activityShopItems.filter((item) => item.isAvailable);
+  const seasonPoints = seasonCenter?.season.points ?? 0;
+  const selectedActivityShopItem = activityShopItems.find((item) => item.id === selectedActivityShopItemId) ?? null;
+  const primaryActivityBoard = activeActivityBoards[0] ?? null;
+  const currentActivityProgressPercent = currentSeasonActivity === null
+    ? 0
+    : Math.max(0, Math.min(100, (currentSeasonActivity.score * 100) / Math.max(1, currentSeasonActivity.targetScore)));
+  const currentActivityClaimable = currentSeasonActivity !== null
+    && currentSeasonActivity.status === "active"
+    && currentSeasonActivity.score >= currentSeasonActivity.targetScore
+    && !currentSeasonActivity.rewardClaimed;
+  const currentActivityProgressLabel = currentSeasonActivity === null
+    ? "暂无活动"
+    : `${currentSeasonActivity.score}/${currentSeasonActivity.targetScore}`
+      + (currentSeasonActivity.status === "active" && currentSeasonActivity.dailyProgressLimit > 0 ? ` · 今日 ${currentSeasonActivity.dailyProgressCount}/${currentSeasonActivity.dailyProgressLimit}` : "")
+      + (currentSeasonActivity.actionPowerCost > 0 ? ` · 消耗 ${currentSeasonActivity.actionPowerCost} 行动力` : "");
+  const currentActivityStatusLabel = currentSeasonActivity === null
+    ? "读取中"
+    : currentSeasonActivity.rewardClaimed ? "已完成"
+      : currentActivityClaimable ? "可领奖"
+        : currentSeasonActivity.status === "active" ? "进行中"
+          : currentSeasonActivity.status === "upcoming" ? "预告"
+            : "已结束";
+  const currentActivityProgressButtonLabel = currentSeasonActivity === null
+    ? "等待活动"
+    : currentSeasonActivity.progressMode === "scenario"
+      ? "剧本结算"
+      : currentSeasonActivity.progressLockedReason ?? (currentSeasonActivity.progressMode === "leaderboard" ? "冲榜一次" : "完成目标");
+  const activityTodayGuide = currentActivityClaimable
+    ? "今日重点：活动目标已达成，先领取奖励，再把积分用于活动商店。"
+    : exchangeableActivityShopItems.length > 0
+      ? "今日重点：活动积分足够，先兑换限时资源补强经营。"
+      : currentSeasonActivity?.canProgress
+        ? "今日重点：完成当前活动推进，积累赛季积分和榜单荣誉。"
+        : "今日重点：查看赛季任务和通行证收益，准备下一轮活动。";
+  const passBenefitCopy = seasonCenter?.season.pass.isPurchased
+    ? "通行证已开通：额外赛季随机任务、付费线奖励和 VIP 经验收益已激活。"
+    : "未开通通行证：开通后获得额外赛季随机任务、立即奖励、VIP 经验，并帮助追赶赛季进度。";
+  const passImmediateRewards = ["赛季经验券 x3", "限定称号碎片 x2", "办公室皮肤券 x1"];
+  const passTaskRows = (seasonCenter?.tasks ?? []).map((task, index) => ({
+    ...task,
+    stageLabel: task.isClaimed || task.progress >= task.target ? "已完成" : index === 0 ? "今日可完成" : "待推进"
+  }));
+  const passTaskStageCounts = ["今日可完成", "待推进", "已完成"].map((stage) => ({
+    stage,
+    count: passTaskRows.filter((task) => task.stageLabel === stage).length
+  }));
   const activityManagerReminders = [
     ...claimableSeasonActivities.map((activity) => ({
       id: `activity-claim:${activity.id}`,
@@ -4311,6 +4362,8 @@ function App() {
     if (panelName === "活动" || panelName === "限时活动") {
       reportCurrentTelemetry("commercial_entry_click", "activity");
       setActivePanel(null);
+      setActiveActivityView("main");
+      setSelectedActivityShopItemId("");
       setNativeHomePage("season");
       if (account && selectedServer) {
         void loadSeasonCenter(account.token, selectedServer.id);
@@ -5909,216 +5962,413 @@ function App() {
           )}
 
           {nativeHomePage === "season" && (
-            <section className="page-container page-active" aria-label="赛季活动" data-testid="native-season">
-              <header className="p-6 pt-10 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <Icon name="calendar" className="w-7 h-7 text-business-gold" />
-                  <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">{seasonCenter?.season.name ?? "Season 活动中心"}</h2>
-                    <span className="text-[10px] text-slate-500">{seasonCenter ? `${seasonCenter.season.startDate} 至 ${seasonCenter.season.endDate}` : "赛季配置读取中"}</span>
-                  </div>
-                </div>
-                <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭赛季活动" onClick={closeNativeHomePage}>
-                  <Icon name="x" className="w-6 h-6" />
-                </button>
-              </header>
-              <div className="px-6 grid grid-cols-3 gap-2 mb-4">
-                <div className="glass-panel rounded-2xl p-2 text-center">
-                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.points ?? 0}</strong>
-                  <span className="text-[9px] text-slate-500">赛季积分</span>
-                </div>
-                <div className="glass-panel rounded-2xl p-2 text-center">
-                  <strong className="block text-sm text-white font-black">{seasonCenter?.season.status === "active" ? "进行中" : "未开放"}</strong>
-                  <span className="text-[9px] text-slate-500">赛季状态</span>
-                </div>
-                <div className="glass-panel rounded-2xl p-2 text-center">
-                  <strong className="block text-sm text-business-gold font-black">{seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}</strong>
-                  <span className="text-[9px] text-slate-500">通行证</span>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
-                {(seasonNotice || seasonError) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {seasonError || seasonNotice}
-                  </p>
-                )}
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">赛季任务</strong>
-                      <span className="text-[9px] text-slate-500">{primarySeasonTask?.description ?? "推进经营动作获得赛季积分"}</span>
+            <section className="page-container page-active activity-native-shell" aria-label="赛季活动" data-testid="native-season">
+              <div className="activity-scan-line" />
+              <button className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-slate-200 backdrop-blur-xl" type="button" aria-label="关闭赛季活动" onClick={closeNativeHomePage}>
+                <Icon name="x" className="h-6 w-6" />
+              </button>
+
+              {activeActivityView === "main" && (
+                <div className="relative z-10 flex-1 overflow-y-auto px-6 pb-28 pt-12 scroll-hide">
+                  {(seasonNotice || seasonError) && (
+                    <p className={`mb-4 rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                      {seasonError || seasonNotice}
+                    </p>
+                  )}
+
+                  <header className="mb-6 flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="mb-1 inline-block rounded border border-cyan-400/30 bg-cyan-400/20 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-cyan-300">第4赛季 新纪元</span>
+                      <h2 className="text-3xl font-black leading-tight text-white">
+                        {seasonCenter?.season.name ?? "AI 创投风口"}
+                        <br />
+                        <span className="text-cyan-300">赛季主题</span>
+                      </h2>
+                      <p className="mt-2 flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                        <Icon name="calendar" className="h-3 w-3 text-cyan-300" />
+                        {seasonCenter ? `${seasonCenter.season.startDate} 至 ${seasonCenter.season.endDate}` : "赛季配置读取中"}
+                      </p>
                     </div>
-                    <span className="text-[10px] text-business-gold">{primarySeasonTask ? `${primarySeasonTask.progress}/${primarySeasonTask.target}` : "0/0"}</span>
-                  </div>
-                  <button
-                    className="btn-gold w-full py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
-                    disabled={!primarySeasonTask || primarySeasonTask.isClaimed}
-                    type="button"
-                    onClick={() => primarySeasonTask && void progressSeasonTask(primarySeasonTask.id)}
-                  >
-                    {primarySeasonTask?.isClaimed ? "任务已完成" : "推进赛季任务"}
-                  </button>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">限时活动轮换</strong>
-                      <span className="text-[9px] text-slate-500">活动榜随活动开放显示。</span>
+                    <button className="group flex shrink-0 flex-col items-center gap-1" type="button" onClick={() => setActiveActivityView("buffs")}>
+                      <span className="activity-glass relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-cyan-400/30 transition-transform duration-300 group-hover:scale-110">
+                        <span className="absolute inset-0 bg-cyan-400/10 group-active:bg-cyan-400/25" />
+                        <Icon name="zap" className="relative h-6 w-6 animate-pulse text-cyan-300" />
+                      </span>
+                      <span className="text-[10px] font-bold text-cyan-300">赛季通行证</span>
+                    </button>
+                  </header>
+
+                  <section className="activity-glass relative mb-6 overflow-hidden rounded-[2rem] p-6">
+                    <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-400/10 blur-[40px]" />
+                    <p className="mb-1 text-[11px] font-bold text-slate-400">当前积分</p>
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="text-5xl font-black tracking-tight text-white tabular-nums">{compactNumber(seasonPoints)}</span>
+                      <span className="rounded-full bg-cyan-400/10 px-2 py-0.5 text-xs font-black text-cyan-300">
+                        {seasonCenter?.season.pass.isPurchased ? "通行证收益已开启" : "通行证可提升赛季收益"}
+                      </span>
                     </div>
-                    <span className="text-[10px] text-business-gold">{seasonActivities.filter((activity) => activity.status === "active").length} 个进行中</span>
-                  </div>
-                  <div className="space-y-2">
-                    {groupedSeasonActivities.map((group) => (
-                      <div className="space-y-2" key={group.key}>
-                        <strong className="block text-[10px] font-black text-slate-400">{group.title}</strong>
-                        {group.activities.map((activity) => {
-                          const isClaimable = activity.status === "active" && activity.score >= activity.targetScore && !activity.rewardClaimed;
-                          const progressButtonLabel = activity.progressMode === "scenario"
-                            ? "剧本结算"
-                            : activity.progressLockedReason ?? (activity.progressMode === "leaderboard" ? "冲榜一次" : "完成目标");
-                          return (
-                          <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={activity.id}>
-                            <div className="flex items-center justify-between gap-3 mb-2">
-                              <div className="min-w-0">
-                                <strong className="block text-xs text-white font-black truncate">{activity.name}</strong>
-                                <span className="text-[9px] text-slate-500">
-                                  {activity.score}/{activity.targetScore}
-                                  {activity.status === "active" && activity.dailyProgressLimit > 0 ? ` · 今日 ${activity.dailyProgressCount}/${activity.dailyProgressLimit}` : ""}
-                                  {activity.actionPowerCost > 0 ? ` · 消耗 ${activity.actionPowerCost} 行动力` : ""}
-                                </span>
-                              </div>
-                              <span className="shrink-0 rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">
-                                {activity.rewardClaimed ? "已完成" : isClaimable ? "可领奖" : activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              <button className="rounded-xl border border-white/10 py-2 text-[10px] font-black text-white disabled:opacity-45" disabled={activity.status !== "active" || activity.isJoined} type="button" onClick={() => void joinSeasonActivity(activity.id)}>
-                                {activity.isJoined ? "已报名" : "报名"}
-                              </button>
-                              <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!activity.canProgress} type="button" onClick={() => void progressSeasonActivity(activity.id)}>
-                                {progressButtonLabel}
-                              </button>
-                              <button className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45" disabled={activity.status !== "active" || activity.score < activity.targetScore || activity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(activity.id)}>
-                                {activity.rewardClaimed ? "已领" : "领奖"}
-                              </button>
-                            </div>
-                          </article>
-                          );
-                        })}
+                    <div className="mt-6 space-y-2">
+                      <div className="flex justify-between text-[10px] font-black tracking-[0.16em]">
+                        <span className="text-slate-500">赛季进度 <span className="text-white">{Math.round(currentActivityProgressPercent)}%</span></span>
+                        <span className="text-slate-500">{activeSeasonActivities.length} 个活动进行中</span>
                       </div>
-                    ))}
-                    {seasonCenter && seasonActivities.length === 0 && <p className="text-xs text-slate-400 font-bold">暂无活动配置。</p>}
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {activeActivityBoards.slice(0, 3).map((board) => (
-                      <div className="rounded-2xl bg-slate-950/50 border border-white/5 p-3" key={board.key}>
-                        <div className="mb-2 flex items-center justify-between">
-                          <strong className="text-xs text-white font-black">{board.name}</strong>
-                          <span className="text-[9px] text-business-gold">榜单</span>
-                        </div>
-                        <div className="space-y-2">
-                          {board.rows.slice(0, 3).map((row) => (
-                            <div className="flex items-center gap-3" key={row.profileId}>
-                              <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                              <div className="flex-1 min-w-0">
-                                <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                                <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动称号待争夺"}</span>
-                              </div>
-                              <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
-                            </div>
-                          ))}
-                          {board.rows.length === 0 && <p className="text-[10px] text-slate-500 font-bold">暂无上榜玩家。</p>}
-                        </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-white/5 p-[2px]">
+                        <div className="activity-tech-gradient activity-shimmer h-full rounded-full shadow-[0_0_15px_rgba(6,182,212,0.4)]" style={{ width: `${currentActivityProgressPercent}%` }} />
                       </div>
-                    ))}
-                    {seasonCenter && activeActivityBoards.length === 0 && <p className="text-xs text-slate-400 font-bold">活动榜未开启。</p>}
+                    </div>
+                  </section>
+
+                  <div className="mb-8 grid grid-cols-2 gap-4">
+                    <button className="activity-glass group flex h-28 flex-col justify-between rounded-3xl p-5 text-left transition-all active:scale-95" type="button" onClick={() => setActiveActivityView("shop")}>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-cyan-400/10 transition-transform group-hover:scale-110">
+                        <Icon name="shopping-bag" className="h-5 w-5 text-cyan-300" />
+                      </span>
+                      <span>
+                        <strong className="block text-sm font-black text-white">活动商店</strong>
+                        <small className="text-[11px] font-medium text-slate-500">兑换限时奖励</small>
+                      </span>
+                    </button>
+                    <button className="activity-glass group flex h-28 flex-col justify-between rounded-3xl p-5 text-left transition-all active:scale-95" type="button" onClick={() => setActiveActivityView("leaderboard")}>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400/10 transition-transform group-hover:scale-110">
+                        <Icon name="award" className="h-5 w-5 text-amber-400" />
+                      </span>
+                      <span>
+                        <strong className="block text-sm font-black text-white">荣誉榜单</strong>
+                        <small className="text-[11px] font-medium text-slate-500">查看活动排名</small>
+                      </span>
+                    </button>
                   </div>
-                </section>
-                {latestActivityRecaps.length > 0 && (
-                  <section className="glass-panel rounded-3xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <strong className="block text-sm text-white font-black">活动回顾</strong>
-                      <span className="text-[10px] text-business-gold">{latestActivityRecaps.length} 场</span>
+
+                  <section className="mb-8">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="flex items-center gap-2 text-base font-black text-white">
+                        <span className="h-4 w-1 rounded-full bg-amber-400 shadow-[0_0_8px_#F59E0B]" />
+                        今日活动
+                      </h3>
+                      <span className="rounded-full bg-amber-400/15 px-3 py-1 text-[10px] font-black text-amber-300">{currentActivityStatusLabel}</span>
+                    </div>
+                    {currentSeasonActivity ? (
+                      <article className="activity-glass relative overflow-hidden rounded-3xl border-amber-400/20 p-5">
+                        <div className="flex items-center gap-5">
+                          <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-950">
+                            <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/20 via-violet-500/15 to-amber-400/15" />
+                            <Icon name="rocket" className="relative h-10 w-10 text-cyan-300" />
+                            <span className="absolute left-1 top-1 rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-black">限时</span>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="truncate text-base font-black text-white">{currentSeasonActivity.name}</h4>
+                            <p className="mt-1 text-[11px] font-medium leading-5 text-slate-500">{activityTodayGuide}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-300">{currentActivityProgressLabel}</span>
+                              <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-black text-amber-300">{currentActivityClaimable ? "目标已达成" : currentActivityProgressButtonLabel}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5 p-[2px]">
+                          <div className="activity-tech-gradient activity-shimmer h-full rounded-full" style={{ width: `${currentActivityProgressPercent}%` }} />
+                        </div>
+                        <div className="mt-4 grid grid-cols-3 gap-2">
+                          <button className="rounded-xl border border-white/10 py-2 text-xs font-bold text-white disabled:opacity-45" disabled={currentSeasonActivity.status !== "active" || currentSeasonActivity.isJoined} type="button" onClick={() => void joinSeasonActivity(currentSeasonActivity.id)}>
+                            {currentSeasonActivity.isJoined ? "已报名" : "报名"}
+                          </button>
+                          <button className="rounded-xl border border-cyan-400/30 py-2 text-xs font-bold text-cyan-300 disabled:opacity-45" disabled={!currentSeasonActivity.canProgress} type="button" onClick={() => void progressSeasonActivity(currentSeasonActivity.id)}>
+                            {currentActivityProgressButtonLabel}
+                          </button>
+                          <button className="activity-gold-gradient activity-glow-gold rounded-xl py-2 text-xs font-black text-black disabled:opacity-45" disabled={currentSeasonActivity.status !== "active" || currentSeasonActivity.score < currentSeasonActivity.targetScore || currentSeasonActivity.rewardClaimed} type="button" onClick={() => void claimSeasonActivity(currentSeasonActivity.id)}>
+                            {currentSeasonActivity.rewardClaimed ? "已领" : "领奖"}
+                          </button>
+                        </div>
+                      </article>
+                    ) : (
+                      <p className="activity-glass rounded-3xl p-5 text-xs font-bold text-slate-400">暂无活动配置。</p>
+                    )}
+                  </section>
+
+                  <section className="activity-glass mb-4 rounded-3xl p-5">
+                    <div className="mb-3 flex items-center justify-between">
+                      <strong className="block text-sm font-black text-white">后续活动</strong>
+                      <span className="text-[10px] font-black text-cyan-300">{groupedSeasonActivities.length} 组</span>
                     </div>
                     <div className="space-y-2">
-                      {latestActivityRecaps.map((recap) => (
-                        <article className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={recap.activityId}>
-                          <div className="flex items-center justify-between gap-3 mb-2">
-                            <div className="min-w-0">
-                              <strong className="block text-xs text-white font-black truncate">{recap.name}</strong>
-                              <span className="text-[9px] text-slate-500">{recap.endDate} / {recap.isSettled ? "已结算" : "待结算"}</span>
-                            </div>
-                            <span className="shrink-0 text-[10px] text-business-gold font-black">
-                              {recap.personalRank === null ? "未上榜" : `第 ${recap.personalRank} 名`}
-                            </span>
-                          </div>
-                          <div className="space-y-2">
-                            {recap.rows.slice(0, 3).map((row) => (
-                              <div className="flex items-center gap-3" key={row.profileId}>
-                                <span className="w-6 text-center text-business-gold font-black italic">{row.rank}</span>
-                                <div className="flex-1 min-w-0">
-                                  <strong className="block text-xs text-white font-black truncate">{row.founderName} · {row.companyName}</strong>
-                                  <span className="text-[9px] text-slate-500">{row.equippedTitle ?? "活动回顾"}</span>
+                      {groupedSeasonActivities.map((group) => {
+                        const visibleActivities = group.activities.filter((activity) => activity.id !== currentSeasonActivity?.id);
+                        if (visibleActivities.length === 0) return null;
+                        return (
+                          <div className="space-y-2" key={group.key}>
+                            <strong className="block text-[10px] font-black text-slate-500">{group.title}</strong>
+                            {visibleActivities.slice(0, 2).map((activity) => (
+                              <div className="rounded-2xl border border-white/5 bg-white/5 p-3" key={activity.id}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <strong className="block truncate text-xs font-black text-white">{activity.name}</strong>
+                                    <span className="text-[10px] font-medium text-slate-500">
+                                      {activity.score}/{activity.targetScore}
+                                      {activity.status === "active" && activity.dailyProgressLimit > 0 ? ` · 今日 ${activity.dailyProgressCount}/${activity.dailyProgressLimit}` : ""}
+                                    </span>
+                                  </div>
+                                  <span className="shrink-0 rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-bold text-cyan-300">
+                                    {activity.rewardClaimed ? "已完成" : activity.status === "active" && activity.score >= activity.targetScore ? "可领奖" : activity.status === "active" ? "进行中" : activity.status === "upcoming" ? "预告" : "已结束"}
+                                  </span>
                                 </div>
-                                <span className="text-[10px] text-business-gold font-black">{row.valueLabel}</span>
                               </div>
                             ))}
                           </div>
-                        </article>
-                      ))}
+                        );
+                      })}
+                      {seasonCenter && seasonActivities.length === 0 && <p className="text-xs font-bold text-slate-400">暂无活动配置。</p>}
                     </div>
                   </section>
-                )}
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">活动商店</strong>
-                      <span className="text-[9px] text-slate-500">用活动积分兑换限时资源。</span>
+
+                  {latestActivityRecaps.length > 0 && (
+                    <section className="activity-glass mb-4 rounded-3xl p-5">
+                      <div className="mb-3 flex items-center justify-between">
+                        <strong className="block text-sm font-black text-white">活动回顾</strong>
+                        <span className="text-[10px] font-black text-amber-300">{latestActivityRecaps.length} 场</span>
+                      </div>
+                      <div className="space-y-2">
+                        {latestActivityRecaps.map((recap) => (
+                          <article className="rounded-2xl border border-white/5 bg-white/5 p-3" key={recap.activityId}>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <strong className="block truncate text-xs font-black text-white">{recap.name}</strong>
+                                <span className="text-[10px] font-medium text-slate-500">{recap.endDate} · {recap.isSettled ? "已结算" : "待结算"}</span>
+                              </div>
+                              <span className="shrink-0 text-[10px] font-black text-amber-300">
+                                {recap.personalRank === null ? "未上榜" : `第 ${recap.personalRank} 名`}
+                              </span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  <section className="activity-glass mb-4 rounded-3xl border-cyan-400/20 p-5">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <strong className="block text-sm font-black text-white">赛季任务</strong>
+                        <span className="text-[11px] font-medium text-slate-500">{primarySeasonTask?.description ?? "推进经营动作获得赛季积分"}</span>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-black text-cyan-300">{primarySeasonTask ? `${primarySeasonTask.progress}/${primarySeasonTask.target}` : "0/0"}</span>
                     </div>
-                    <span className="text-[10px] text-business-gold">{activityShopItems.length} 项</span>
+                    <button className="activity-tech-gradient w-full rounded-xl py-2 text-xs font-black text-white disabled:opacity-45" disabled={!primarySeasonTask || primarySeasonTask.isClaimed} type="button" onClick={() => primarySeasonTask && void progressSeasonTask(primarySeasonTask.id)}>
+                      {primarySeasonTask?.isClaimed ? "任务已完成" : "推进赛季任务"}
+                    </button>
+                  </section>
+
+                  <section className="activity-glass rounded-3xl p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <strong className="block text-sm font-black text-white">{primaryScenario?.name ?? "经营剧本"}</strong>
+                        <span className="text-[11px] font-medium text-slate-500">{primaryScenario?.summary ?? "按经营选择结算评分和奖励。"}</span>
+                      </div>
+                      <span className="text-[10px] font-black text-amber-300">{scenarioRun?.grade ?? primaryScenario?.bestScore ?? "-"}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button className="rounded-xl border border-white/10 py-2 text-xs font-black text-white disabled:opacity-45" disabled={!primaryScenario || scenarioRun?.score !== null && scenarioRun !== null} type="button" onClick={() => primaryScenario && void startSeasonScenario(primaryScenario.id)}>
+                        启动剧本
+                      </button>
+                      <button className="activity-gold-gradient rounded-xl py-2 text-xs font-black text-black disabled:opacity-45" disabled={!scenarioRun || scenarioRun.score !== null} type="button" onClick={() => void settleSeasonScenario()}>
+                        结算剧本
+                      </button>
+                    </div>
+                  </section>
+                  {!seasonCenter && <p className="activity-glass mt-4 rounded-3xl p-4 text-xs font-bold text-slate-300">暂无赛季活动。</p>}
+                </div>
+              )}
+
+              {activeActivityView === "shop" && (
+                <div className="activity-slide-up relative z-10 flex flex-1 flex-col overflow-hidden">
+                  <header className="flex items-center justify-between border-b border-white/5 px-6 pb-4 pt-12">
+                    <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5" type="button" aria-label="返回活动首页" onClick={() => setActiveActivityView("main")}>
+                      <Icon name="chevron-left" className="h-5 w-5" />
+                    </button>
+                    <h2 className="text-sm font-black tracking-[0.22em] text-white">赛季商店</h2>
+                    <div className="flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5">
+                      <Icon name="gem" className="h-3 w-3 text-cyan-300" />
+                      <span className="text-xs font-black text-cyan-300 tabular-nums">{compactNumber(seasonPoints)}</span>
+                    </div>
+                  </header>
+                  <div className="flex-1 overflow-y-auto px-6 pb-12 pt-6 scroll-hide">
+                    <p className="mb-4 text-[11px] font-medium text-slate-500">当前 {seasonPoints} 积分 · {exchangeableActivityShopItems.length} 项可兑换。点击道具查看用途。</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      {activityShopItems.map((item) => {
+                        const missingPoints = Math.max(0, item.costPoints - seasonPoints);
+                        return (
+                          <button className={`rounded-3xl border p-4 text-left transition-all active:scale-95 ${item.isAvailable ? "border-cyan-400/30 bg-cyan-400/10" : "border-white/5 bg-white/5"}`} key={item.id} type="button" onClick={() => setSelectedActivityShopItemId(item.id)}>
+                            <span className="relative mb-3 flex aspect-square items-center justify-center overflow-hidden rounded-2xl bg-slate-950 p-3">
+                              <span className={`absolute inset-0 ${item.isAvailable ? "bg-gradient-to-br from-cyan-400/20 to-violet-500/10" : "bg-white/5"}`} />
+                              <Icon name={item.isAvailable ? "package-open" : "lock"} className={`relative h-10 w-10 ${item.isAvailable ? "text-cyan-300" : "text-slate-600"}`} />
+                              <span className="absolute bottom-1 right-1 rounded bg-cyan-400/20 px-1.5 py-0.5 text-[10px] font-bold text-cyan-300">经营</span>
+                            </span>
+                            <strong className="block truncate text-xs font-black text-white">{item.name}</strong>
+                            <span className="mt-2 flex items-center gap-1.5 text-xs font-black text-cyan-300">
+                              <Icon name="gem" className="h-3 w-3" />
+                              {item.costPoints} 分
+                            </span>
+                            <small className={`mt-1 block text-[10px] font-bold ${item.isAvailable ? "text-amber-300" : "text-slate-500"}`}>
+                              {item.isAvailable ? "可兑换" : item.lockedReason ?? `还差 ${missingPoints} 分`}
+                            </small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {seasonCenter && activityShopItems.length === 0 && <p className="activity-glass rounded-3xl p-4 text-xs font-bold text-slate-400">活动商店暂未配置商品。</p>}
                   </div>
-                  <div className="space-y-2">
-                    {activityShopItems.map((item) => (
-                      <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={item.id}>
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <div className="min-w-0">
-                            <strong className="block text-xs text-white font-black truncate">{item.name}</strong>
-                            <span className="text-[9px] text-slate-500">{item.summary}</span>
-                          </div>
-                          <span className="shrink-0 text-[10px] text-business-gold font-black">{item.costPoints} 分</span>
+                </div>
+              )}
+
+              {activeActivityView === "leaderboard" && (
+                <div className="activity-slide-up relative z-10 flex flex-1 flex-col overflow-hidden">
+                  <header className="flex items-center justify-between border-b border-white/5 px-6 pb-4 pt-12">
+                    <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5" type="button" aria-label="返回活动首页" onClick={() => setActiveActivityView("main")}>
+                      <Icon name="chevron-left" className="h-5 w-5" />
+                    </button>
+                    <h2 className="text-sm font-black tracking-[0.3em] text-white">荣誉榜单</h2>
+                    <div className="w-10" />
+                  </header>
+                  <div className="flex-1 overflow-y-auto px-6 pb-24 pt-12 scroll-hide">
+                    {primaryActivityBoard ? (
+                      <>
+                        <div className="mb-14 flex items-end justify-between px-2">
+                          {primaryActivityBoard.rows.slice(0, 3).map((row) => (
+                            <div className={`flex flex-col items-center gap-3 ${row.rank === 1 ? "w-[100px] -translate-y-6" : "w-[80px]"}`} key={row.profileId}>
+                              <div className="relative">
+                                {row.rank === 1 && <Icon name="crown" className="absolute -top-10 left-1/2 h-8 w-8 -translate-x-1/2 animate-bounce text-amber-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]" />}
+                                <div className={`${row.rank === 1 ? "activity-podium-1 h-24 w-24 p-1.5" : row.rank === 2 ? "activity-podium-2 h-16 w-16 p-1" : "activity-podium-3 h-16 w-16 p-1"} overflow-hidden rounded-full bg-slate-950`}>
+                                  <span className="flex h-full w-full items-center justify-center rounded-full bg-slate-800 text-lg font-black text-white">{row.founderName.slice(0, 1)}</span>
+                                </div>
+                                <span className={`absolute -right-1 -top-1 flex rounded-xl text-black shadow-lg ${row.rank === 1 ? "h-8 w-8 bg-amber-400 text-[12px]" : row.rank === 2 ? "h-6 w-6 bg-slate-300 text-[10px]" : "h-6 w-6 bg-amber-800 text-[10px] text-white"} items-center justify-center rotate-12 font-black`}>
+                                  {row.rank}
+                                </span>
+                              </div>
+                              <div className="w-full text-center">
+                                <p className="truncate text-[11px] font-black text-white">{row.companyName}</p>
+                                <p className={`mt-0.5 text-[10px] font-bold ${row.rank === 1 ? "text-amber-300" : "text-slate-500"}`}>{row.valueLabel}</p>
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <button className="w-full rounded-xl border border-business-gold/40 py-2 text-xs font-black text-business-gold disabled:opacity-45" disabled={!item.isAvailable} type="button" onClick={() => void purchaseActivityShopItem(item.id)}>
-                          {item.lockedReason ?? "兑换"}
+                        <div className="space-y-3">
+                          {primaryActivityBoard.rows.slice(3, 6).map((row) => (
+                            <div className="flex items-center gap-4 rounded-2xl border border-white/5 bg-white/5 p-4" key={row.profileId}>
+                              <span className="w-6 text-sm font-black text-slate-500">#{row.rank}</span>
+                              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-xs font-black text-white">{row.founderName.slice(0, 1)}</span>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-xs font-black text-white">{row.founderName} · {row.companyName}</p>
+                                <p className="mt-0.5 text-[10px] font-medium text-slate-500">{row.equippedTitle ?? "活动称号待争夺"}</p>
+                              </div>
+                              <div className="text-[11px] font-black text-slate-400">{row.valueLabel}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="activity-glass rounded-3xl p-5 text-xs font-bold text-slate-400">活动榜未开启。</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {activeActivityView === "buffs" && (
+                <div className="activity-slide-up relative z-10 flex flex-1 flex-col overflow-hidden">
+                  <header className="flex items-center justify-between border-b border-white/5 px-6 pb-4 pt-12">
+                    <button className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5" type="button" aria-label="返回活动首页" onClick={() => setActiveActivityView("main")}>
+                      <Icon name="chevron-left" className="h-5 w-5" />
+                    </button>
+                    <h2 className="text-sm font-black text-white">通行证收益</h2>
+                    <div className="w-10" />
+                  </header>
+                  <div className="flex-1 space-y-4 overflow-y-auto px-6 pb-24 pt-6 scroll-hide">
+                    <section className="relative overflow-hidden rounded-3xl border border-cyan-400/30 bg-cyan-400/10 p-5">
+                      <div className="absolute -right-10 -top-10 h-32 w-32 rounded-full bg-cyan-400/10 blur-2xl" />
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                            <Icon name="zap" className="h-6 w-6 text-white" />
+                          </span>
+                          <div>
+                            <p className="text-sm font-black text-white">赛季收益加速</p>
+                            <p className="text-[10px] font-bold text-cyan-300">{seasonCenter?.season.pass.isPurchased ? "已开启" : "查看后可开通"}</p>
+                          </div>
+                        </div>
+                        <span className="rounded-lg bg-cyan-400 px-2 py-1 text-[11px] font-black text-black">赛季</span>
+                      </div>
+                      <p className="mb-4 text-xs font-bold leading-5 text-slate-400">{passBenefitCopy}</p>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+                        <div className="activity-shimmer h-full w-1/2 rounded-full bg-cyan-400" />
+                      </div>
+                    </section>
+                    <section className="rounded-3xl border border-white/5 bg-white/5 p-5">
+                      <div className="mb-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-800">
+                            <Icon name="gift" className="h-6 w-6 text-amber-300" />
+                          </span>
+                          <div>
+                            <p className="text-sm font-black text-white">开通即得</p>
+                            <p className="text-[10px] font-black tracking-[0.18em] text-slate-500">立即奖励</p>
+                          </div>
+                        </div>
+                        <button className="rounded-xl border border-cyan-400/40 px-3 py-2 text-[10px] font-black text-cyan-300" type="button" onClick={() => openHomePanel("通行证")}>
+                          查看通行证
                         </button>
                       </div>
-                    ))}
+                      <div className="grid grid-cols-3 gap-2">
+                        {passImmediateRewards.map((reward) => (
+                          <span className="rounded-xl bg-slate-950/60 px-2 py-2 text-center text-[10px] font-bold text-amber-200" key={reward}>{reward}</span>
+                        ))}
+                      </div>
+                    </section>
                   </div>
-                </section>
-                <section className="glass-panel rounded-3xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">{primaryScenario?.name ?? "经营剧本"}</strong>
-                      <span className="text-[9px] text-slate-500">{primaryScenario?.summary ?? "按经营选择结算评分和奖励。"}</span>
+                </div>
+              )}
+
+              {activeActivityView === "main" && (
+                <button className="activity-glass relative z-20 mx-auto mb-2 flex w-[280px] shrink-0 items-center justify-between rounded-full border-white/10 px-5 py-2.5 shadow-[0_15px_30px_rgba(0,0,0,0.5)] transition-all" type="button" onClick={() => currentActivityClaimable && currentSeasonActivity ? void claimSeasonActivity(currentSeasonActivity.id) : setActiveActivityView("shop")}>
+                  <span className="flex items-center gap-3">
+                    <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-400 shadow-[0_0_10px_#F59E0B]" />
+                    <span className="text-xs font-black text-white">{currentActivityClaimable ? "领取赛季奖励" : "去活动商店"}</span>
+                  </span>
+                  <Icon name="award" className="h-6 w-6 text-amber-400" />
+                </button>
+              )}
+
+              {selectedActivityShopItem && (
+                <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/90 px-6 backdrop-blur-sm" onClick={() => setSelectedActivityShopItemId("")}>
+                  <section className="activity-glass activity-slide-up w-full rounded-[2.5rem] border-cyan-400/40 p-8 shadow-[0_30px_60px_rgba(0,0,0,0.8)]" onClick={(event) => event.stopPropagation()}>
+                    <div className="mb-4 flex justify-end">
+                      <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 transition-transform active:scale-90" type="button" aria-label="关闭道具详情" onClick={() => setSelectedActivityShopItemId("")}>
+                        <Icon name="x" className="h-5 w-5 text-slate-500" />
+                      </button>
                     </div>
-                    <span className="text-[10px] text-business-gold">{scenarioRun?.grade ?? primaryScenario?.bestScore ?? "-"}</span>
-                  </div>
-                  {scenarioRun && (
-                    <div className="mb-3 grid grid-cols-2 gap-2 text-center">
-                      <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{scenarioRun.initialState.cashDays}</strong><span className="text-[9px] text-slate-500">现金天数</span></div>
-                      <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{scenarioRun.score ?? "-"}</strong><span className="text-[9px] text-slate-500">评分</span></div>
+                    <div className="relative mb-6 flex aspect-square w-full items-center justify-center overflow-hidden rounded-3xl bg-slate-950 p-6">
+                      <div className="absolute inset-0 bg-gradient-to-t from-cyan-400/10 to-transparent" />
+                      <Icon name={selectedActivityShopItem.isAvailable ? "package-open" : "lock"} className="relative h-20 w-20 text-cyan-300" />
                     </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button className="rounded-xl border border-white/10 py-2 text-xs font-black text-white disabled:opacity-45" disabled={!primaryScenario || scenarioRun?.score !== null && scenarioRun !== null} type="button" onClick={() => primaryScenario && void startSeasonScenario(primaryScenario.id)}>
-                      启动剧本
+                    <h3 className="mb-1 text-2xl font-black tracking-tight text-white">{selectedActivityShopItem.name}</h3>
+                    <div className="mb-6 flex items-center gap-2">
+                      <span className="text-lg font-black text-cyan-300">{selectedActivityShopItem.costPoints}</span>
+                      <Icon name="gem" className="h-4 w-4 text-cyan-300" />
+                      <span className="ml-2 text-[10px] font-bold text-slate-600">库存：限时</span>
+                    </div>
+                    <div className="mb-8 rounded-2xl border border-white/5 bg-white/5 p-5">
+                      <p className="mb-2 text-[10px] font-black tracking-[0.16em] text-slate-500">道具效果</p>
+                      <p className="text-sm font-bold leading-6 text-slate-200">{selectedActivityShopItem.summary}</p>
+                      {selectedActivityShopItem.rewardItem && (
+                        <p className="mt-3 text-xs font-black text-amber-300">{selectedActivityShopItem.rewardItem.name} x{selectedActivityShopItem.rewardItem.quantity}</p>
+                      )}
+                    </div>
+                    <button className="activity-tech-gradient w-full rounded-[1.5rem] py-5 text-sm font-black tracking-[0.12em] text-white shadow-[0_15px_30px_rgba(6,182,212,0.3)] transition-all active:scale-95 disabled:opacity-45" disabled={!selectedActivityShopItem.isAvailable} type="button" onClick={() => {
+                      const itemId = selectedActivityShopItem.id;
+                      setSelectedActivityShopItemId("");
+                      void purchaseActivityShopItem(itemId);
+                    }}>
+                      {selectedActivityShopItem.isAvailable ? "确认兑换" : selectedActivityShopItem.lockedReason ?? `还差 ${Math.max(0, selectedActivityShopItem.costPoints - seasonPoints)} 分`}
                     </button>
-                    <button className="btn-gold py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45" disabled={!scenarioRun || scenarioRun.score !== null} type="button" onClick={() => void settleSeasonScenario()}>
-                      结算剧本
-                    </button>
-                  </div>
-                </section>
-                {!seasonCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无赛季活动。</p>}
-              </div>
+                  </section>
+                </div>
+              )}
             </section>
           )}
 
@@ -7084,7 +7334,7 @@ function App() {
                     <div>
                       <div className="text-[10px] text-emerald-300 font-black uppercase">赛季通行证</div>
                       <h3 className="mt-1 text-2xl font-black italic text-white">{seasonCenter?.season.name ?? "赛季通行证"}</h3>
-                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验；开通后每日额外获得 1 个赛季随机任务。</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验；开通后每日额外获得 1 个赛季随机任务，帮助追赶活动积分和赛季奖励线。</p>
                     </div>
                     <span className="rounded-2xl bg-slate-900/70 border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200 font-black">
                       {seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}
@@ -7130,6 +7380,20 @@ function App() {
                       </div>
                     </div>
                   )}
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                    {passImmediateRewards.map((reward) => (
+                      <div className="rounded-2xl border border-emerald-400/20 bg-slate-950/50 p-2" key={reward}>
+                        <strong className="block text-[10px] font-black text-emerald-200">{reward}</strong>
+                        <span className="text-[8px] text-slate-500">开通即得</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 rounded-2xl border border-business-gold/20 bg-business-gold/10 p-3">
+                    <strong className="block text-xs font-black text-business-gold">活动增益说明</strong>
+                    <span className="mt-1 block text-[10px] font-bold leading-4 text-slate-300">
+                      通行证不直接提高排行榜结算，但会提供赛季随机任务、经验券和限定资源，让玩家更稳定地完成每日活动和商店兑换目标。
+                    </span>
+                  </div>
                   <button
                     className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark disabled:opacity-45"
                     disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
@@ -7158,20 +7422,37 @@ function App() {
                     <strong className="text-sm text-white font-black">赛季任务线</strong>
                     <span className="text-[10px] text-business-gold">{seasonCenter?.tasks.length ?? 0} 项</span>
                   </div>
-                  <div className="space-y-2">
-                    {(seasonCenter?.tasks ?? []).map((task) => (
-                      <div className="rounded-2xl bg-slate-900/60 p-3" key={task.id}>
-                        <div className="flex items-center justify-between gap-2">
-                          <strong className="text-xs text-white">{task.title}</strong>
-                          <span className="text-[10px] text-business-gold">{task.progress}/{task.target}</span>
-                        </div>
-                        <p className="mt-1 text-[9px] leading-4 text-slate-500">{task.description}</p>
-                        <div className="mt-2 flex items-center justify-between text-[9px] font-black">
-                          <span className="text-emerald-300">积分 +{task.rewardPoints}</span>
-                          <span className="text-business-gold">{task.rewardItem ? `${task.rewardItem.name} x${task.rewardItem.quantity}` : "基础奖励"}</span>
-                        </div>
+                  <div className="mb-3 grid grid-cols-3 gap-2 text-center">
+                    {passTaskStageCounts.map((item) => (
+                      <div className="rounded-xl bg-slate-950/60 px-2 py-2" key={item.stage}>
+                        <strong className="block text-[9px] font-black text-slate-300">{item.stage}</strong>
+                        <span className="text-[9px] font-black text-business-gold">{item.count}</span>
                       </div>
                     ))}
+                  </div>
+                  <div className="space-y-2">
+                    {["今日可完成", "待推进", "已完成"].map((stage) => {
+                      const stagedTasks = passTaskRows.filter((task) => task.stageLabel === stage);
+                      if (stagedTasks.length === 0) return null;
+                      return (
+                        <div className="space-y-2" key={stage}>
+                          <strong className="block text-[10px] font-black text-slate-400">{stage}</strong>
+                          {stagedTasks.map((task) => (
+                            <div className={`rounded-2xl p-3 ${stage === "已完成" ? "bg-emerald-500/10 border border-emerald-400/20" : "bg-slate-900/60"}`} key={task.id}>
+                              <div className="flex items-center justify-between gap-2">
+                                <strong className="text-xs text-white">{task.title}</strong>
+                                <span className="text-[10px] text-business-gold">{task.progress}/{task.target}</span>
+                              </div>
+                              <p className="mt-1 text-[9px] leading-4 text-slate-500">{task.description}</p>
+                              <div className="mt-2 flex items-center justify-between text-[9px] font-black">
+                                <span className="text-emerald-300">积分 +{task.rewardPoints}</span>
+                                <span className="text-business-gold">{task.rewardItem ? `${task.rewardItem.name} x${task.rewardItem.quantity}` : "基础奖励"}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
                 {!seasonCenter && (
