@@ -78,6 +78,10 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   for (const copy of [
     "跨服创业赛",
     "今日跨服目标",
+    "今日奖励",
+    "今日已领取",
+    "报名后领取",
+    "声望奖励",
     "赛季进度",
     "下一奖励",
     "冲榜助力",
@@ -90,6 +94,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "创业大赛",
     "跨服商会",
     "战报",
+    "赛果回放",
     "赛果摘要",
     "个人对比",
     "商会对比",
@@ -131,6 +136,8 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
   assert.match(source, /data-testid="cross-server-guild-season"/, "guild cross-server season should stay addressable");
   assert.match(source, /\/cross-server\/daily-reward\/claim/, "cross-server should claim real daily participation rewards");
+  assert.match(source, /dailyReward\.canClaim/, "cross-server daily reward button should use server-side claim state");
+  assert.match(source, /dailyReward\.actionLabel/, "cross-server daily reward button should show claimed state");
   assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");
   assert.doesNotMatch(source, /跨服数据读取中，请确认 API 服务已启动。/, "player cross-server empty copy should avoid engineering wording");
   assert.doesNotMatch(source, /不改变跨服结算算法|奖励预览：|长期目标：/, "cross-server player UI should avoid backend-rule or long explanatory copy");

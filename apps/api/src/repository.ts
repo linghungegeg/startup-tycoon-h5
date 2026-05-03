@@ -1970,6 +1970,13 @@ export type CrossServerGroupRecord = {
 export type CrossServerCenterRecord = {
   group: CrossServerGroupRecord;
   isRegistered: boolean;
+  dailyReward: {
+    isClaimed: boolean;
+    canClaim: boolean;
+    rewardReputation: number;
+    statusLabel: string;
+    actionLabel: string;
+  };
   boards: LeaderboardBoardRecord[];
   guildSeason: {
     isGuildMember: boolean;
@@ -11493,7 +11500,7 @@ export const createPrismaGameRepository = (
     const serverIds = groupServer.group.servers.map((item) => item.serverId);
     const dayStart = new Date(`${today}T00:00:00.000Z`);
     const dayEnd = new Date(`${today}T23:59:59.999Z`);
-    const [profiles, signup, guildMember, guildSignups] = await Promise.all([
+    const [profiles, signup, dailyRewardDelivery, guildMember, guildSignups] = await Promise.all([
       prisma.playerProfile.findMany({
         where: { serverId: { in: serverIds } },
         include: {
@@ -11507,6 +11514,15 @@ export const createPrismaGameRepository = (
           profileId_groupId: {
             profileId: profile.id,
             groupId: groupServer.groupId
+          }
+        }
+      }),
+      prisma.leaderboardRewardDelivery.findUnique({
+        where: {
+          profileId_boardKey_snapshotDate: {
+            profileId: profile.id,
+            boardKey: "cross-daily-goal",
+            snapshotDate: today
           }
         }
       }),
@@ -11603,6 +11619,8 @@ export const createPrismaGameRepository = (
     const meetsRequirements =
       memberCount >= crossServerGuildSeasonRequirements.minMembers &&
       todayActiveMemberCount >= crossServerGuildSeasonRequirements.minTodayActiveMembers;
+    const isRegistered = signup?.status === "active";
+    const isDailyRewardClaimed = dailyRewardDelivery !== null;
 
     const center = {
       group: {
@@ -11611,7 +11629,14 @@ export const createPrismaGameRepository = (
         ruleLabel: groupServer.group.ruleLabel,
         serverIds
       },
-      isRegistered: signup?.status === "active",
+      isRegistered,
+      dailyReward: {
+        isClaimed: isDailyRewardClaimed,
+        canClaim: isRegistered && !isDailyRewardClaimed,
+        rewardReputation: 30,
+        statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
+        actionLabel: isDailyRewardClaimed ? "今日已领取" : "领取今日奖励"
+      },
       boards,
       guildSeason: {
         isGuildMember: guildMember !== null,
@@ -11886,7 +11911,7 @@ export const createPrismaGameRepository = (
     if (existing !== null) {
       return { deliveredRewards: 0, rewardReputation: 0, crossServer: center };
     }
-    const rewardReputation = 30;
+    const rewardReputation = center.dailyReward.rewardReputation;
     await prisma.$transaction([
       prisma.playerProfile.update({
         where: { id: profile.id },

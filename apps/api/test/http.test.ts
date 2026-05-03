@@ -2323,9 +2323,18 @@ const createTestRepository = (): GameRepository => {
       { key: "cross-company-value", name: "跨服创业大赛榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-company-value"), snapshotDate: today },
       { key: "cross-guild", name: "跨服商会榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-guild"), snapshotDate: today }
     ];
+    const isRegistered = crossServerSignups.has(`${profile.id}:${group.id}`);
+    const isDailyRewardClaimed = leaderboardRewards.has(`${profile.id}:cross-daily-goal:${today}`);
     const center = {
       group,
-      isRegistered: crossServerSignups.has(`${profile.id}:${group.id}`),
+      isRegistered,
+      dailyReward: {
+        isClaimed: isDailyRewardClaimed,
+        canClaim: isRegistered && !isDailyRewardClaimed,
+        rewardReputation: 30,
+        statusLabel: !isRegistered ? "报名后领取" : isDailyRewardClaimed ? "今日已领取" : "待领取",
+        actionLabel: isDailyRewardClaimed ? "今日已领取" : "领取今日奖励"
+      },
       boards,
       guildSeason: {
         isGuildMember: member !== undefined,
@@ -10687,6 +10696,9 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(center.body.data?.isRegistered, false);
     assert.equal(center.body.data?.boards.length, 2);
     assert.ok(center.body.data?.boards.every((board) => board.scope === "cross"));
+    assert.equal(center.body.data?.dailyReward.isClaimed, false);
+    assert.equal(center.body.data?.dailyReward.canClaim, false);
+    assert.equal(center.body.data?.dailyReward.statusLabel, "报名后领取");
     assert.equal(center.body.data?.battleReport.groupName, "开服成长池");
     assert.equal(center.body.data?.battleReport.personal.rewardStatus, "待结算");
     assert.ok((center.body.data?.battleReport.lines.length ?? 0) >= 3);
@@ -10698,6 +10710,9 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     });
     assert.equal(registered.status, 200);
     assert.equal(registered.body.data?.isRegistered, true);
+    assert.equal(registered.body.data?.dailyReward.isClaimed, false);
+    assert.equal(registered.body.data?.dailyReward.canClaim, true);
+    assert.equal(registered.body.data?.dailyReward.statusLabel, "待领取");
 
     const beforeDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
@@ -10711,12 +10726,15 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(dailyReward.body.data?.deliveredRewards, 1);
     assert.equal(dailyReward.body.data?.rewardReputation, 30);
     assert.equal(dailyReward.body.data?.crossServer.isRegistered, true);
+    assert.equal(dailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
+    assert.equal(dailyReward.body.data?.crossServer.dailyReward.canClaim, false);
+    assert.equal(dailyReward.body.data?.crossServer.dailyReward.statusLabel, "今日已领取");
     const afterDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
     });
     assert.equal(afterDailyReward.body.data?.reputation, (beforeDailyReward.body.data?.reputation ?? 0) + 30);
 
-    const duplicateDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number }>(baseUrl, "/cross-server/daily-reward/claim", {
+    const duplicateDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
       body: JSON.stringify({ serverId: "s1" })
@@ -10724,6 +10742,8 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(duplicateDailyReward.status, 200);
     assert.equal(duplicateDailyReward.body.data?.deliveredRewards, 0);
     assert.equal(duplicateDailyReward.body.data?.rewardReputation, 0);
+    assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
+    assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.canClaim, false);
 
     const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",

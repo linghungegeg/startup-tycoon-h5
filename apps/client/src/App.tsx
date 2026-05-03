@@ -813,6 +813,13 @@ type CrossServerCenter = {
     serverIds: string[];
   };
   isRegistered: boolean;
+  dailyReward: {
+    isClaimed: boolean;
+    canClaim: boolean;
+    rewardReputation: number;
+    statusLabel: string;
+    actionLabel: string;
+  };
   boards: LeaderboardCenter["boards"];
   guildSeason: {
     isGuildMember: boolean;
@@ -5900,15 +5907,18 @@ function App() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <strong className="block text-sm text-white font-black">今日跨服目标</strong>
-                      <span className="text-[9px] text-slate-500">完成今日目标，提升赛季表现。</span>
+                      <span className="text-[9px] text-slate-500">完成今日目标，领取跨服声望。</span>
                     </div>
                     <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.isRegistered ? "已报名" : "待报名"}</strong><span className="text-[9px] text-slate-500">参赛状态</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{todayGoalSection?.goals[0]?.statusLabel ?? "推进中"}</strong><span className="text-[9px] text-slate-500">今日任务</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{longTermGoals?.summaries.todayClaimableCount ?? 0}</strong><span className="text-[9px] text-slate-500">可领取</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.dailyReward.statusLabel ?? "报名后领取"}</strong><span className="text-[9px] text-slate-500">今日奖励</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">+{crossServerCenter?.dailyReward.rewardReputation ?? 30}</strong><span className="text-[9px] text-slate-500">声望奖励</span></div>
                   </div>
+                  <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
+                    今日任务：{todayGoalSection?.goals[0]?.statusLabel ?? "推进经营目标"} · 待领奖励 {longTermGoals?.summaries.todayClaimableCount ?? 0}
+                  </p>
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
@@ -5935,11 +5945,11 @@ function App() {
                   </div>
                   <button
                     className="mt-3 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark disabled:opacity-45"
-                    disabled={!crossServerCenter?.isRegistered}
+                    disabled={!crossServerCenter?.dailyReward.canClaim}
                     type="button"
                     onClick={() => void claimCrossServerDailyReward()}
                   >
-                    领取今日奖励
+                    {crossServerCenter?.dailyReward.actionLabel ?? (crossServerCenter?.dailyReward.isClaimed ? "今日已领取" : "领取今日奖励")}
                   </button>
                 </section>
 
@@ -6043,11 +6053,12 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4" aria-label="跨服战报" data-testid="cross-server-battle-report" hidden={activeCrossServerMode !== "history"}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">赛果摘要</strong>
+                      <strong className="block text-sm text-white font-black">赛果回放</strong>
                       <span className="text-[9px] text-slate-500">{crossServerBattleReport?.snapshotDate ?? "跨服赛季结算后生成战报"}</span>
                     </div>
                     <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerBattleReport?.personal.rewardStatus ?? "赛前情报"}</span>
                   </div>
+                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">赛果摘要：个人排名、商会表现和奖励去向已汇总。</p>
                   <div className="mt-3 space-y-2">
                     {(crossServerBattleReport?.lines.length ?? 0) === 0 ? (
                       <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">赛前情报将在跨服数据生成后显示。</p>
