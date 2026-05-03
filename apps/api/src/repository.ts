@@ -382,6 +382,7 @@ export type EventOptionRecord = {
 export type EventRecord = {
   id: string;
   configId: string;
+  sourceKey: string;
   title: string;
   source: string;
   channel: string;
@@ -421,6 +422,9 @@ export type LoanOfferRecord = {
   termMonths: number;
   monthlyPayment: number;
   creditRequired: string;
+  isHighRisk: boolean;
+  purposeTag: string;
+  applicationImpact: string[];
   summary: string;
   isAvailable: boolean;
   lockedReason: string | null;
@@ -439,6 +443,7 @@ export type LoanRecord = {
   monthlyPayment: number;
   overduePeriods: number;
   penaltyAccrued: number;
+  onTimeRepayPeriods: number;
   status: "active" | "overdue" | "settled";
   createdAt: string;
   settledAt: string | null;
@@ -480,6 +485,19 @@ export type FundingOfferRecord = {
   boardPressure: number;
   term: string;
   summary: string;
+  offerType: "initial" | "follow_on";
+  followOnSequence: number;
+  gate: {
+    minCompanyLevel: number;
+    minReputation: number;
+    maxDebtRatioBasisPoints: number;
+    minFounderEquityBasisPoints: number;
+    requiresLegalReview: boolean;
+  };
+  gateStatus: {
+    isAvailable: boolean;
+    blockers: Array<{ code: string; message: string }>;
+  };
   isAvailable: boolean;
   lockedReason: string | null;
 };
@@ -496,6 +514,14 @@ export type FundingRecord = {
   successRate: number;
   boardPressure: number;
   term: string;
+  offerType: "initial" | "follow_on";
+  offerStatus: string;
+  paymentStatus: string;
+  disbursementStatus: string;
+  legalReviewStatus: string;
+  postEventStatus: string;
+  followOnSequence: number;
+  followOnCount: number;
   status: "pending" | "funded" | "failed";
   resultSummary: string | null;
   createdAt: string;
@@ -2329,13 +2355,16 @@ export type GameRepository = {
   listEvents(accountId: string, serverId: string): Promise<EventRecord[] | "PLAYER_NOT_FOUND">;
   chooseEvent(accountId: string, serverId: string, eventId: string, option: "A" | "B"): Promise<EventChoiceRecord | "PLAYER_NOT_FOUND" | "EVENT_NOT_FOUND" | "EVENT_ALREADY_RESOLVED" | "INVALID_EVENT_OPTION">;
   listLoans(accountId: string, serverId: string): Promise<LoanCenterRecord | "PLAYER_NOT_FOUND">;
-  applyLoan(accountId: string, serverId: string, loanConfigId: string): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "LOAN_NOT_FOUND" | "CREDIT_NOT_ENOUGH" | "LOAN_ALREADY_ACTIVE">;
+  applyLoan(accountId: string, serverId: string, loanConfigId: string): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "LOAN_NOT_FOUND" | "CREDIT_NOT_ENOUGH" | "LOAN_ALREADY_ACTIVE" | "LOAN_LOCKED">;
   repayLoan(accountId: string, serverId: string, loanId: string, mode: "scheduled" | "full"): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "LOAN_NOT_FOUND" | "INSUFFICIENT_CASH">;
   settleLoanPeriod(accountId: string, serverId: string): Promise<LoanActionRecord | "PLAYER_NOT_FOUND" | "NO_ACTIVE_LOAN">;
   resolveCrisis(accountId: string, serverId: string, route: "financing" | "cost_cut" | "restructure"): Promise<LoanCenterRecord | "PLAYER_NOT_FOUND" | "CRISIS_NOT_ACTIVE" | "INVALID_CRISIS_ROUTE">;
   listFundings(accountId: string, serverId: string): Promise<FundingCenterRecord | "PLAYER_NOT_FOUND">;
   startFunding(accountId: string, serverId: string, investorId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "INVESTOR_NOT_FOUND" | "FUNDING_LOCKED" | "FUNDING_ALREADY_ACTIVE">;
-  settleFunding(accountId: string, serverId: string, fundingId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_ALREADY_SETTLED">;
+  settleFunding(accountId: string, serverId: string, fundingId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_ALREADY_SETTLED" | "FUNDING_LOCKED">;
+  reviewFundingLegalTerms(accountId: string, serverId: string, fundingId: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_ALREADY_SETTLED">;
+  pauseFundingDisbursement(accountId: string, serverId: string, fundingId: string, reason: string): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_ALREADY_SETTLED">;
+  applyFundingFollowOn(accountId: string, serverId: string, fundingId: string, amount: number, equityBasisPoints: number): Promise<FundingActionRecord | "PLAYER_NOT_FOUND" | "FUNDING_NOT_FOUND" | "FUNDING_LOCKED">;
   listProducts(accountId: string, serverId: string): Promise<ProductCenterRecord | "PLAYER_NOT_FOUND">;
   startProduct(accountId: string, serverId: string, productConfigId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_ALREADY_ACTIVE" | "INSUFFICIENT_CASH">;
   advanceProduct(accountId: string, serverId: string, productId: string): Promise<ProductActionRecord | "PLAYER_NOT_FOUND" | "PRODUCT_NOT_FOUND" | "PRODUCT_CLOSED" | "INSUFFICIENT_CASH">;
@@ -2610,6 +2639,7 @@ const formatEventImpact = (cash: number, reputation: number, customerSatisfactio
 const toEventRecord = (event: {
   id: string;
   configId: string;
+  sourceKey: string;
   status: string;
   selectedOption: string | null;
   resultSummary: string | null;
@@ -2641,6 +2671,7 @@ const toEventRecord = (event: {
 }, knowledge?: KnowledgeLinkRecord | null): EventRecord => ({
   id: event.id,
   configId: event.configId,
+  sourceKey: event.sourceKey,
   title: event.config.title,
   source: event.config.source,
   channel: event.config.channel,
@@ -2722,6 +2753,7 @@ const toLoanRecord = (loan: {
   monthlyPayment: number;
   overduePeriods: number;
   penaltyAccrued: number;
+  onTimeRepayPeriods: number;
   status: string;
   createdAt: Date;
   settledAt: Date | null;
@@ -2738,6 +2770,7 @@ const toLoanRecord = (loan: {
   monthlyPayment: loan.monthlyPayment,
   overduePeriods: loan.overduePeriods,
   penaltyAccrued: loan.penaltyAccrued,
+  onTimeRepayPeriods: loan.onTimeRepayPeriods,
   status: readLoanStatus(loan.status),
   createdAt: loan.createdAt.toISOString(),
   settledAt: loan.settledAt?.toISOString() ?? null
@@ -2757,6 +2790,14 @@ const toFundingRecord = (funding: {
   successRate: number;
   boardPressure: number;
   term: string;
+  offerType: string;
+  offerStatus: string;
+  paymentStatus: string;
+  disbursementStatus: string;
+  legalReviewStatus: string;
+  postEventStatus: string;
+  followOnSequence: number;
+  followOnCount: number;
   status: string;
   resultSummary: string | null;
   createdAt: Date;
@@ -2773,6 +2814,14 @@ const toFundingRecord = (funding: {
   successRate: funding.successRate,
   boardPressure: funding.boardPressure,
   term: funding.term,
+  offerType: funding.offerType === "follow_on" ? "follow_on" : "initial",
+  offerStatus: funding.offerStatus,
+  paymentStatus: funding.paymentStatus,
+  disbursementStatus: funding.disbursementStatus,
+  legalReviewStatus: funding.legalReviewStatus,
+  postEventStatus: funding.postEventStatus,
+  followOnSequence: funding.followOnSequence,
+  followOnCount: funding.followOnCount,
   status: funding.status === "funded" || funding.status === "failed" ? funding.status : "pending",
   resultSummary: funding.resultSummary,
   createdAt: funding.createdAt.toISOString(),
@@ -2900,8 +2949,100 @@ const toCompetitorActionRecord = (action: {
   resolvedAt: action.resolvedAt?.toISOString() ?? null
 });
 
+const loanApplicationImpact = (config: {
+  principal: number;
+  monthlyPayment: number;
+  termMonths: number;
+  annualRateBasisPoints: number;
+  isHighRisk: boolean;
+  purposeTag: string;
+}): string[] => {
+  const impact = [
+    `现金 +${config.principal.toLocaleString("zh-CN")}`,
+    `月供 ${config.monthlyPayment.toLocaleString("zh-CN")}`,
+    `期限 ${config.termMonths}期`
+  ];
+  if (config.annualRateBasisPoints >= 1200) {
+    impact.push("月供压力高");
+  }
+  if (config.isHighRisk) {
+    impact.push("高风险");
+  }
+  impact.push(config.purposeTag);
+  impact.push("逾期会降信用");
+  return impact;
+};
+
+const evaluateLoanGate = (
+  profile: PlayerProfileRecord,
+  finance: CompanyFinanceRecord,
+  config: {
+    creditRequired: string;
+    minCompanyLevel: number;
+    minMonthlyIncome: number;
+    minNetCashFlow: number;
+    maxDebtRatioBasisPoints: number;
+    requiresCrisis: boolean;
+    requiresOverdue: boolean;
+    requiresActiveLoan: boolean;
+  },
+  context: { hasActiveLoan: boolean; hasAnyActiveLoan: boolean; hasOverdueLoan: boolean; crisisLevel: LoanCenterRecord["crisis"]["level"] }
+): { isAvailable: boolean; lockedReason: string | null } => {
+  const blockers = [
+    context.hasActiveLoan ? "同类未结清" : null,
+    creditRank(profile.creditRating) < creditRank(config.creditRequired) ? "信用不足" : null,
+    profile.companyLevel < config.minCompanyLevel ? "公司等级不足" : null,
+    finance.monthlyIncome < config.minMonthlyIncome ? "月收入不足" : null,
+    finance.netCashFlow < config.minNetCashFlow ? "现金流不足" : null,
+    finance.debtRatioBasisPoints >= config.maxDebtRatioBasisPoints ? "负债率过高" : null,
+    config.requiresCrisis && context.crisisLevel === "none" ? "尚未进入危机场景" : null,
+    config.requiresOverdue && !context.hasOverdueLoan ? "尚未出现逾期" : null,
+    config.requiresActiveLoan && !context.hasAnyActiveLoan ? "需要已有贷款" : null
+  ].filter((item): item is string => item !== null);
+
+  return {
+    isAvailable: blockers.length === 0,
+    lockedReason: blockers[0] ?? null
+  };
+};
+
+type FundingProductMetrics = {
+  activeProductCount: number;
+  monthlyRevenue: number;
+  maxRetentionBasisPoints: number;
+  maxPayRateBasisPoints: number;
+};
+
+const calculateFundingProductMetrics = (products: Array<{
+  status: string;
+  monthlyRevenue: number;
+  retentionBasisPoints: number;
+  payRateBasisPoints: number;
+}>): FundingProductMetrics => {
+  const activeProducts = products.filter((product) => product.status !== "closed");
+  return {
+    activeProductCount: activeProducts.length,
+    monthlyRevenue: activeProducts.reduce((total, product) => total + product.monthlyRevenue, 0),
+    maxRetentionBasisPoints: activeProducts.reduce((max, product) => Math.max(max, product.retentionBasisPoints), 0),
+    maxPayRateBasisPoints: activeProducts.reduce((max, product) => Math.max(max, product.payRateBasisPoints), 0)
+  };
+};
+
+const shouldCreatePostFundingEvent = (funding: { boardPressure: number; offerType: string }): boolean =>
+  funding.offerType === "follow_on" || funding.boardPressure >= 12;
+
+const fundingSettlementRoll = (investorId: string): number => {
+  let hash = 0;
+  for (const character of investorId) {
+    hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  }
+
+  return hash % 100;
+};
+
 const calculateFundingOffer = (
   profile: PlayerProfileRecord,
+  productMetrics: FundingProductMetrics,
   config: {
     id: string;
     roundName: string;
@@ -2912,30 +3053,89 @@ const calculateFundingOffer = (
     equityBasisPoints: number;
     successRateBase: number;
     debtToleranceBasisPoints: number;
+    minProductCount: number;
+    minMonthlyIncome: number;
+    minRetentionBasisPoints: number;
+    minPayRateBasisPoints: number;
+    minValuation: number;
+    minReputation: number;
+    minCompanyLevel: number;
+    requiresLegalReview: boolean;
+    allowFollowOn: boolean;
     boardPressure: number;
     term: string;
     summary: string;
   },
-  completedInvestorIds: Set<string>
+  fundedInvestorCounts: Map<string, number>,
+  activeInvestorIds: Set<string>
 ): FundingOfferRecord => {
   const finance = toCompanyFinanceRecord(profile);
   const reputationBonus = clamp(Math.floor((profile.reputation - 1000000) / 100000), -8, 8);
   const cashflowBonus = finance.netCashFlow >= 300000 ? 6 : finance.netCashFlow >= 0 ? 3 : -10;
+  const productBonus = clamp(Math.floor(productMetrics.monthlyRevenue / 300000), 0, 10);
+  const retentionBonus = productMetrics.maxRetentionBasisPoints >= 6000 ? 6 : productMetrics.maxRetentionBasisPoints >= 4500 ? 3 : 0;
+  const payRateBonus = productMetrics.maxPayRateBasisPoints >= 800 ? 4 : productMetrics.maxPayRateBasisPoints >= 500 ? 2 : 0;
   const debtPenalty = Math.ceil(finance.debtRatioBasisPoints / 1000) * 4;
   const creditPenalty = profile.creditRating === "A" ? 0 : profile.creditRating === "B" ? 8 : profile.creditRating === "C" ? 18 : 30;
   const riskPenalty = finance.riskStatus === "稳健" ? 0 : finance.riskStatus === "预警" ? 8 : 16;
-  const successRate = clamp(config.successRateBase + reputationBonus + cashflowBonus - debtPenalty - creditPenalty - riskPenalty, 5, 95);
+  const successRate = clamp(
+    config.successRateBase + reputationBonus + cashflowBonus + productBonus + retentionBonus + payRateBonus - debtPenalty - creditPenalty - riskPenalty,
+    5,
+    95
+  );
   const debtPressureBasisPoints = Math.min(3000, Math.max(0, finance.debtRatioBasisPoints - 2000));
   const valuationBasisPoints = Math.max(6000, config.valuationMultiplierBasisPoints - debtPressureBasisPoints);
   const preMoneyValuation = Math.max(1000000, Math.round((profile.valuation * valuationBasisPoints) / 10000));
   const postMoneyValuation = preMoneyValuation + config.ticketSize;
   const isDebtAcceptable = finance.debtRatioBasisPoints <= config.debtToleranceBasisPoints;
   const isEquityEnough = profile.founderEquityBasisPoints > config.equityBasisPoints;
-  const isAvailable = isDebtAcceptable && isEquityEnough && !completedInvestorIds.has(config.id);
+  const fundedCount = fundedInvestorCounts.get(config.id) ?? 0;
+  const isFollowOn = fundedCount > 0;
+  const isInvestorAvailable = !activeInvestorIds.has(config.id) && (fundedCount === 0 || config.allowFollowOn);
+  const hasProductCount = productMetrics.activeProductCount >= config.minProductCount;
+  const hasMonthlyIncome = profile.monthlyIncome >= config.minMonthlyIncome;
+  const hasRetention = productMetrics.maxRetentionBasisPoints >= config.minRetentionBasisPoints;
+  const hasPayRate = productMetrics.maxPayRateBasisPoints >= config.minPayRateBasisPoints;
+  const hasValuation = profile.valuation >= config.minValuation;
+  const hasReputation = profile.reputation >= config.minReputation;
+  const hasCompanyLevel = profile.companyLevel >= config.minCompanyLevel;
+  const isBridgeInvestor = config.id === "crisis-bridge-capital";
+  const hasBridgeNeed =
+    !isBridgeInvestor ||
+    finance.netCashFlow < 0 ||
+    finance.riskStatus !== "稳健" ||
+    finance.debtRatioBasisPoints >= 2000 ||
+    profile.cash < profile.monthlyExpense * 2;
+  const isAvailable =
+    isInvestorAvailable &&
+    isDebtAcceptable &&
+    isEquityEnough &&
+    hasProductCount &&
+    hasMonthlyIncome &&
+    hasRetention &&
+    hasPayRate &&
+    hasValuation &&
+    hasReputation &&
+    hasCompanyLevel &&
+    hasBridgeNeed;
+  const blockers = [
+    activeInvestorIds.has(config.id) ? { code: "active_funding", message: "已有进行中的融资谈判" } : undefined,
+    fundedCount > 0 && !config.allowFollowOn ? { code: "round_completed", message: "本轮已完成" } : undefined,
+    !isEquityEnough ? { code: "founder_equity", message: "创始人股权不足" } : undefined,
+    !isDebtAcceptable ? { code: "debt_ratio", message: "负债率过高，条款暂不可接受" } : undefined,
+    !hasProductCount ? { code: "product_count", message: "产品线数量不足" } : undefined,
+    !hasMonthlyIncome ? { code: "monthly_income", message: "月收入未达投资人门槛" } : undefined,
+    !hasRetention ? { code: "retention", message: "产品留存率未达投资人门槛" } : undefined,
+    !hasPayRate ? { code: "pay_rate", message: "产品付费率未达投资人门槛" } : undefined,
+    !hasValuation ? { code: "valuation", message: "估值未达投资人门槛" } : undefined,
+    !hasReputation ? { code: "reputation", message: "声望未达投资人门槛" } : undefined,
+    !hasCompanyLevel ? { code: "company_level", message: "公司等级未达投资人门槛" } : undefined,
+    !hasBridgeNeed ? { code: "bridge_need", message: "现金流尚未进入桥接场景" } : undefined
+  ].filter((blocker): blocker is { code: string; message: string } => blocker !== undefined);
 
   return {
     id: config.id,
-    roundName: config.roundName,
+    roundName: isFollowOn ? `${config.roundName}加投` : config.roundName,
     investorName: config.name,
     focus: config.focus,
     amount: config.ticketSize,
@@ -2947,14 +3147,45 @@ const calculateFundingOffer = (
     boardPressure: config.boardPressure + (isDebtAcceptable ? 0 : 10),
     term: config.term,
     summary: config.summary,
+    offerType: isFollowOn ? "follow_on" : "initial",
+    followOnSequence: fundedCount,
+    gate: {
+      minCompanyLevel: config.minCompanyLevel,
+      minReputation: config.minReputation,
+      maxDebtRatioBasisPoints: config.debtToleranceBasisPoints,
+      minFounderEquityBasisPoints: config.equityBasisPoints + 1,
+      requiresLegalReview: config.requiresLegalReview
+    },
+    gateStatus: {
+      isAvailable,
+      blockers
+    },
     isAvailable,
-    lockedReason: completedInvestorIds.has(config.id)
-      ? "本轮已完成"
+    lockedReason: activeInvestorIds.has(config.id)
+      ? "已有进行中的融资谈判"
+      : fundedCount > 0 && !config.allowFollowOn
+        ? "本轮已完成"
       : !isEquityEnough
         ? "创始人股权不足"
         : !isDebtAcceptable
           ? "负债率过高，条款暂不可接受"
-          : null
+          : !hasProductCount
+            ? "产品线数量不足"
+            : !hasMonthlyIncome
+              ? "月收入未达投资人门槛"
+              : !hasRetention
+                ? "产品留存率未达投资人门槛"
+                : !hasPayRate
+                  ? "产品付费率未达投资人门槛"
+                  : !hasValuation
+                    ? "估值未达投资人门槛"
+                    : !hasReputation
+                      ? "声望未达投资人门槛"
+                      : !hasCompanyLevel
+                        ? "公司等级未达投资人门槛"
+                        : !hasBridgeNeed
+                          ? "现金流尚未进入桥接场景"
+                          : null
   };
 };
 
@@ -2962,17 +3193,25 @@ const toFundingCenterRecord = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
 ): Promise<FundingCenterRecord> => {
-  const [configs, fundings] = await Promise.all([
+  const [configs, fundings, products] = await Promise.all([
     prisma.investorConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.playerFunding.findMany({
       where: { profileId: profile.id },
       orderBy: [{ createdAt: "desc" }]
+    }),
+    prisma.playerProduct.findMany({
+      where: { profileId: profile.id }
     })
   ]);
-  const completedInvestorIds = new Set(fundings.filter((funding) => funding.status === "funded").map((funding) => funding.investorId));
+  const fundedInvestorCounts = new Map<string, number>();
+  for (const funding of fundings.filter((funding) => funding.status === "funded")) {
+    fundedInvestorCounts.set(funding.investorId, (fundedInvestorCounts.get(funding.investorId) ?? 0) + 1);
+  }
+  const activeInvestorIds = new Set(fundings.filter((funding) => funding.status === "pending").map((funding) => funding.investorId));
+  const productMetrics = calculateFundingProductMetrics(products);
 
   return {
-    offers: configs.map((config) => calculateFundingOffer(profile, config, completedInvestorIds)),
+    offers: configs.map((config) => calculateFundingOffer(profile, productMetrics, config, fundedInvestorCounts, activeInvestorIds)),
     fundings: fundings.map(toFundingRecord),
     finance: toCompanyFinanceRecord(profile)
   };
@@ -5414,6 +5653,7 @@ const toLoanCenterRecord = async (
   const activeConfigIds = new Set(loans.filter((loan) => loan.status !== "settled").map((loan) => loan.configId));
   const finance = toCompanyFinanceRecord(profile);
   const hasOverdueLoan = loans.some((loan) => loan.status === "overdue");
+  const hasAnyActiveLoan = loans.some((loan) => loan.status !== "settled");
   const crisisLevel: LoanCenterRecord["crisis"]["level"] =
     finance.cash < 0 || finance.debtRatioBasisPoints >= 9000
       ? "bankruptcy"
@@ -5425,8 +5665,8 @@ const toLoanCenterRecord = async (
 
   return {
     offers: configs.map((config) => {
-      const isCreditEnough = creditRank(profile.creditRating) >= creditRank(config.creditRequired);
       const hasActiveLoan = activeConfigIds.has(config.id);
+      const gate = evaluateLoanGate(profile, finance, config, { hasActiveLoan, hasAnyActiveLoan, hasOverdueLoan, crisisLevel });
       return {
         id: config.id,
         name: config.name,
@@ -5436,9 +5676,12 @@ const toLoanCenterRecord = async (
         termMonths: config.termMonths,
         monthlyPayment: config.monthlyPayment,
         creditRequired: config.creditRequired,
+        isHighRisk: config.isHighRisk,
+        purposeTag: config.purposeTag,
+        applicationImpact: loanApplicationImpact(config),
         summary: config.summary,
-        isAvailable: isCreditEnough && !hasActiveLoan,
-        lockedReason: !isCreditEnough ? "信用评级不足" : hasActiveLoan ? "同类贷款未结清" : null
+        isAvailable: gate.isAvailable,
+        lockedReason: gate.lockedReason
       };
     }),
     loans: loans.map(toLoanRecord),
@@ -7704,7 +7947,8 @@ export const createPrismaGameRepository = (
           data: {
             id: randomUUID(),
             profileId: profile.id,
-            configId: firstConfig.id
+            configId: firstConfig.id,
+            sourceKey: `event:${firstConfig.id}:initial`
           }
         });
       }
@@ -7796,12 +8040,10 @@ export const createPrismaGameRepository = (
         const followupConfig = await tx.eventConfig.findUnique({
           where: { id: event.config.followupEventId }
         });
-        const existingFollowup = await tx.playerEvent.findUnique({
+        const existingFollowup = await tx.playerEvent.findFirst({
           where: {
-            profileId_configId: {
-              profileId: profile.id,
-              configId: event.config.followupEventId
-            }
+            profileId: profile.id,
+            configId: event.config.followupEventId
           },
           include: { config: true }
         });
@@ -7812,7 +8054,8 @@ export const createPrismaGameRepository = (
             data: {
               id: randomUUID(),
               profileId: profile.id,
-              configId: followupConfig.id
+              configId: followupConfig.id,
+              sourceKey: `event:${event.id}:followup:${followupConfig.id}`
             },
             include: { config: true }
           });
@@ -7894,19 +8137,39 @@ export const createPrismaGameRepository = (
     if (config === null) {
       return "LOAN_NOT_FOUND";
     }
+
+    const loans = await prisma.playerLoan.findMany({
+      where: {
+        profileId: profile.id,
+        status: { not: "settled" }
+      }
+    });
+    const activeLoan = loans.find((loan) => loan.configId === config.id);
+    if (activeLoan !== undefined) {
+      return "LOAN_ALREADY_ACTIVE";
+    }
     if (creditRank(profile.creditRating) < creditRank(config.creditRequired)) {
       return "CREDIT_NOT_ENOUGH";
     }
 
-    const activeLoan = await prisma.playerLoan.findFirst({
-      where: {
-        profileId: profile.id,
-        configId: config.id,
-        status: { not: "settled" }
-      }
+    const finance = toCompanyFinanceRecord(toProfileRecord(profile));
+    const hasOverdueLoan = loans.some((loan) => loan.status === "overdue");
+    const crisisLevel: LoanCenterRecord["crisis"]["level"] =
+      finance.cash < 0 || finance.debtRatioBasisPoints >= 9000
+        ? "bankruptcy"
+        : finance.riskStatus === "资金紧张" || hasOverdueLoan
+          ? "cashflow"
+          : finance.debtRatioBasisPoints >= 6000
+            ? "debt"
+            : "none";
+    const gate = evaluateLoanGate(toProfileRecord(profile), finance, config, {
+      hasActiveLoan: false,
+      hasAnyActiveLoan: loans.length > 0,
+      hasOverdueLoan,
+      crisisLevel
     });
-    if (activeLoan !== null) {
-      return "LOAN_ALREADY_ACTIVE";
+    if (!gate.isAvailable) {
+      return "LOAN_LOCKED";
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -7930,6 +8193,8 @@ export const createPrismaGameRepository = (
         data: {
           cash: { increment: config.principal },
           totalDebt: { increment: config.principal },
+          riskStatus: config.riskDeltaOnApply > 0 ? "预警" : profile.riskStatus,
+          creditRating: config.creditPenaltyOnApply > 0 ? downgradeCredit(profile.creditRating) : profile.creditRating,
           debtWarning: "中"
         }
       });
@@ -7977,6 +8242,7 @@ export const createPrismaGameRepository = (
       const remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
       const remainingMonths = mode === "full" || remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
       const status = remainingPrincipal === 0 ? "settled" : "active";
+      const nextOnTimeRepayPeriods = mode === "scheduled" ? loan.onTimeRepayPeriods + 1 : loan.onTimeRepayPeriods;
       const updatedLoan = await tx.playerLoan.update({
         where: { id: loan.id },
         data: {
@@ -7984,6 +8250,7 @@ export const createPrismaGameRepository = (
           remainingMonths,
           penaltyAccrued: 0,
           overduePeriods: status === "settled" ? loan.overduePeriods : 0,
+          onTimeRepayPeriods: nextOnTimeRepayPeriods,
           status,
           settledAt: status === "settled" ? new Date() : null
         }
@@ -7993,6 +8260,7 @@ export const createPrismaGameRepository = (
         data: {
           cash: { decrement: payment },
           totalDebt: { decrement: Math.min(profile.totalDebt, principalPayment + loan.penaltyAccrued) },
+          riskStatus: mode === "scheduled" && nextOnTimeRepayPeriods >= 3 && profile.riskStatus === "资金紧张" ? "预警" : profile.riskStatus,
           debtWarning: remainingPrincipal === 0 ? "低" : profile.debtWarning
         }
       });
@@ -8036,6 +8304,7 @@ export const createPrismaGameRepository = (
       const result = await prisma.$transaction(async (tx) => {
         const remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
         const status = remainingPrincipal === 0 ? "settled" : "active";
+        const nextOnTimeRepayPeriods = loan.onTimeRepayPeriods + 1;
         const updatedLoan = await tx.playerLoan.update({
           where: { id: loan.id },
           data: {
@@ -8043,6 +8312,7 @@ export const createPrismaGameRepository = (
             remainingMonths: status === "settled" ? 0 : Math.max(0, loan.remainingMonths - 1),
             penaltyAccrued: 0,
             overduePeriods: status === "settled" ? loan.overduePeriods : 0,
+            onTimeRepayPeriods: nextOnTimeRepayPeriods,
             status,
             settledAt: status === "settled" ? new Date() : null
           }
@@ -8050,11 +8320,12 @@ export const createPrismaGameRepository = (
         const updatedProfile = await tx.playerProfile.update({
           where: { id: profile.id },
           data: {
-            cash: { decrement: payment },
-            totalDebt: { decrement: Math.min(profile.totalDebt, principalPayment + loan.penaltyAccrued) },
-            debtWarning: remainingPrincipal === 0 ? "低" : profile.debtWarning
-          }
-        });
+          cash: { decrement: payment },
+          totalDebt: { decrement: Math.min(profile.totalDebt, principalPayment + loan.penaltyAccrued) },
+          riskStatus: nextOnTimeRepayPeriods >= 3 && profile.riskStatus === "资金紧张" ? "预警" : profile.riskStatus,
+          debtWarning: remainingPrincipal === 0 ? "低" : profile.debtWarning
+        }
+      });
         return { loan: updatedLoan, profile: updatedProfile };
       });
 
@@ -8072,6 +8343,7 @@ export const createPrismaGameRepository = (
         data: {
           status: "overdue",
           overduePeriods: { increment: 1 },
+          onTimeRepayPeriods: 0,
           penaltyAccrued: { increment: penalty }
         }
       });
@@ -8180,9 +8452,22 @@ export const createPrismaGameRepository = (
       return "INVESTOR_NOT_FOUND";
     }
 
-    const fundings = await prisma.playerFunding.findMany({ where: { profileId: profile.id } });
-    const completedInvestorIds = new Set(fundings.filter((funding) => funding.status === "funded").map((funding) => funding.investorId));
-    const offer = calculateFundingOffer(toProfileRecord(profile), config, completedInvestorIds);
+    const [fundings, products] = await Promise.all([
+      prisma.playerFunding.findMany({ where: { profileId: profile.id } }),
+      prisma.playerProduct.findMany({ where: { profileId: profile.id } })
+    ]);
+    const fundedInvestorCounts = new Map<string, number>();
+    for (const funding of fundings.filter((funding) => funding.status === "funded")) {
+      fundedInvestorCounts.set(funding.investorId, (fundedInvestorCounts.get(funding.investorId) ?? 0) + 1);
+    }
+    const activeInvestorIds = new Set(fundings.filter((funding) => funding.status === "pending").map((funding) => funding.investorId));
+    const offer = calculateFundingOffer(
+      toProfileRecord(profile),
+      calculateFundingProductMetrics(products),
+      config,
+      fundedInvestorCounts,
+      activeInvestorIds
+    );
     if (!offer.isAvailable) {
       return "FUNDING_LOCKED";
     }
@@ -8204,7 +8489,15 @@ export const createPrismaGameRepository = (
         equityBasisPoints: offer.equityBasisPoints,
         successRate: offer.successRate,
         boardPressure: offer.boardPressure,
-        term: offer.term
+        term: offer.term,
+        offerType: offer.offerType,
+        offerStatus: "accepted",
+        paymentStatus: "pending",
+        disbursementStatus: "scheduled",
+        legalReviewStatus: offer.gate.requiresLegalReview ? "pending" : "not_required",
+        postEventStatus: "none",
+        followOnSequence: offer.followOnSequence,
+        followOnCount: 0
       }
     });
 
@@ -8241,7 +8534,11 @@ export const createPrismaGameRepository = (
       return "FUNDING_ALREADY_SETTLED";
     }
 
-    const isSuccess = funding.successRate >= 50;
+    if (funding.legalReviewStatus === "blocked" || funding.disbursementStatus === "paused") {
+      return "FUNDING_LOCKED";
+    }
+
+    const isSuccess = fundingSettlementRoll(funding.investorId) < funding.successRate;
     const settled = await prisma.$transaction(async (tx) => {
       const resultSummary = isSuccess
         ? `${funding.investorName} 完成打款，创始人股权稀释 ${(funding.equityBasisPoints / 100).toFixed(1)}%。`
@@ -8250,6 +8547,10 @@ export const createPrismaGameRepository = (
         where: { id: funding.id },
         data: {
           status: isSuccess ? "funded" : "failed",
+          offerStatus: "closed",
+          paymentStatus: isSuccess ? "paid" : "none",
+          disbursementStatus: isSuccess ? "completed" : funding.disbursementStatus,
+          postEventStatus: isSuccess ? (shouldCreatePostFundingEvent(funding) ? "pending" : "not_required") : "none",
           resultSummary,
           resolvedAt: new Date()
         }
@@ -8263,41 +8564,264 @@ export const createPrismaGameRepository = (
               founderEquityBasisPoints: { decrement: funding.equityBasisPoints },
               reputation: { increment: 600 },
               riskStatus: funding.boardPressure >= 30 ? "预警" : profile.riskStatus
-            }
+          }
           : {
               reputation: { decrement: 500 },
-              riskStatus: "预警",
-              pendingEventCount: { increment: 1 }
+              riskStatus: "预警"
             }
       });
 
-      if (!isSuccess) {
-        const failureConfig = await tx.eventConfig.findUnique({ where: { id: "funding-failed-bridge-plan" } });
-        if (failureConfig !== null) {
-          await tx.playerEvent.upsert({
+      const postInvestmentEvents: Array<{ eventId: string; configId: string; title: string }> = [];
+      if (isSuccess && shouldCreatePostFundingEvent(funding)) {
+        const postFundingConfig = await tx.eventConfig.findUnique({ where: { id: "post-funding-board-review" } });
+        if (postFundingConfig !== null) {
+          const postEvent = await tx.playerEvent.upsert({
             where: {
-              profileId_configId: {
+              profileId_configId_sourceKey: {
                 profileId: profile.id,
-                configId: failureConfig.id
+                configId: postFundingConfig.id,
+                sourceKey: `funding:${funding.id}:post-investment`
               }
             },
             update: { status: "pending" },
             create: {
               id: randomUUID(),
               profileId: profile.id,
-              configId: failureConfig.id
+              configId: postFundingConfig.id,
+              sourceKey: `funding:${funding.id}:post-investment`
+            }
+          });
+          postInvestmentEvents.push({ eventId: postEvent.id, configId: postFundingConfig.id, title: postFundingConfig.title });
+        }
+      }
+
+      if (!isSuccess) {
+        const failureConfig = await tx.eventConfig.findUnique({ where: { id: "funding-failed-bridge-plan" } });
+        if (failureConfig !== null) {
+          await tx.playerEvent.upsert({
+            where: {
+              profileId_configId_sourceKey: {
+                profileId: profile.id,
+                configId: failureConfig.id,
+                sourceKey: `funding:${funding.id}:failed-bridge-plan`
+              }
+            },
+            update: { status: "pending" },
+            create: {
+              id: randomUUID(),
+              profileId: profile.id,
+              configId: failureConfig.id,
+              sourceKey: `funding:${funding.id}:failed-bridge-plan`
             }
           });
         }
       }
 
-      return { funding: updatedFunding, profile: updatedProfile, resultSummary };
+      const pendingEventCount = await tx.playerEvent.count({
+        where: {
+          profileId: profile.id,
+          status: "pending"
+        }
+      });
+      const syncedProfile = await tx.playerProfile.update({
+        where: { id: updatedProfile.id },
+        data: { pendingEventCount }
+      });
+
+      return { funding: updatedFunding, profile: syncedProfile, resultSummary, postInvestmentEvents };
     });
 
     return {
       funding: toFundingRecord(settled.funding),
       fundingCenter: await toFundingCenterRecord(prisma, toProfileRecord(settled.profile)),
-      result: settled.resultSummary
+      result: settled.resultSummary,
+      postInvestmentEvents: settled.postInvestmentEvents
+    };
+  },
+
+  async reviewFundingLegalTerms(accountId, serverId, fundingId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const funding = await prisma.playerFunding.findFirst({
+      where: {
+        id: fundingId,
+        profileId: profile.id
+      }
+    });
+    if (funding === null) {
+      return "FUNDING_NOT_FOUND";
+    }
+    if (funding.status !== "pending") {
+      return "FUNDING_ALREADY_SETTLED";
+    }
+
+    const riskLevel = funding.boardPressure >= 30 ? "medium" : "low";
+    const status = funding.boardPressure >= 45 ? "blocked" : "passed";
+    const updatedFunding = await prisma.playerFunding.update({
+      where: { id: funding.id },
+      data: {
+        legalReviewStatus: status
+      }
+    });
+
+    return {
+      funding: toFundingRecord(updatedFunding),
+      fundingCenter: await toFundingCenterRecord(prisma, toProfileRecord(profile)),
+      result: status === "passed" ? "法务复核已通过，融资条款可以继续推进。" : "法务复核发现高风险条款，需要暂缓推进。",
+      legalReview: {
+        status,
+        riskLevel,
+        checkedClauses: ["股权稀释", "董事会观察权", "回购和对赌条款"]
+      }
+    };
+  },
+
+  async pauseFundingDisbursement(accountId, serverId, fundingId, reason) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const funding = await prisma.playerFunding.findFirst({
+      where: {
+        id: fundingId,
+        profileId: profile.id
+      }
+    });
+    if (funding === null) {
+      return "FUNDING_NOT_FOUND";
+    }
+    if (funding.status !== "pending") {
+      return "FUNDING_ALREADY_SETTLED";
+    }
+
+    const paused = await prisma.$transaction(async (tx) => {
+      const updatedFunding = await tx.playerFunding.update({
+        where: { id: funding.id },
+        data: {
+          disbursementStatus: "paused",
+          paymentStatus: "paused"
+        }
+      });
+
+      const pausedConfig = await tx.eventConfig.findUnique({ where: { id: "funding-disbursement-paused" } });
+      const event = pausedConfig === null
+        ? null
+        : await tx.playerEvent.upsert({
+            where: {
+              profileId_configId_sourceKey: {
+                profileId: profile.id,
+                configId: pausedConfig.id,
+                sourceKey: `funding:${funding.id}:pause-disbursement`
+              }
+            },
+            update: { status: "pending", resultSummary: reason },
+            create: {
+              id: randomUUID(),
+              profileId: profile.id,
+              configId: pausedConfig.id,
+              sourceKey: `funding:${funding.id}:pause-disbursement`,
+              resultSummary: reason
+            },
+            include: { config: true }
+          });
+
+      const pendingEventCount = await tx.playerEvent.count({
+        where: {
+          profileId: profile.id,
+          status: "pending"
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: { pendingEventCount }
+      });
+
+      return { funding: updatedFunding, profile: updatedProfile, event };
+    });
+
+    return {
+      funding: toFundingRecord(paused.funding),
+      fundingCenter: await toFundingCenterRecord(prisma, toProfileRecord(paused.profile)),
+      result: "融资打款已暂停，等待条款复核确认。",
+      event: paused.event === null ? null : toEventRecord(paused.event)
+    };
+  },
+
+  async applyFundingFollowOn(accountId, serverId, fundingId, amount, equityBasisPoints) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const funding = await prisma.playerFunding.findFirst({
+      where: {
+        id: fundingId,
+        profileId: profile.id
+      },
+      include: { investor: true }
+    });
+    if (funding === null) {
+      return "FUNDING_NOT_FOUND";
+    }
+    if (funding.status !== "funded" || !funding.investor.allowFollowOn || amount <= 0 || equityBasisPoints <= 0 || profile.founderEquityBasisPoints <= equityBasisPoints) {
+      return "FUNDING_LOCKED";
+    }
+
+    const followed = await prisma.$transaction(async (tx) => {
+      const updatedFunding = await tx.playerFunding.update({
+        where: { id: funding.id },
+        data: {
+          offerType: "follow_on",
+          followOnCount: { increment: 1 },
+          disbursementStatus: "completed",
+          paymentStatus: "paid"
+        }
+      });
+      const updatedProfile = await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: { increment: amount },
+          founderEquityBasisPoints: { decrement: equityBasisPoints },
+          valuation: { increment: amount },
+          reputation: { increment: 200 }
+        }
+      });
+      return { funding: updatedFunding, profile: updatedProfile };
+    });
+
+    return {
+      funding: toFundingRecord(followed.funding),
+      fundingCenter: await toFundingCenterRecord(prisma, toProfileRecord(followed.profile)),
+      result: `${funding.investorName} 完成加投，追加资金 ${amount.toLocaleString("zh-CN")}。`,
+      followOn: {
+        amount,
+        equityBasisPoints
+      }
     };
   },
 
@@ -8467,22 +8991,37 @@ export const createPrismaGameRepository = (
         if (incidentConfig !== null) {
           await tx.playerEvent.upsert({
             where: {
-              profileId_configId: {
+              profileId_configId_sourceKey: {
                 profileId: profile.id,
-                configId: incidentConfig.id
+                configId: incidentConfig.id,
+                sourceKey: `product:${product.id}:tech-debt-incident`
               }
             },
             update: { status: "pending" },
             create: {
               id: randomUUID(),
               profileId: profile.id,
-              configId: incidentConfig.id
+              configId: incidentConfig.id,
+              sourceKey: `product:${product.id}:tech-debt-incident`
             }
           });
         }
       }
 
-      return { product: updatedProduct, profile: updatedProfile };
+      const pendingEventCount = await tx.playerEvent.count({
+        where: {
+          profileId: profile.id,
+          status: "pending"
+        }
+      });
+      const syncedProfile = nextMetrics.incidentTriggered
+        ? await tx.playerProfile.update({
+            where: { id: updatedProfile.id },
+            data: { pendingEventCount }
+          })
+        : updatedProfile;
+
+      return { product: updatedProduct, profile: syncedProfile };
     });
 
     return {

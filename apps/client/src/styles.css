@@ -3456,6 +3456,576 @@ input {
   text-align: center;
 }
 
+.finance-funding-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  grid-template-rows: 48px auto minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  color: #e0e0e0;
+  background: #0a0a0c;
+}
+
+.finance-funding-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid #2d2d32;
+  background: rgba(21, 21, 24, 0.5);
+}
+
+.finance-funding-header h1 {
+  margin: 0;
+  color: #f5f5f5;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.finance-funding-header button,
+.finance-funding-actions button {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font-weight: 900;
+}
+
+.finance-funding-header .finance-funding-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #c5a059;
+  background: transparent;
+  font-size: 12px;
+}
+
+.finance-funding-header-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.finance-funding-header .finance-funding-sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #8a8a8f;
+  background: transparent;
+}
+
+.finance-funding-header button:focus-visible {
+  outline: 1px solid rgba(197, 160, 89, 0.42);
+  outline-offset: 2px;
+}
+
+.finance-funding-sync.is-syncing .finance-funding-header-icon {
+  animation: financeFundingSpin 0.8s linear;
+}
+
+.finance-funding-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid #2d2d32;
+  border-radius: 0;
+  background: #0a0a0c;
+}
+
+.finance-funding-summary div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid #2d2d32;
+  border-bottom: 1px solid #2d2d32;
+}
+
+.finance-funding-summary div:nth-child(2n) {
+  border-right: 0;
+}
+
+.finance-funding-summary div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.finance-funding-summary span,
+.finance-funding-stats dt,
+.finance-funding-panel strong,
+.finance-funding-results strong,
+.finance-funding-actions > div > span {
+  display: block;
+  margin-bottom: 2px;
+  color: #666666;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.finance-funding-summary strong {
+  overflow: hidden;
+  display: block;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-funding-summary div:nth-child(2) strong {
+  color: #c5a059;
+}
+
+.finance-funding-notice,
+.finance-funding-error {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid #2d2d32;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.finance-funding-notice {
+  color: #c5a059;
+  background: rgba(197, 160, 89, 0.12);
+}
+
+.finance-funding-error {
+  color: #fca5a5;
+  background: rgba(153, 61, 61, 0.18);
+}
+
+.finance-funding-layout {
+  display: grid;
+  grid-template-rows: 35% minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.finance-funding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: none;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding: 0;
+  border-bottom: 1px solid #2d2d32;
+  background: rgba(21, 21, 24, 0.2);
+}
+
+.finance-funding-list::-webkit-scrollbar {
+  display: none;
+}
+
+.finance-funding-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 16px;
+  border-bottom: 1px solid #2d2d32;
+  color: #6f6f76;
+  background: rgba(21, 21, 24, 0.8);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.finance-funding-card {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 62px;
+  border: 0;
+  border-bottom: 1px solid #1a1a1e;
+  border-radius: 0;
+  padding: 10px 16px;
+  color: #e0e0e0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.finance-funding-card.selected {
+  border-left: 3px solid #c5a059;
+  border-color: #1a1a1e;
+  background: #1e1e24;
+  box-shadow: none;
+}
+
+.finance-funding-card-main {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+  text-align: left;
+}
+
+.finance-funding-card-main > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.finance-funding-card-main small {
+  color: #666666;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.finance-funding-card-main strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-funding-card-main em {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  color: #777777;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.finance-funding-card-main em b {
+  color: #c5a059;
+  font-size: 12px;
+}
+
+.finance-funding-state {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  max-width: 76px;
+  text-align: right;
+}
+
+.finance-funding-state small {
+  overflow: hidden;
+  max-width: 76px;
+  color: #7f1d1d;
+  font-size: 9px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-funding-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 18px;
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.finance-funding-status-icon {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+}
+
+.finance-funding-status.is-open,
+.finance-funding-status.is-risk {
+  border: 1px solid rgba(197, 160, 89, 0.3);
+  color: #c5a059;
+  background: rgba(197, 160, 89, 0.2);
+}
+
+.finance-funding-status.is-pending {
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.2);
+  animation: financingStatusPulse 2s ease-in-out infinite;
+}
+
+.finance-funding-status.is-pending .finance-funding-status-icon {
+  animation: financeFundingSpin 1s linear infinite;
+}
+
+.finance-funding-status.is-done {
+  border: 1px solid rgba(22, 163, 74, 0.3);
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.2);
+}
+
+.finance-funding-status.is-failed,
+.finance-funding-status.is-locked {
+  border: 1px solid rgba(153, 61, 61, 0.3);
+  color: #993d3d;
+  background: rgba(153, 61, 61, 0.2);
+}
+
+@keyframes financingStatusPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 2px rgba(217, 119, 6, 0.2);
+    border-color: rgba(217, 119, 6, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(217, 119, 6, 0.5);
+    border-color: rgba(217, 119, 6, 0.8);
+  }
+}
+
+@keyframes financeFundingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.finance-funding-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  border: 0;
+  border-radius: 0;
+  padding: 16px 16px 0;
+  background: #0a0a0c;
+  box-shadow: none;
+}
+
+.finance-funding-detail::-webkit-scrollbar {
+  display: none;
+}
+
+.finance-funding-title {
+  display: block;
+  padding: 0;
+  margin-bottom: 16px;
+  border: 0;
+}
+
+.finance-funding-title strong {
+  color: #c5a059;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.finance-funding-title em {
+  display: block;
+  margin-top: 4px;
+  color: #666666;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.finance-funding-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 0 0 24px;
+  border: 0;
+}
+
+.finance-funding-stats div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.finance-funding-stats dd {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.finance-funding-stats dd i {
+  display: block;
+  max-width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: #c5a059;
+}
+
+.finance-funding-stats dd.is-danger i {
+  background: #ef4444;
+  animation: financingDangerPulse 0.4s ease-in-out infinite;
+}
+
+.finance-funding-stats dd.is-high i {
+  background: #991b1b;
+}
+
+.finance-funding-stats dd.is-mid i {
+  background: #d97706;
+}
+
+.finance-funding-stats dd.is-low i {
+  background: #16a34a;
+}
+
+@keyframes financingDangerPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 #ef4444;
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+  }
+}
+
+.finance-funding-panel,
+.finance-funding-results {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border: 0;
+  border-top: 1px solid #2d2d32;
+  border-radius: 0;
+  background: transparent;
+}
+
+.finance-funding-panel ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finance-funding-panel li,
+.finance-funding-results p,
+.finance-funding-results small {
+  color: #999999;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.finance-funding-panel li::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #c5a059;
+  vertical-align: middle;
+}
+
+.finance-funding-results header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.finance-funding-results header span {
+  color: #666666;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.finance-funding-results article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 8px;
+  align-items: center;
+}
+
+.finance-funding-results article small {
+  grid-column: 1 / -1;
+}
+
+.finance-funding-actions {
+  position: sticky;
+  right: auto;
+  bottom: 0;
+  left: auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  margin: auto -16px 0;
+  padding: 12px 16px 16px;
+  border: 0;
+  border-top: 1px solid #2d2d32;
+  border-radius: 0;
+  background: #151518;
+  box-shadow: none;
+}
+
+.finance-funding-actions > div:first-child {
+  display: grid;
+  align-content: center;
+  min-width: 54px;
+}
+
+.finance-funding-actions > div:first-child strong {
+  justify-self: start;
+}
+
+.finance-funding-primary-action {
+  min-height: 38px;
+  padding: 10px 20px;
+  color: #000000;
+  background: #c5a059;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.finance-funding-primary-action:disabled {
+  color: #555555;
+  background: #2d2d32;
+}
+
+.finance-funding-secondary-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}
+
+.finance-funding-secondary-actions button {
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid #2d2d32;
+  color: #888888;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.finance-funding-secondary-actions button:disabled {
+  color: #555555;
+}
+
+.finance-funding-empty {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  color: #666666;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .event-screen {
   position: absolute;
   inset: 8.8% 2.4% 9.8%;
@@ -4264,4 +4834,561 @@ input {
   .task-panel {
     width: 53.8%;
   }
+}
+/* Phase 29 native loan center */
+.loan-native-screen {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  flex-direction: column;
+  background: radial-gradient(circle at top, rgba(26, 30, 38, 0.95) 0%, #0f1218 62%, #05070a 100%);
+  color: #e2e8f0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.loan-native-header {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 18px 14px;
+  background: rgba(15, 18, 24, 0.92);
+  border-bottom: 1px solid #2d333f;
+}
+
+.loan-native-header strong {
+  color: #ffd700;
+  font-size: 17px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.loan-native-icon-button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #1a1e26;
+  color: #ffd700;
+}
+
+.loan-native-icon,
+.loan-native-small-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.loan-native-small-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.loan-native-icon.is-muted {
+  color: #94a3b8;
+}
+
+.loan-native-icon.is-danger {
+  color: #ef4444;
+}
+
+.loan-native-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px 18px 16px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.loan-native-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.loan-native-dashboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.loan-native-metric,
+.loan-native-debt-bar,
+.loan-native-detail,
+.loan-native-product,
+.loan-native-crisis {
+  background: rgba(26, 30, 38, 0.82);
+  border: 1px solid rgba(255, 215, 0, 0.12);
+  border-radius: 14px;
+}
+
+.loan-native-metric {
+  padding: 13px;
+}
+
+.loan-native-metric span,
+.loan-native-debt-bar span,
+.loan-native-detail dt,
+.loan-native-active span {
+  display: block;
+  color: #8d96a8;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.loan-native-metric strong {
+  display: inline-block;
+  color: #fff;
+  font-size: 26px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.loan-native-metric:first-child strong {
+  color: #ffd700;
+  font-style: italic;
+}
+
+.loan-native-metric small {
+  margin-left: 6px;
+  color: #10b981;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.loan-debt-progress-track {
+  display: block;
+  height: 5px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.loan-debt-progress {
+  display: block;
+  height: 100%;
+  transition: width 0.5s ease-out;
+}
+
+.loan-debt-progress.is-safe {
+  background: #10b981;
+}
+
+.loan-debt-progress.is-warning {
+  background: #f59e0b;
+}
+
+.loan-debt-progress.is-danger {
+  background: #ef4444;
+}
+
+.loan-native-debt-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.16);
+}
+
+.loan-native-debt-bar.is-crisis {
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.loan-native-debt-bar > div:last-child {
+  min-width: 112px;
+  padding-left: 16px;
+  border-left: 1px solid #2d333f;
+  text-align: right;
+}
+
+.loan-native-debt-bar strong {
+  display: block;
+  margin-top: 3px;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.loan-native-debt-bar > div:last-child strong {
+  color: #ef4444;
+}
+
+.loan-native-crisis {
+  margin-top: 12px;
+  padding: 12px;
+  border-color: rgba(239, 68, 68, 0.52);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.loan-native-crisis > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ef4444;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.loan-native-crisis > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.loan-native-crisis button {
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.18);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  padding: 8px 4px;
+}
+
+.loan-native-products {
+  margin-top: 14px;
+}
+
+.loan-native-products > header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #7f8ca4;
+  font-size: 11px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.loan-native-product-list {
+  display: grid;
+  gap: 9px;
+}
+
+.loan-native-product {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 11px 12px;
+  color: #e2e8f0;
+  text-align: left;
+  border-left: 4px solid transparent;
+}
+
+.loan-native-product.selected,
+.loan-native-product.is-active {
+  border-left-color: #ffd700;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16), rgba(26, 30, 38, 0.88));
+}
+
+.loan-native-product.is-high-risk {
+  border-color: rgba(239, 68, 68, 0.42);
+}
+
+.loan-native-product span {
+  display: grid;
+  gap: 3px;
+}
+
+.loan-native-product span:last-child {
+  justify-items: end;
+  flex-shrink: 0;
+}
+
+.loan-native-product strong {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.loan-native-product span:last-child strong {
+  color: #ffd700;
+  font-style: italic;
+}
+
+.loan-native-product small {
+  color: #8d96a8;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.loan-native-product em {
+  width: fit-content;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 950;
+  padding: 1px 5px;
+}
+
+.loan-native-product small.is-open {
+  color: #10b981;
+}
+
+.loan-native-product small.is-locked {
+  color: #ef4444;
+}
+
+.loan-native-detail {
+  margin-top: 14px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(26, 30, 38, 0.94), rgba(15, 18, 24, 0.96));
+}
+
+.loan-native-detail header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.loan-native-detail header strong {
+  display: block;
+  color: #ffd700;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.loan-native-detail header span {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.loan-native-detail header em {
+  align-self: flex-start;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  padding: 4px 8px;
+}
+
+.loan-native-detail header em.is-open {
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+}
+
+.loan-native-detail header em.is-locked {
+  background: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+}
+
+.loan-native-detail dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.loan-native-detail dl div {
+  border-radius: 10px;
+  background: rgba(5, 7, 10, 0.28);
+  padding: 10px;
+}
+
+.loan-native-detail dd {
+  margin: 4px 0 0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.loan-native-active {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2d333f;
+}
+
+.loan-native-active div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.loan-native-active strong {
+  color: #fff;
+  font-size: 11px;
+}
+
+.loan-native-detail p {
+  margin: 12px 0 0;
+  color: #a3adbf;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.loan-native-impact-note {
+  display: block;
+  margin-top: 8px;
+  color: #ef4444;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.loan-native-detail ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loan-native-detail li {
+  border: 1px solid rgba(255, 215, 0, 0.14);
+  border-radius: 999px;
+  color: #ffd700;
+  font-size: 10px;
+  font-weight: 850;
+  padding: 4px 8px;
+}
+
+.loan-native-actions {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  padding: 10px 18px 18px;
+  background: #0f1218;
+  border-top: 1px solid rgba(255, 215, 0, 0.1);
+}
+
+.loan-native-actions div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.loan-native-actions button {
+  min-height: 42px;
+  border: 1px solid #2d333f;
+  border-radius: 12px;
+  background: #1a1e26;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.loan-native-actions > button {
+  min-height: 52px;
+  border: 0;
+  background: #ffd700;
+  color: #05070a;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.28);
+}
+
+.loan-native-actions button:disabled {
+  opacity: 0.48;
+}
+
+.loan-native-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.loan-native-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.loan-native-modal section {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  width: 100%;
+  max-width: 330px;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 24px;
+  background: rgba(26, 30, 38, 0.96);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.loan-native-modal header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border-bottom: 1px solid rgba(255, 215, 0, 0.18);
+  background: rgba(255, 215, 0, 0.08);
+}
+
+.loan-native-modal header span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 215, 0, 0.16);
+  color: #ffd700;
+}
+
+.loan-native-modal strong {
+  color: #ffd700;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.loan-native-modal small {
+  display: block;
+  color: #7f8ca4;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.loan-native-modal p {
+  margin: 0;
+  padding: 18px;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.6;
+}
+
+.loan-native-modal div:last-child {
+  display: grid;
+  gap: 8px;
+  padding: 0 18px 18px;
+}
+
+.loan-native-modal div:last-child button {
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 12px;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.loan-native-modal div:last-child button:first-child {
+  background: #ffd700;
+  color: #05070a;
+}
+
+.loan-native-modal div:last-child button:last-child {
+  border: 1px solid #2d333f;
+  background: transparent;
+  color: #8d96a8;
 }

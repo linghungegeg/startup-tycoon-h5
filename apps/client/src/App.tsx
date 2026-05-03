@@ -372,6 +372,9 @@ type LoanOffer = {
   termMonths: number;
   monthlyPayment: number;
   creditRequired: string;
+  isHighRisk: boolean;
+  purposeTag: string;
+  applicationImpact: string[];
   summary: string;
   isAvailable: boolean;
   lockedReason: string | null;
@@ -390,6 +393,7 @@ type PlayerLoan = {
   monthlyPayment: number;
   overduePeriods: number;
   penaltyAccrued: number;
+  onTimeRepayPeriods: number;
   status: "active" | "overdue" | "settled";
   createdAt: string;
   settledAt: string | null;
@@ -417,6 +421,9 @@ type LoanActionResult = {
   result: string;
 };
 
+type FundingTextBlock = string | string[] | null;
+type FundingUiStatus = "未达条件" | "可谈" | "高风险可谈" | "谈判中" | "已完成" | "已失败";
+
 type FundingOffer = {
   id: string;
   roundName: string;
@@ -431,6 +438,12 @@ type FundingOffer = {
   boardPressure: number;
   term: string;
   summary: string;
+  gateStatus?: {
+    isAvailable: boolean;
+    blockers: Array<{ code: string; message: string }>;
+  };
+  postInvestmentFocus?: FundingTextBlock;
+  recentResult?: string | null;
   isAvailable: boolean;
   lockedReason: string | null;
 };
@@ -447,8 +460,13 @@ type PlayerFunding = {
   successRate: number;
   boardPressure: number;
   term: string;
+  disbursementStatus?: "paused" | "scheduled" | "completed" | string;
+  legalReviewStatus?: string;
+  followOnCount?: number;
   status: "pending" | "funded" | "failed";
   resultSummary: string | null;
+  postInvestmentFocus?: FundingTextBlock;
+  recentResult?: string | null;
   createdAt: string;
   resolvedAt: string | null;
 };
@@ -457,6 +475,8 @@ type FundingCenter = {
   offers: FundingOffer[];
   fundings: PlayerFunding[];
   finance: CompanyFinance;
+  postInvestmentFocus?: FundingTextBlock;
+  recentResult?: string | null;
 };
 
 type FundingActionResult = {
@@ -1318,6 +1338,8 @@ const iconPaths: Record<string, string[]> = {
   "building": ["M6 22V4h12v18", "M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"],
   "building-2": ["M6 22V4h8v18", "M14 9h4v13", "M9 8h2M9 12h2M9 16h2"],
   "calendar": ["M7 3v4M17 3v4", "M4 7h16v14H4Z", "M4 11h16"],
+  "check": ["M20 6 9 17l-5-5"],
+  "chevron-left": ["M15 18 9 12l6-6"],
   "circle-dollar-sign": ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M12 6v12", "M16 9c-1-1-3-1-4-1s-3 .5-3 2 1 2 3 2 3 .5 3 2-1 2-3 2-3 0-4-1"],
   "clipboard-check": ["M9 5h6l1 2h2v14H6V7h2Z", "m9 14 2 2 4-5"],
   "contact": ["M7 7a5 5 0 0 1 10 0", "M5 21a7 7 0 0 1 14 0", "M4 4h16v18H4Z"],
@@ -1330,6 +1352,8 @@ const iconPaths: Record<string, string[]> = {
   "home": ["M3 11 12 3l9 8", "M5 10v11h14V10", "M10 21v-6h4v6"],
   "landmark": ["M3 21h18", "M5 10h14", "M12 3 4 8h16Z", "M6 10v8M10 10v8M14 10v8M18 10v8"],
   "layout-dashboard": ["M4 4h7v7H4Z", "M13 4h7v4h-7Z", "M13 10h7v10h-7Z", "M4 13h7v7H4Z"],
+  "loader-2": ["M21 12a9 9 0 1 1-6.2-8.6"],
+  "lock": ["M6 10V8a6 6 0 0 1 12 0v2", "M5 10h14v11H5Z"],
   "mail": ["M4 6h16v12H4Z", "m4 7 8 6 8-6"],
   "megaphone": ["M3 11v4h4l10 4V7L7 11Z", "M7 15l2 5"],
   "message-circle": ["M21 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4.2A8.5 8.5 0 1 1 21 11.5Z", "M8 10h8M8 14h5"],
@@ -1337,6 +1361,7 @@ const iconPaths: Record<string, string[]> = {
   "package-open": ["M3 9 12 4l9 5-9 5Z", "M3 9v8l9 5 9-5V9", "M12 14v8"],
   "plus": ["M12 5v14", "M5 12h14"],
   "radar": ["M12 20a8 8 0 1 0-8-8", "M12 12l6-6", "M12 12h8", "M12 4v4", "M4 12h4"],
+  "refresh-cw": ["M21 12a9 9 0 0 1-15 6.7L3 16", "M3 21v-5h5", "M3 12a9 9 0 0 1 15-6.7L21 8", "M21 3v5h-5"],
   "rocket": ["M4 14c4-8 8-10 16-10-1 8-2 12-10 16l-2-4-4-2Z", "M14 6l4 4", "M5 19l-2 2"],
   "send": ["M22 2 11 13", "M22 2 15 22l-4-9-9-4Z"],
   "shield-check": ["M12 3 5 6v6c0 5 3 8 7 10 4-2 7-5 7-10V6Z", "m9 12 2 2 4-5"],
@@ -1597,6 +1622,230 @@ const compactNumber = (value: number): string => {
 };
 
 const formatWan = (value: number): string => `${(value / 10000).toFixed(1)}万`;
+const FUNDING_HIGH_RISK_BOARD_PRESSURE = 30;
+
+const creditStatusLabel = (rating: string): string => {
+  if (rating === "A") {
+    return "优秀";
+  }
+  if (rating === "B") {
+    return "良好";
+  }
+  if (rating === "C") {
+    return "承压";
+  }
+  return "危险";
+};
+
+const debtRatioClass = (basisPoints: number): string => {
+  if (basisPoints >= 7500) {
+    return "is-danger";
+  }
+  if (basisPoints >= 6000) {
+    return "is-warning";
+  }
+  return "is-safe";
+};
+
+const loanKnownLockedReasons = new Set(["信用不足", "公司等级不足", "月收入不足", "现金流不足", "负债率过高", "尚未进入危机场景", "尚未出现逾期", "需要已有贷款", "同类未结清"]);
+
+const loanOfferStatusLabel = (offer: LoanOffer, activeLoan: PlayerLoan | undefined): string => {
+  if (activeLoan !== undefined) {
+    return activeLoan.status === "overdue" ? `逾期${activeLoan.overduePeriods}期` : "还款中";
+  }
+  if (!offer.isAvailable) {
+    return offer.lockedReason && loanKnownLockedReasons.has(offer.lockedReason) ? offer.lockedReason : "信用不足";
+  }
+  return offer.isHighRisk ? "高风险" : "可签约";
+};
+
+const loanPrimaryActionLabel = (offer: LoanOffer | undefined, activeLoan: PlayerLoan | undefined): string => {
+  if (activeLoan !== undefined) {
+    return "偿还本期账单";
+  }
+  if (offer === undefined) {
+    return "暂无授信";
+  }
+  return offer.isAvailable ? "申请签约拨备" : (offer.lockedReason ?? "信用不足");
+};
+
+const loanCrisisIcon = (routeId: string): string => {
+  if (routeId === "cost_cut") {
+    return "trending-up";
+  }
+  if (routeId === "restructure") {
+    return "refresh-cw";
+  }
+  return "handshake";
+};
+
+const normalizeFundingTextList = (value: FundingTextBlock | undefined): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item.trim().length > 0);
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    return [value.trim()];
+  }
+
+  return [];
+};
+
+const fundingOfferStatusLabel = (offer: FundingOffer): FundingUiStatus => {
+  if (!offer.isAvailable) {
+    return "未达条件";
+  }
+
+  return offer.boardPressure >= FUNDING_HIGH_RISK_BOARD_PRESSURE ? "高风险可谈" : "可谈";
+};
+
+const fundingRecordStatusLabel = (funding: PlayerFunding): FundingUiStatus => {
+  if (funding.status === "funded") {
+    return "已完成";
+  }
+
+  if (funding.status === "failed") {
+    return "已失败";
+  }
+
+  return "谈判中";
+};
+
+const fundingStatusClass = (status: FundingUiStatus): string => {
+  const classNameByStatus: Record<FundingUiStatus, string> = {
+    "未达条件": "is-locked",
+    "可谈": "is-open",
+    "高风险可谈": "is-risk",
+    "谈判中": "is-pending",
+    "已完成": "is-done",
+    "已失败": "is-failed"
+  };
+
+  return `finance-funding-status ${classNameByStatus[status]}`;
+};
+
+const fundingOfferDisplayStatus = (offer: FundingOffer, funding: PlayerFunding | undefined): FundingUiStatus => {
+  if (funding !== undefined) {
+    return fundingRecordStatusLabel(funding);
+  }
+
+  return fundingOfferStatusLabel(offer);
+};
+
+const fundingOfferReason = (offer: FundingOffer, funding: PlayerFunding | undefined): string => {
+  if (funding?.status === "pending") {
+    return "等待敲定条款";
+  }
+
+  if (funding?.status === "funded") {
+    return "条款已生效";
+  }
+
+  if (funding?.status === "failed") {
+    return "本轮已失败";
+  }
+
+  return offer.lockedReason ?? offer.gateStatus?.blockers[0]?.message ?? "可谈";
+};
+
+const fundingLegalReviewLabel = (status: string | undefined): string => {
+  const labels: Record<string, string> = {
+    not_required: "无需法务",
+    pending: "法务待看",
+    passed: "法务通过",
+    blocked: "法务卡住"
+  };
+
+  return labels[status ?? "not_required"] ?? "法务待看";
+};
+
+const fundingDisbursementLabel = (status: string | undefined): string => {
+  const labels: Record<string, string> = {
+    scheduled: "等待打款",
+    completed: "已到账",
+    paused: "打款暂停"
+  };
+
+  return labels[status ?? "scheduled"] ?? "等待打款";
+};
+
+const fundingRoadshowStatusLabel = (status: FundingUiStatus): string => {
+  const labels: Record<FundingUiStatus, string> = {
+    "未达条件": "锁定",
+    "可谈": "可谈",
+    "高风险可谈": "可谈",
+    "谈判中": "谈判",
+    "已完成": "完成",
+    "已失败": "失败"
+  };
+
+  return labels[status];
+};
+
+const fundingRoadshowStatusIcon = (status: FundingUiStatus): string => {
+  const icons: Record<FundingUiStatus, string> = {
+    "未达条件": "lock",
+    "可谈": "zap",
+    "高风险可谈": "zap",
+    "谈判中": "loader-2",
+    "已完成": "check",
+    "已失败": "x"
+  };
+
+  return icons[status];
+};
+
+const fundingRoadshowFooterStatus = (status: FundingUiStatus): string => {
+  const labels: Record<FundingUiStatus, string> = {
+    "未达条件": "不满足",
+    "可谈": "就绪",
+    "高风险可谈": "高风险",
+    "谈判中": "谈判中",
+    "已完成": "生效",
+    "已失败": "失败"
+  };
+
+  return labels[status];
+};
+
+const fundingPrimaryActionLabel = (offer: FundingOffer, funding: PlayerFunding | undefined): string => {
+  if (funding?.status === "pending") {
+    if (funding.legalReviewStatus === "blocked" || funding.disbursementStatus === "paused") {
+      return "条款受阻";
+    }
+
+    return "敲定条款";
+  }
+
+  if (funding?.status === "funded") {
+    return "已完成";
+  }
+
+  if (funding?.status === "failed") {
+    return "已失败";
+  }
+
+  return offer.isAvailable ? "开始谈判" : "开始谈判";
+};
+
+const canSettleFunding = (funding: PlayerFunding): boolean =>
+  funding.status === "pending" && funding.legalReviewStatus !== "blocked" && funding.disbursementStatus !== "paused";
+
+const fundingPressureLabel = (value: number): string => {
+  if (value > 80) {
+    return "危急";
+  }
+
+  if (value > 50) {
+    return "高压";
+  }
+
+  if (value > 30) {
+    return "中等";
+  }
+
+  return "轻微";
+};
 
 const serverStatusClass = (server: ServerOption): string => {
   if (server.status === "busy" || server.label === "繁忙") {
@@ -1821,11 +2070,13 @@ function App() {
   const [selectedLoanId, setSelectedLoanId] = useState("");
   const [loanError, setLoanError] = useState("");
   const [loanNotice, setLoanNotice] = useState("");
+  const [loanCrisisModalRoute, setLoanCrisisModalRoute] = useState<LoanCenter["crisis"]["routes"][number] | null>(null);
   const [fundingCenter, setFundingCenter] = useState<FundingCenter | null>(null);
   const [selectedFundingOfferId, setSelectedFundingOfferId] = useState("");
   const [selectedFundingId, setSelectedFundingId] = useState("");
   const [fundingError, setFundingError] = useState("");
   const [fundingNotice, setFundingNotice] = useState("");
+  const [isFundingSyncing, setIsFundingSyncing] = useState(false);
   const [productCenter, setProductCenter] = useState<ProductCenter | null>(null);
   const [selectedProductOfferId, setSelectedProductOfferId] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
@@ -2044,6 +2295,26 @@ function App() {
     () => activeLoans.find((item) => item.id === selectedLoanId) ?? activeLoans[0],
     [activeLoans, selectedLoanId]
   );
+  const selectedOfferLoan = useMemo(
+    () => activeLoans.find((item) => item.configId === selectedLoanOffer?.id),
+    [activeLoans, selectedLoanOffer?.id]
+  );
+  const sortedLoanOffers = useMemo(() => {
+    const statusRank = (offer: LoanOffer): number => {
+      const active = activeLoans.some((loan) => loan.configId === offer.id);
+      if (active) {
+        return 0;
+      }
+      if (offer.isAvailable && !offer.isHighRisk) {
+        return 1;
+      }
+      if (offer.isAvailable) {
+        return 2;
+      }
+      return 3;
+    };
+    return [...(loanCenter?.offers ?? [])].sort((left, right) => statusRank(left) - statusRank(right));
+  }, [activeLoans, loanCenter?.offers]);
   const selectedFundingOffer = useMemo(
     () => fundingCenter?.offers.find((item) => item.id === selectedFundingOfferId) ?? fundingCenter?.offers[0],
     [fundingCenter?.offers, selectedFundingOfferId]
@@ -2053,9 +2324,61 @@ function App() {
     [fundingCenter?.fundings]
   );
   const selectedFunding = useMemo(
-    () => pendingFundings.find((item) => item.id === selectedFundingId) ?? pendingFundings[0],
-    [pendingFundings, selectedFundingId]
+    () =>
+      pendingFundings.find((item) => item.id === selectedFundingId && item.investorId === selectedFundingOffer?.id) ??
+      pendingFundings.find((item) => item.investorId === selectedFundingOffer?.id),
+    [pendingFundings, selectedFundingId, selectedFundingOffer?.id]
   );
+  const selectedFundingRecord = useMemo(
+    () => fundingCenter?.fundings.find((item) => item.investorId === selectedFundingOffer?.id),
+    [fundingCenter?.fundings, selectedFundingOffer?.id]
+  );
+  const fundingHistory = useMemo(
+    () =>
+      [...(fundingCenter?.fundings ?? [])].sort((left, right) => {
+        const leftTime = new Date(left.resolvedAt ?? left.createdAt).getTime();
+        const rightTime = new Date(right.resolvedAt ?? right.createdAt).getTime();
+        return rightTime - leftTime;
+      }),
+    [fundingCenter?.fundings]
+  );
+  const selectedFundingPostFocus = useMemo(() => {
+    const centerFocus = normalizeFundingTextList(fundingCenter?.postInvestmentFocus);
+    if (selectedFundingOffer === undefined) {
+      return centerFocus;
+    }
+
+    const matchedFunding = fundingCenter?.fundings.find((item) => item.investorId === selectedFundingOffer.id);
+    const offerFocus = normalizeFundingTextList(selectedFundingOffer.postInvestmentFocus);
+    const fundingFocus = normalizeFundingTextList(matchedFunding?.postInvestmentFocus);
+    if (offerFocus.length > 0) {
+      return offerFocus;
+    }
+
+    if (fundingFocus.length > 0) {
+      return fundingFocus;
+    }
+
+    if (centerFocus.length > 0) {
+      return centerFocus;
+    }
+
+    const founderEquityAfter =
+      ((fundingCenter?.finance.founderEquityBasisPoints ?? profile?.founderEquityBasisPoints ?? 0) - selectedFundingOffer.equityBasisPoints) / 100;
+    return [
+      `创始人持股降至 ${founderEquityAfter.toFixed(1)}%`,
+      `治理压力 ${selectedFundingOffer.boardPressure}`,
+      `投后估值 ${compactNumber(selectedFundingOffer.postMoneyValuation)}`
+    ];
+  }, [fundingCenter?.finance.founderEquityBasisPoints, fundingCenter?.fundings, fundingCenter?.postInvestmentFocus, profile?.founderEquityBasisPoints, selectedFundingOffer]);
+  const selectedFundingRecentResult = useMemo(() => {
+    if (selectedFundingOffer === undefined) {
+      return fundingCenter?.recentResult ?? "";
+    }
+
+    const matchedFunding = fundingHistory.find((item) => item.investorId === selectedFundingOffer.id);
+    return selectedFundingOffer.recentResult ?? matchedFunding?.recentResult ?? matchedFunding?.resultSummary ?? fundingCenter?.recentResult ?? "";
+  }, [fundingCenter?.recentResult, fundingHistory, selectedFundingOffer]);
   const selectedProductOffer = useMemo(
     () => productCenter?.offers.find((item) => item.id === selectedProductOfferId) ?? productCenter?.offers[0],
     [productCenter?.offers, selectedProductOfferId]
@@ -2567,6 +2890,16 @@ function App() {
     }
 
     setFundingError(response.error.message);
+  };
+
+  const syncFundingCenter = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+
+    setIsFundingSyncing(true);
+    await loadFundingCenter(account.token, selectedServer.id);
+    window.setTimeout(() => setIsFundingSyncing(false), 800);
   };
 
   const loadProductCenter = async (token: string, nextServerId: string): Promise<void> => {
@@ -4182,29 +4515,6 @@ function App() {
     setRandomTaskError(response.error.message);
   };
 
-  const settleFinanceMonth = async (): Promise<void> => {
-    if (!account || !selectedServer || !companyFinance) {
-      return;
-    }
-
-    const response = await apiRequest<CompanyFinance>(
-      "/finance/settle-month",
-      {
-        method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id, reportMonth: companyFinance.financeMonth })
-      },
-      account.token
-    );
-
-    if (response.success) {
-      applyCompanyFinance(response.data);
-      setFinanceError("");
-      return;
-    }
-
-    setFinanceError(response.error.message);
-  };
-
   const refreshCompanyAndEmployees = (): void => {
     if (!account || !selectedServer) {
       return;
@@ -4477,7 +4787,7 @@ function App() {
     setLoanError(response.error.message);
   };
 
-  const runFundingAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
+  const runFundingAction = async (path: string, body: Record<string, string | number> = {}): Promise<void> => {
     if (!account || !selectedServer) {
       setFundingError("账号或区服状态缺失，请重新登录。");
       return;
@@ -5224,8 +5534,8 @@ function App() {
                 <div className="flex items-center gap-3">
                   <Icon name="pie-chart" className="w-7 h-7 text-business-gold" />
                   <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Finance 财务</h2>
-                    <span className="text-[10px] text-slate-500">现金流、估值、负债与月度经营报告</span>
+                    <h2 className="text-xl font-black text-white">财务</h2>
+                    <span className="text-[10px] text-slate-500">现金流、负债、风险</span>
                   </div>
                 </div>
                 <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭财务" onClick={closeNativeHomePage}>
@@ -5235,73 +5545,96 @@ function App() {
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
                 {companyFinance ? (
                   <>
-                    <section className="grid grid-cols-2 gap-3">
-                      {[
-                        ["现金", compactNumber(companyFinance.cash)],
-                        ["月收入", compactNumber(companyFinance.monthlyIncome)],
-                        ["月支出", compactNumber(companyFinance.monthlyExpense)],
-                        ["净现金流", compactNumber(companyFinance.netCashFlow)],
-                        ["估值", compactNumber(companyFinance.valuation)],
-                        ["股权", `${(companyFinance.founderEquityBasisPoints / 100).toFixed(1)}%`],
-                        ["负债率", `${(companyFinance.debtRatioBasisPoints / 100).toFixed(1)}%`],
-                        ["信用", companyFinance.creditRating]
-                      ].map(([label, value]) => (
-                        <div className="glass-panel rounded-2xl p-4" key={label}>
-                          <div className="text-[10px] text-slate-400 font-bold">{label}</div>
-                          <div className="mt-2 text-xl text-business-gold font-black">{value}</div>
+                    <section className={`glass-panel rounded-3xl p-4 border ${companyFinance.riskStatus === "稳健" ? "border-business-gold/30" : "border-amber-400/40"} bg-gradient-to-br from-business-gold/10 to-slate-950`} aria-label="财务账本">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <strong className="block text-sm text-white font-black">财务账本</strong>
+                          <span className="text-[10px] text-slate-500">第 {companyFinance.financeMonth} 月 · 第 {companyFinance.operatingDay} 天</span>
                         </div>
-                      ))}
-                    </section>
-
-                    <section className={`glass-panel rounded-3xl p-4 border ${companyFinance.riskStatus === "稳健" ? "border-emerald-400/40" : "border-amber-400/40"}`}>
-                      <strong className={companyFinance.riskStatus === "稳健" ? "text-emerald-200 font-black" : "text-amber-200 font-black"}>
-                        {companyFinance.riskStatus}
-                      </strong>
-                      <div className="mt-2 space-y-1">
+                        <span className={companyFinance.riskStatus === "稳健" ? "rounded-full bg-emerald-400/15 px-3 py-1 text-[10px] text-emerald-200 font-black" : "rounded-full bg-amber-400/15 px-3 py-1 text-[10px] text-amber-200 font-black"}>
+                          {companyFinance.riskStatus}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-end justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-slate-400 font-bold">现金流总览</div>
+                          <div className="mt-1 truncate text-3xl text-business-gold font-black">{compactNumber(companyFinance.cash)}</div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-[10px] text-slate-400 font-bold">净现金流</div>
+                          <div className={companyFinance.netCashFlow >= 0 ? "mt-1 text-lg text-emerald-200 font-black" : "mt-1 text-lg text-amber-200 font-black"}>
+                            {companyFinance.netCashFlow >= 0 ? `+${compactNumber(companyFinance.netCashFlow)}` : compactNumber(companyFinance.netCashFlow)}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 divide-y divide-white/10 border-y border-white/10">
+                        {[
+                          ["月收入", compactNumber(companyFinance.monthlyIncome)],
+                          ["月支出", compactNumber(companyFinance.monthlyExpense)],
+                          ["估值", compactNumber(companyFinance.valuation)],
+                          ["股权", `${(companyFinance.founderEquityBasisPoints / 100).toFixed(1)}%`],
+                          ["负债率", `${(companyFinance.debtRatioBasisPoints / 100).toFixed(1)}%`],
+                          ["信用", companyFinance.creditRating]
+                        ].map(([label, value]) => (
+                          <div className="flex items-center justify-between gap-3 py-2.5" key={label}>
+                            <span className="text-[10px] text-slate-500 font-bold">{label}</span>
+                            <strong className="truncate text-sm text-white font-black">{value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/10" aria-label="财务顾问提示">
+                        <div className="flex items-center justify-between gap-3">
+                          <strong className="text-xs text-white font-black">财务顾问提示</strong>
+                          <span className={companyFinance.riskStatus === "稳健" ? "text-[10px] text-emerald-200 font-black" : "text-[10px] text-amber-200 font-black"}>
+                            {companyFinance.riskStatus}
+                          </span>
+                        </div>
                         {companyFinance.riskTips.map((tip) => (
-                          <p className="text-xs text-slate-300 font-bold leading-5" key={tip}>{tip}</p>
+                          <p className="mt-2 text-xs text-slate-300 font-bold leading-5" key={tip}>{tip}</p>
                         ))}
                       </div>
                     </section>
 
                     {companyFinance.businessClock && (
-                      <section className="glass-panel rounded-3xl p-4" aria-label="最近经营脉冲">
+                      <section className="glass-panel rounded-3xl p-4" aria-label="经营流水">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <strong className="block text-sm text-white font-black">最近经营脉冲</strong>
-                            <span className="text-[10px] text-slate-500">经营时钟使用服务器时间懒同步</span>
+                            <strong className="block text-sm text-white font-black">经营流水</strong>
+                            <span className="text-[10px] text-slate-500">经营已更新</span>
                           </div>
-                          <span className="text-[10px] font-black text-emerald-200">平台币 / VIP / 榜单不变</span>
+                          <span className="text-[10px] font-black text-emerald-200">状态已更新</span>
                         </div>
-                        <p className="mt-3 text-xs text-slate-300 font-bold leading-5">{companyFinance.businessClock.summary}</p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                        <p className="mt-3 text-xs text-slate-300 font-bold leading-5">
+                          {companyFinance.businessClock.settledTicks > 0 ? companyFinance.businessClock.summary : "经营暂无新增变化。"}
+                        </p>
+                        <div className="mt-3 divide-y divide-white/10 border-y border-white/10">
                           {[
-                            ["同步分钟", `${companyFinance.businessClock.settledMinutes} 分钟`],
+                            ["经营时间", `${companyFinance.businessClock.settledMinutes} 分钟`],
                             ["现金变化", companyFinance.businessClock.cashDelta >= 0 ? `+${compactNumber(companyFinance.businessClock.cashDelta)}` : compactNumber(companyFinance.businessClock.cashDelta)],
                             ["估值变化", companyFinance.businessClock.valuationDelta >= 0 ? `+${compactNumber(companyFinance.businessClock.valuationDelta)}` : compactNumber(companyFinance.businessClock.valuationDelta)],
-                            ["离线经营", `${companyFinance.businessClock.elapsedMinutes} 分钟`]
+                            ["离线时长", `${companyFinance.businessClock.elapsedMinutes} 分钟`]
                           ].map(([label, value]) => (
-                            <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={label}>
-                              <div className="text-[10px] text-slate-500 font-bold">{label}</div>
-                              <div className="mt-1 text-sm text-white font-black">{value}</div>
+                            <div className="flex items-center justify-between gap-3 py-2.5" key={label}>
+                              <span className="text-[10px] text-slate-500 font-bold">{label}</span>
+                              <strong className="text-sm text-white font-black">{value}</strong>
                             </div>
                           ))}
                         </div>
                         {companyFinance.businessClock.nightBriefing && (
-                          <article className="mt-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-3" aria-label="夜间经营简报">
+                          <article className="mt-3 border-t border-emerald-400/20 pt-3" aria-label="夜间经营简报">
                             <div className="flex items-center justify-between gap-3">
                               <strong className="text-xs text-emerald-100 font-black">夜间经营简报</strong>
                               <span className="text-[10px] text-emerald-200 font-black">{companyFinance.businessClock.nightBriefing.offlineMinutes} 分钟</span>
                             </div>
                             <p className="mt-2 text-xs text-slate-200 font-bold leading-5">{companyFinance.businessClock.nightBriefing.summary}</p>
-                            <div className="mt-3 grid grid-cols-2 gap-2">
+                            <div className="mt-3 divide-y divide-white/10 border-y border-white/10">
                               {[
                                 ["行动力恢复", `+${companyFinance.businessClock.nightBriefing.actionPowerRecovered}`],
                                 ["新待办", `${companyFinance.businessClock.nightBriefing.newTodoCount} 个`]
                               ].map(([label, value]) => (
-                                <div className="rounded-xl bg-slate-950/40 border border-white/5 p-2" key={label}>
-                                  <div className="text-[10px] text-slate-500 font-bold">{label}</div>
-                                  <div className="mt-1 text-sm text-white font-black">{value}</div>
+                                <div className="flex items-center justify-between gap-3 py-2" key={label}>
+                                  <span className="text-[10px] text-slate-500 font-bold">{label}</span>
+                                  <strong className="text-sm text-white font-black">{value}</strong>
                                 </div>
                               ))}
                             </div>
@@ -5318,16 +5651,16 @@ function App() {
                           <strong className="text-sm text-white font-black">第 {companyFinance.reportMonth} 月经营报告</strong>
                           <span className="text-[10px] text-slate-500">已生成</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="divide-y divide-white/10 border-y border-white/10">
                           {[
                             ["收入", compactNumber(companyFinance.income ?? companyFinance.monthlyIncome)],
                             ["支出", compactNumber(companyFinance.expense ?? companyFinance.monthlyExpense)],
                             ["净现金流", compactNumber(companyFinance.netCashFlow)],
                             ["期末现金", compactNumber(companyFinance.endingCash ?? companyFinance.cash)]
                           ].map(([label, value]) => (
-                            <div className="rounded-2xl bg-slate-900/60 border border-white/5 p-3" key={label}>
-                              <div className="text-[10px] text-slate-500 font-bold">{label}</div>
-                              <div className="mt-1 text-sm text-white font-black">{value}</div>
+                            <div className="flex items-center justify-between gap-3 py-2.5" key={label}>
+                              <span className="text-[10px] text-slate-500 font-bold">{label}</span>
+                              <strong className="text-sm text-white font-black">{value}</strong>
                             </div>
                           ))}
                         </div>
@@ -5335,9 +5668,6 @@ function App() {
                     )}
 
                     {financeError && <p className="rounded-2xl px-4 py-3 text-xs font-bold bg-red-500/15 text-red-200">{financeError}</p>}
-                    <button className="btn-gold w-full py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={() => void settleFinanceMonth()}>
-                      生成第 {companyFinance.financeMonth} 月经营报告
-                    </button>
                   </>
                 ) : (
                   <section className="glass-panel rounded-3xl p-5">
@@ -7750,110 +8080,212 @@ function App() {
           )}
 
           {activeNav === "融资" && (
-            <section className="funding-screen" aria-label="融资路演">
-              <header className="funding-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
-                <div>
-                  <strong>融资</strong>
-                  <span>估值 {compactNumber(fundingCenter?.finance.valuation ?? profile.valuation)} · 股权 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) / 100).toFixed(1)}%</span>
-                </div>
-                <button type="button" onClick={() => account && selectedServer && void loadFundingCenter(account.token, selectedServer.id)}>刷新</button>
+            <section className="finance-funding-screen" aria-label="融资路演">
+              <header className="finance-funding-header">
+                <button className="finance-funding-back" type="button" onClick={() => setActiveNav("公司")}>
+                  <Icon name="chevron-left" className="finance-funding-header-icon" />
+                  返回
+                </button>
+                <h1>融资路演</h1>
+                <button className={isFundingSyncing ? "finance-funding-sync is-syncing" : "finance-funding-sync"} type="button" aria-label="同步融资数据" onClick={() => void syncFundingCenter()}>
+                  <Icon name="refresh-cw" className="finance-funding-header-icon" />
+                </button>
               </header>
 
-              <section className="funding-summary" aria-label="融资概览">
-                <span>现金 {compactNumber(fundingCenter?.finance.cash ?? profile.cash)}</span>
-                <span>负债 {(fundingCenter ? fundingCenter.finance.debtRatioBasisPoints / 100 : 0).toFixed(1)}%</span>
-                <span>待谈 {pendingFundings.length}</span>
+              <section className="finance-funding-summary" aria-label="融资核心数据">
+                <div>
+                  <span>公司估值</span>
+                  <strong>{compactNumber(fundingCenter?.finance.valuation ?? profile.valuation)}</strong>
+                </div>
+                <div>
+                  <span>账上现金</span>
+                  <strong>{compactNumber(fundingCenter?.finance.cash ?? profile.cash)}</strong>
+                </div>
+                <div>
+                  <span>创始人持股</span>
+                  <strong>{((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) / 100).toFixed(1)}%</strong>
+                </div>
+                <div>
+                  <span>可谈方案</span>
+                  <strong>{(fundingCenter?.offers ?? []).filter((offer) => offer.isAvailable).length} / {fundingCenter?.offers.length ?? 0}</strong>
+                </div>
               </section>
-              {fundingNotice && <p className="funding-notice">{fundingNotice}</p>}
-              {fundingError && <p className="funding-error">{fundingError}</p>}
 
-              <section className="funding-layout">
-                <div className="funding-list" aria-label="投资人列表">
-                  {(fundingCenter?.offers ?? []).map((offer) => (
-                    <button
-                      className={offer.id === selectedFundingOffer?.id ? "selected" : undefined}
-                      key={offer.id}
-                      type="button"
-                      onClick={() => setSelectedFundingOfferId(offer.id)}
-                    >
-                      <strong>{offer.investorName}</strong>
-                      <em>{offer.roundName} · {offer.focus}</em>
-                      <span>{formatWan(offer.amount)} / 稀释{(offer.equityBasisPoints / 100).toFixed(1)}% / 成功{offer.successRate}%</span>
-                      <small>{offer.lockedReason ?? "可路演"}</small>
-                    </button>
-                  ))}
+              {fundingNotice && <p className="finance-funding-notice">{fundingNotice}</p>}
+              {fundingError && <p className="finance-funding-error">{fundingError}</p>}
+
+              <section className="finance-funding-layout">
+                <div className="finance-funding-list" aria-label="融资方案列表">
+                  <div className="finance-funding-list-head">
+                    <span>融资方案列表</span>
+                    <span>当前状态</span>
+                  </div>
+                  {(fundingCenter?.offers ?? []).map((offer) => {
+                    const matchedFunding = fundingCenter?.fundings.find((item) => item.investorId === offer.id);
+                    const status = fundingOfferDisplayStatus(offer, matchedFunding);
+                    const reason = fundingOfferReason(offer, matchedFunding);
+                    return (
+                      <button
+                        className={offer.id === selectedFundingOffer?.id ? "finance-funding-card selected" : "finance-funding-card"}
+                        key={offer.id}
+                        type="button"
+                        onClick={() => setSelectedFundingOfferId(offer.id)}
+                      >
+                        <span className="finance-funding-card-main">
+                          <span>
+                            <small>{offer.roundName}</small>
+                            <strong>{offer.investorName}</strong>
+                          </span>
+                          <em>
+                            <b>{formatWan(offer.amount)}</b>
+                            <small>{(offer.equityBasisPoints / 100).toFixed(1)}%</small>
+                          </em>
+                        </span>
+                        <span className="finance-funding-state">
+                          <strong className={fundingStatusClass(status)}>
+                            <Icon name={fundingRoadshowStatusIcon(status)} className="finance-funding-status-icon" />
+                            {fundingRoadshowStatusLabel(status)}
+                          </strong>
+                          {reason !== "可谈" && <small>{reason}</small>}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <article className="funding-detail" aria-label="融资详情">
+                <article className="finance-funding-detail" aria-label="融资方案详情">
                   {selectedFundingOffer ? (
                     <>
-                      <div className="funding-title">
-                        <span>融</span>
+                      <div className="finance-funding-title">
                         <strong>{selectedFundingOffer.investorName}</strong>
                         <em>{selectedFundingOffer.summary}</em>
                       </div>
 
-                      <dl className="funding-stats">
+                      <dl className="finance-funding-stats">
                         <div>
-                          <dt>到账</dt>
+                          <dt>路演把握</dt>
+                          <dd>
+                            <span>{selectedFundingOffer.successRate}%</span>
+                            <i style={{ width: `${selectedFundingOffer.successRate}%` }} />
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>治理压力</dt>
+                          <dd className={selectedFundingOffer.boardPressure > 80 ? "is-danger" : selectedFundingOffer.boardPressure > 50 ? "is-high" : selectedFundingOffer.boardPressure > 30 ? "is-mid" : "is-low"}>
+                            <span>{fundingPressureLabel(selectedFundingOffer.boardPressure)} ({selectedFundingOffer.boardPressure}%)</span>
+                            <i style={{ width: `${Math.min(100, selectedFundingOffer.boardPressure)}%` }} />
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>到账金额</dt>
                           <dd>{compactNumber(selectedFundingOffer.amount)}</dd>
                         </div>
                         <div>
-                          <dt>投前</dt>
-                          <dd>{compactNumber(selectedFundingOffer.preMoneyValuation)}</dd>
-                        </div>
-                        <div>
-                          <dt>投后</dt>
-                          <dd>{compactNumber(selectedFundingOffer.postMoneyValuation)}</dd>
-                        </div>
-                        <div>
-                          <dt>稀释</dt>
-                          <dd>{(selectedFundingOffer.equityBasisPoints / 100).toFixed(1)}%</dd>
-                        </div>
-                        <div>
-                          <dt>成功率</dt>
-                          <dd>{selectedFundingOffer.successRate}%</dd>
-                        </div>
-                        <div>
-                          <dt>董事会</dt>
-                          <dd>{selectedFundingOffer.boardPressure}</dd>
+                          <dt>投后持股</dt>
+                          <dd>{(((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) - selectedFundingOffer.equityBasisPoints) / 100).toFixed(1)}%</dd>
                         </div>
                       </dl>
 
-                      <section className="funding-active">
-                        <strong>投资条款</strong>
-                        <span>{selectedFundingOffer.term}</span>
-                        <small>接受后创始人股权降至 {((fundingCenter?.finance.founderEquityBasisPoints ?? profile.founderEquityBasisPoints) - selectedFundingOffer.equityBasisPoints) / 100}%</small>
+                      <section className="finance-funding-panel">
+                        <strong>门槛与条款</strong>
+                        <ul>
+                          <li>{selectedFundingOffer.term}</li>
+                          <li>{fundingOfferReason(selectedFundingOffer, selectedFundingRecord)}</li>
+                        </ul>
+                      </section>
+
+                      <section className="finance-funding-panel">
+                        <strong>投后管理事件</strong>
+                        <ul>
+                          {selectedFundingPostFocus.map((item) => (
+                            <li key={item}>{item}</li>
+                          ))}
+                        </ul>
+                      </section>
+
+                      <section className="finance-funding-results">
+                        <header>
+                          <strong>最近谈判结果</strong>
+                          <span>{fundingHistory.length > 0 ? `${fundingHistory.length} 条记录` : "暂无记录"}</span>
+                        </header>
+                        <p>{selectedFundingRecentResult || "敲定后显示投后反馈。"}</p>
+                        {fundingHistory.length > 0 && (
+                          <div>
+                            {fundingHistory.slice(0, 3).map((funding) => {
+                              const status = fundingRecordStatusLabel(funding);
+                              return (
+                                <article key={funding.id}>
+                                  <span className={fundingStatusClass(status)}>{status}</span>
+                                  <strong>{funding.investorName}</strong>
+                                  <small>{funding.resultSummary ?? funding.term}</small>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        )}
                       </section>
 
                       {selectedFunding && (
-                        <section className="funding-active">
-                          <strong>{selectedFunding.investorName}</strong>
-                          <span>{selectedFunding.roundName} 正在谈判，成功率 {selectedFunding.successRate}%。</span>
-                          <small>{selectedFunding.term}</small>
+                        <section className="finance-funding-panel">
+                          <strong>谈判中 · {selectedFunding.investorName}</strong>
+                          <span>{selectedFunding.roundName} 正在谈判，路演把握 {selectedFunding.successRate}。</span>
+                          <small>{selectedFunding.term} · {fundingLegalReviewLabel(selectedFunding.legalReviewStatus)} · {fundingDisbursementLabel(selectedFunding.disbursementStatus)}</small>
                         </section>
                       )}
 
-                      <div className="funding-actions">
-                        <button
-                          type="button"
-                          disabled={!selectedFundingOffer.isAvailable}
-                          onClick={() => void runFundingAction("/finance/fundings/start", { investorId: selectedFundingOffer.id })}
-                        >
-                          发起路演
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectedFunding}
-                          onClick={() => selectedFunding && void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFunding.id)}/settle`)}
-                        >
-                          确认结果
-                        </button>
+                      <div className="finance-funding-actions">
+                        <div>
+                          <span>当前状态</span>
+                          <strong className={fundingStatusClass(fundingOfferDisplayStatus(selectedFundingOffer, selectedFundingRecord))}>
+                            {fundingRoadshowFooterStatus(fundingOfferDisplayStatus(selectedFundingOffer, selectedFundingRecord))}
+                          </strong>
+                        </div>
+                        {selectedFunding ? (
+                          <button
+                            className="finance-funding-primary-action"
+                            type="button"
+                            disabled={!canSettleFunding(selectedFunding)}
+                            onClick={() => void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFunding.id)}/settle`)}
+                          >
+                            {fundingPrimaryActionLabel(selectedFundingOffer, selectedFunding)}
+                          </button>
+                        ) : (
+                          <button
+                            className="finance-funding-primary-action"
+                            type="button"
+                            disabled={Boolean(selectedFundingRecord) || !selectedFundingOffer.isAvailable}
+                            onClick={() => void runFundingAction("/finance/fundings/start", { investorId: selectedFundingOffer.id })}
+                          >
+                            {fundingPrimaryActionLabel(selectedFundingOffer, selectedFundingRecord)}
+                          </button>
+                        )}
+                        <div className="finance-funding-secondary-actions">
+                          <button
+                            type="button"
+                            disabled={!selectedFunding || selectedFunding.legalReviewStatus === "blocked"}
+                            onClick={() => selectedFunding && void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFunding.id)}/legal-review`)}
+                          >
+                            {selectedFunding ? fundingLegalReviewLabel(selectedFunding.legalReviewStatus) : "无需法务"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedFunding || selectedFunding.disbursementStatus === "paused" || selectedFunding.legalReviewStatus === "blocked"}
+                            onClick={() => selectedFunding && void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFunding.id)}/pause-disbursement`, { reason: "等待法务复核确认" })}
+                          >
+                            暂停打款
+                          </button>
+                          <button
+                            type="button"
+                            disabled={selectedFundingRecord?.status !== "funded" || !selectedFundingOffer.isAvailable}
+                            onClick={() => selectedFundingRecord?.status === "funded" && void runFundingAction(`/finance/fundings/${encodeURIComponent(selectedFundingRecord.id)}/follow-on`, { amount: 200000, equityBasisPoints: 150 })}
+                          >
+                            加投
+                          </button>
+                        </div>
                       </div>
                     </>
                   ) : (
-                    <div className="funding-empty">暂无投资人配置。</div>
+                    <div className="finance-funding-empty">暂无可谈方案。</div>
                   )}
                 </article>
               </section>
@@ -7861,119 +8293,216 @@ function App() {
           )}
 
           {activeNav === "贷款" && (
-            <section className="loan-screen" aria-label="贷款与危机">
-              <header className="loan-header">
-                <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
-                <div>
-                  <strong>贷款</strong>
-                  <span>信用 {loanCenter?.finance.creditRating ?? profile.creditRating} · 负债 {loanCenter ? `${(loanCenter.finance.debtRatioBasisPoints / 100).toFixed(1)}%` : "读取中"}</span>
-                </div>
-                <button type="button" onClick={() => account && selectedServer && void loadLoanCenter(account.token, selectedServer.id)}>刷新</button>
+            <section className="loan-screen loan-native-screen" aria-label="授信与债务管理">
+              <header className="loan-native-header">
+                <button className="loan-native-icon-button" type="button" onClick={() => setActiveNav("公司")} aria-label="返回">
+                  <Icon name="chevron-left" className="loan-native-icon" />
+                </button>
+                <strong>授信与债务管理</strong>
+                <button className="loan-native-icon-button" type="button" onClick={() => account && selectedServer && void loadLoanCenter(account.token, selectedServer.id)} aria-label="刷新">
+                  <Icon name="refresh-cw" className="loan-native-icon is-muted" />
+                </button>
               </header>
 
-              <section className="loan-summary" aria-label="负债概览">
-                <span>总负债 {compactNumber(loanCenter?.finance.totalDebt ?? profile.totalDebt)}</span>
-                <span>本期应还 {compactNumber(activeLoans.reduce((total, item) => total + item.monthlyPayment + item.penaltyAccrued, 0))}</span>
-                <span>{loanCenter?.crisis.isActive ? "危机中" : "可控"}</span>
-              </section>
-              {loanNotice && <p className="loan-notice">{loanNotice}</p>}
-              {loanError && <p className="loan-error">{loanError}</p>}
+              <section className="loan-native-scroll">
+                <section className="loan-native-dashboard" aria-label="授信状态">
+                  <div className="loan-native-metric">
+                    <span>当前信用评级</span>
+                    <strong>{loanCenter?.finance.creditRating ?? profile.creditRating}</strong>
+                    <small>{creditStatusLabel(loanCenter?.finance.creditRating ?? profile.creditRating)}</small>
+                  </div>
+                  <div className="loan-native-metric">
+                    <span>负债率</span>
+                    <strong>{((loanCenter?.finance.debtRatioBasisPoints ?? 0) / 100).toFixed(1)}%</strong>
+                    <i className="loan-debt-progress-track">
+                      <b className={`loan-debt-progress ${debtRatioClass(loanCenter?.finance.debtRatioBasisPoints ?? 0)}`} style={{ width: `${Math.min(100, (loanCenter?.finance.debtRatioBasisPoints ?? 0) / 100)}%` }} />
+                    </i>
+                  </div>
+                  <div className={`loan-native-debt-bar ${loanCenter?.crisis.isActive ? "is-crisis" : ""}`}>
+                    <div>
+                      <span>总负债额度</span>
+                      <strong>{compactNumber(loanCenter?.finance.totalDebt ?? profile.totalDebt)}</strong>
+                    </div>
+                    <div>
+                      <span>本期应还</span>
+                      <strong>{compactNumber(activeLoans.reduce((total, item) => total + item.monthlyPayment + item.penaltyAccrued, 0))}</strong>
+                    </div>
+                  </div>
+                </section>
 
-              <section className="loan-layout">
-                <div className="loan-list" aria-label="贷款产品">
-                  {(loanCenter?.offers ?? []).map((offer) => (
-                    <button
-                      className={offer.id === selectedLoanOffer?.id ? "selected" : undefined}
-                      key={offer.id}
-                      type="button"
-                      onClick={() => setSelectedLoanOfferId(offer.id)}
-                    >
-                      <strong>{offer.name}</strong>
-                      <em>{offer.lender} · 年化 {(offer.annualRateBasisPoints / 100).toFixed(1)}%</em>
-                      <span>{formatWan(offer.principal)} / {offer.termMonths}期 / 月供{formatWan(offer.monthlyPayment)}</span>
-                      <small>{offer.lockedReason ?? "可申请"}</small>
-                    </button>
-                  ))}
-                </div>
+                {loanCenter?.crisis.isActive && (
+                  <section className="loan-native-crisis" aria-label="债务危机">
+                    <div>
+                      <Icon name="zap" className="loan-native-icon is-danger" />
+                      <strong>债务危机：{loanCenter.crisis.summary}</strong>
+                    </div>
+                    <div>
+                      {loanCenter.crisis.routes.map((route) => (
+                        <button key={route.id} type="button" onClick={() => setLoanCrisisModalRoute(route)}>
+                          {route.title}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
 
-                <article className="loan-detail" aria-label="贷款详情">
-                  {selectedLoanOffer ? (
-                    <>
-                      <div className="loan-title">
-                        <span>贷</span>
+                {loanNotice && <p className="loan-notice">{loanNotice}</p>}
+                {loanError && <p className="loan-error">{loanError}</p>}
+
+                <section className="loan-native-products" aria-label="可用授信产品">
+                  <header>
+                    <Icon name="package" className="loan-native-small-icon" />
+                    <span>可用授信产品</span>
+                  </header>
+                  <div className="loan-native-product-list">
+                    {sortedLoanOffers.map((offer) => {
+                      const activeLoan = activeLoans.find((loan) => loan.configId === offer.id);
+                      const statusLabel = loanOfferStatusLabel(offer, activeLoan);
+                      return (
+                        <button
+                          className={[
+                            "loan-native-product",
+                            offer.id === selectedLoanOffer?.id ? "selected" : "",
+                            offer.isHighRisk ? "is-high-risk" : "",
+                            activeLoan !== undefined ? "is-active" : ""
+                          ].filter(Boolean).join(" ")}
+                          key={offer.id}
+                          type="button"
+                          onClick={() => setSelectedLoanOfferId(offer.id)}
+                        >
+                          <span>
+                            <strong>{offer.name}</strong>
+                            {offer.isHighRisk && <em>高风险</em>}
+                            <small>{offer.lender}</small>
+                          </span>
+                          <span>
+                            <strong>{formatWan(offer.principal)}</strong>
+                            <small className={offer.isAvailable || activeLoan !== undefined ? "is-open" : "is-locked"}>{statusLabel}</small>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {selectedLoanOffer ? (
+                  <article className="loan-native-detail" aria-label="贷款详情">
+                    <header>
+                      <div>
                         <strong>{selectedLoanOffer.name}</strong>
-                        <em>{selectedLoanOffer.summary}</em>
+                        <span>{selectedLoanOffer.purposeTag}</span>
                       </div>
-
-                      <dl className="loan-stats">
-                        <div>
-                          <dt>到账</dt>
-                          <dd>{compactNumber(selectedLoanOffer.principal)}</dd>
-                        </div>
-                        <div>
-                          <dt>月供</dt>
-                          <dd>{compactNumber(selectedLoanOffer.monthlyPayment)}</dd>
-                        </div>
-                        <div>
-                          <dt>期限</dt>
-                          <dd>{selectedLoanOffer.termMonths}期</dd>
-                        </div>
-                        <div>
-                          <dt>信用</dt>
-                          <dd>{selectedLoanOffer.creditRequired}级</dd>
-                        </div>
-                      </dl>
-
-                      {selectedLoan && (
-                        <section className="loan-active">
-                          <strong>{selectedLoan.name}</strong>
-                          <span>剩余 {compactNumber(selectedLoan.remainingPrincipal)} · {selectedLoan.remainingMonths}期 · {selectedLoan.status === "overdue" ? `逾期${selectedLoan.overduePeriods}期` : "正常"}</span>
-                          <small>罚息 {compactNumber(selectedLoan.penaltyAccrued)}</small>
-                        </section>
-                      )}
-
-                      {loanCenter?.crisis.isActive && (
-                        <section className="loan-crisis">
-                          <strong>{loanCenter.crisis.summary}</strong>
-                          {loanCenter.crisis.routes.map((route) => (
-                            <button key={route.id} type="button" onClick={() => void resolveCrisis(route.id)}>
-                              <span>{route.title}</span>
-                              <small>{route.impact}</small>
-                            </button>
-                          ))}
-                        </section>
-                      )}
-
-                      <div className="loan-actions">
-                        <button
-                          type="button"
-                          disabled={!selectedLoanOffer.isAvailable}
-                          onClick={() => void runLoanAction("/finance/loans/apply", { loanConfigId: selectedLoanOffer.id })}
-                        >
-                          申请
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectedLoan}
-                          onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "scheduled" })}
-                        >
-                          还本期
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectedLoan}
-                          onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "full" })}
-                        >
-                          结清
-                        </button>
-                        <button type="button" onClick={() => void runLoanAction("/finance/loans/settle-period")}>到期</button>
+                      <em className={selectedLoanOffer.isAvailable || selectedOfferLoan ? "is-open" : "is-locked"}>
+                        {loanOfferStatusLabel(selectedLoanOffer, selectedOfferLoan)}
+                      </em>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>到账金额</dt>
+                        <dd>{compactNumber(selectedLoanOffer.principal)}</dd>
                       </div>
-                    </>
-                  ) : (
-                    <div className="loan-empty">暂无贷款配置。</div>
-                  )}
-                </article>
+                      <div>
+                        <dt>月供账单</dt>
+                        <dd>{compactNumber(selectedLoanOffer.monthlyPayment)}</dd>
+                      </div>
+                      <div>
+                        <dt>授信期限</dt>
+                        <dd>{selectedLoanOffer.termMonths}期</dd>
+                      </div>
+                      <div>
+                        <dt>年化利率</dt>
+                        <dd>{(selectedLoanOffer.annualRateBasisPoints / 100).toFixed(1)}%</dd>
+                      </div>
+                    </dl>
+                    {selectedOfferLoan && (
+                      <section className="loan-native-active">
+                        <div>
+                          <span>剩余本金</span>
+                          <strong>{compactNumber(selectedOfferLoan.remainingPrincipal)}</strong>
+                        </div>
+                        <div>
+                          <span>剩余期数</span>
+                          <strong>{selectedOfferLoan.remainingMonths}/{selectedOfferLoan.termMonths}期</strong>
+                        </div>
+                        <div>
+                          <span>罚息</span>
+                          <strong>{compactNumber(selectedOfferLoan.penaltyAccrued)}</strong>
+                        </div>
+                      </section>
+                    )}
+                    <p>{selectedLoanOffer.summary}</p>
+                    <small className="loan-native-impact-note">月供压力高 · 逾期会降信用</small>
+                    <ul>
+                      {selectedLoanOffer.applicationImpact.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                ) : (
+                  <div className="loan-empty">暂无贷款配置。</div>
+                )}
               </section>
+
+              <footer className="loan-native-actions">
+                <div>
+                  <button
+                    type="button"
+                    disabled={!selectedLoan}
+                    onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "full" })}
+                  >
+                    提前结清
+                  </button>
+                  <button type="button" disabled={activeLoans.length === 0} onClick={() => void runLoanAction("/finance/loans/settle-period")}>
+                    推进账期
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  disabled={!selectedLoanOffer || (!selectedLoanOffer.isAvailable && !selectedOfferLoan)}
+                  onClick={() => {
+                    if (selectedOfferLoan) {
+                      void runLoanAction(`/finance/loans/${encodeURIComponent(selectedOfferLoan.id)}/repay`, { mode: "scheduled" });
+                      return;
+                    }
+                    if (selectedLoanOffer?.isAvailable) {
+                      void runLoanAction("/finance/loans/apply", { loanConfigId: selectedLoanOffer.id });
+                    }
+                  }}
+                >
+                  {selectedOfferLoan ? "偿还本期账单" : selectedLoanOffer?.isAvailable ? "申请签约拨备" : loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan)}
+                </button>
+              </footer>
+
+              {loanCrisisModalRoute && (
+                <div className="loan-native-modal" role="dialog" aria-modal="true" aria-label="债务危机方案">
+                  <button className="loan-native-modal-backdrop" type="button" aria-label="关闭" onClick={() => setLoanCrisisModalRoute(null)} />
+                  <section>
+                    <header>
+                      <span>
+                        <Icon name={loanCrisisIcon(loanCrisisModalRoute.id)} className="loan-native-icon" />
+                      </span>
+                      <div>
+                        <strong>{loanCrisisModalRoute.title}</strong>
+                        <small>债务危机处理</small>
+                      </div>
+                    </header>
+                    <p>{loanCrisisModalRoute.impact}</p>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const routeId = loanCrisisModalRoute.id;
+                          setLoanCrisisModalRoute(null);
+                          void resolveCrisis(routeId);
+                        }}
+                      >
+                        确认执行方案
+                      </button>
+                      <button type="button" onClick={() => setLoanCrisisModalRoute(null)}>暂时放弃</button>
+                    </div>
+                  </section>
+                </div>
+              )}
             </section>
           )}
 

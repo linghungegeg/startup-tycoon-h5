@@ -843,6 +843,54 @@ const createTestRepository = (): GameRepository => {
       riskExplanation: "融资失败不会直接补充现金，需要用回款、降本或授信维持安全垫。"
     },
     {
+      id: "post-funding-board-review",
+      title: "投后经营复盘",
+      source: "投资人会议",
+      channel: "finance",
+      summary: "融资到账后，投资人要求确认下一阶段预算和增长节奏。",
+      context: "新资金提高了公司安全垫，也带来了投后沟通、预算使用和增长承诺。",
+      optionA: "按月披露预算和经营指标",
+      optionAResult: "投后沟通更透明，董事会压力下降。",
+      optionACash: -20000,
+      optionAReputation: 600,
+      optionACustomerSatisfaction: 1,
+      optionARiskDelta: -1,
+      optionB: "加速投放兑现增长承诺",
+      optionBResult: "增长叙事更强，但现金消耗和投后压力同步上升。",
+      optionBCash: -80000,
+      optionBReputation: 900,
+      optionBCustomerSatisfaction: 0,
+      optionBRiskDelta: 1,
+      followupEventId: null,
+      knowledgeId: "capital-term-sheet",
+      knowledgeTitle: "投后治理和预算披露",
+      riskExplanation: "融资成功后，投后预算、披露节奏和增长承诺会直接影响后续融资与经营风险。"
+    },
+    {
+      id: "funding-disbursement-paused",
+      title: "融资打款暂停确认",
+      source: "法务提醒",
+      channel: "finance",
+      summary: "融资条款仍需复核，打款流程被暂时挂起。",
+      context: "法务提醒，部分条款需要在打款前再次确认。",
+      optionA: "完成法务复核后再恢复打款",
+      optionAResult: "融资节奏放慢，但条款风险得到控制。",
+      optionACash: -10000,
+      optionAReputation: 300,
+      optionACustomerSatisfaction: 0,
+      optionARiskDelta: -1,
+      optionB: "先推进打款，后补材料",
+      optionBResult: "现金到账预期更快，但条款争议风险上升。",
+      optionBCash: 0,
+      optionBReputation: -400,
+      optionBCustomerSatisfaction: 0,
+      optionBRiskDelta: 1,
+      followupEventId: null,
+      knowledgeId: "capital-term-sheet",
+      knowledgeTitle: "融资打款前条款复核",
+      riskExplanation: "融资打款暂停通常意味着条款仍有不确定性，应优先确认股权稀释、董事会权利和回购安排。"
+    },
+    {
       id: "product-tech-debt-incident",
       title: "产品技术债事故预警",
       source: "技术周报",
@@ -870,6 +918,54 @@ const createTestRepository = (): GameRepository => {
   const playerEvents = new Map<string, EventRecord>();
   const investorConfigs = [
     {
+      id: "friends-family-starter",
+      roundName: "亲友轮",
+      name: "创业亲友会",
+      focus: "启动现金与信任",
+      ticketSize: 300000,
+      valuationMultiplierBasisPoints: 9000,
+      equityBasisPoints: 200,
+      successRateBase: 88,
+      debtToleranceBasisPoints: 6000,
+      minProductCount: 0,
+      minMonthlyIncome: 0,
+      minRetentionBasisPoints: 0,
+      minPayRateBasisPoints: 0,
+      minValuation: 0,
+      minReputation: 0,
+      minCompanyLevel: 1,
+      requiresLegalReview: false,
+      allowFollowOn: false,
+      boardPressure: 4,
+      term: "金额有限，重在过桥；连续亏损会影响亲友信任。",
+      summary: "门槛最低，适合现金紧张的新公司。",
+      sortOrder: 1
+    },
+    {
+      id: "city-incubator-program",
+      roundName: "孵化器",
+      name: "城市创业孵化器",
+      focus: "办公资源与导师",
+      ticketSize: 600000,
+      valuationMultiplierBasisPoints: 9800,
+      equityBasisPoints: 400,
+      successRateBase: 82,
+      debtToleranceBasisPoints: 5500,
+      minProductCount: 0,
+      minMonthlyIncome: 250000,
+      minRetentionBasisPoints: 0,
+      minPayRateBasisPoints: 0,
+      minValuation: 2500000,
+      minReputation: 0,
+      minCompanyLevel: 1,
+      requiresLegalReview: false,
+      allowFollowOn: true,
+      boardPressure: 8,
+      term: "提供创业资源和导师复盘，不参与日常经营决策。",
+      summary: "金额不高但压力较低。",
+      sortOrder: 2
+    },
+    {
       id: "angel-local-commerce",
       roundName: "天使轮",
       name: "启明天使合伙人",
@@ -879,74 +975,270 @@ const createTestRepository = (): GameRepository => {
       equityBasisPoints: 800,
       successRateBase: 78,
       debtToleranceBasisPoints: 4500,
+      minProductCount: 0,
+      minMonthlyIncome: 500000,
+      minRetentionBasisPoints: 0,
+      minPayRateBasisPoints: 0,
+      minValuation: 4000000,
+      minReputation: 0,
+      minCompanyLevel: 1,
+      requiresLegalReview: false,
+      allowFollowOn: true,
       boardPressure: 12,
       term: "每月提交经营简报，重大支出需提前说明。",
-      summary: "偏好现金流清晰的小团队。"
+      summary: "偏好现金流清晰的小团队。",
+      sortOrder: 3
+    },
+    {
+      id: "crisis-bridge-capital",
+      roundName: "桥接轮",
+      name: "周转桥接资本",
+      focus: "现金缺口救急",
+      ticketSize: 700000,
+      valuationMultiplierBasisPoints: 8600,
+      equityBasisPoints: 1200,
+      successRateBase: 34,
+      debtToleranceBasisPoints: 9000,
+      minProductCount: 0,
+      minMonthlyIncome: 0,
+      minRetentionBasisPoints: 0,
+      minPayRateBasisPoints: 0,
+      minValuation: 0,
+      minReputation: 0,
+      minCompanyLevel: 1,
+      requiresLegalReview: true,
+      allowFollowOn: false,
+      boardPressure: 45,
+      term: "条款强势，打款前可能要求法务复核和现金流替代方案。",
+      summary: "适合濒临断现金流时尝试。",
+      sortOrder: 4
+    },
+    {
+      id: "seed-product-signal",
+      roundName: "种子轮",
+      name: "星火种子基金",
+      focus: "产品上线信号",
+      ticketSize: 1200000,
+      valuationMultiplierBasisPoints: 11000,
+      equityBasisPoints: 900,
+      successRateBase: 70,
+      debtToleranceBasisPoints: 4200,
+      minProductCount: 1,
+      minMonthlyIncome: 700000,
+      minRetentionBasisPoints: 3500,
+      minPayRateBasisPoints: 300,
+      minValuation: 5000000,
+      minReputation: 1250000,
+      minCompanyLevel: 1,
+      requiresLegalReview: false,
+      allowFollowOn: true,
+      boardPressure: 18,
+      term: "关注首个产品的留存和真实付费，允许小步加投。",
+      summary: "产品跑通后的第一档机构资金。",
+      sortOrder: 5
+    },
+    {
+      id: "safe-bridge-note",
+      roundName: "SAFE",
+      name: "云启SAFE基金",
+      focus: "下一轮估值空间",
+      ticketSize: 1800000,
+      valuationMultiplierBasisPoints: 11200,
+      equityBasisPoints: 700,
+      successRateBase: 68,
+      debtToleranceBasisPoints: 4000,
+      minProductCount: 1,
+      minMonthlyIncome: 850000,
+      minRetentionBasisPoints: 4000,
+      minPayRateBasisPoints: 400,
+      minValuation: 6000000,
+      minReputation: 1280000,
+      minCompanyLevel: 2,
+      requiresLegalReview: true,
+      allowFollowOn: true,
+      boardPressure: 16,
+      term: "本轮压力较低，但下一轮可能触发估值折扣复核。",
+      summary: "现金体量中等，稀释较低。",
+      sortOrder: 6
     },
     {
       id: "prea-growth-fund",
       roundName: "Pre-A",
       name: "源石成长基金",
       focus: "项目收入增长",
-      ticketSize: 1500000,
+      ticketSize: 3000000,
       valuationMultiplierBasisPoints: 11600,
       equityBasisPoints: 1200,
       successRateBase: 62,
       debtToleranceBasisPoints: 3500,
+      minProductCount: 1,
+      minMonthlyIncome: 900000,
+      minRetentionBasisPoints: 4500,
+      minPayRateBasisPoints: 500,
+      minValuation: 6000000,
+      minReputation: 1260000,
+      minCompanyLevel: 2,
+      requiresLegalReview: true,
+      allowFollowOn: true,
       boardPressure: 22,
       term: "季度增长目标未达成时触发估值复核。",
-      summary: "提供更高金额，但关注增长速度。"
+      summary: "提供更高金额，但关注增长速度。",
+      sortOrder: 7
+    },
+    {
+      id: "revenue-share-capital",
+      roundName: "收入分成",
+      name: "同舟营收资本",
+      focus: "稳定现金回款",
+      ticketSize: 2500000,
+      valuationMultiplierBasisPoints: 10800,
+      equityBasisPoints: 500,
+      successRateBase: 65,
+      debtToleranceBasisPoints: 5000,
+      minProductCount: 1,
+      minMonthlyIncome: 1200000,
+      minRetentionBasisPoints: 3500,
+      minPayRateBasisPoints: 500,
+      minValuation: 8000000,
+      minReputation: 1300000,
+      minCompanyLevel: 2,
+      requiresLegalReview: true,
+      allowFollowOn: false,
+      boardPressure: 20,
+      term: "股权稀释较低，但会持续关注收入回款和账期。",
+      summary: "适合现金流稳定但不想过度稀释的公司。",
+      sortOrder: 8
+    },
+    {
+      id: "a-round-venture-capital",
+      roundName: "A轮",
+      name: "北辰创投",
+      focus: "产品规模化增长",
+      ticketSize: 8000000,
+      valuationMultiplierBasisPoints: 12500,
+      equityBasisPoints: 1500,
+      successRateBase: 48,
+      debtToleranceBasisPoints: 3500,
+      minProductCount: 2,
+      minMonthlyIncome: 2000000,
+      minRetentionBasisPoints: 5500,
+      minPayRateBasisPoints: 700,
+      minValuation: 15000000,
+      minReputation: 1450000,
+      minCompanyLevel: 3,
+      requiresLegalReview: true,
+      allowFollowOn: false,
+      boardPressure: 32,
+      term: "要求产品增长曲线和关键岗位补齐，重大预算需董事会复盘。",
+      summary: "中后期标准 VC 条款。",
+      sortOrder: 9
+    },
+    {
+      id: "industry-channel-fund",
+      roundName: "产业资本",
+      name: "鼎盛产业基金",
+      focus: "渠道和供应链合作",
+      ticketSize: 12000000,
+      valuationMultiplierBasisPoints: 12000,
+      equityBasisPoints: 1200,
+      successRateBase: 54,
+      debtToleranceBasisPoints: 3300,
+      minProductCount: 2,
+      minMonthlyIncome: 2400000,
+      minRetentionBasisPoints: 5500,
+      minPayRateBasisPoints: 800,
+      minValuation: 18000000,
+      minReputation: 1500000,
+      minCompanyLevel: 3,
+      requiresLegalReview: true,
+      allowFollowOn: true,
+      boardPressure: 38,
+      term: "提供渠道机会，同时可能要求重点客户和排他合作优先权。",
+      summary: "现金和资源并重。",
+      sortOrder: 10
     },
     {
       id: "strategic-enterprise-capital",
-      roundName: "A轮",
+      roundName: "战略投资",
       name: "华企战略资本",
       focus: "大客户渠道合作",
-      ticketSize: 2600000,
-      valuationMultiplierBasisPoints: 12800,
-      equityBasisPoints: 1600,
-      successRateBase: 32,
+      ticketSize: 20000000,
+      valuationMultiplierBasisPoints: 13200,
+      equityBasisPoints: 1800,
+      successRateBase: 40,
       debtToleranceBasisPoints: 3000,
-      boardPressure: 34,
-      term: "优先参与大客户渠道合作，保留董事会观察权。",
-      summary: "金额最高，条款更强势。"
+      minProductCount: 2,
+      minMonthlyIncome: 3000000,
+      minRetentionBasisPoints: 6000,
+      minPayRateBasisPoints: 900,
+      minValuation: 25000000,
+      minReputation: 1600000,
+      minCompanyLevel: 4,
+      requiresLegalReview: true,
+      allowFollowOn: false,
+      boardPressure: 42,
+      term: "优先参与大客户渠道合作，保留董事会观察权和战略复盘权。",
+      summary: "金额高、资源强，但治理压力高。",
+      sortOrder: 11
+    },
+    {
+      id: "growth-b-fund",
+      roundName: "B轮",
+      name: "长青成长基金",
+      focus: "全国化扩张",
+      ticketSize: 80000000,
+      valuationMultiplierBasisPoints: 14200,
+      equityBasisPoints: 1400,
+      successRateBase: 36,
+      debtToleranceBasisPoints: 2500,
+      minProductCount: 3,
+      minMonthlyIncome: 6000000,
+      minRetentionBasisPoints: 6500,
+      minPayRateBasisPoints: 1200,
+      minValuation: 60000000,
+      minReputation: 2000000,
+      minCompanyLevel: 5,
+      requiresLegalReview: true,
+      allowFollowOn: false,
+      boardPressure: 50,
+      term: "要求财务规范、增长承诺和下一阶段全国化预算计划。",
+      summary: "面向高估值玩家的后期大额资金。",
+      sortOrder: 12
     }
   ];
   const playerFundings = new Map<string, FundingRecord>();
+  const loanDefaults = {
+    minCompanyLevel: 1,
+    minMonthlyIncome: 0,
+    minNetCashFlow: -999999999,
+    maxDebtRatioBasisPoints: 10000,
+    requiresCrisis: false,
+    requiresOverdue: false,
+    requiresActiveLoan: false,
+    isHighRisk: false,
+    purposeTag: "日常周转",
+    riskDeltaOnApply: 0,
+    creditPenaltyOnApply: 0
+  };
   const loanConfigs = [
-    {
-      id: "short-cashflow-loan",
-      name: "经营周转贷",
-      lender: "城市商业银行",
-      principal: 300000,
-      annualRateBasisPoints: 720,
-      termMonths: 6,
-      monthlyPayment: 53200,
-      creditRequired: "B",
-      summary: "适合短期现金流缺口。"
-    },
-    {
-      id: "equipment-growth-loan",
-      name: "设备升级贷",
-      lender: "科技园担保中心",
-      principal: 600000,
-      annualRateBasisPoints: 960,
-      termMonths: 12,
-      monthlyPayment: 54800,
-      creditRequired: "A",
-      summary: "额度更高，适合扩张办公。"
-    },
-    {
-      id: "high-debt-expansion-loan",
-      name: "高负债扩张贷",
-      lender: "民间联合授信",
-      principal: 4000000,
-      annualRateBasisPoints: 1500,
-      termMonths: 12,
-      monthlyPayment: 700000,
-      creditRequired: "B",
-      summary: "额度很高，但会带来高负债压力。"
-    }
+    { ...loanDefaults, id: "micro-turnover-loan", name: "微额周转贷", lender: "城市商业银行", principal: 150000, annualRateBasisPoints: 840, termMonths: 3, monthlyPayment: 52000, creditRequired: "C", maxDebtRatioBasisPoints: 6000, purposeTag: "现金缺口", summary: "小额短期周转。" },
+    { ...loanDefaults, id: "short-cashflow-loan", name: "经营周转贷", lender: "城市商业银行", principal: 300000, annualRateBasisPoints: 720, termMonths: 6, monthlyPayment: 53200, creditRequired: "B", maxDebtRatioBasisPoints: 6000, purposeTag: "日常周转", summary: "适合短期现金流缺口。" },
+    { ...loanDefaults, id: "emergency-bridge-loan", name: "应急过桥贷", lender: "供应链金融机构", principal: 180000, annualRateBasisPoints: 1800, termMonths: 3, monthlyPayment: 62700, creditRequired: "C", requiresCrisis: true, isHighRisk: true, purposeTag: "止血", riskDeltaOnApply: 1, summary: "用于资金紧张时快速止血。" },
+    { ...loanDefaults, id: "tax-credit-loan", name: "银税信用贷", lender: "普惠银行线上授信", principal: 800000, annualRateBasisPoints: 680, termMonths: 12, monthlyPayment: 71000, creditRequired: "A", minMonthlyIncome: 500000, minNetCashFlow: 0, maxDebtRatioBasisPoints: 6000, purposeTag: "低息信用", summary: "适合收入稳定、现金流为正的公司。" },
+    { ...loanDefaults, id: "revolving-credit-line", name: "循环授信", lender: "商业银行授信部", principal: 1000000, annualRateBasisPoints: 920, termMonths: 12, monthlyPayment: 90000, creditRequired: "A", maxDebtRatioBasisPoints: 4500, purposeTag: "现金安全垫", summary: "给稳健公司准备的中期现金垫。" },
+    { ...loanDefaults, id: "invoice-quick-loan", name: "发票快贷", lender: "税票数据授信", principal: 600000, annualRateBasisPoints: 880, termMonths: 9, monthlyPayment: 72000, creditRequired: "B", minMonthlyIncome: 600000, maxDebtRatioBasisPoints: 6000, purposeTag: "税票经营", summary: "根据经营收入和票据流水给额度。" },
+    { ...loanDefaults, id: "equipment-growth-loan", name: "设备升级贷", lender: "科技园担保中心", principal: 600000, annualRateBasisPoints: 960, termMonths: 12, monthlyPayment: 54800, creditRequired: "A", minCompanyLevel: 2, minMonthlyIncome: 600000, maxDebtRatioBasisPoints: 6000, purposeTag: "产能升级", summary: "额度更高，适合扩张办公。" },
+    { ...loanDefaults, id: "project-delivery-loan", name: "项目履约贷", lender: "项目担保公司", principal: 2000000, annualRateBasisPoints: 1150, termMonths: 9, monthlyPayment: 240000, creditRequired: "B", minCompanyLevel: 2, minMonthlyIncome: 1000000, maxDebtRatioBasisPoints: 6500, purposeTag: "大项目交付", summary: "为大项目交付垫付现金。" },
+    { ...loanDefaults, id: "order-fulfillment-loan", name: "订单履约贷", lender: "订单融资中心", principal: 1800000, annualRateBasisPoints: 1050, termMonths: 6, monthlyPayment: 310000, creditRequired: "B", minMonthlyIncome: 1200000, minNetCashFlow: -100000, maxDebtRatioBasisPoints: 6500, purposeTag: "订单垫资", summary: "适合有订单但需要先垫付交付成本的阶段。" },
+    { ...loanDefaults, id: "receivable-supply-loan", name: "应收账款贷", lender: "供应链金融机构", principal: 1200000, annualRateBasisPoints: 1080, termMonths: 6, monthlyPayment: 210000, creditRequired: "B", minMonthlyIncome: 800000, maxDebtRatioBasisPoints: 6500, purposeTag: "应收回款", summary: "用稳定应收回款换取短期现金。" },
+    { ...loanDefaults, id: "supply-chain-loan", name: "供应链授信", lender: "核心企业供应链", principal: 2600000, annualRateBasisPoints: 1020, termMonths: 9, monthlyPayment: 310000, creditRequired: "B", minCompanyLevel: 3, minMonthlyIncome: 1800000, maxDebtRatioBasisPoints: 6500, purposeTag: "供应链周转", summary: "面向供应链合作阶段的大额周转。" },
+    { ...loanDefaults, id: "mortgage-fast-loan", name: "抵押快贷", lender: "资产抵押中心", principal: 3000000, annualRateBasisPoints: 880, termMonths: 18, monthlyPayment: 185000, creditRequired: "B", minCompanyLevel: 3, maxDebtRatioBasisPoints: 5500, purposeTag: "大额低息", summary: "大额低息但要求资产和负债结构更稳。" },
+    { ...loanDefaults, id: "expansion-credit-loan", name: "扩张授信贷", lender: "成长银行", principal: 5000000, annualRateBasisPoints: 1250, termMonths: 12, monthlyPayment: 460000, creditRequired: "A", minMonthlyIncome: 2000000, minNetCashFlow: 200000, maxDebtRatioBasisPoints: 6000, isHighRisk: true, purposeTag: "扩张冲刺", riskDeltaOnApply: 1, summary: "面向收入高、现金流好的扩张期公司。" },
+    { ...loanDefaults, id: "scale-operation-loan", name: "规模经营贷", lender: "全国经营银行", principal: 10000000, annualRateBasisPoints: 1180, termMonths: 18, monthlyPayment: 640000, creditRequired: "A", minCompanyLevel: 4, minMonthlyIncome: 3500000, maxDebtRatioBasisPoints: 5000, isHighRisk: true, purposeTag: "后期扩张", riskDeltaOnApply: 1, summary: "后期公司规模化经营贷款。" },
+    { ...loanDefaults, id: "debt-refinance-loan", name: "债务置换贷", lender: "重组服务机构", principal: 2500000, annualRateBasisPoints: 1350, termMonths: 18, monthlyPayment: 160000, creditRequired: "B", requiresCrisis: true, isHighRisk: true, purposeTag: "降月供压力", riskDeltaOnApply: 1, creditPenaltyOnApply: 1, summary: "用更长周期置换短期压力。" },
+    { ...loanDefaults, id: "renewal-loan", name: "无还本续贷", lender: "续贷服务中心", principal: 1500000, annualRateBasisPoints: 1280, termMonths: 12, monthlyPayment: 140000, creditRequired: "B", maxDebtRatioBasisPoints: 9000, requiresActiveLoan: true, isHighRisk: true, purposeTag: "续贷缓冲", riskDeltaOnApply: 1, summary: "已有贷款仍需周转时使用。" },
+    { ...loanDefaults, id: "restructure-loan", name: "重组缓释贷", lender: "债务重组机构", principal: 5000000, annualRateBasisPoints: 1650, termMonths: 24, monthlyPayment: 260000, creditRequired: "C", requiresCrisis: true, requiresOverdue: true, isHighRisk: true, purposeTag: "危机重组", riskDeltaOnApply: 1, creditPenaltyOnApply: 1, summary: "逾期或高负债时的重组方案。" },
+    { ...loanDefaults, id: "high-debt-expansion-loan", name: "高负债扩张贷", lender: "民间联合授信", principal: 4000000, annualRateBasisPoints: 1500, termMonths: 12, monthlyPayment: 700000, creditRequired: "B", maxDebtRatioBasisPoints: 7500, isHighRisk: true, purposeTag: "高风险冲刺", riskDeltaOnApply: 1, summary: "额度很高，但会带来高负债压力。" }
   ];
   const playerLoans = new Map<string, LoanRecord>();
   const productConfigs = [
@@ -1119,8 +1411,24 @@ const createTestRepository = (): GameRepository => {
     };
   };
   const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+  const fundingSettlementRoll = (investorId: string): number => {
+    let hash = 0;
+    for (const character of investorId) {
+      hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    }
+
+    return hash % 100;
+  };
   const fundingForProfile = (profileId: string): FundingRecord[] =>
     [...playerFundings.values()].filter((funding) => funding.id.startsWith(`${profileId}:`));
+  const productMetricsForProfile = (profileId: string) => {
+    const activeProducts = [...playerProducts.values()].filter((product) => product.id.startsWith(`${profileId}:`) && product.status !== "closed");
+    return {
+      activeProductCount: activeProducts.length,
+      maxRetentionBasisPoints: activeProducts.reduce((max, product) => Math.max(max, product.retentionBasisPoints), 0),
+      maxPayRateBasisPoints: activeProducts.reduce((max, product) => Math.max(max, product.payRateBasisPoints), 0)
+    };
+  };
   const calculateFundingOffer = (profile: PlayerProfileRecord, config: (typeof investorConfigs)[number]) => {
     const finance = toCompanyFinanceRecord(profile);
     const reputationBonus = clamp(Math.floor((profile.reputation - 1000000) / 100000), -8, 8);
@@ -1133,8 +1441,32 @@ const createTestRepository = (): GameRepository => {
     const preMoneyValuation = Math.max(1000000, Math.round((profile.valuation * valuationBasisPoints) / 10000));
     const postMoneyValuation = preMoneyValuation + config.ticketSize;
     const completed = fundingForProfile(profile.id).some((funding) => funding.investorId === config.id && funding.status === "funded");
+    const active = fundingForProfile(profile.id).some((funding) => funding.investorId === config.id && funding.status === "pending");
+    const metrics = productMetricsForProfile(profile.id);
     const isDebtAcceptable = finance.debtRatioBasisPoints <= config.debtToleranceBasisPoints;
     const isEquityEnough = profile.founderEquityBasisPoints > config.equityBasisPoints;
+    const isBridgeInvestor = config.id === "crisis-bridge-capital";
+    const hasBridgeNeed =
+      !isBridgeInvestor ||
+      finance.netCashFlow < 0 ||
+      finance.riskStatus !== "稳健" ||
+      finance.debtRatioBasisPoints >= 2000 ||
+      profile.cash < profile.monthlyExpense * 2;
+    const blockers = [
+      active ? { code: "active_funding", message: "已有进行中的融资谈判" } : undefined,
+      completed && !config.allowFollowOn ? { code: "round_completed", message: "本轮已完成" } : undefined,
+      !isEquityEnough ? { code: "founder_equity", message: "创始人股权不足" } : undefined,
+      !isDebtAcceptable ? { code: "debt_ratio", message: "负债率过高，条款暂不可接受" } : undefined,
+      metrics.activeProductCount < config.minProductCount ? { code: "product_count", message: "产品线数量不足" } : undefined,
+      profile.monthlyIncome < config.minMonthlyIncome ? { code: "monthly_income", message: "月收入未达投资人门槛" } : undefined,
+      metrics.maxRetentionBasisPoints < config.minRetentionBasisPoints ? { code: "retention", message: "产品留存率未达投资人门槛" } : undefined,
+      metrics.maxPayRateBasisPoints < config.minPayRateBasisPoints ? { code: "pay_rate", message: "产品付费率未达投资人门槛" } : undefined,
+      profile.valuation < config.minValuation ? { code: "valuation", message: "估值未达投资人门槛" } : undefined,
+      profile.reputation < config.minReputation ? { code: "reputation", message: "声望未达投资人门槛" } : undefined,
+      profile.companyLevel < config.minCompanyLevel ? { code: "company_level", message: "公司等级未达投资人门槛" } : undefined,
+      !hasBridgeNeed ? { code: "bridge_need", message: "现金流尚未进入桥接场景" } : undefined
+    ].filter((blocker): blocker is { code: string; message: string } => blocker !== undefined);
+    const isAvailable = blockers.length === 0 && (!completed || config.allowFollowOn);
 
     return {
       id: config.id,
@@ -1150,8 +1482,21 @@ const createTestRepository = (): GameRepository => {
       boardPressure: config.boardPressure + (isDebtAcceptable ? 0 : 10),
       term: config.term,
       summary: config.summary,
-      isAvailable: !completed && isDebtAcceptable && isEquityEnough,
-      lockedReason: completed ? "本轮已完成" : !isEquityEnough ? "创始人股权不足" : !isDebtAcceptable ? "负债率过高，条款暂不可接受" : null
+      offerType: completed ? "follow_on" : "initial",
+      followOnSequence: completed ? 1 : 0,
+      gate: {
+        minCompanyLevel: config.minCompanyLevel,
+        minReputation: config.minReputation,
+        maxDebtRatioBasisPoints: config.debtToleranceBasisPoints,
+        minFounderEquityBasisPoints: config.equityBasisPoints + 1,
+        requiresLegalReview: config.requiresLegalReview
+      },
+      gateStatus: {
+        isAvailable,
+        blockers
+      },
+      isAvailable,
+      lockedReason: blockers[0]?.message ?? null
     };
   };
   const toFundingCenterRecord = (profile: PlayerProfileRecord): FundingCenterRecord => ({
@@ -1266,6 +1611,7 @@ const createTestRepository = (): GameRepository => {
   ): EventRecord => ({
     id: existing?.id ?? `${profileId}:${config.id}`,
     configId: config.id,
+    sourceKey: existing?.sourceKey ?? "legacy",
     title: config.title,
     source: config.source,
     channel: config.channel,
@@ -1315,11 +1661,23 @@ const createTestRepository = (): GameRepository => {
   };
   const loansForProfile = (profileId: string): LoanRecord[] =>
     [...playerLoans.values()].filter((loan) => loan.id.startsWith(`${profileId}:`));
+  const loanApplicationImpact = (config: { principal: number; monthlyPayment: number; termMonths: number; annualRateBasisPoints: number; isHighRisk: boolean; purposeTag: string }): string[] => {
+    const impact = [`现金 +${config.principal}`, `月供 ${config.monthlyPayment}`, `期限 ${config.termMonths}期`];
+    if (config.annualRateBasisPoints >= 1200) {
+      impact.push("月供压力高");
+    }
+    if (config.isHighRisk) {
+      impact.push("高风险");
+    }
+    impact.push(config.purposeTag, "逾期会降信用");
+    return impact;
+  };
   const toLoanCenterRecord = (profile: PlayerProfileRecord): LoanCenterRecord => {
     const loans = loansForProfile(profile.id);
     const activeConfigIds = new Set(loans.filter((loan) => loan.status !== "settled").map((loan) => loan.configId));
     const finance = toCompanyFinanceRecord(profile);
     const hasOverdueLoan = loans.some((loan) => loan.status === "overdue");
+    const hasAnyActiveLoan = loans.some((loan) => loan.status !== "settled");
     const crisisLevel =
       finance.cash < 0 || finance.debtRatioBasisPoints >= 9000
         ? "bankruptcy"
@@ -1333,10 +1691,22 @@ const createTestRepository = (): GameRepository => {
       offers: loanConfigs.map((config) => {
         const isCreditEnough = creditRank(profile.creditRating) >= creditRank(config.creditRequired);
         const hasActiveLoan = activeConfigIds.has(config.id);
+        const blockers = [
+          hasActiveLoan ? "同类未结清" : null,
+          !isCreditEnough ? "信用不足" : null,
+          profile.companyLevel < config.minCompanyLevel ? "公司等级不足" : null,
+          finance.monthlyIncome < config.minMonthlyIncome ? "月收入不足" : null,
+          finance.netCashFlow < config.minNetCashFlow ? "现金流不足" : null,
+          finance.debtRatioBasisPoints >= config.maxDebtRatioBasisPoints ? "负债率过高" : null,
+          config.requiresCrisis && crisisLevel === "none" ? "尚未进入危机场景" : null,
+          config.requiresOverdue && !hasOverdueLoan ? "尚未出现逾期" : null,
+          config.requiresActiveLoan && !hasAnyActiveLoan ? "需要已有贷款" : null
+        ].filter((item): item is string => item !== null);
         return {
           ...config,
-          isAvailable: isCreditEnough && !hasActiveLoan,
-          lockedReason: !isCreditEnough ? "信用评级不足" : hasActiveLoan ? "同类贷款未结清" : null
+          applicationImpact: loanApplicationImpact(config),
+          isAvailable: blockers.length === 0,
+          lockedReason: blockers[0] ?? null
         };
       }),
       loans,
@@ -5260,6 +5630,11 @@ const createTestRepository = (): GameRepository => {
       if (existing !== undefined && existing.status !== "settled") {
         return "LOAN_ALREADY_ACTIVE";
       }
+      const center = toLoanCenterRecord(profile);
+      const offer = center.offers.find((item) => item.id === config.id);
+      if (offer?.isAvailable === false) {
+        return "LOAN_LOCKED";
+      }
 
       const loan: LoanRecord = {
         id: loanId,
@@ -5274,6 +5649,7 @@ const createTestRepository = (): GameRepository => {
         monthlyPayment: config.monthlyPayment,
         overduePeriods: 0,
         penaltyAccrued: 0,
+        onTimeRepayPeriods: 0,
         status: "active",
         createdAt: new Date().toISOString(),
         settledAt: null
@@ -5281,6 +5657,12 @@ const createTestRepository = (): GameRepository => {
       playerLoans.set(loan.id, loan);
       profile.cash += config.principal;
       profile.totalDebt += config.principal;
+      if (config.riskDeltaOnApply > 0) {
+        profile.riskStatus = "预警";
+      }
+      if (config.creditPenaltyOnApply > 0) {
+        profile.creditRating = downgradeCredit(profile.creditRating);
+      }
       profile.debtWarning = "中";
       return { loan, loanCenter: toLoanCenterRecord(profile), result: `${config.name} 已放款。` } satisfies LoanActionRecord;
     },
@@ -5303,8 +5685,14 @@ const createTestRepository = (): GameRepository => {
       loan.remainingPrincipal = Math.max(0, loan.remainingPrincipal - principalPayment);
       loan.remainingMonths = mode === "full" || loan.remainingPrincipal === 0 ? 0 : Math.max(0, loan.remainingMonths - 1);
       loan.penaltyAccrued = 0;
+      if (mode === "scheduled") {
+        loan.onTimeRepayPeriods += 1;
+      }
       loan.status = loan.remainingPrincipal === 0 ? "settled" : "active";
       loan.settledAt = loan.status === "settled" ? new Date().toISOString() : null;
+      if (mode === "scheduled" && loan.onTimeRepayPeriods >= 3 && profile.riskStatus === "资金紧张") {
+        profile.riskStatus = "预警";
+      }
       return { loan, loanCenter: toLoanCenterRecord(profile), result: mode === "full" ? "提前结清完成。" : "本期还款完成。" } satisfies LoanActionRecord;
     },
     async settleLoanPeriod(accountId, serverId) {
@@ -5322,6 +5710,7 @@ const createTestRepository = (): GameRepository => {
       const penalty = Math.max(1000, Math.round(loan.monthlyPayment * 0.08));
       loan.status = "overdue";
       loan.overduePeriods += 1;
+      loan.onTimeRepayPeriods = 0;
       loan.penaltyAccrued += penalty;
       profile.totalDebt += penalty;
       profile.creditRating = downgradeCredit(profile.creditRating);
@@ -5391,6 +5780,14 @@ const createTestRepository = (): GameRepository => {
         successRate: offer.successRate,
         boardPressure: offer.boardPressure,
         term: offer.term,
+        offerType: offer.offerType,
+        offerStatus: "accepted",
+        paymentStatus: "pending",
+        disbursementStatus: "scheduled",
+        legalReviewStatus: offer.gate.requiresLegalReview ? "pending" : "not_required",
+        postEventStatus: "none",
+        followOnSequence: offer.followOnSequence,
+        followOnCount: 0,
         status: "pending",
         resultSummary: null,
         createdAt: new Date().toISOString(),
@@ -5416,8 +5813,16 @@ const createTestRepository = (): GameRepository => {
         return "FUNDING_ALREADY_SETTLED";
       }
 
-      const isSuccess = funding.successRate >= 50;
+      if (funding.legalReviewStatus === "blocked" || funding.disbursementStatus === "paused") {
+        return "FUNDING_LOCKED";
+      }
+
+      const isSuccess = fundingSettlementRoll(funding.investorId) < funding.successRate;
       funding.status = isSuccess ? "funded" : "failed";
+      funding.offerStatus = "closed";
+      funding.paymentStatus = isSuccess ? "paid" : "none";
+      funding.disbursementStatus = isSuccess ? "completed" : funding.disbursementStatus;
+      funding.postEventStatus = isSuccess ? "pending" : "none";
       funding.resolvedAt = new Date().toISOString();
       funding.resultSummary = isSuccess
         ? `${funding.investorName} 完成打款，创始人股权稀释 ${(funding.equityBasisPoints / 100).toFixed(1)}%。`
@@ -5427,6 +5832,12 @@ const createTestRepository = (): GameRepository => {
         profile.valuation = funding.postMoneyValuation;
         profile.founderEquityBasisPoints -= funding.equityBasisPoints;
         profile.reputation += 600;
+        const config = eventConfigs.find((item) => item.id === "post-funding-board-review");
+        if (config !== undefined) {
+          const event = toEventRecord(profile.id, config, { sourceKey: `funding:${funding.id}:post-investment` } as EventRecord);
+          playerEvents.set(event.id, event);
+          profile.pendingEventCount += 1;
+        }
       } else {
         const config = eventConfigs.find((item) => item.id === "funding-failed-bridge-plan");
         if (config !== undefined) {
@@ -5441,8 +5852,95 @@ const createTestRepository = (): GameRepository => {
       return {
         funding,
         fundingCenter: toFundingCenterRecord(profile),
-        result: funding.resultSummary
-      } satisfies FundingActionRecord;
+        result: funding.resultSummary,
+        postInvestmentEvents: isSuccess
+          ? [{ eventId: `${profile.id}:post-funding-board-review`, configId: "post-funding-board-review", title: "投后经营复盘" }]
+          : []
+      };
+    },
+    async reviewFundingLegalTerms(accountId, serverId, fundingId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const funding = playerFundings.get(fundingId);
+      if (funding === undefined || !funding.id.startsWith(`${profile.id}:`)) {
+        return "FUNDING_NOT_FOUND";
+      }
+      if (funding.status !== "pending") {
+        return "FUNDING_ALREADY_SETTLED";
+      }
+      const status = funding.boardPressure >= 45 ? "blocked" : "passed";
+      funding.legalReviewStatus = status;
+      return {
+        funding,
+        fundingCenter: toFundingCenterRecord(profile),
+        result: status === "blocked" ? "法务复核发现高风险条款，融资暂不能敲定。" : "法务复核已通过，融资条款可以继续推进。",
+        legalReview: {
+          status,
+          riskLevel: status === "blocked" ? "high" : "low",
+          checkedClauses: ["股权稀释", "董事会观察权", "回购和对赌条款"]
+        }
+      };
+    },
+    async pauseFundingDisbursement(accountId, serverId, fundingId, reason) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const funding = playerFundings.get(fundingId);
+      if (funding === undefined || !funding.id.startsWith(`${profile.id}:`)) {
+        return "FUNDING_NOT_FOUND";
+      }
+      if (funding.status !== "pending") {
+        return "FUNDING_ALREADY_SETTLED";
+      }
+      funding.disbursementStatus = "paused";
+      funding.paymentStatus = "paused";
+      const config = eventConfigs.find((item) => item.id === "funding-disbursement-paused");
+      const event = config === undefined
+        ? null
+        : toEventRecord(profile.id, config, { sourceKey: `funding:${funding.id}:pause-disbursement`, resultSummary: reason } as EventRecord);
+      if (event !== null) {
+        playerEvents.set(event.id, event);
+        profile.pendingEventCount += 1;
+      }
+      return {
+        funding,
+        fundingCenter: toFundingCenterRecord(profile),
+        result: "融资打款已暂停，等待条款复核确认。",
+        event
+      };
+    },
+    async applyFundingFollowOn(accountId, serverId, fundingId, amount, equityBasisPoints) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const funding = playerFundings.get(fundingId);
+      if (funding === undefined || !funding.id.startsWith(`${profile.id}:`)) {
+        return "FUNDING_NOT_FOUND";
+      }
+      const config = investorConfigs.find((item) => item.id === funding.investorId);
+      if (config === undefined || funding.status !== "funded" || !config.allowFollowOn || profile.founderEquityBasisPoints <= equityBasisPoints) {
+        return "FUNDING_LOCKED";
+      }
+      funding.followOnCount += 1;
+      funding.offerType = "follow_on";
+      funding.paymentStatus = "paid";
+      funding.disbursementStatus = "completed";
+      profile.cash += amount;
+      profile.founderEquityBasisPoints -= equityBasisPoints;
+      profile.valuation += amount;
+      return {
+        funding,
+        fundingCenter: toFundingCenterRecord(profile),
+        result: `${funding.investorName} 完成加投，追加资金 ${amount}。`,
+        followOn: {
+          amount,
+          equityBasisPoints
+        }
+      };
     },
     async listProducts(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -8372,9 +8870,10 @@ test("lists loan products and applies cashflow loans with debt pressure", async 
     });
     assert.equal(loans.status, 200);
     assert.equal(loans.body.success, true);
-    assert.equal(loans.body.data?.offers[0]?.name, "经营周转贷");
-    assert.equal(loans.body.data?.offers[0]?.termMonths, 6);
-    assert.equal(loans.body.data?.offers[0]?.annualRateBasisPoints, 720);
+    const cashflowOffer = loans.body.data?.offers.find((offer) => offer.id === "short-cashflow-loan");
+    assert.equal(cashflowOffer?.name, "经营周转贷");
+    assert.equal(cashflowOffer?.termMonths, 6);
+    assert.equal(cashflowOffer?.annualRateBasisPoints, 720);
     assert.equal(loans.body.data?.crisis.routes.length, 3);
 
     const applied = await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
@@ -8396,6 +8895,41 @@ test("lists loan products and applies cashflow loans with debt pressure", async 
     });
     assert.equal(duplicate.status, 409);
     assert.equal(duplicate.body.error?.code, "LOAN_ALREADY_ACTIVE");
+  });
+});
+
+test("phase 29 loan center exposes full-stage products and player-facing gates", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "loanphase29gates");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const loans = await requestJson<LoanCenterRecord>(baseUrl, "/finance/loans?serverId=s1", { headers });
+    assert.equal(loans.status, 200, JSON.stringify(loans.body));
+    assert.equal(loans.body.data?.offers.length, 18);
+
+    const ids = new Set(loans.body.data?.offers.map((offer) => offer.id));
+    for (const id of [
+      "micro-turnover-loan",
+      "tax-credit-loan",
+      "receivable-supply-loan",
+      "scale-operation-loan",
+      "renewal-loan",
+      "restructure-loan"
+    ]) {
+      assert.ok(ids.has(id), `missing loan product ${id}`);
+    }
+
+    const renewal = loans.body.data?.offers.find((offer) => offer.id === "renewal-loan");
+    assert.equal(renewal?.isAvailable, false);
+    assert.equal(renewal?.lockedReason, "需要已有贷款");
+
+    const emergency = loans.body.data?.offers.find((offer) => offer.id === "emergency-bridge-loan");
+    assert.equal(emergency?.isAvailable, false);
+    assert.equal(emergency?.lockedReason, "尚未进入危机场景");
+
+    const highRisk = loans.body.data?.offers.find((offer) => offer.id === "high-debt-expansion-loan");
+    assert.equal(highRisk?.isHighRisk, true);
+    assert.equal(highRisk?.purposeTag, "高风险冲刺");
   });
 });
 
@@ -8504,12 +9038,35 @@ test("lists funding offers with valuation, dilution, and debt-adjusted condition
     });
     assert.equal(initial.status, 200);
     assert.equal(initial.body.success, true);
-    assert.equal(initial.body.data?.offers[0]?.roundName, "天使轮");
-    assert.equal(initial.body.data?.offers[0]?.amount, 800000);
+    assert.equal(initial.body.data?.offers.length, 12);
+    assert.equal(initial.body.data?.offers[0]?.roundName, "亲友轮");
+    assert.equal(initial.body.data?.offers[0]?.amount, 300000);
     assert.ok((initial.body.data?.offers[0]?.preMoneyValuation ?? 0) >= 1000000);
     assert.ok((initial.body.data?.offers[0]?.postMoneyValuation ?? 0) > (initial.body.data?.offers[0]?.preMoneyValuation ?? 0));
-    assert.equal(initial.body.data?.offers[0]?.equityBasisPoints, 800);
+    assert.equal(initial.body.data?.offers[0]?.equityBasisPoints, 200);
     assert.ok((initial.body.data?.offers[0]?.successRate ?? 0) > 0);
+    assert.deepEqual(
+      initial.body.data?.offers.map((offer) => offer.id),
+      [
+        "friends-family-starter",
+        "city-incubator-program",
+        "angel-local-commerce",
+        "crisis-bridge-capital",
+        "seed-product-signal",
+        "safe-bridge-note",
+        "prea-growth-fund",
+        "revenue-share-capital",
+        "a-round-venture-capital",
+        "industry-channel-fund",
+        "strategic-enterprise-capital",
+        "growth-b-fund"
+      ]
+    );
+    assert.equal(initial.body.data?.offers.find((offer) => offer.id === "growth-b-fund")?.amount, 80000000);
+    assert.equal(initial.body.data?.offers.find((offer) => offer.id === "strategic-enterprise-capital")?.isAvailable, false);
+    const initialBridge = initial.body.data?.offers.find((offer) => offer.id === "crisis-bridge-capital");
+    assert.equal(initialBridge?.isAvailable, false);
+    assert.equal(initialBridge?.lockedReason, "现金流尚未进入桥接场景");
 
     await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
       method: "POST",
@@ -8568,32 +9125,281 @@ test("settles successful funding with cash gain and founder equity dilution", as
 test("records failed funding and creates an investor event without changing cash or equity", async () => {
   await withServer(async (baseUrl) => {
     const { token, profile } = await createPlayerSession(baseUrl, "fundingfail");
+    const headers = { authorization: `Bearer ${token}` };
+    const bridgeBeforeNeed = await requestJson(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "crisis-bridge-capital" })
+    });
+    assert.equal(bridgeBeforeNeed.status, 409, JSON.stringify(bridgeBeforeNeed.body));
+
+    await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
     const started = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
-      body: JSON.stringify({ serverId: "s1", investorId: "strategic-enterprise-capital" })
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "crisis-bridge-capital" })
     });
     assert.equal(started.status, 201);
     assert.ok((started.body.data?.funding.successRate ?? 100) < 50);
+    const cashBeforeFunding = started.body.data?.fundingCenter.finance.cash;
 
     const fundingId = started.body.data?.funding.id;
     assert.ok(fundingId);
     const settled = await requestJson<FundingActionRecord>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/settle`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ serverId: "s1" })
     });
     assert.equal(settled.status, 200);
     assert.equal(settled.body.data?.funding.status, "failed");
-    assert.equal(settled.body.data?.fundingCenter.finance.cash, profile.cash);
+    assert.equal(settled.body.data?.fundingCenter.finance.cash, cashBeforeFunding);
     assert.equal(settled.body.data?.fundingCenter.finance.founderEquityBasisPoints, profile.founderEquityBasisPoints);
     assert.ok(settled.body.data?.result.includes("替代现金流"));
 
     const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", {
-      headers: { authorization: `Bearer ${token}` }
+      headers
     });
     assert.equal(events.status, 200);
     assert.ok(events.body.data?.some((event) => event.configId === "funding-failed-bridge-plan"));
+  });
+});
+
+test("phase 28 funding center exposes explicit investment gates before starting a round", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "phase28fundinggates");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const initial = await requestJson<{
+      offers: Array<FundingOfferRecord & {
+        gate: {
+          minCompanyLevel: number;
+          minReputation: number;
+          maxDebtRatioBasisPoints: number;
+          minFounderEquityBasisPoints: number;
+          requiresLegalReview: boolean;
+        };
+        gateStatus: {
+          isAvailable: boolean;
+          blockers: Array<{ code: string; message: string }>;
+        };
+      }>;
+    }>(baseUrl, "/finance/fundings?serverId=s1", { headers });
+    assert.equal(initial.status, 200, JSON.stringify(initial.body));
+
+    const angel = initial.body.data?.offers.find((offer) => offer.id === "angel-local-commerce");
+    assert.ok(angel);
+    assert.deepEqual(angel.gate, {
+      minCompanyLevel: 1,
+      minReputation: 0,
+      maxDebtRatioBasisPoints: angel.debtToleranceBasisPoints,
+      minFounderEquityBasisPoints: angel.equityBasisPoints + 1,
+      requiresLegalReview: false
+    });
+    assert.equal(angel.gateStatus.isAvailable, true);
+    assert.deepEqual(angel.gateStatus.blockers, []);
+
+    await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    const stressed = await requestJson<{
+      offers: Array<FundingOfferRecord & {
+        gateStatus: {
+          isAvailable: boolean;
+          blockers: Array<{ code: string; message: string }>;
+        };
+      }>;
+    }>(baseUrl, "/finance/fundings?serverId=s1", { headers });
+    assert.equal(stressed.status, 200, JSON.stringify(stressed.body));
+    const stressedAngel = stressed.body.data?.offers.find((offer) => offer.id === "angel-local-commerce");
+    assert.ok(stressedAngel);
+    assert.equal(stressedAngel.gateStatus.isAvailable, false);
+    assert.ok(stressedAngel.gateStatus.blockers.some((blocker) => blocker.code === "debt_ratio"));
+
+    const blocked = await requestJson(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "angel-local-commerce" })
+    });
+    assert.equal(blocked.status, 409, JSON.stringify(blocked.body));
+    assert.equal(blocked.body.error?.code, "FUNDING_LOCKED");
+  });
+});
+
+test("phase 28 funding creates post-investment event after successful disbursement", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "phase28fundingpostevent");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const started = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "angel-local-commerce" })
+    });
+    assert.equal(started.status, 201, JSON.stringify(started.body));
+    const fundingId = started.body.data?.funding.id;
+    assert.ok(fundingId);
+
+    const settled = await requestJson<FundingActionRecord & {
+      postInvestmentEvents: Array<{ eventId: string; configId: string; title: string }>;
+    }>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/settle`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(settled.status, 200, JSON.stringify(settled.body));
+    assert.equal(settled.body.data?.funding.status, "funded");
+    assert.equal(settled.body.data?.fundingCenter.finance.cash, profile.cash + 800000);
+    assert.ok(settled.body.data?.postInvestmentEvents, "settlement should return created post-investment events");
+    assert.ok(settled.body.data.postInvestmentEvents.some((event) => event.configId === "post-funding-board-review"));
+
+    const events = await requestJson<EventRecord[]>(baseUrl, "/events?serverId=s1", { headers });
+    assert.equal(events.status, 200, JSON.stringify(events.body));
+    const postFundingEvent = events.body.data?.find((event) => event.configId === "post-funding-board-review");
+    assert.ok(postFundingEvent);
+    assert.match(postFundingEvent.title, /投后|董事会|经营复盘/);
+  });
+});
+
+test("phase 28 funding actions support follow-on investment pause disbursement and legal review", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "phase28fundingactions");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const started = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "angel-local-commerce" })
+    });
+    assert.equal(started.status, 201, JSON.stringify(started.body));
+    const fundingId = started.body.data?.funding.id;
+    assert.ok(fundingId);
+
+    const legalReview = await requestJson<FundingActionRecord & {
+      legalReview: {
+        status: "passed" | "blocked";
+        riskLevel: "low" | "medium" | "high";
+        checkedClauses: string[];
+      };
+    }>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/legal-review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", reviewer: "legal" })
+    });
+    assert.equal(legalReview.status, 200, JSON.stringify(legalReview.body));
+    assert.equal(legalReview.body.data?.legalReview.status, "passed");
+    assert.ok(legalReview.body.data?.legalReview.checkedClauses.includes("股权稀释"));
+
+    const paused = await requestJson<FundingActionRecord & {
+      funding: FundingRecord & { disbursementStatus: "paused" | "scheduled" | "completed" };
+      event: { configId: string };
+    }>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/pause-disbursement`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", reason: "等待法务复核确认" })
+    });
+    assert.equal(paused.status, 200, JSON.stringify(paused.body));
+    assert.equal(paused.body.data?.funding.disbursementStatus, "paused");
+    assert.equal(paused.body.data?.fundingCenter.finance.cash, profile.cash);
+    assert.equal(paused.body.data?.event.configId, "funding-disbursement-paused");
+
+    const pausedSettle = await requestJson(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/settle`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(pausedSettle.status, 409, JSON.stringify(pausedSettle.body));
+    assert.equal(pausedSettle.body.error?.code, "FUNDING_LOCKED");
+
+    const pendingFollowOn = await requestJson(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/follow-on`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", amount: 200000, equityBasisPoints: 150 })
+    });
+    assert.equal(pendingFollowOn.status, 409, JSON.stringify(pendingFollowOn.body));
+    assert.equal(pendingFollowOn.body.error?.code, "FUNDING_LOCKED");
+
+    const followOnSession = await createPlayerSession(baseUrl, "phase28fundingfollowon");
+    const followOnHeaders = { authorization: `Bearer ${followOnSession.token}` };
+    const followOnStarted = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers: followOnHeaders,
+      body: JSON.stringify({ serverId: "s1", investorId: "angel-local-commerce" })
+    });
+    assert.equal(followOnStarted.status, 201, JSON.stringify(followOnStarted.body));
+    const followOnFundingId = followOnStarted.body.data?.funding.id;
+    assert.ok(followOnFundingId);
+    const followOnSettled = await requestJson<FundingActionRecord>(baseUrl, `/finance/fundings/${encodeURIComponent(followOnFundingId)}/settle`, {
+      method: "POST",
+      headers: followOnHeaders,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(followOnSettled.status, 200, JSON.stringify(followOnSettled.body));
+    assert.equal(followOnSettled.body.data?.funding.status, "funded");
+
+    const followOn = await requestJson<FundingActionRecord & {
+      funding: FundingRecord & { followOnCount: number };
+      followOn: {
+        amount: number;
+        equityBasisPoints: number;
+      };
+    }>(baseUrl, `/finance/fundings/${encodeURIComponent(followOnFundingId)}/follow-on`, {
+      method: "POST",
+      headers: followOnHeaders,
+      body: JSON.stringify({ serverId: "s1", amount: 200000, equityBasisPoints: 150 })
+    });
+    assert.equal(followOn.status, 200, JSON.stringify(followOn.body));
+    assert.equal(followOn.body.data?.funding.followOnCount, 1);
+    assert.equal(followOn.body.data?.followOn.amount, 200000);
+    assert.equal(followOn.body.data?.fundingCenter.finance.cash, (followOnSettled.body.data?.fundingCenter.finance.cash ?? 0) + 200000);
+    assert.equal(followOn.body.data?.fundingCenter.finance.founderEquityBasisPoints, followOnSession.profile.founderEquityBasisPoints - 800 - 150);
+    assert.match(followOn.body.data?.result ?? "", /加投/);
+  });
+});
+
+test("phase 28 funding blocks settlement when legal review blocks high-risk terms", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "fundingblocklegal");
+    const headers = { authorization: `Bearer ${token}` };
+
+    await requestJson<LoanActionRecord>(baseUrl, "/finance/loans/apply", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", loanConfigId: "high-debt-expansion-loan" })
+    });
+    const started = await requestJson<FundingActionRecord>(baseUrl, "/finance/fundings/start", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", investorId: "crisis-bridge-capital" })
+    });
+    assert.equal(started.status, 201, JSON.stringify(started.body));
+    const fundingId = started.body.data?.funding.id;
+    assert.ok(fundingId);
+
+    const legalReview = await requestJson<FundingActionRecord & {
+      legalReview: {
+        status: "passed" | "blocked";
+      };
+    }>(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/legal-review`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(legalReview.status, 200, JSON.stringify(legalReview.body));
+    assert.equal(legalReview.body.data?.legalReview.status, "blocked");
+
+    const blockedSettle = await requestJson(baseUrl, `/finance/fundings/${encodeURIComponent(fundingId)}/settle`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(blockedSettle.status, 409, JSON.stringify(blockedSettle.body));
+    assert.equal(blockedSettle.body.error?.code, "FUNDING_LOCKED");
   });
 });
 

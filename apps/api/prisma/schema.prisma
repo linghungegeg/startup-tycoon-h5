@@ -1070,6 +1070,7 @@ model PlayerEvent {
   id        String        @id @default(uuid()) @db.VarChar(36)
   profileId String       @db.VarChar(36)
   configId  String       @db.VarChar(48)
+  sourceKey String       @default("legacy") @db.VarChar(80)
   status    String       @default("pending") @db.VarChar(16)
   selectedOption String? @db.VarChar(8)
   resultSummary String?  @db.VarChar(220)
@@ -1079,7 +1080,8 @@ model PlayerEvent {
   profile   PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
   config    EventConfig   @relation(fields: [configId], references: [id], onDelete: Restrict)
 
-  @@unique([profileId, configId])
+  @@unique([profileId, configId, sourceKey])
+  @@index([profileId, configId])
   @@index([profileId, status])
 }
 
@@ -1092,6 +1094,17 @@ model LoanConfig {
   termMonths Int
   monthlyPayment Int
   creditRequired String  @db.VarChar(8)
+  minCompanyLevel Int     @default(1)
+  minMonthlyIncome Int    @default(0)
+  minNetCashFlow Int      @default(-999999999)
+  maxDebtRatioBasisPoints Int @default(10000)
+  requiresCrisis Boolean  @default(false)
+  requiresOverdue Boolean @default(false)
+  requiresActiveLoan Boolean @default(false)
+  isHighRisk Boolean      @default(false)
+  purposeTag String       @default("日常周转") @db.VarChar(32)
+  riskDeltaOnApply Int    @default(0)
+  creditPenaltyOnApply Int @default(0)
   summary   String       @db.VarChar(180)
   sortOrder Int          @default(0)
   createdAt DateTime     @default(now())
@@ -1114,6 +1127,7 @@ model PlayerLoan {
   monthlyPayment Int
   overduePeriods Int      @default(0)
   penaltyAccrued Int      @default(0)
+  onTimeRepayPeriods Int   @default(0)
   status    String       @default("active") @db.VarChar(16)
   createdAt DateTime     @default(now())
   settledAt DateTime?
@@ -1134,6 +1148,15 @@ model InvestorConfig {
   equityBasisPoints Int
   successRateBase Int
   debtToleranceBasisPoints Int
+  minProductCount Int     @default(0)
+  minMonthlyIncome Int    @default(0)
+  minRetentionBasisPoints Int @default(0)
+  minPayRateBasisPoints Int @default(0)
+  minValuation Int        @default(0)
+  minReputation Int       @default(0)
+  minCompanyLevel Int     @default(1)
+  requiresLegalReview Boolean @default(false)
+  allowFollowOn Boolean   @default(false)
   boardPressure Int
   term      String       @db.VarChar(180)
   summary   String       @db.VarChar(180)
@@ -1157,6 +1180,14 @@ model PlayerFunding {
   successRate Int
   boardPressure Int
   term      String        @db.VarChar(180)
+  offerType String        @default("initial") @db.VarChar(16)
+  offerStatus String      @default("accepted") @db.VarChar(16)
+  paymentStatus String    @default("pending") @db.VarChar(16)
+  disbursementStatus String @default("scheduled") @db.VarChar(16)
+  legalReviewStatus String @default("pending") @db.VarChar(16)
+  postEventStatus String  @default("none") @db.VarChar(16)
+  followOnSequence Int    @default(0)
+  followOnCount Int       @default(0)
   status    String        @default("pending") @db.VarChar(16)
   resultSummary String?   @db.VarChar(220)
   createdAt DateTime      @default(now())

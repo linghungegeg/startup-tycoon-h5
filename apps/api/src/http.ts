@@ -3910,6 +3910,108 @@ export const createApiServer = (
       return;
     }
 
+    const fundingLegalReviewMatch = /^\/finance\/fundings\/([^/]+)\/legal-review$/.exec(url.pathname);
+    if (request.method === "POST" && fundingLegalReviewMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const fundingId = fundingLegalReviewMatch[1];
+      if (serverId === undefined || fundingId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and fundingId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.reviewFundingLegalTerms(account.id, serverId, decodeURIComponent(fundingId));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_NOT_FOUND") {
+        sendJson(response, 404, failure("FUNDING_NOT_FOUND", "Financing record not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_ALREADY_SETTLED") {
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const fundingPauseMatch = /^\/finance\/fundings\/([^/]+)\/pause-disbursement$/.exec(url.pathname);
+    if (request.method === "POST" && fundingPauseMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const fundingId = fundingPauseMatch[1];
+      const reason = isRecord(body) && typeof body.reason === "string" ? body.reason.trim() : "";
+      if (serverId === undefined || fundingId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and fundingId are required.", traceId));
+        return;
+      }
+
+      const result = await repository.pauseFundingDisbursement(account.id, serverId, decodeURIComponent(fundingId), reason);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_NOT_FOUND") {
+        sendJson(response, 404, failure("FUNDING_NOT_FOUND", "Financing record not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_ALREADY_SETTLED") {
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    const fundingFollowOnMatch = /^\/finance\/fundings\/([^/]+)\/follow-on$/.exec(url.pathname);
+    if (request.method === "POST" && fundingFollowOnMatch !== null) {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const fundingId = fundingFollowOnMatch[1];
+      const amount = isRecord(body) && typeof body.amount === "number" ? Math.round(body.amount) : 0;
+      const equityBasisPoints = isRecord(body) && typeof body.equityBasisPoints === "number" ? Math.round(body.equityBasisPoints) : 0;
+      if (serverId === undefined || fundingId === undefined || amount <= 0 || equityBasisPoints <= 0) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId, fundingId, amount and equityBasisPoints are required.", traceId));
+        return;
+      }
+
+      const result = await repository.applyFundingFollowOn(account.id, serverId, decodeURIComponent(fundingId), amount, equityBasisPoints);
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_NOT_FOUND") {
+        sendJson(response, 404, failure("FUNDING_NOT_FOUND", "Financing record not found.", traceId));
+        return;
+      }
+      if (result === "FUNDING_LOCKED") {
+        sendJson(response, 409, failure("FUNDING_LOCKED", "Follow-on investment is not available.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
     const fundingSettleMatch = /^\/finance\/fundings\/([^/]+)\/settle$/.exec(url.pathname);
     if (request.method === "POST" && fundingSettleMatch !== null) {
       if (account === undefined) {
@@ -3936,6 +4038,10 @@ export const createApiServer = (
       }
       if (result === "FUNDING_ALREADY_SETTLED") {
         sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        return;
+      }
+      if (result === "FUNDING_LOCKED") {
+        sendJson(response, 409, failure("FUNDING_LOCKED", "Financing terms are blocked or disbursement is paused.", traceId));
         return;
       }
 
@@ -3973,6 +4079,10 @@ export const createApiServer = (
       }
       if (result === "LOAN_ALREADY_ACTIVE") {
         sendJson(response, 409, failure("LOAN_ALREADY_ACTIVE", "This loan is already active.", traceId));
+        return;
+      }
+      if (result === "LOAN_LOCKED") {
+        sendJson(response, 409, failure("LOAN_LOCKED", "Loan product conditions are not met.", traceId));
         return;
       }
 
