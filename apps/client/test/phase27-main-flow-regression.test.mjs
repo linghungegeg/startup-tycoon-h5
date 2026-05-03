@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const developmentPlan = readFileSync(new URL("../../../docs/development-plan.md", import.meta.url), "utf8");
+const profileCenterSource = source.slice(
+  source.indexOf('data-testid="native-profile-center"'),
+  source.indexOf('{nativeHomePage === "chat"')
+);
+const vipCenterSource = source.slice(
+  source.indexOf('data-testid="native-vip"'),
+  source.indexOf('{nativeHomePage === "bag"')
+);
 
 test("phase 27 client preserves pre-launch player main flow coverage", () => {
   for (const text of [
@@ -206,9 +215,85 @@ test("phase 28-30 plan requires researched differentiated full-screen layouts", 
 
 test("phase 30 home keeps cross-server chat and mail centered above the main task module", () => {
   assert.match(source, /data-testid="home-social-dock"/, "social dock should be a single centered shortcut row");
-  assert.match(source, /left-1\/2 bottom-40/, "social dock should sit centered above the main task module");
+  assert.match(source, /left-1\/2 bottom-44/, "social dock should sit centered above the main task module");
   assert.match(source, /data-testid="home-cross-server-entry"/, "cross-server should live in the centered shortcut row");
   assert.match(source, /data-testid="home-chat-entry"/, "chat should live in the centered shortcut row");
   assert.match(source, /data-testid="home-mail-entry"/, "mail should live in the centered shortcut row");
   assert.match(source, /少年三国志式快捷入口/, "layout intent should stay documented in code-native copy");
+});
+
+test("phase 31 documents researched style-family UI coverage", () => {
+  assert.match(developmentPlan, /Phase 31：主 UI 与全覆盖页安全底座样式收口/, "phase 31 plan should be documented");
+  assert.match(developmentPlan, /样式族联网参考/, "phase 31 should require researched style-family references");
+  assert.match(developmentPlan, /主页 HUD/, "phase 31 should cover the home HUD style family");
+  assert.match(developmentPlan, /单点视觉修正/, "phase 31 should require single-point visual changes");
+  assert.match(developmentPlan, /底部导航保持现状/, "phase 31 should keep the current bottom navigation style");
+  assert.match(developmentPlan, /全覆盖页安全底座/, "phase 31 should cover full-screen page safety");
+  assert.match(developmentPlan, /不把聊天、邮件、跨服改成同一模板/, "phase 31 should preserve differentiated feature layouts");
+});
+
+test("phase 31 client applies game-style safe UI shell", () => {
+  assert.match(source, /data-testid="home-social-dock"/, "social dock should remain addressable");
+  assert.doesNotMatch(source, /phase31-social-dock/, "phase 31 should not add a shared wrapper behind the three social shortcuts");
+  assert.match(source, /home-social-dock absolute left-1\/2 bottom-44/, "social dock labels should sit above the main task strip");
+  assert.doesNotMatch(source, /rounded-full border border-black\/30 bg-slate-950\/80 px-2 py-0\.5 text-\[10px\] font-black text-white shadow-lg/, "social shortcut labels should not use black capsule backgrounds");
+  assert.match(source, /data-testid="home-task-strip"/, "main task strip should stay addressable");
+  assert.doesNotMatch(source, /phase31-task-strip/, "phase 31 should not restyle the main task strip until that single point is approved");
+  assert.match(source, /aria-label="底部导航"/, "bottom navigation should remain visible and addressable");
+  assert.doesNotMatch(source, /phase31-bottom-nav/, "phase 31 should not override the current bottom navigation style");
+  assert.doesNotMatch(source, /phase31-native-page/, "phase 31 should not batch-apply native page shells");
+  assert.doesNotMatch(styles, /--phase31-safe-bottom/, "phase 31 should not add global safe-area tokens before a single page needs them");
+  assert.doesNotMatch(styles, /\.phase31-social-dock/, "phase 31 should not introduce a social dock background shell");
+  assert.doesNotMatch(styles, /\.phase31-bottom-nav/, "phase 31 should not introduce a bottom navigation restyle");
+  assert.doesNotMatch(styles, /\.phase31-native-page/, "phase 31 should not introduce a batch native page shell");
+});
+
+test("phase 31 keeps avatar profile center as a single-point visual change", () => {
+  assert.match(source, /type NativeHomePage = .*"profile"/, "profile center should be an explicit native page");
+  assert.match(source, /onClick=\{\(\) => openHomePanel\("个人中心"\)\}/, "avatar should open the profile center instead of jumping straight to VIP");
+  assert.match(source, /const sideActions = \["VIP", "财务", "融资", "贷款"\]/, "VIP should be a native left-side home entry without changing the entry structure");
+  assert.match(source, /onClick=\{\(\) => openHomePanel\(item\)\}/, "left-side home entries should keep the existing click structure");
+  assert.match(source, /data-testid="native-profile-center"/, "profile center should stay addressable for browser checks");
+  assert.match(profileCenterSource, /data-testid="profile-attribute-panel"/, "profile center should expose the continuous attribute panel");
+  assert.doesNotMatch(profileCenterSource, /aria-label="个人快捷入口"/, "profile center should not keep quick-entry buttons");
+  assert.doesNotMatch(profileCenterSource, />背包</, "profile center should not show a bag quick-entry button");
+  assert.doesNotMatch(profileCenterSource, />邮件</, "profile center should not show a mail quick-entry button");
+  assert.doesNotMatch(profileCenterSource, />商会</, "profile center should not show a guild quick-entry button");
+  assert.doesNotMatch(profileCenterSource, /openHomePanel\("VIP"\)/, "profile center should not route VIP through a secondary button");
+  assert.doesNotMatch(profileCenterSource, />查看</, "profile center should not show a VIP secondary view button");
+  assert.doesNotMatch(profileCenterSource, /grid grid-cols-2/, "profile center should not present core attributes as a modular card grid");
+  assert.match(profileCenterSource, /data-testid="profile-attribute-panel"/, "profile center should use a continuous attribute panel");
+  assert.doesNotMatch(profileCenterSource, /data-testid="profile-vip-benefits"/, "profile center should not contain VIP benefits after VIP is split out");
+  assert.doesNotMatch(profileCenterSource, /data-testid="profile-vip-level-strip"/, "profile center should not contain VIP level navigation after VIP is split out");
+  assert.doesNotMatch(profileCenterSource, /贵宾权益/, "profile center should not mix VIP center copy");
+  assert.doesNotMatch(profileCenterSource, /VIP详情/, "profile center should not duplicate VIP detail heading");
+  assert.doesNotMatch(profileCenterSource, /\["VIP等级"/, "profile center should not duplicate current VIP level as a separate row");
+  assert.doesNotMatch(profileCenterSource, /VIP经验/, "profile center should not embed VIP progress after VIP is split out");
+  assert.doesNotMatch(profileCenterSource, /每日礼包/, "profile center should not embed daily gift state after VIP is split out");
+  assert.doesNotMatch(profileCenterSource, /claimVipDailyGift/, "profile center should not claim VIP gifts inline after VIP is split out");
+  assert.doesNotMatch(profileCenterSource, /VIP 1 到 VIP 15/, "profile center should not expose VIP levels after VIP is split out");
+  assert.match(profileCenterSource, /scroll-hide/, "profile center should hide the outer white scrollbar and keep scrolling internal");
+  assert.doesNotMatch(profileCenterSource, /VIP 提供身份、每日礼包和便利权益/, "profile center should not show long VIP rule copy");
+  assert.match(vipCenterSource, /data-testid="native-vip"/, "VIP center should remain a separate native page");
+  assert.match(vipCenterSource, /data-testid="vip-current-summary"/, "VIP center should show a compact current VIP identity strip");
+  assert.match(vipCenterSource, /data-testid="vip-level-strip"/, "VIP center should own the VIP level strip");
+  assert.match(vipCenterSource, /VIP等级/, "VIP center should use concise VIP level wording");
+  assert.match(vipCenterSource, /<strong className="block text-sm text-white font-black">VIP等级<\/strong>/, "VIP level heading should match daily gift typography");
+  assert.match(vipCenterSource, /选中/, "VIP center should distinguish the selected preview level");
+  assert.doesNotMatch(vipCenterSource, /当前/, "VIP center should not show current marker copy in the level buttons");
+  assert.doesNotMatch(vipCenterSource, /grid grid-cols-5/, "VIP center should not expose all levels as a static grid");
+  assert.match(vipCenterSource, /profileVipVisibleLevels/, "VIP center should show a five-level visible window");
+  assert.match(vipCenterSource, /handleSelectProfileVipLevel\(level\.level\)/, "clicking a VIP level should load that level and move the visible window");
+  assert.match(source, /setProfileVipLevelWindowStart/, "VIP center should support click-driven level window paging");
+  assert.match(source, /vipCenter\?\.levels\.filter/, "VIP center should derive levels from VIP config");
+  assert.match(vipCenterSource, /profileVipVisibleLevels\.map/, "VIP center should render the visible VIP level window");
+  assert.match(vipCenterSource, /\{level\.name\}/, "VIP center should render each VIP level name");
+  assert.match(vipCenterSource, /每日礼包/, "VIP center should show daily gift state");
+  assert.match(vipCenterSource, /claimVipDailyGift/, "VIP center should claim daily gift");
+  assert.match(vipCenterSource, /权益称号/, "VIP center should show selected level title");
+  assert.match(vipCenterSource, /行动力上限/, "VIP center should show selected level action power benefit");
+  assert.doesNotMatch(vipCenterSource, /onClick=\{leaveGame\}/, "VIP center should not expose account switching");
+  assert.doesNotMatch(vipCenterSource, />\s*切换账号\s*</, "VIP center should not show account switching copy");
+  assert.doesNotMatch(vipCenterSource, /VIP入口导航/, "VIP center should not keep old entrance navigation");
+  assert.doesNotMatch(vipCenterSource, /VIP 提供身份、每日礼包和便利权益/, "VIP center should not show long rule copy");
 });

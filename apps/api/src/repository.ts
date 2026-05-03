@@ -725,6 +725,7 @@ export type VipCenterRecord = {
   wallet: PlatformWalletRecord;
   currentLevel: VipLevelRecord;
   nextLevel: VipLevelRecord | null;
+  levels: VipLevelRecord[];
   progressToNextBasisPoints: number;
   benefits: {
     title: string;
@@ -4661,6 +4662,7 @@ const toVipCenterRecord = async (
     wallet,
     currentLevel,
     nextLevel,
+    levels,
     progressToNextBasisPoints,
     benefits: {
       title: currentLevel.title,

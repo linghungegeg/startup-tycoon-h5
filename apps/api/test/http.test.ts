@@ -1674,6 +1674,186 @@ const createTestRepository = (): GameRepository => {
       title: "资本新贵",
       avatarFrame: "royal-gold",
       summary: "提供更高身份展示和经营便利。"
+    },
+    {
+      level: 4,
+      name: "VIP 4",
+      requiredExperience: 6000,
+      dailyGiftPlatformCoins: 100,
+      dailyGiftActionPower: 70,
+      actionPowerLimitBonus: 40,
+      quickSettleTimes: 3,
+      trainingQueueBonus: 1,
+      recruitRefreshTimes: 3,
+      shopDiscountBasisPoints: 9300,
+      title: "增长董事",
+      avatarFrame: "platinum-plus",
+      summary: "增强日常补给、招聘刷新和轻量折扣。"
+    },
+    {
+      level: 5,
+      name: "VIP 5",
+      requiredExperience: 10000,
+      dailyGiftPlatformCoins: 130,
+      dailyGiftActionPower: 85,
+      actionPowerLimitBonus: 50,
+      quickSettleTimes: 3,
+      trainingQueueBonus: 2,
+      recruitRefreshTimes: 3,
+      shopDiscountBasisPoints: 9200,
+      title: "行业新贵",
+      avatarFrame: "diamond",
+      summary: "适合员工培养和七日成长基金玩家。"
+    },
+    {
+      level: 6,
+      name: "VIP 6",
+      requiredExperience: 18000,
+      dailyGiftPlatformCoins: 160,
+      dailyGiftActionPower: 100,
+      actionPowerLimitBonus: 60,
+      quickSettleTimes: 4,
+      trainingQueueBonus: 2,
+      recruitRefreshTimes: 4,
+      shopDiscountBasisPoints: 9100,
+      title: "区域领航者",
+      avatarFrame: "diamond-plus",
+      summary: "提高经营容错和中期培养效率。"
+    },
+    {
+      level: 7,
+      name: "VIP 7",
+      requiredExperience: 30000,
+      dailyGiftPlatformCoins: 200,
+      dailyGiftActionPower: 120,
+      actionPowerLimitBonus: 75,
+      quickSettleTimes: 4,
+      trainingQueueBonus: 2,
+      recruitRefreshTimes: 4,
+      shopDiscountBasisPoints: 9000,
+      title: "员工伯乐",
+      avatarFrame: "star-gold",
+      summary: "服务员工池、培养材料和定向招募深度。"
+    },
+    {
+      level: 8,
+      name: "VIP 8",
+      requiredExperience: 50000,
+      dailyGiftPlatformCoins: 250,
+      dailyGiftActionPower: 140,
+      actionPowerLimitBonus: 90,
+      quickSettleTimes: 5,
+      trainingQueueBonus: 3,
+      recruitRefreshTimes: 5,
+      shopDiscountBasisPoints: 8900,
+      title: "赛季合伙人",
+      avatarFrame: "star-platinum",
+      summary: "承接赛季、员工养成和长期展示。"
+    },
+    {
+      level: 9,
+      name: "VIP 9",
+      requiredExperience: 80000,
+      dailyGiftPlatformCoins: 320,
+      dailyGiftActionPower: 165,
+      actionPowerLimitBonus: 110,
+      quickSettleTimes: 5,
+      trainingQueueBonus: 3,
+      recruitRefreshTimes: 5,
+      shopDiscountBasisPoints: 8800,
+      title: "资本合伙人",
+      avatarFrame: "star-diamond",
+      summary: "强化中高付费玩家的便利和身份。"
+    },
+    {
+      level: 10,
+      name: "VIP 10",
+      requiredExperience: 120000,
+      dailyGiftPlatformCoins: 400,
+      dailyGiftActionPower: 190,
+      actionPowerLimitBonus: 130,
+      quickSettleTimes: 6,
+      trainingQueueBonus: 3,
+      recruitRefreshTimes: 6,
+      shopDiscountBasisPoints: 8700,
+      title: "独角兽董事",
+      avatarFrame: "unicorn-gold",
+      summary: "进入长期身份和经营便利阶段。"
+    },
+    {
+      level: 11,
+      name: "VIP 11",
+      requiredExperience: 180000,
+      dailyGiftPlatformCoins: 500,
+      dailyGiftActionPower: 220,
+      actionPowerLimitBonus: 155,
+      quickSettleTimes: 6,
+      trainingQueueBonus: 4,
+      recruitRefreshTimes: 6,
+      shopDiscountBasisPoints: 8600,
+      title: "跨服名董",
+      avatarFrame: "unicorn-platinum",
+      summary: "匹配跨服荣誉、商会和长期付费深度。"
+    },
+    {
+      level: 12,
+      name: "VIP 12",
+      requiredExperience: 260000,
+      dailyGiftPlatformCoins: 650,
+      dailyGiftActionPower: 260,
+      actionPowerLimitBonus: 180,
+      quickSettleTimes: 7,
+      trainingQueueBonus: 4,
+      recruitRefreshTimes: 7,
+      shopDiscountBasisPoints: 8500,
+      title: "产业资本家",
+      avatarFrame: "unicorn-diamond",
+      summary: "提供高阶便利和稀缺身份展示。"
+    },
+    {
+      level: 13,
+      name: "VIP 13",
+      requiredExperience: 380000,
+      dailyGiftPlatformCoins: 850,
+      dailyGiftActionPower: 310,
+      actionPowerLimitBonus: 210,
+      quickSettleTimes: 7,
+      trainingQueueBonus: 5,
+      recruitRefreshTimes: 7,
+      shopDiscountBasisPoints: 8400,
+      title: "行业领袖",
+      avatarFrame: "legend-gold",
+      summary: "强化长期荣誉、外观和便利上限。"
+    },
+    {
+      level: 14,
+      name: "VIP 14",
+      requiredExperience: 550000,
+      dailyGiftPlatformCoins: 1100,
+      dailyGiftActionPower: 370,
+      actionPowerLimitBonus: 245,
+      quickSettleTimes: 8,
+      trainingQueueBonus: 5,
+      recruitRefreshTimes: 8,
+      shopDiscountBasisPoints: 8300,
+      title: "商业巨擘",
+      avatarFrame: "legend-platinum",
+      summary: "高付费身份阶段，仍不直接售卖胜利。"
+    },
+    {
+      level: 15,
+      name: "VIP 15",
+      requiredExperience: 800000,
+      dailyGiftPlatformCoins: 1500,
+      dailyGiftActionPower: 450,
+      actionPowerLimitBonus: 300,
+      quickSettleTimes: 9,
+      trainingQueueBonus: 6,
+      recruitRefreshTimes: 10,
+      shopDiscountBasisPoints: 8200,
+      title: "传奇创始人",
+      avatarFrame: "legend-diamond",
+      summary: "最高身份与长期荣誉，只提供便利、展示和轻量效率。"
     }
   ];
   const shopPurchases = new Map<string, ShopCenterRecord["purchases"][number] & { profileId: string }>();
@@ -2095,6 +2275,7 @@ const createTestRepository = (): GameRepository => {
       wallet,
       currentLevel,
       nextLevel,
+      levels: vipLevels,
       progressToNextBasisPoints,
       benefits: {
         title: currentLevel.title,
@@ -9941,6 +10122,10 @@ test("platform coin spending upgrades VIP and enables daily gift once per day", 
     assert.equal(after.body.data?.currentLevel.level, 2);
     assert.equal(after.body.data?.benefits.title, "增长合伙人");
     assert.ok((after.body.data?.benefits.actionPowerLimit ?? 0) > profile.actionPowerLimit);
+    assert.equal(after.body.data?.levels.length, 16);
+    assert.deepEqual(after.body.data?.levels.map((level) => level.level), Array.from({ length: 16 }, (_, index) => index));
+    assert.equal(after.body.data?.levels.at(1)?.name, "VIP 1");
+    assert.equal(after.body.data?.levels.at(15)?.name, "VIP 15");
 
     const gift = await requestJson(baseUrl, "/vip/daily-gift", {
       method: "POST",
@@ -9950,6 +10135,8 @@ test("platform coin spending upgrades VIP and enables daily gift once per day", 
     assert.equal(gift.status, 200);
     const giftData = gift.body.data as { vipCenter: VipCenterRecord; profile: PlayerProfileRecord };
     assert.equal(giftData.vipCenter.dailyGift.isClaimed, true);
+    assert.equal(giftData.vipCenter.levels.length, 16);
+    assert.equal(giftData.vipCenter.levels.at(15)?.name, "VIP 15");
     assert.equal(giftData.profile.platformCoins, profile.platformCoins - 1280 + 60);
 
     const duplicate = await requestJson(baseUrl, "/vip/daily-gift", {

@@ -2777,9 +2777,50 @@ VIP 权益：
 - 验证命令：本阶段至少执行 `node --import tsx --test --test-reporter spec --test-name-pattern "phase 28 chat channels" apps/api/test/http.test.ts`、`node --import tsx --test --test-reporter spec --test-name-pattern "phase 15 cross server|phase 28 chat keyword|phase 30 mail" apps/api/test/http.test.ts`、`node --test apps/client/test/phase27-main-flow-regression.test.mjs`、API/client typecheck、lint、`git diff --check`。
 - 当前稳定点目标：完成 Browser Use 验收且验证通过后，提交为 Phase 28-30 收口稳定点；未跟踪参考素材继续保持未提交。
 
-### Phase 24-30 全局验证要求
+### Phase 31：主 UI 与全覆盖页安全底座样式收口
 
-- Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29 和 Phase 30 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
+- 当前稳定点：`5c5b250 feat: sync cross-server rewards with mail center`。
+- 阶段目标：在 Phase 28-30 功能稳定后，按“四插件 + 联网参考 + 单点视觉修正”逐步收口玩家前台 UI；不做批量样式全覆盖，不一次性套大量 `phase31-*` 壳层；底部导航保持现状，仅做无遮挡验收；本阶段不改 API、不改玩法、不改奖励、不新增数据库表。
+- 样式族联网参考：
+  - 主页 HUD / 资源栏：参考中国竖版手游顶部资源、VIP、战力/估值、活动入口组织。
+  - 底部导航：参考移动端底部导航的可见性和触控稳定性；本批不覆盖当前底部导航样式。
+  - 主线任务与三入口：参考中国手游主界面中“任务按钮 + 社交/邮件/跨服入口”的层级。
+  - 全覆盖页安全底座：参考游戏内全屏页、弹层关闭按钮、标题、滚动区和底部避让。
+  - 功能页内部：聊天查聊天频道/消息流，邮件查游戏邮箱/收件箱，跨服查赛事/报名/排行/奖励；不把聊天、邮件、跨服改成同一模板。
+- 已采用参考方向：
+  - 《少年三国志》官方界面介绍中的竖版主界面、资源/VIP、活动/日常、邮件、聊天入口组织：`https://sg.youzu.com/wap/detail/strategy_new/5146732`。
+  - GDC China 移动游戏 UI 资料中的“小而精、单一焦点、碎片时间”原则：`https://www.gdcvault.com/play/1023726/UI-Design-from-Pc-Game`。
+  - 移动底部导航设计资料中“可见、清晰、简单、足够触控区”的导航原则，仅作为验收约束，不作为本批重做依据：`https://www.uxren.cn/?p=46621`。
+- 统一范围：
+  - 三入口保持三个独立按钮与独立文字标签，不增加共享底板、遮罩或胶囊壳；标签使用纯文字加投影，并与主线任务条保留可读间距。
+  - 全覆盖页安全底座只作为验收标准：关闭按钮位置、标题间距、顶部避让、底部导航避让、滚动区域；发现具体页面问题后再单点修改。
+  - 底部导航保持现状：不新增 `phase31` 导航样式、不改当前视觉，只检查它与主线任务和全覆盖页不互相遮挡。
+- 不统一范围：
+  - 聊天仍保持频道 + 消息流 + 输入。
+  - 邮件仍保持邮箱列表 + 详情。
+  - 跨服仍保持赛事状态头 + 横向阶段条 + 当前阶段内容。
+  - 商会、活动、商业、排行榜等功能页继续按各自信息架构差异化。
+- 第一批实施：
+  - 文档和回归测试先锁定 Phase 31 单点视觉修正规则、安全验收标准和差异化边界。
+  - 第一单点只调整主页跨服/聊天/邮件三入口：保持独立入口、去掉共享底板和小黑底标签、上移到不压主线任务条的位置。
+  - 第二单点只调整头像点击后的个人中心和左侧 VIP 入口：头像打开独立个人中心，只展示头像、昵称、公司、区服、身份、核心估值和基础属性；删除背包/邮件/商会快捷入口，也不再混入 VIP 权益、每日礼包和等级预览。首页左侧竖排入口新增 `VIP`，保持既有按钮尺寸、间距、图标风格和文字大小；VIP 中心单独承载当前等级、VIP 经验、每日礼包领取、VIP 1 到 VIP 15 等级预览、权益称号、行动力上限和商城折扣；删除“VIP入口导航”和长规则文案，保持 H5 原生文字游戏的紧凑连续行表达。
+  - 主线任务条、底部导航和全覆盖页不挂新 `phase31-*` 样式壳；后续只有在用户指出具体问题并通过 Browser Use 验收后，才进入下一单点。
+  - 不新增可见系统、不迁移状态、不改结算。
+- 四插件验收：
+  - Superpowers：按 TDD 红绿测试、最小改动范围和稳定点推进。
+  - Browser Use：打开 `http://127.0.0.1:5173/` 验收首页、聊天、邮件、跨服和 Console。
+  - Build Web Apps：检查中国竖版 H5 商业手游观感、深色商务 UI、短文案和避免 SaaS 卡片化。
+  - Game Studio：检查 HUD、底部导航、主线任务、全覆盖页关闭按钮、滚动区和主操作不遮挡。
+- 验证命令：
+  - `node --test apps/client/test/phase27-main-flow-regression.test.mjs`
+  - `npm run typecheck -w @wenziyouxi/client`
+  - `npm run lint -w @wenziyouxi/client`
+  - `git diff --check`
+- 稳定点目标：Browser Use 验收和验证命令通过后，提交为 Phase 31 第一稳定点；未跟踪参考素材继续保持未提交。
+
+### Phase 24-31 全局验证要求
+
+- Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
   - Superpowers：阶段开始前确认目标、成功标准、当前稳定点、最小改动范围；实现时优先按 TDD 或明确执行计划推进；提交前做验证前检查。
   - Browser Use：每批完成后打开本地前台、Admin 或 API 健康入口做真实浏览器验收；纯后端批次也要至少确认主页、核心入口和 Console 无关键回归。
   - Build Web Apps：涉及前台或 Admin 页面时检查深色商务手游 UI、中国用户视觉习惯、稳重后台结构、文案层级、按钮状态、移动端适配和页面密度；不做营销式改版、模块化 SaaS 卡片堆叠或低密度空页面。

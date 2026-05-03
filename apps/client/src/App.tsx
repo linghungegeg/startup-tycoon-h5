@@ -7,7 +7,7 @@ const SESSION_VERSION = 1;
 
 type OnboardingStep = "auth" | "server" | "avatar" | "profile" | "game";
 type AuthMode = "login" | "register";
-type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "guild" | "finance" | "chat" | "mail";
+type NativeHomePage = "leaderboard" | "cross-server" | "season" | "shop" | "privilege" | "pass" | "bag" | "negotiation" | "vip" | "profile" | "guild" | "finance" | "chat" | "mail";
 
 type ApiSuccess<T> = {
   success: true;
@@ -683,6 +683,7 @@ type VipCenter = {
   wallet: PlatformWallet;
   currentLevel: VipLevel;
   nextLevel: VipLevel | null;
+  levels: VipLevel[];
   progressToNextBasisPoints: number;
   benefits: {
     title: string;
@@ -1232,7 +1233,8 @@ const shopCategoryLabels: Record<string, string> = {
   activity_shop: "活动"
 };
 
-const sideActions = ["财务", "融资", "贷款"];
+const VIP_LEVEL_WINDOW_SIZE = 5;
+const sideActions = ["VIP", "财务", "融资", "贷款"];
 const rightActions = ["活动", "排行", "商业", "特权", "通行证", "专属经理"];
 const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
@@ -1842,6 +1844,8 @@ function App() {
   const [inventoryCenter, setInventoryCenter] = useState<InventoryCenter | null>(null);
   const [inventoryError, setInventoryError] = useState("");
   const [vipCenter, setVipCenter] = useState<VipCenter | null>(null);
+  const [selectedProfileVipLevel, setSelectedProfileVipLevel] = useState<number | null>(null);
+  const [profileVipLevelWindowStart, setProfileVipLevelWindowStart] = useState<number | null>(null);
   const [vipError, setVipError] = useState("");
   const [vipNotice, setVipNotice] = useState("");
   const [seasonCenter, setSeasonCenter] = useState<SeasonCenter | null>(null);
@@ -2497,8 +2501,31 @@ function App() {
     );
   };
 
+  const resolveVipLevelWindowStart = (targetLevel: number | null | undefined, levels: VipLevel[]): number | null => {
+    if (levels.length === 0) {
+      return null;
+    }
+    const targetIndex = Math.max(0, levels.findIndex((level) => level.level === targetLevel));
+    const windowStartIndex = Math.floor(targetIndex / VIP_LEVEL_WINDOW_SIZE) * VIP_LEVEL_WINDOW_SIZE;
+    return levels[windowStartIndex]?.level ?? levels[0]?.level ?? null;
+  };
+
   const applyVipCenter = (nextVipCenter: VipCenter): void => {
     setVipCenter(nextVipCenter);
+    setSelectedProfileVipLevel((currentLevel) => {
+      const visibleLevels = nextVipCenter.levels.filter((level) => level.level > 0);
+      if (visibleLevels.some((level) => level.level === currentLevel)) {
+        return currentLevel;
+      }
+      return nextVipCenter.currentLevel.level > 0 ? nextVipCenter.currentLevel.level : visibleLevels[0]?.level ?? null;
+    });
+    setProfileVipLevelWindowStart((currentStart) => {
+      const visibleLevels = nextVipCenter.levels.filter((level) => level.level > 0);
+      if (visibleLevels.some((level) => level.level === currentStart)) {
+        return currentStart;
+      }
+      return resolveVipLevelWindowStart(nextVipCenter.currentLevel.level, visibleLevels);
+    });
     setProfile((currentProfile) =>
       currentProfile === null
         ? currentProfile
@@ -3947,6 +3974,12 @@ function App() {
       return;
     }
 
+    if (panelName === "个人中心") {
+      setActivePanel(null);
+      setNativeHomePage("profile");
+      return;
+    }
+
     if (panelName === "专属经理") {
       reportCurrentTelemetry("commercial_entry_click", "manager");
       if (account && selectedServer) {
@@ -4717,6 +4750,33 @@ function App() {
 
   const selectedPanel = activePanel ? homePanelContent[activePanel] : undefined;
   const hasVipAttention = vipCenter ? !vipCenter.dailyGift.isClaimed : false;
+  const profileVipLevels = vipCenter?.levels.filter((level) => level.level > 0) ?? [];
+  const selectedProfileVip =
+    profileVipLevels.find((level) => level.level === selectedProfileVipLevel) ??
+    (vipCenter?.currentLevel.level && vipCenter.currentLevel.level > 0 ? vipCenter.currentLevel : profileVipLevels[0]) ??
+    null;
+  const profileVipLevelWindowStartValue = profileVipLevelWindowStart ?? resolveVipLevelWindowStart(selectedProfileVip?.level, profileVipLevels);
+  const profileVipLevelWindowStartIndex = Math.max(0, profileVipLevels.findIndex((level) => level.level === profileVipLevelWindowStartValue));
+  const profileVipVisibleLevels = profileVipLevels.slice(profileVipLevelWindowStartIndex, profileVipLevelWindowStartIndex + VIP_LEVEL_WINDOW_SIZE);
+  const handleSelectProfileVipLevel = (level: number): void => {
+    const selectedIndex = profileVipLevels.findIndex((item) => item.level === level);
+    if (selectedIndex < 0) {
+      return;
+    }
+    const currentStartIndex = Math.max(0, profileVipLevels.findIndex((item) => item.level === profileVipLevelWindowStartValue));
+    const currentEndIndex = Math.min(profileVipLevels.length - 1, currentStartIndex + VIP_LEVEL_WINDOW_SIZE - 1);
+    setSelectedProfileVipLevel(level);
+    if (selectedIndex === currentEndIndex && selectedIndex < profileVipLevels.length - 1) {
+      setProfileVipLevelWindowStart(profileVipLevels[selectedIndex + 1]?.level ?? null);
+      return;
+    }
+    if (selectedIndex === currentStartIndex && selectedIndex > 0) {
+      setProfileVipLevelWindowStart(profileVipLevels[Math.max(0, selectedIndex - VIP_LEVEL_WINDOW_SIZE)]?.level ?? null);
+      return;
+    }
+    setProfileVipLevelWindowStart(profileVipLevels[currentStartIndex]?.level ?? null);
+  };
+  const nextVipLabel = vipCenter?.nextLevel ? `距 ${vipCenter.nextLevel.name}` : "已达上限";
   const isNavActive = (item: string): boolean => {
     if (item === "业务") {
       return activeNav === "业务" || activeNav === "项目" || activeNav === "产品";
@@ -4752,7 +4812,7 @@ function App() {
         <section className="app-viewport shadow-2xl" aria-label="公司经营主页">
           <header className="absolute top-0 left-0 right-0 z-[60] p-4 space-y-3 pointer-events-none">
             <div className="flex items-center justify-between pointer-events-auto">
-              <button className="flex items-center gap-2 text-left" type="button" onClick={() => openHomePanel("VIP")}>
+              <button className="flex items-center gap-2 text-left" type="button" onClick={() => openHomePanel("个人中心")}>
                 <span className="relative group">
                   {hasVipAttention && <span className="red-dot" />}
                   <span className="block w-12 h-12 rounded-full border-2 border-business-gold p-0.5 overflow-hidden shadow-lg shadow-business-gold/10">
@@ -4848,30 +4908,30 @@ function App() {
               ))}
             </div>
 
-            <div aria-label="少年三国志式快捷入口" className="absolute left-1/2 bottom-40 z-[70] flex -translate-x-1/2 items-end justify-center gap-3" data-testid="home-social-dock">
+            <div aria-label="少年三国志式快捷入口" className="home-social-dock absolute left-1/2 bottom-44 z-[70] flex -translate-x-1/2 items-end justify-center gap-3" data-testid="home-social-dock">
               <button className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-cross-server-entry" type="button" onClick={() => openHomePanel("跨服")}>
                 <span className="red-dot" />
                 <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
                   <Icon name="trophy" className="h-6 w-6 text-cyan-400" />
                 </span>
-                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg">跨服</span>
+                <span className="text-[10px] font-black text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]">跨服</span>
               </button>
               <button className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-chat-entry" type="button" onClick={() => openHomePanel("聊天")}>
                 <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
                   <Icon name="message-circle" className="h-6 w-6 text-business-gold" />
                 </span>
-                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg" title={latestChatMessage ? `${latestChatMessage.founderName}：${latestChatMessage.content}` : "聊天"}>聊天</span>
+                <span className="text-[10px] font-black text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]" title={latestChatMessage ? `${latestChatMessage.founderName}：${latestChatMessage.content}` : "聊天"}>聊天</span>
               </button>
               <button aria-label={profile.unreadMailCount > 0 ? `邮件 ${profile.unreadMailCount}` : "邮件"} className="group relative flex w-16 flex-col items-center gap-1 active:scale-95 transition-transform" data-testid="home-mail-entry" type="button" onClick={() => openHomePanel("邮件")}>
                 {profile.unreadMailCount > 0 && <span className="red-dot" />}
                 <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-business-gold/50 bg-gradient-to-b from-business-gold/25 to-slate-950/85 shadow-[0_8px_18px_rgba(0,0,0,0.45)] group-hover:scale-110 transition-transform">
                   <Icon name="mail" className="h-6 w-6 text-business-gold" />
                 </span>
-                <span className="rounded-full border border-black/30 bg-slate-950/80 px-2 py-0.5 text-[10px] font-black text-white shadow-lg" data-testid="home-mail-unread-count">{profile.unreadMailCount > 0 ? `邮件 ${profile.unreadMailCount}` : "邮件"}</span>
+                <span className="text-[10px] font-black text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.9)]" data-testid="home-mail-unread-count">{profile.unreadMailCount > 0 ? `邮件 ${profile.unreadMailCount}` : "邮件"}</span>
               </button>
             </div>
 
-            <button className="absolute bottom-24 left-4 right-24 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer text-left" type="button" onClick={openTaskScreen}>
+            <button className="absolute bottom-24 left-4 right-24 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer text-left" data-testid="home-task-strip" type="button" onClick={openTaskScreen}>
               <span className="w-12 h-12 bg-business-gold/15 rounded-xl flex items-center justify-center relative border border-business-gold/20">
                 <span className="red-dot" />
                 <Icon name="clipboard-check" className="w-7 h-7 text-business-gold" />
@@ -4926,6 +4986,64 @@ function App() {
               </button>
             ))}
           </nav>
+
+          {nativeHomePage === "profile" && (
+            <section className="page-container page-active" aria-label="个人中心" data-testid="native-profile-center">
+              <div className="flex-1 overflow-hidden px-4 pb-5 pt-10">
+                <div className="relative flex h-full flex-col overflow-hidden rounded-[1.7rem] border border-business-gold/30 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] shadow-[0_18px_45px_rgba(0,0,0,0.55)]">
+                  <button className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-slate-950/80 text-slate-200" data-testid="profile-close-button" type="button" aria-label="关闭个人中心" onClick={closeNativeHomePage}>
+                    <Icon name="x" className="h-4 w-4" />
+                  </button>
+
+                  <div className="relative px-5 pb-4 pt-5">
+                    <div className="absolute inset-x-0 top-0 h-32 bg-[radial-gradient(circle_at_20%_10%,rgba(251,191,36,0.22),transparent_34%),linear-gradient(135deg,rgba(14,165,233,0.16),transparent_48%)]" />
+                    <div className="relative flex items-center gap-4">
+                      <span className="relative block h-20 w-20 rounded-full border-2 border-business-gold p-1 shadow-[0_0_24px_rgba(251,191,36,0.2)]">
+                        <img src="/game-ui/html-design/founder.jpg" alt="" className="h-full w-full rounded-full object-cover" />
+                        <span className="absolute bottom-1 -right-1 rounded-md border border-business-dark bg-business-gold px-1.5 py-0.5 text-[9px] font-black leading-none text-business-dark shadow-[0_3px_8px_rgba(0,0,0,0.45)]">
+                          VIP {vipCenter?.currentLevel.level ?? 0}
+                        </span>
+                      </span>
+                      <div className="min-w-0 flex-1 pt-1">
+                        <span className="text-[10px] font-black text-business-gold">个人中心</span>
+                        <h2 className="mt-1 truncate text-2xl font-black text-white">{profile.founderName || account?.username || "创业新星"}</h2>
+                        <p className="mt-1 truncate text-xs font-bold text-slate-300">{profile.companyName}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className="rounded-full border border-white/10 bg-slate-950/55 px-2.5 py-1 text-[10px] font-bold text-slate-300">{selectedServer.name}</span>
+                          <span className="rounded-full border border-blue-400/20 bg-blue-400/10 px-2.5 py-1 text-[10px] font-bold text-blue-200">创业先驱</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto scroll-hide px-5 pb-5" data-testid="profile-scroll-area">
+                    <div className="border-y border-business-gold/25 bg-[linear-gradient(90deg,rgba(251,191,36,0.16),rgba(15,23,42,0.24))] px-4 py-4">
+                      <span className="text-[10px] font-black text-business-gold">公司估值</span>
+                      <strong className="mt-1 block truncate text-3xl font-black italic text-white">{compactNumber(profile.valuation)}</strong>
+                    </div>
+
+                    <div className="mt-3 overflow-hidden border-y border-white/10" data-testid="profile-attribute-panel">
+                      {[
+                        ["公司等级", `LV.${profile.companyLevel}`],
+                        ["现金", compactNumber(profile.cash)],
+                        ["声望", compactNumber(profile.reputation)],
+                        ["行动力", `${profile.actionPower}/${profile.actionPowerLimit}`]
+                      ].map(([label, value]) => (
+                        <div className="flex items-center justify-between gap-4 border-b border-white/5 px-1 py-3 last:border-b-0" key={label}>
+                          <span className="text-[11px] font-bold text-slate-400">{label}</span>
+                          <strong className="truncate text-sm font-black text-white">{value}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button className="mt-4 w-full rounded-2xl border border-white/5 bg-slate-950/70 py-3 text-xs font-black text-slate-200" type="button" onClick={leaveGame}>
+                      切换账号
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           {nativeHomePage === "chat" && (
             <section className="page-container page-active bg-[radial-gradient(circle_at_top,#5b3a16_0%,#111827_42%,#020617_100%)]" aria-label="聊天" data-testid="native-chat">
@@ -6923,49 +7041,45 @@ function App() {
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="award" className="w-7 h-7 text-business-gold" />
-                  <h2 className="text-xl font-black text-white italic uppercase">VIP 创业权益</h2>
+                  <h2 className="text-xl font-black text-white">VIP中心</h2>
                 </div>
                 <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭VIP中心" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
                 </button>
               </header>
-              <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                <section className="glass-panel rounded-3xl p-5 border-business-gold/40 bg-gradient-to-br from-business-gold/15 to-slate-950">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-business-gold font-black uppercase">当前等级</div>
-                      <h3 className="mt-1 text-3xl font-black italic text-white">{vipCenter?.currentLevel.name ?? "VIP 0"}</h3>
-                      <p className="mt-1 text-xs text-slate-300 font-bold">{vipCenter?.benefits.title ?? "创业新星"} · {vipCenter?.benefits.avatarFrame ?? "basic"}</p>
+              <div className="flex-1 overflow-y-auto px-6 pb-10 scroll-hide">
+                <section className="border-y border-business-gold/25 bg-business-gold/5 px-4 py-4" data-testid="vip-current-summary">
+                  <div className="flex items-end justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black text-business-gold">我的等级</span>
+                      <strong className="mt-1 block truncate text-3xl font-black italic text-white">{vipCenter?.currentLevel.name ?? "VIP 0"}</strong>
+                      <span className="mt-1 block truncate text-xs font-bold text-slate-300">{vipCenter?.benefits.title ?? "创业新星"}</span>
                     </div>
-                    <div className="w-20 h-20 rounded-full border-2 border-business-gold bg-business-gold/10 flex items-center justify-center">
-                      <Icon name="award" className="w-11 h-11 text-business-gold" />
-                    </div>
+                    <span className="shrink-0 text-right text-[10px] font-black text-business-gold">{nextVipLabel}</span>
                   </div>
-                  <div className="mt-5">
-                    <div className="flex items-center justify-between text-[10px] font-black text-slate-400">
-                      <span>VIP经验 {compactNumber(vipCenter?.wallet.vipExperience ?? shopCenter?.wallet.vipExperience ?? 0)}</span>
-                      <span>{vipCenter?.nextLevel ? `距离 ${vipCenter.nextLevel.name}` : "已达当前上限"}</span>
-                    </div>
-                    <div className="mt-2 h-3 rounded-full bg-slate-900 overflow-hidden border border-business-gold/30">
-                      <div className="h-full bg-business-gold" style={{ width: `${(vipCenter?.progressToNextBasisPoints ?? 0) / 100}%` }} />
-                    </div>
+                  <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-slate-400">
+                    <span>VIP经验 {compactNumber(vipCenter?.wallet.vipExperience ?? shopCenter?.wallet.vipExperience ?? 0)}</span>
+                    <span>{((vipCenter?.progressToNextBasisPoints ?? 0) / 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full border border-business-gold/25 bg-slate-950/70">
+                    <div className="h-full bg-business-gold" style={{ width: `${(vipCenter?.progressToNextBasisPoints ?? 0) / 100}%` }} />
                   </div>
                 </section>
                 {(vipNotice || vipError) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${vipError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
+                  <p className={`mt-3 border-y px-3 py-2 text-xs font-bold ${vipError ? "border-red-400/25 bg-red-500/10 text-red-200" : "border-emerald-400/20 bg-emerald-500/10 text-emerald-100"}`}>
                     {vipError || vipNotice}
                   </p>
                 )}
-                <section className="glass-panel rounded-3xl p-4">
+                <section className="border-b border-white/10 px-1 py-4">
                   <div className="flex items-center justify-between">
-                    <div>
+                    <div className="min-w-0">
                       <strong className="block text-sm text-white font-black">每日礼包</strong>
-                      <span className="text-[10px] text-slate-400 font-bold">
+                      <span className="mt-1 block truncate text-xs text-slate-400 font-bold">
                         平台币 {vipCenter?.dailyGift.rewardPlatformCoins ?? 0} · 行动力 {vipCenter?.dailyGift.rewardActionPower ?? 0}
                       </span>
                     </div>
                     <button
-                      className="btn-gold px-5 py-2 rounded-xl text-xs font-black text-business-dark disabled:opacity-45"
+                      className="shrink-0 rounded-xl bg-business-gold px-4 py-2 text-[11px] font-black text-business-dark disabled:opacity-45"
                       type="button"
                       disabled={vipCenter?.dailyGift.isClaimed}
                       onClick={() => void claimVipDailyGift()}
@@ -6974,43 +7088,41 @@ function App() {
                     </button>
                   </div>
                 </section>
-                <section className="grid grid-cols-2 gap-3">
+
+                <section className="border-b border-white/10 px-1 py-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <strong className="block text-sm text-white font-black">VIP等级</strong>
+                    <span className="text-[10px] font-bold text-business-gold">选中 {selectedProfileVip?.name ?? "VIP 1"}</span>
+                  </div>
+                  <div className="flex gap-2 overflow-hidden" aria-label="VIP等级" data-testid="vip-level-strip">
+                    {profileVipVisibleLevels.map((level) => (
+                      <button
+                        aria-label={`${level.name}${selectedProfileVip?.level === level.level ? " 选中" : ""}`}
+                        className={`h-8 min-w-0 flex-1 whitespace-nowrap rounded-full border px-1 text-[10px] font-black ${selectedProfileVip?.level === level.level ? "border-business-gold bg-business-gold text-business-dark" : "border-business-gold/25 bg-slate-950/60 text-slate-300"}`}
+                        key={level.level}
+                        type="button"
+                        onClick={() => handleSelectProfileVipLevel(level.level)}
+                      >
+                        {level.name}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="border-b border-business-gold/20">
                   {[
-                    ["行动力上限", vipCenter?.benefits.actionPowerLimit ?? profile.actionPowerLimit],
-                    ["快速结算", vipCenter?.benefits.quickSettleTimes ?? 0],
-                    ["培训队列", vipCenter?.benefits.trainingQueueBonus ?? 0],
-                    ["招聘刷新", vipCenter?.benefits.recruitRefreshTimes ?? 0],
-                    ["商城折扣", `${((vipCenter?.benefits.shopDiscountBasisPoints ?? 10000) / 100).toFixed(0)}%`],
-                    ["专属称号", vipCenter?.benefits.title ?? "创业新星"]
+                    ["权益称号", selectedProfileVip?.title ?? vipCenter?.benefits.title ?? "创业新星"],
+                    ["行动力上限", Math.max(profile.actionPowerLimit, 120 + (selectedProfileVip?.actionPowerLimitBonus ?? 0))],
+                    ["每日礼包", `平台币 ${selectedProfileVip?.dailyGiftPlatformCoins ?? 0} · 行动力 ${selectedProfileVip?.dailyGiftActionPower ?? 0}`],
+                    ["商城折扣", `${((selectedProfileVip?.shopDiscountBasisPoints ?? 10000) / 100).toFixed(0)}%`]
                   ].map(([label, value]) => (
-                    <div className="glass-panel rounded-2xl p-3" key={label}>
-                      <div className="text-[10px] text-slate-500 font-bold">{label}</div>
-                      <div className="mt-1 text-sm text-white font-black">{value}</div>
+                    <div className="flex items-center justify-between gap-4 border-b border-white/5 px-1 py-3 last:border-b-0" key={label}>
+                      <span className="text-[11px] font-bold text-slate-400">{label}</span>
+                      <strong className="truncate text-sm font-black text-white">{value}</strong>
                     </div>
                   ))}
                 </section>
-                <section className="glass-panel rounded-3xl p-4" aria-label="VIP入口导航">
-                  <strong className="block text-sm text-white font-black">VIP入口导航</strong>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">
-                    VIP 提供身份、每日礼包和便利权益，帮助提高经营效率；普通补给去商业，长期效率权益去特权，赛季奖励线去通行证，已获得道具回到背包查看。
-                  </p>
-                  <div className="mt-3 grid grid-cols-4 gap-2">
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("商业")}>去商业</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("特权")}>去特权</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("通行证")}>去通行证</button>
-                    <button className="rounded-xl bg-slate-900/70 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => openHomePanel("背包")}>去背包</button>
-                  </div>
-                </section>
-                <p className="text-[10px] leading-5 text-slate-500 font-bold px-1">
-                  VIP 权益只提供便利、身份和轻量效率，不直接清空负债、免除经营风险或改变排行榜名次。
-                </p>
-                <button
-                  className="w-full rounded-2xl border border-white/10 py-3 text-sm font-black text-slate-200"
-                  type="button"
-                  onClick={leaveGame}
-                >
-                  切换账号
-                </button>
+                <div className="h-8" aria-hidden="true" />
               </div>
             </section>
           )}
