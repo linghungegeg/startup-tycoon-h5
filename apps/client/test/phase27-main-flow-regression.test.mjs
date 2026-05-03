@@ -95,6 +95,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "跨服商会",
     "战报",
     "赛果回放",
+    "赛果回放已生成",
     "赛果摘要",
     "个人对比",
     "商会对比",

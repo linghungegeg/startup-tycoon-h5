@@ -4702,6 +4702,17 @@ const buildCrossServerBattleReport = (
   const topGuild = center.guildBoard.rows[0] ?? null;
   const personalRankLabel = personalRow === null ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`;
   const guildRankLabel = guildRow === null ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`;
+  const settlementLine =
+    rewardStatus === "待结算"
+      ? "赛前情报：结算后生成赛果回放。"
+      : rewardStatus === "已生成邮件"
+        ? "赛果回放：本次跨服结算已生成奖励邮件。"
+        : "赛果回放：本次跨服排名已复核，无重复奖励。";
+  const gapLabel = previousRow === null
+    ? nextRow === null
+      ? "当前暂无相邻名次差距。"
+      : `领先下一名 ${Math.max((personalRow?.value ?? 0) - nextRow.value, 0).toLocaleString("zh-CN")} 估值。`
+    : `距离上一名还差 ${Math.max(previousRow.value - (personalRow?.value ?? 0), 0).toLocaleString("zh-CN")} 估值。`;
 
   return {
     snapshotDate: personalBoard?.snapshotDate ?? center.guildBoard.snapshotDate,
@@ -4724,11 +4735,11 @@ const buildCrossServerBattleReport = (
       rewardStatus
     },
     lines: [
-      `跨服战报已汇总 ${center.group.serverIds.length} 个区服的经营表现。`,
-      personalRankLabel,
-      previousRow === null ? "当前暂无上一名差距。" : `距离上一名还差 ${Math.max(previousRow.value - (personalRow?.value ?? 0), 0).toLocaleString("zh-CN")} 估值。`,
-      guildRankLabel,
-      "奖励通过邮件发放。"
+      settlementLine,
+      `个人对比：${personalRankLabel}，${gapLabel}`,
+      `榜首对比：${personalRows[0]?.founderName ?? "榜首待定"} 领跑 ${center.group.serverIds.length} 个区服。`,
+      `商会对比：${guildRankLabel}，活跃 ${center.guildSeason.todayActiveMemberCount}/${center.guildSeason.minTodayActiveMembers}。`,
+      `奖励去向：${rewardStatus === "待结算" ? "结算后通过邮件发放。" : "奖励通过邮件发放。"}`
     ]
   };
 };

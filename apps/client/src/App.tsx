@@ -2882,7 +2882,7 @@ function App() {
     );
 
     if (response.success) {
-      setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服奖励已结算 ${response.data.deliveredRewards} 份。` : "跨服奖励已结算，本日没有重复发放。");
+      setPhase14Notice(response.data.deliveredRewards > 0 ? `赛果回放已生成，跨服奖励已结算 ${response.data.deliveredRewards} 份。` : "赛果回放已生成，本日没有重复发放。");
       setPhase14Error("");
       setActiveCrossServerMode("history");
       await loadPhase14Center(account.token, selectedServer.id);

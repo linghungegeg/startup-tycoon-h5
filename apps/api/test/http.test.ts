@@ -2361,7 +2361,13 @@ const createTestRepository = (): GameRepository => {
     };
     const personalRow = boards[0]?.rows.find((row) => row.profileId === profile.id);
     const previousRow = personalRow === undefined ? undefined : boards[0]?.rows.find((row) => row.rank === personalRow.rank - 1);
+    const nextRow = personalRow === undefined ? undefined : boards[0]?.rows.find((row) => row.rank === personalRow.rank + 1);
     const guildRow = member === undefined ? undefined : guildRows.find((row) => row.guildId === member.guildId);
+    const gapLabel = previousRow === undefined || personalRow === undefined
+      ? nextRow === undefined || personalRow === undefined
+        ? "当前暂无相邻名次差距。"
+        : `领先下一名 ${(personalRow.value - nextRow.value).toLocaleString("zh-CN")} 估值。`
+      : `距离上一名还差 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值。`;
     return {
       ...center,
       battleReport: {
@@ -2385,11 +2391,11 @@ const createTestRepository = (): GameRepository => {
           rewardStatus: "待结算"
         },
         lines: [
-          `跨服战报已汇总 ${group.serverIds.length} 个区服的经营表现。`,
-          personalRow === undefined ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`,
-          previousRow === undefined || personalRow === undefined ? "当前暂无上一名差距。" : `距离上一名还差 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值。`,
-          guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`,
-          "奖励通过邮件发放。"
+          "赛前情报：结算后生成赛果回放。",
+          `个人对比：${personalRow === undefined ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`}，${gapLabel}`,
+          `榜首对比：${boards[0]?.rows[0]?.founderName ?? "榜首待定"} 领跑 ${group.serverIds.length} 个区服。`,
+          `商会对比：${guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`}，活跃 ${todayActiveMemberCount}/${seasonRequirements.minTodayActiveMembers}。`,
+          "奖励去向：结算后通过邮件发放。"
         ]
       }
     };
@@ -5971,7 +5977,11 @@ const createTestRepository = (): GameRepository => {
         battleReport: {
           ...center.battleReport,
           personal: { ...center.battleReport.personal, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
-          guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" }
+          guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
+          lines: [
+            deliveredRewards > 0 ? "赛果回放：本次跨服结算已生成奖励邮件。" : "赛果回放：本次跨服排名已复核，无重复奖励。",
+            ...center.battleReport.lines.slice(1, 5).map((line) => line.replace("结算后通过邮件发放", "奖励通过邮件发放"))
+          ]
         }
       } satisfies LeaderboardSettlementRecord;
     },
@@ -10753,6 +10763,10 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(settled.status, 200);
     assert.ok((settled.body.data?.deliveredRewards ?? 0) > 0);
     assert.equal(settled.body.data?.battleReport.personal.rewardStatus, "已生成邮件");
+    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("赛果回放")));
+    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("个人对比")));
+    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("商会对比")));
+    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("奖励去向")));
     assert.match(settled.body.data?.battleReport.lines[0] ?? "", /跨服/);
 
     const duplicate = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
