@@ -960,6 +960,7 @@ type MailRecord = {
   isRead: boolean;
   canClaim: boolean;
   claimStatus: "none" | "claimable" | "claimed";
+  statusLabel: string;
 };
 
 type MailCenter = {
@@ -2895,6 +2896,7 @@ function App() {
     if (response.success) {
       setCrossServerCenter(response.data.crossServer);
       setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
+      await syncMailCenterAfterReward(response.data.deliveredRewards);
       setPhase14Notice(response.data.deliveredRewards > 0 ? `今日跨服奖励已领取：声望 +${response.data.rewardReputation}` : "今日跨服奖励已领取。");
       setPhase14Error("");
       return;
@@ -2920,6 +2922,7 @@ function App() {
     if (response.success) {
       setCrossServerCenter(response.data.crossServer);
       setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
+      await syncMailCenterAfterReward(response.data.deliveredRewards);
       setPhase14Notice(response.data.deliveredRewards > 0 ? `跨服阶段奖励已领取：声望 +${response.data.rewardReputation}` : "跨服阶段奖励已领取。");
       setPhase14Error("");
       return;
@@ -3754,6 +3757,18 @@ function App() {
     }
     setMailError(response.error.message);
   };
+
+  const syncMailCenterAfterReward = async (deliveredRewards: number): Promise<void> => {
+    if (!account || !selectedServer || deliveredRewards <= 0) {
+      return;
+    }
+    setProfile((current) => current === null ? current : { ...current, unreadMailCount: current.unreadMailCount + deliveredRewards });
+    if (mailCenter !== null || nativeHomePage === "mail") {
+      await loadMailCenter(account.token, selectedServer.id);
+    }
+  };
+
+  const getMailStatusLabel = (mail: MailRecord): string => mail.statusLabel || (mail.claimStatus === "claimable" ? "待领取" : mail.claimStatus === "claimed" ? "已领取" : mail.rewardSummary ? "已入账" : "已读");
 
   const markAllMailsRead = async (): Promise<void> => {
     if (!account || !selectedServer) {
@@ -5055,7 +5070,7 @@ function App() {
                               <span className="shrink-0 text-[9px] text-business-gold">{mail.channel === "reward" ? "奖励" : mail.channel === "compensation" ? "补偿" : "系统"}</span>
                             </div>
                             <p className="mt-1 truncate text-[10px] text-slate-400">{mail.body}</p>
-                            {mail.rewardSummary && <span className="mt-1 block text-[9px] font-black text-business-gold">{mail.rewardSummary}{mail.claimStatus === "claimable" ? " · 待领取" : mail.claimStatus === "claimed" ? " · 已领取" : ""}</span>}
+                            {mail.rewardSummary && <span className="mt-1 block text-[9px] font-black text-business-gold">{mail.rewardSummary} · {getMailStatusLabel(mail)}</span>}
                           </button>
                         ))}
                       </section>
@@ -5069,7 +5084,7 @@ function App() {
                               <span className="shrink-0 text-[9px] text-slate-500">{new Date(selectedMail.createdAt).toLocaleDateString("zh-CN")}</span>
                             </div>
                             <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">{selectedMail.body}</p>
-                            {selectedMail.rewardSummary && <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励：{selectedMail.rewardSummary}{selectedMail.claimStatus === "claimable" ? " · 待领取" : selectedMail.claimStatus === "claimed" ? " · 已领取" : ""}</p>}
+                            {selectedMail.rewardSummary && <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] font-black text-business-gold">奖励：{selectedMail.rewardSummary} · {getMailStatusLabel(selectedMail)}</p>}
                             {selectedMail.canClaim && (
                               <button className="mt-2 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark" type="button" onClick={() => void claimMailAttachments()}>
                                 领取附件

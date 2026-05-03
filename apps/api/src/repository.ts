@@ -1741,6 +1741,7 @@ export type MailRecord = {
   platformCoins: number;
   canClaim: boolean;
   claimStatus: "none" | "claimable" | "claimed";
+  statusLabel: string;
   createdAt: string;
   isRead: boolean;
 };
@@ -6329,6 +6330,7 @@ export const createPrismaGameRepository = (
         platformCoins: mail.platformCoins,
         canClaim: false,
         claimStatus: "claimed",
+        statusLabel: mail.platformCoins > 0 ? "已领取" : "已读",
         createdAt: mail.createdAt.toISOString(),
         isRead: profile.unreadMailCount === 0
       })),
@@ -6348,6 +6350,7 @@ export const createPrismaGameRepository = (
         platformCoins: delivery.rewardPlatformCoins,
         canClaim: delivery.rewardPlatformCoins > 0 && !claimedReferenceIds.has(delivery.id),
         claimStatus: delivery.rewardPlatformCoins <= 0 ? "none" : claimedReferenceIds.has(delivery.id) ? "claimed" : "claimable",
+        statusLabel: delivery.rewardPlatformCoins <= 0 ? "已入账" : claimedReferenceIds.has(delivery.id) ? "已领取" : "待领取",
         createdAt: delivery.deliveredAt.toISOString(),
         isRead: profile.unreadMailCount === 0
       }))

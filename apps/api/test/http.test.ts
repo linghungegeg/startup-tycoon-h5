@@ -4274,7 +4274,8 @@ const createTestRepository = (): GameRepository => {
           createdAt: mail.createdAt,
           isRead: profile.unreadMailCount === 0,
           canClaim: false,
-          claimStatus: "claimed" as const
+          claimStatus: "claimed" as const,
+          statusLabel: mail.platformCoins > 0 ? "已领取" : "已读"
         }));
       const rewardMails = [...leaderboardRewards]
         .map((key) => {
@@ -4284,19 +4285,22 @@ const createTestRepository = (): GameRepository => {
         .filter((mail) => mail.profileId === profile.id)
         .map((mail) => {
           const id = `reward:${mail.boardKey}:${mail.snapshotDate}`;
-          const platformCoins = mail.boardKey.includes("cross-daily-goal") ? 0 : 60;
+          const isCrossReputationReward = mail.boardKey.includes("cross-daily-goal") || mail.boardKey.startsWith("cross-stage-");
+          const platformCoins = isCrossReputationReward ? 0 : 60;
+          const reputationReward = mail.boardKey === "cross-stage-3" ? 60 : 30;
           return {
             id,
             profileId: profile.id,
             channel: "reward" as const,
             subject: `${mail.boardKey.includes("cross") ? "跨服榜" : "排行榜"}奖励`,
-            body: platformCoins > 0 ? "榜单奖励已送达邮箱。" : "今日跨服目标已完成。",
-            rewardSummary: platformCoins > 0 ? `平台币 +${platformCoins}` : "声望 +30",
+            body: platformCoins > 0 ? "榜单奖励已送达邮箱。" : mail.boardKey.startsWith("cross-stage-") ? "跨服阶段奖励已完成。" : "今日跨服目标已完成。",
+            rewardSummary: platformCoins > 0 ? `平台币 +${platformCoins}` : `声望 +${reputationReward}`,
             platformCoins,
             createdAt: `${mail.snapshotDate}T00:00:00.000Z`,
             isRead: profile.unreadMailCount === 0,
             canClaim: platformCoins > 0 && !claimedMailRewardIds.has(id),
-            claimStatus: platformCoins <= 0 ? "none" as const : claimedMailRewardIds.has(id) ? "claimed" as const : "claimable" as const
+            claimStatus: platformCoins <= 0 ? "none" as const : claimedMailRewardIds.has(id) ? "claimed" as const : "claimable" as const,
+            statusLabel: platformCoins <= 0 ? "已入账" : claimedMailRewardIds.has(id) ? "已领取" : "待领取"
           };
         });
       const mails = [...compensationMails, ...rewardMails].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -10845,6 +10849,14 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
     });
     assert.equal(afterDailyReward.body.data?.reputation, (beforeDailyReward.body.data?.reputation ?? 0) + 30);
+    assert.equal(afterDailyReward.body.data?.unreadMailCount, (beforeDailyReward.body.data?.unreadMailCount ?? 0) + 1);
+    const dailyRewardMails = await requestJson<MailCenterRecord>(baseUrl, "/mails?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    const dailyRewardMail = dailyRewardMails.body.data?.mails.find((mail) => mail.rewardSummary === "声望 +30");
+    assert.equal(dailyRewardMail?.statusLabel, "已入账");
+    assert.equal(dailyRewardMail?.canClaim, false);
+    assert.equal(dailyRewardMail?.claimStatus, "none");
 
     const duplicateDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
       method: "POST",
@@ -10886,6 +10898,14 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
     });
     assert.equal(afterStageReward.body.data?.reputation, (beforeStageReward.body.data?.reputation ?? 0) + 60);
+    assert.equal(afterStageReward.body.data?.unreadMailCount, (beforeStageReward.body.data?.unreadMailCount ?? 0) + 1);
+    const stageRewardMails = await requestJson<MailCenterRecord>(baseUrl, "/mails?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
+    });
+    const stageRewardMail = stageRewardMails.body.data?.mails.find((mail) => mail.rewardSummary === "声望 +60");
+    assert.equal(stageRewardMail?.statusLabel, "已入账");
+    assert.equal(stageRewardMail?.canClaim, false);
+    assert.equal(stageRewardMail?.claimStatus, "none");
     const duplicateStageReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/stage-reward/claim", {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },

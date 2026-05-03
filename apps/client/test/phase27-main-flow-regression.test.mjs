@@ -166,6 +166,7 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
     "领取附件",
     "待领取",
     "已领取",
+    "已入账",
     "暂无邮件"
   ]) {
     assert.ok(source.includes(copy), `missing mail center copy: ${copy}`);
@@ -185,6 +186,10 @@ test("phase 30 client exposes mail capsule and full-screen mail center", () => {
   assert.match(source, /data-testid="mail-mark-all-read"/, "mark all read button should stay addressable");
   assert.match(source, /data-testid="mail-claim-attachments"/, "mail attachment claim button should stay addressable");
   assert.match(source, /claimStatus: "none" \| "claimable" \| "claimed"/, "mail records should expose attachment claim status");
+  assert.match(source, /statusLabel: string/, "mail records should expose a player-readable delivery status");
+  assert.match(source, /mail\.statusLabel/, "mail center should render player-readable delivery status");
+  assert.match(source, /syncMailCenterAfterReward/, "cross-server reward claims should sync mail center after delivery");
+  assert.match(source, /unreadMailCount: current\.unreadMailCount \+ deliveredRewards/, "cross-server reward claims should update home mail unread count");
   assert.doesNotMatch(source, /Mail 邮件中心/, "mail should not keep a separate English top title");
   assert.doesNotMatch(source, /邮件读取中，请确认 API 服务已启动。/, "player mail empty/loading copy should avoid engineering wording");
   assert.match(source, /\/mails\?serverId=/, "client should load mail center from API");
