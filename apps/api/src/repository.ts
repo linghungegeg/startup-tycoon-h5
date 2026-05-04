@@ -5275,6 +5275,72 @@ export const selectEmployeeRandomTaskConfig = <TConfig extends { id: string; cat
   return availableConfigs[0] ?? null;
 };
 
+const employeePressureTaskIdSet = new Set(employeePressureTaskIds);
+const employeeLoyaltyTaskIdSet = new Set(employeeLoyaltyTaskIds);
+const employeeOnboardingTaskIdSet = new Set(employeeOnboardingTaskIds);
+
+const selectEmployeeEventTarget = (
+  employees: Array<{ id: string; pressure: number; loyalty: number; level: number }>,
+  configId: string
+): { id: string; pressure: number; loyalty: number; level: number } | null => {
+  if (employees.length === 0) {
+    return null;
+  }
+
+  const ranked = [...employees];
+  if (employeeLoyaltyTaskIdSet.has(configId)) {
+    ranked.sort((left, right) => left.loyalty - right.loyalty || right.pressure - left.pressure);
+    return ranked[0] ?? null;
+  }
+  if (employeeOnboardingTaskIdSet.has(configId)) {
+    ranked.sort((left, right) => left.level - right.level || right.pressure - left.pressure);
+    return ranked[0] ?? null;
+  }
+  if (employeePressureTaskIdSet.has(configId)) {
+    ranked.sort((left, right) => right.pressure - left.pressure || left.loyalty - right.loyalty);
+    return ranked[0] ?? null;
+  }
+
+  ranked.sort((left, right) => right.pressure - left.pressure || left.loyalty - right.loyalty);
+  return ranked[0] ?? null;
+};
+
+const applyEmployeeRandomTaskResult = async (
+  tx: Prisma.TransactionClient,
+  profileId: string,
+  configId: string,
+  outcome: "resolvedA" | "resolvedB" | "dismissed"
+) => {
+  if (!configId.startsWith("random-employee-")) {
+    return;
+  }
+
+  const employees = await tx.playerEmployee.findMany({
+    where: { profileId, isActive: true },
+    select: { id: true, pressure: true, loyalty: true, level: true }
+  });
+  const target = selectEmployeeEventTarget(employees, configId);
+  if (target === null) {
+    return;
+  }
+
+  const pressureDelta = outcome === "dismissed" ? 0 : outcome === "resolvedA" ? -8 : 4;
+  const loyaltyDelta = outcome === "dismissed" ? 0 : outcome === "resolvedA" ? 4 : -3;
+  const nextPressure = clampNumber(target.pressure + pressureDelta, 0, 100);
+  const nextLoyalty = clampNumber(target.loyalty + loyaltyDelta, 0, 100);
+  const eventState = outcome === "dismissed" ? "已保留" : outcome === "resolvedA" ? "风险缓解" : "继续关注";
+
+  await tx.playerEmployee.update({
+    where: { id: target.id },
+    data: {
+      pressure: { set: nextPressure },
+      loyalty: { set: nextLoyalty },
+      pressureState: nextPressure >= 60 ? "偏高" : "稳定",
+      eventState
+    }
+  });
+};
+
 const readFullLevelChest = (fullLevelOverflowExperience: number, claimedCount: number): CompanyGrowthRecord["fullLevelChest"] => {
   const earnedCount = Math.floor(fullLevelOverflowExperience / FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE);
   return {
@@ -8072,6 +8138,7 @@ export const createPrismaGameRepository = (
           resolvedAt: new Date()
         }
       });
+      await applyEmployeeRandomTaskResult(tx, profile.id, randomTask.config.id, option === "A" ? "resolvedA" : "resolvedB");
       const updatedProfile = await tx.playerProfile.update({
         where: { id: profile.id },
         data: {
@@ -8138,6 +8205,9 @@ export const createPrismaGameRepository = (
         resultSummary: "已暂时跳过本次展示，本次不消耗行动力。",
         resolvedAt: new Date()
       }
+    });
+    await prisma.$transaction(async (tx) => {
+      await applyEmployeeRandomTaskResult(tx, profile.id, randomTask.config.id, "dismissed");
     });
     const center = await this.listRandomTasks(accountId, serverId, today);
     if (center === "PLAYER_NOT_FOUND") {

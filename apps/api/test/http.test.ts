@@ -1034,6 +1034,27 @@ const createTestRepository = (): GameRepository => {
       optionBReputation: 90,
       optionBCompanyExperience: 45,
       knowledgeId: "ai-agent-season-playbook"
+    },
+    {
+      id: "random-employee-burnout",
+      category: "employee",
+      title: "核心员工压力升高",
+      description: "一名核心员工连续加班，专属经理建议你立即介入处理。",
+      source: "员工私信",
+      riskLabel: "员工压力",
+      optionALabel: "亲自沟通并安排补休",
+      optionAResult: "团队信任提升，短期效率略降，但降低离职风险。",
+      optionAActionPower: -15,
+      optionACash: -20000,
+      optionAReputation: 300,
+      optionACompanyExperience: 65,
+      optionBLabel: "发放小额激励",
+      optionBResult: "现金支出增加，员工状态暂时稳定。",
+      optionBActionPower: -5,
+      optionBCash: -50000,
+      optionBReputation: 120,
+      optionBCompanyExperience: 45,
+      knowledgeId: "labor-overtime-pay"
     }
   ];
   const playerRandomTasks = new Map<string, RandomTaskCenterRecord["tasks"][number]>();
@@ -3135,6 +3156,22 @@ const createTestRepository = (): GameRepository => {
       }
     ]
   });
+  const applyEmployeeRandomTaskResult = (profileId: string, configId: string, outcome: "resolvedA" | "resolvedB" | "dismissed") => {
+    if (!configId.startsWith("random-employee-")) {
+      return;
+    }
+    const activeEmployees = [...employees.values()].filter((employee) => employee.id.startsWith(`${profileId}:`) && employee.isActive);
+    const target = activeEmployees.sort((left, right) => right.pressure - left.pressure || left.loyalty - right.loyalty)[0];
+    if (target === undefined) {
+      return;
+    }
+    const pressureDelta = outcome === "dismissed" ? 0 : outcome === "resolvedA" ? -8 : 4;
+    const loyaltyDelta = outcome === "dismissed" ? 0 : outcome === "resolvedA" ? 4 : -3;
+    target.pressure = Math.max(0, Math.min(100, target.pressure + pressureDelta));
+    target.loyalty = Math.max(0, Math.min(100, target.loyalty + loyaltyDelta));
+    target.pressureState = target.pressure >= 60 ? "偏高" : "稳定";
+    target.eventState = outcome === "dismissed" ? "已保留" : outcome === "resolvedA" ? "风险缓解" : "继续关注";
+  };
   const toSeasonCenter = (profile: PlayerProfileRecord, today: string) => {
     const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
     const wallet = ensureWallet(profile);
@@ -5876,10 +5913,19 @@ const createTestRepository = (): GameRepository => {
       const visibleCount = hasSeasonPass ? 4 : 3;
       const createCount = Math.max(0, Math.min(visibleCount - pendingCount, dailyLimit - existingToday.length));
       const existingConfigIds = new Set(existingToday.map((task) => task.configId));
-      const nextConfigs = randomTaskConfigs
+      const activeEmployees = [...employees.values()].filter((employee) => employee.id.startsWith(`${profile.id}:`) && employee.isActive);
+      const employeeConfig = activeEmployees.length === 0 || existingConfigIds.has("random-employee-burnout")
+        ? undefined
+        : randomTaskConfigs.find((config) => config.id === "random-employee-burnout");
+      const baseConfigs = randomTaskConfigs
         .filter((config) => hasSeasonPass || config.category !== "season")
         .filter((config) => !existingConfigIds.has(config.id))
-        .sort((left, right) => Number(right.category === "season" && hasSeasonPass) - Number(left.category === "season" && hasSeasonPass))
+        .filter((config) => config.id !== employeeConfig?.id)
+        .sort((left, right) => Number(right.category === "season" && hasSeasonPass) - Number(left.category === "season" && hasSeasonPass));
+      const nextConfigs = [
+        ...(employeeConfig === undefined ? [] : [employeeConfig]),
+        ...baseConfigs
+      ]
         .slice(0, createCount);
       for (const config of nextConfigs) {
         const task = toRandomTask(profile.id, config, today);
@@ -5967,6 +6013,7 @@ const createTestRepository = (): GameRepository => {
       task.status = "resolved";
       task.selectedOption = option;
       task.resultSummary = usedItem === undefined ? selected.result : `${selected.result} ${effectSummary}`;
+      applyEmployeeRandomTaskResult(profile.id, task.configId, option === "A" ? "resolvedA" : "resolvedB");
       profile.companyExperience += nextCompanyExperienceReward;
       const center = await this.listRandomTasks(accountId, serverId, today);
       assert.notEqual(center, "PLAYER_NOT_FOUND");
@@ -5992,6 +6039,7 @@ const createTestRepository = (): GameRepository => {
       }
       task.status = "dismissed";
       task.resultSummary = "已暂时跳过本次展示，本次不消耗行动力。";
+      applyEmployeeRandomTaskResult(profile.id, task.configId, "dismissed");
       const center = await this.listRandomTasks(accountId, serverId, today);
       assert.notEqual(center, "PLAYER_NOT_FOUND");
       return { center, task, profile, result: task.resultSummary } satisfies RandomTaskActionRecord;
@@ -10022,6 +10070,87 @@ test("random task settlement returns linked knowledge summary", async () => {
     assert.equal(settled.body.data?.task.knowledge?.id, "cashflow-safety-line");
     assert.equal(settled.body.data?.task.knowledge?.sourceName, "国家税务总局");
     assert.equal(settled.body.data?.task.knowledge?.isUnlocked, false);
+  });
+});
+
+test("employee random task results update employee state", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "employeeeventstate");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-04" };
+
+    const recruited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(recruited.status, 201);
+    const employeeId = recruited.body.data?.id ?? "";
+
+    let trainedEmployee = recruited.body.data;
+    for (let index = 0; index < 13; index += 1) {
+      const trained = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(employeeId)}/train`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(trained.status, 200);
+      trainedEmployee = trained.body.data;
+    }
+    assert.ok((trainedEmployee?.pressure ?? 0) >= 60);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", { headers });
+    assert.equal(center.status, 200);
+    const employeeTask = center.body.data?.tasks.find((task) => task.category === "employee");
+    assert.ok(employeeTask);
+
+    const settled = await requestJson<RandomTaskActionRecord>(baseUrl, `/random-tasks/${encodeURIComponent(employeeTask.id)}/resolve`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", option: "A" })
+    });
+    assert.equal(settled.status, 200);
+
+    const afterEmployees = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers });
+    assert.equal(afterEmployees.status, 200);
+    const afterEmployee = afterEmployees.body.data?.find((employee) => employee.id === employeeId);
+    assert.ok(afterEmployee);
+    assert.ok(afterEmployee.pressure < (trainedEmployee?.pressure ?? 0));
+    assert.ok(afterEmployee.loyalty >= (trainedEmployee?.loyalty ?? 0));
+    assert.equal(afterEmployee.eventState, "风险缓解");
+  });
+});
+
+test("dismissing employee random task keeps action power and marks employee event", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "employeeeventdismiss");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-04" };
+
+    const recruited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(recruited.status, 201);
+
+    const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", { headers });
+    assert.equal(center.status, 200);
+    const employeeTask = center.body.data?.tasks.find((task) => task.category === "employee");
+    assert.ok(employeeTask);
+    const beforeActionPower = center.body.data?.profile.actionPower;
+
+    const dismissed = await requestJson<RandomTaskActionRecord>(baseUrl, `/random-tasks/${encodeURIComponent(employeeTask.id)}/dismiss`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(dismissed.status, 200);
+    assert.equal(dismissed.body.data?.task.status, "dismissed");
+    assert.equal(dismissed.body.data?.profile.actionPower, beforeActionPower);
+
+    const afterEmployees = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers });
+    assert.equal(afterEmployees.status, 200);
+    assert.equal(afterEmployees.body.data?.[0]?.eventState, "已保留");
+    assert.equal(profile.serverId, "s1");
   });
 });
 
