@@ -404,6 +404,21 @@ const createTestRepository = (): GameRepository => {
       unlockKind: "none" as const
     },
     {
+      id: "daily-employee-recruit",
+      type: "daily" as const,
+      title: "补齐岗位短板",
+      description: "完成一次员工招募，优先补齐产品、市场或资本团队岗位。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "培养手册 1、声望 120",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
       id: "daily-project-push",
       type: "daily" as const,
       title: "推进项目",
@@ -14498,9 +14513,42 @@ test("manager goals surface employee business gaps with routed actions", async (
     assert.ok(employeeGoal, "today goals should include employee business guidance");
     assert.match(employeeGoal.description, /补齐|团队|岗位/);
     assert.equal(employeeGoal.action.targetNav, "员工");
-    assert.equal(employeeGoal.action.targetTab, "图鉴");
+    assert.equal(employeeGoal.action.targetTab, "招募");
     assert.ok(employeeGoal.action.missingRoles.includes("产品经理"));
     assert.match(employeeGoal.action.reason ?? "", /产品|市场|融资/);
+  });
+});
+
+test("employee collection goals route to targeted recruit and daily recruit task", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "employeecollectionloop");
+    const headers = { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-10" };
+
+    const goals = await requestJson<LongTermGoalsRecord>(baseUrl, "/long-term-goals?serverId=s1", { headers });
+    assert.equal(goals.status, 200, JSON.stringify(goals.body));
+    const employeeGoal = goals.body.data?.sections.find((section) => section.key === "today")?.goals.find((goal) => goal.id === "today-employee-guidance");
+    assert.ok(employeeGoal, "today goals should include employee collection guidance");
+    assert.equal(employeeGoal.action.targetNav, "员工");
+    assert.equal(employeeGoal.action.targetTab, "招募");
+    assert.ok((employeeGoal.action.missingRoles ?? []).length > 0);
+
+    const beforeTasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers });
+    assert.equal(beforeTasks.status, 200);
+    const recruitTaskBefore = beforeTasks.body.data?.find((task) => task.id === "daily-employee-recruit");
+    assert.ok(recruitTaskBefore, "daily tasks should include employee recruit loop");
+    assert.equal(recruitTaskBefore.progress, 0);
+
+    const recruited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(recruited.status, 201, JSON.stringify(recruited.body));
+
+    const afterTasks = await requestJson<TaskRecord[]>(baseUrl, "/tasks?serverId=s1", { headers });
+    const recruitTaskAfter = afterTasks.body.data?.find((task) => task.id === "daily-employee-recruit");
+    assert.equal(recruitTaskAfter?.progress, 1);
+    assert.equal(recruitTaskAfter?.isClaimable, true);
   });
 });
 

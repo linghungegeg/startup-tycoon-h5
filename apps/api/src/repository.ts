@@ -5193,7 +5193,7 @@ export const buildEmployeeBusinessGuidance = (input: {
       title: "补齐产品团队岗位",
       description: `补齐${productMissingRoles.slice(0, 2).join("、")}后，产品推进更稳。`,
       targetNav: "员工",
-      targetTab: "图鉴",
+      targetTab: "招募",
       reason: `产品研发：${input.productEffect?.summary ?? "需要关键岗位支撑"}`,
       missingRoles: productMissingRoles
     };
@@ -5204,8 +5204,8 @@ export const buildEmployeeBusinessGuidance = (input: {
     return {
       title: "补齐市场应对岗位",
       description: `竞品行动待处理，建议补齐${marketMissingRoles.slice(0, 2).join("、")}支撑。`,
-      targetNav: "市场",
-      targetTab: "市场",
+      targetNav: "员工",
+      targetTab: "招募",
       reason: `市场竞争：${input.marketEffect?.summary ?? "需要岗位支撑"}`,
       missingRoles: marketMissingRoles
     };
@@ -5216,8 +5216,8 @@ export const buildEmployeeBusinessGuidance = (input: {
     return {
       title: "补齐资本团队岗位",
       description: `补齐${fundingMissingRoles.slice(0, 2).join("、")}，提高路演把握。`,
-      targetNav: "融资",
-      targetTab: null,
+      targetNav: "员工",
+      targetTab: "招募",
       reason: `融资路演：${input.fundingEffect?.summary ?? "需要岗位支撑"}`,
       missingRoles: fundingMissingRoles
     };

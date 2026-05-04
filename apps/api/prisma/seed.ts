@@ -423,6 +423,24 @@ const taskConfigs = [
     sortOrder: 10
   },
   {
+    id: "daily-employee-recruit",
+    type: "daily",
+    title: "补齐岗位短板",
+    description: "完成一次员工招募，优先补齐产品、市场或资本团队岗位。",
+    target: 1,
+    initialProgress: 0,
+    rewardLabel: "培养手册 1、声望 120",
+    rewardCash: 0,
+    rewardPlatformCoins: 0,
+    rewardReputation: 120,
+    rewardActionPower: 0,
+    rewardItemId: "training-manual",
+    rewardItemQuantity: 1,
+    guideAction: "前往员工",
+    unlockKind: "none",
+    sortOrder: 11
+  },
+  {
     id: "daily-project-push",
     type: "daily",
     title: "推进项目",
@@ -690,6 +708,7 @@ const taskCompanyExperienceRewards: Record<string, number> = {
   ...expandedMainTaskExperienceRewards,
   "daily-login": 40,
   "daily-train-employee": 50,
+  "daily-employee-recruit": 50,
   "daily-project-push": 60,
   "daily-handle-event": 60,
   "daily-finance-review": 50,

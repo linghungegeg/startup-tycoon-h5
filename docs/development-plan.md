@@ -2873,6 +2873,23 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase34-employee-closure.test.mjs`、`node apps/client/test/phase35-employee-system-depth.test.mjs`、`node apps/client/test/phase36-employee-business-effect.test.mjs`、`node apps/client/test/phase37-manager-employee-guidance.test.mjs`、`node apps/client/test/phase38-guild-retention-depth.test.mjs`、`node apps/client/test/phase39-employee-48-collection.test.mjs`，以及员工、市场、融资、商会相关 API 定向测试、typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：本批稳定后再评估员工 60 人长期池或头像资源替换；不在本批加入新员工剧情树、皮肤商店或限定付费池。
 
+### Phase 35：员工收集目标闭环
+
+- 当前稳定点：`556c681 feat: expand employee collection to 48`。
+- 阶段目标：不扩 60 人、不做头像美术和新付费池，只把员工图鉴的资本团队、市场团队、产品团队目标接入每日回访、专属经理和定向猎头。
+- 完成内容：
+  - 图鉴收集目标显示 `已拥有/目标岗位数` 和短板状态，继续保持紧凑信息条。
+  - 专属经理员工建议优先跳转员工招募页，并把缺口岗位传给定向猎头作为默认岗位；玩家仍可自由切换，不硬锁玩法。
+  - 新增每日轻任务 `daily-employee-recruit`，完成一次员工招募即可推进，奖励为培养材料和声望，不做直接战力膨胀。
+  - 招募动作推进首名员工、招聘渠道和每日招募任务，保持旧 `/employees/recruit` 行为兼容。
+- 四插件证据：
+  - Superpowers：按 TDD 先补 phase40 和 API 红灯，再做最小实现。
+  - Build Web Apps：图鉴目标只补短状态，不新增大卡片或教学弹窗，竖屏卡片不横向滚动。
+  - Game Studio：员工收集目标成为中期岗位补齐和每日回访理由，不改变市场、融资、商会既有闭环。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收经理建议跳员工招募、定向岗位默认短板、图鉴目标和 Console。
+- 验证命令：`node apps/client/test/phase40-employee-collection-loop.test.mjs`、`node --import tsx --test --test-name-pattern "employee collection goals route" apps/api/test/http.test.ts`，以及员工、经理、主流程、typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：本批稳定后再考虑员工 60 人长期池或正式头像资源；不在本批加入员工剧情树、皮肤商店或限定池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

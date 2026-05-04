@@ -2514,10 +2514,19 @@ function App() {
     const ownedStatuses = new Set(["已招募", "已离岗"]);
     const countOwnedByRoles = (roles: string[]) =>
       entries.filter((entry) => ownedStatuses.has(entry.status) && roles.includes(entry.role)).length;
+    const buildGoal = (label: string, roles: string[], hint: string) => {
+      const value = countOwnedByRoles(roles);
+      return {
+        label,
+        value,
+        target: roles.length,
+        hint: `${value >= roles.length ? "岗位基本成型" : `还缺 ${roles.length - value} 个关键岗位`} · ${hint}`
+      };
+    };
     return [
-      { label: "资本团队", value: countOwnedByRoles(["投资关系", "财务", "法务", "高管", "顾问"]), hint: "支撑融资路演和贷款判断" },
-      { label: "市场团队", value: countOwnedByRoles(["市场", "公关", "销售", "客服", "法务"]), hint: "支撑竞品应对和客户迁移" },
-      { label: "产品团队", value: countOwnedByRoles(["产品经理", "工程师", "运营", "市场"]), hint: "支撑产品推进和留存增长" }
+      buildGoal("资本团队", ["投资关系", "财务", "法务", "高管", "顾问"], "支撑融资路演和贷款判断"),
+      buildGoal("市场团队", ["市场", "公关", "销售", "客服", "法务"], "支撑竞品应对和客户迁移"),
+      buildGoal("产品团队", ["产品经理", "工程师", "运营", "市场"], "支撑产品推进和留存增长")
     ];
   }, [employeeCollection?.entries]);
   const selectedTargetRecruitRole = targetRecruitRole || employeeRecruitRoles[0] || "";
@@ -5150,6 +5159,11 @@ function App() {
       }
       if (goal.action.targetTab === "养成") {
         setEmployeeViewTab("growth");
+      }
+      if (goal.action.targetTab === "招募") {
+        setEmployeeViewTab("recruit");
+        setEmployeeRecruitMode("targeted");
+        setTargetRecruitRole(goal.action.missingRoles?.[0] ?? targetRecruitRole);
       }
       return;
     }
@@ -8653,7 +8667,7 @@ function App() {
                       {employeeCollectionGoalRows.map((goal) => (
                         <span key={goal.label}>
                           <b>{goal.label}</b>
-                          <em>{goal.value}</em>
+                          <em>{goal.value}/{goal.target}</em>
                           <small>{goal.hint}</small>
                         </span>
                       ))}

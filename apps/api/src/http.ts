@@ -4340,6 +4340,7 @@ export const createApiServer = (
 
       await repository.advanceTask(account.id, serverId, "main-first-employee", readToday(request));
       await repository.advanceTask(account.id, serverId, "main-recruit-channel", readToday(request));
+      await repository.advanceTask(account.id, serverId, "daily-employee-recruit", readToday(request));
       sendJson(response, 201, success(employee, traceId));
       return;
     }
