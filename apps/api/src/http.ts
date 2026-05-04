@@ -10,7 +10,6 @@ type ApiSuccess<T> = {
   data: T;
   traceId: string;
 };
-
 type ApiFailure = {
   success: false;
   error: {
@@ -3788,7 +3787,7 @@ export const createApiServer = (
         return;
       }
       if (result === "COMPETITOR_ACTION_NOT_FOUND") {
-        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "No competitor action is available.", traceId));
+        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "暂无新的竞品行动。", traceId));
         return;
       }
 
@@ -3823,15 +3822,15 @@ export const createApiServer = (
         return;
       }
       if (result === "COMPETITOR_ACTION_NOT_FOUND") {
-        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "Competitor action not found.", traceId));
+        sendJson(response, 404, failure("COMPETITOR_ACTION_NOT_FOUND", "竞品行动不存在。", traceId));
         return;
       }
       if (result === "COMPETITOR_ACTION_SETTLED") {
-        sendJson(response, 409, failure("COMPETITOR_ACTION_SETTLED", "Competitor action has already been resolved.", traceId));
+        sendJson(response, 409, failure("COMPETITOR_ACTION_SETTLED", "该竞品行动已处理。", traceId));
         return;
       }
       if (result === "INSUFFICIENT_CASH") {
-        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this market response.", traceId));
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法应对市场行动。", traceId));
         return;
       }
 
@@ -3863,11 +3862,11 @@ export const createApiServer = (
         return;
       }
       if (result === "PRODUCT_ALREADY_ACTIVE") {
-        sendJson(response, 409, failure("PRODUCT_ALREADY_ACTIVE", "This product line is already active.", traceId));
+        sendJson(response, 409, failure("PRODUCT_ALREADY_ACTIVE", "该产品线已立项。", traceId));
         return;
       }
       if (result === "INSUFFICIENT_CASH") {
-        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this product action.", traceId));
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法推进产品。", traceId));
         return;
       }
 
@@ -3910,11 +3909,11 @@ export const createApiServer = (
         return;
       }
       if (result === "PRODUCT_CLOSED") {
-        sendJson(response, 409, failure("PRODUCT_CLOSED", "Product line has already been closed.", traceId));
+        sendJson(response, 409, failure("PRODUCT_CLOSED", "产品线已关闭。", traceId));
         return;
       }
       if (result === "INSUFFICIENT_CASH") {
-        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for this product action.", traceId));
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法推进产品。", traceId));
         return;
       }
 
@@ -3949,11 +3948,11 @@ export const createApiServer = (
         return;
       }
       if (result === "FUNDING_LOCKED") {
-        sendJson(response, 409, failure("FUNDING_LOCKED", "Financing terms are not available.", traceId));
+        sendJson(response, 409, failure("FUNDING_LOCKED", "当前融资条件暂不可谈。", traceId));
         return;
       }
       if (result === "FUNDING_ALREADY_ACTIVE") {
-        sendJson(response, 409, failure("FUNDING_ALREADY_ACTIVE", "This financing negotiation is already active.", traceId));
+        sendJson(response, 409, failure("FUNDING_ALREADY_ACTIVE", "这轮融资正在谈判中。", traceId));
         return;
       }
 
@@ -3989,7 +3988,7 @@ export const createApiServer = (
         return;
       }
       if (result === "FUNDING_ALREADY_SETTLED") {
-        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "这轮融资已结算。", traceId));
         return;
       }
 
@@ -4023,7 +4022,7 @@ export const createApiServer = (
         return;
       }
       if (result === "FUNDING_ALREADY_SETTLED") {
-        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "这轮融资已结算。", traceId));
         return;
       }
 
@@ -4058,7 +4057,7 @@ export const createApiServer = (
         return;
       }
       if (result === "FUNDING_LOCKED") {
-        sendJson(response, 409, failure("FUNDING_LOCKED", "Follow-on investment is not available.", traceId));
+        sendJson(response, 409, failure("FUNDING_LOCKED", "当前暂不能追加融资。", traceId));
         return;
       }
 
@@ -4091,11 +4090,11 @@ export const createApiServer = (
         return;
       }
       if (result === "FUNDING_ALREADY_SETTLED") {
-        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "Financing record has already been settled.", traceId));
+        sendJson(response, 409, failure("FUNDING_ALREADY_SETTLED", "这轮融资已结算。", traceId));
         return;
       }
       if (result === "FUNDING_LOCKED") {
-        sendJson(response, 409, failure("FUNDING_LOCKED", "Financing terms are blocked or disbursement is paused.", traceId));
+        sendJson(response, 409, failure("FUNDING_LOCKED", "融资条款受阻或打款已暂停。", traceId));
         return;
       }
 
@@ -4128,15 +4127,15 @@ export const createApiServer = (
         return;
       }
       if (result === "CREDIT_NOT_ENOUGH") {
-        sendJson(response, 409, failure("CREDIT_NOT_ENOUGH", "Credit rating is not enough for this loan.", traceId));
+        sendJson(response, 409, failure("CREDIT_NOT_ENOUGH", "当前信用评级不足。", traceId));
         return;
       }
       if (result === "LOAN_ALREADY_ACTIVE") {
-        sendJson(response, 409, failure("LOAN_ALREADY_ACTIVE", "This loan is already active.", traceId));
+        sendJson(response, 409, failure("LOAN_ALREADY_ACTIVE", "这笔贷款已在进行中。", traceId));
         return;
       }
       if (result === "LOAN_LOCKED") {
-        sendJson(response, 409, failure("LOAN_LOCKED", "Loan product conditions are not met.", traceId));
+        sendJson(response, 409, failure("LOAN_LOCKED", "贷款条件暂未满足。", traceId));
         return;
       }
 
@@ -4173,7 +4172,7 @@ export const createApiServer = (
         return;
       }
       if (result === "INSUFFICIENT_CASH") {
-        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough to repay this loan.", traceId));
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法还款。", traceId));
         return;
       }
 
@@ -4199,7 +4198,7 @@ export const createApiServer = (
         return;
       }
       if (result === "NO_ACTIVE_LOAN") {
-        sendJson(response, 409, failure("NO_ACTIVE_LOAN", "No active loan is available.", traceId));
+        sendJson(response, 409, failure("NO_ACTIVE_LOAN", "当前没有待还贷款。", traceId));
         return;
       }
 
@@ -4326,15 +4325,15 @@ export const createApiServer = (
         return;
       }
       if (employee === "NO_EMPLOYEE_AVAILABLE") {
-        sendJson(response, 409, failure("NO_EMPLOYEE_AVAILABLE", "No employee candidates are available.", traceId));
+        sendJson(response, 409, failure("NO_EMPLOYEE_AVAILABLE", "暂无可招募员工。", traceId));
         return;
       }
       if (employee === "ITEM_NOT_FOUND") {
-        sendJson(response, 409, failure("ITEM_NOT_FOUND", "Required recruit item is not available.", traceId));
+        sendJson(response, 409, failure("ITEM_NOT_FOUND", "招募道具不足。", traceId));
         return;
       }
       if (employee === "EMPLOYEE_ROLE_UNAVAILABLE") {
-        sendJson(response, 409, failure("EMPLOYEE_ROLE_UNAVAILABLE", "No employee candidates are available for this role.", traceId));
+        sendJson(response, 409, failure("EMPLOYEE_ROLE_UNAVAILABLE", "该岗位暂无可招募人选。", traceId));
         return;
       }
 
@@ -4378,15 +4377,15 @@ export const createApiServer = (
         return;
       }
       if (result === "EQUITY_LIMIT_REACHED") {
-        sendJson(response, 409, failure("EQUITY_LIMIT_REACHED", "Founder equity is not enough.", traceId));
+        sendJson(response, 409, failure("EQUITY_LIMIT_REACHED", "创始人股权不足。", traceId));
         return;
       }
       if (result === "INSUFFICIENT_CASH") {
-        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for employee training.", traceId));
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法培养员工。", traceId));
         return;
       }
       if (result === "ITEM_NOT_FOUND") {
-        sendJson(response, 409, failure("ITEM_NOT_FOUND", "Required employee item is not available.", traceId));
+        sendJson(response, 409, failure("ITEM_NOT_FOUND", "员工关怀道具不足。", traceId));
         return;
       }
 
@@ -4443,7 +4442,7 @@ export const createApiServer = (
         return;
       }
       if (project === "NO_PROJECT_AVAILABLE") {
-        sendJson(response, 409, failure("NO_PROJECT_AVAILABLE", "No project is available.", traceId));
+        sendJson(response, 409, failure("NO_PROJECT_AVAILABLE", "暂无可接项目。", traceId));
         return;
       }
 
@@ -4493,11 +4492,11 @@ export const createApiServer = (
         return;
       }
       if (result === "PROJECT_ALREADY_SETTLED") {
-        sendJson(response, 409, failure("PROJECT_ALREADY_SETTLED", "Project has already been settled.", traceId));
+        sendJson(response, 409, failure("PROJECT_ALREADY_SETTLED", "项目已经结算。", traceId));
         return;
       }
       if (result === "PROJECT_INCOMPLETE") {
-        sendJson(response, 409, failure("PROJECT_INCOMPLETE", "Project is not ready to settle.", traceId));
+        sendJson(response, 409, failure("PROJECT_INCOMPLETE", "项目还没达到结算条件。", traceId));
         return;
       }
 

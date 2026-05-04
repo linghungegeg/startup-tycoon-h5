@@ -644,6 +644,7 @@ type PlayerMarket = {
   talentPressure: number;
   reputationPressure: number;
   patentRisk: number;
+  availableCompetitorActionCount?: number;
   resultSummary: string | null;
   createdAt: string;
   updatedAt: string;
@@ -2328,6 +2329,31 @@ const apiRequest = async <T,>(
   return (await response.json()) as ApiResponse<T>;
 };
 
+const playerActionErrorMessages: Record<string, string> = {
+  NO_PROJECT_AVAILABLE: "暂无可接项目。",
+  PROJECT_ALREADY_SETTLED: "项目已经结算。",
+  PROJECT_INCOMPLETE: "项目还没达到结算条件。",
+  NO_EMPLOYEE_AVAILABLE: "暂无可招募员工。",
+  ITEM_NOT_FOUND: "需要的道具不足。",
+  EMPLOYEE_ROLE_UNAVAILABLE: "该岗位暂无可招募人选。",
+  EQUITY_LIMIT_REACHED: "创始人股权不足。",
+  INSUFFICIENT_CASH: "现金不足。",
+  PRODUCT_ALREADY_ACTIVE: "该产品线已立项。",
+  PRODUCT_CLOSED: "产品线已关闭。",
+  COMPETITOR_ACTION_NOT_FOUND: "暂无新的竞品行动。",
+  COMPETITOR_ACTION_SETTLED: "该竞品行动已处理。",
+  FUNDING_LOCKED: "当前融资条件暂不可谈。",
+  FUNDING_ALREADY_ACTIVE: "这轮融资正在谈判中。",
+  FUNDING_ALREADY_SETTLED: "这轮融资已结算。",
+  LOAN_LOCKED: "贷款条件暂未满足。",
+  LOAN_ALREADY_ACTIVE: "这笔贷款已在进行中。",
+  CREDIT_NOT_ENOUGH: "当前信用评级不足。",
+  NO_ACTIVE_LOAN: "当前没有待还贷款。"
+};
+
+const formatPlayerActionError = (failureResponse: ApiFailure): string =>
+  playerActionErrorMessages[failureResponse.error.code] ?? failureResponse.error.message;
+
 function App() {
   const initialSession = loadSession();
   const rememberedAuth = loadRememberedAuth();
@@ -2840,6 +2866,9 @@ function App() {
     () => pendingCompetitorActions.find((item) => item.id === selectedCompetitorActionId) ?? pendingCompetitorActions[0],
     [pendingCompetitorActions, selectedCompetitorActionId]
   );
+  const hasAvailableCompetitorAction = selectedMarket
+    ? selectedMarket.availableCompetitorActionCount === undefined || selectedMarket.availableCompetitorActionCount > 0
+    : false;
   const selectedShopProduct = useMemo(
     () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? null,
     [selectedShopProductId, shopCenter?.products]
@@ -3643,7 +3672,7 @@ function App() {
       return;
     }
 
-    setLoanError(response.error.message);
+    setLoanError(formatPlayerActionError(response));
   };
 
   const loadFundingCenter = async (token: string, nextServerId: string): Promise<void> => {
@@ -3659,7 +3688,7 @@ function App() {
       return;
     }
 
-    setFundingError(response.error.message);
+    setFundingError(formatPlayerActionError(response));
   };
 
   const syncFundingCenter = async (): Promise<void> => {
@@ -3685,7 +3714,7 @@ function App() {
       return;
     }
 
-    setProductError(response.error.message);
+    setProductError(formatPlayerActionError(response));
   };
 
   const loadMarketCenter = async (token: string, nextServerId: string): Promise<void> => {
@@ -3701,7 +3730,7 @@ function App() {
       return;
     }
 
-    setMarketError(response.error.message);
+    setMarketError(formatPlayerActionError(response));
   };
 
   const loadShopCenter = async (token: string, nextServerId: string): Promise<void> => {
@@ -4503,7 +4532,7 @@ function App() {
       return;
     }
 
-    setEmployeeError(response.error.message);
+    setEmployeeError(formatPlayerActionError(response));
   };
 
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
@@ -4521,7 +4550,7 @@ function App() {
       return;
     }
 
-    setEmployeeError(response.error.message);
+    setEmployeeError(formatPlayerActionError(response));
   };
 
   const loadProjects = async (token: string, nextServerId: string): Promise<void> => {
@@ -4538,7 +4567,7 @@ function App() {
       return;
     }
 
-    setProjectError(response.error.message);
+    setProjectError(formatPlayerActionError(response));
   };
 
   const enterGame = (
@@ -5627,7 +5656,7 @@ function App() {
       return;
     }
 
-    setProjectError(response.error.message);
+    setProjectError(formatPlayerActionError(response));
   };
 
   const assignProjectEmployee = async (employeeId: string): Promise<void> => {
@@ -5650,7 +5679,7 @@ function App() {
       return;
     }
 
-    setProjectError(response.error.message);
+    setProjectError(formatPlayerActionError(response));
   };
 
   const advanceProject = async (): Promise<void> => {
@@ -5673,7 +5702,7 @@ function App() {
       return;
     }
 
-    setProjectError(response.error.message);
+    setProjectError(formatPlayerActionError(response));
   };
 
   const settleProject = async (): Promise<void> => {
@@ -5767,7 +5796,7 @@ function App() {
       return;
     }
 
-    setLoanError(response.error.message);
+    setLoanError(formatPlayerActionError(response));
   };
 
   const runFundingAction = async (path: string, body: Record<string, string | number> = {}): Promise<void> => {
@@ -5792,7 +5821,7 @@ function App() {
       return;
     }
 
-    setFundingError(response.error.message);
+    setFundingError(formatPlayerActionError(response));
   };
 
   const runProductAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
@@ -5821,7 +5850,7 @@ function App() {
       return;
     }
 
-    setProductError(response.error.message);
+    setProductError(formatPlayerActionError(response));
   };
 
   const runMarketAction = async (path: string, body: Record<string, string> = {}): Promise<void> => {
@@ -5850,7 +5879,7 @@ function App() {
       return;
     }
 
-    setMarketError(response.error.message);
+    setMarketError(formatPlayerActionError(response));
   };
 
   const purchaseShopProduct = async (productId: string): Promise<void> => {
@@ -5972,7 +6001,7 @@ function App() {
       return;
     }
 
-    setLoanError(response.error.message);
+    setLoanError(formatPlayerActionError(response));
   };
 
   const guideTask = (task: TaskItem): void => {
@@ -9298,11 +9327,19 @@ function App() {
                         </section>
                       )}
 
-                      {!selectedCompetitorAction && (
+                      {!selectedCompetitorAction && hasAvailableCompetitorAction && (
                         <section className="funding-active">
                           <strong>应对门槛</strong>
                           <span>先触发竞品行动，再选择防守或反击。</span>
                           <small>进入赛道后会出现价格战、挖人、舆论和政策等市场压力。</small>
+                        </section>
+                      )}
+
+                      {!selectedCompetitorAction && selectedMarket && !hasAvailableCompetitorAction && (
+                        <section className="funding-active">
+                          <strong>赛道复盘</strong>
+                          <span>本赛道竞品行动已处理完，继续关注份额和团队支撑。</span>
+                          <small>可进入其他赛道，或处理已出现的防守、反击事项。</small>
                         </section>
                       )}
 
@@ -9316,7 +9353,7 @@ function App() {
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedMarket}
+                          disabled={!selectedMarket || !hasAvailableCompetitorAction}
                           onClick={() => selectedMarket && void runMarketAction("/markets/competitor-action", { trackId: selectedMarket.trackId })}
                         >
                           竞品行动

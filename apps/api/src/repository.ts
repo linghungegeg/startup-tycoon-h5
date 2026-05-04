@@ -704,6 +704,7 @@ export type PlayerMarketRecord = {
   talentPressure: number;
   reputationPressure: number;
   patentRisk: number;
+  availableCompetitorActionCount?: number;
   resultSummary: string | null;
   createdAt: string;
   updatedAt: string;
@@ -3781,8 +3782,9 @@ const toMarketCenterRecord = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
 ): Promise<MarketCenterRecord> => {
-  const [configs, markets, actions, employees] = await Promise.all([
+  const [configs, competitorActionConfigs, markets, actions, employees] = await Promise.all([
     prisma.marketTrackConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.competitorActionConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.playerMarketState.findMany({
       where: { profileId: profile.id },
       orderBy: [{ createdAt: "asc" }]
@@ -3794,6 +3796,12 @@ const toMarketCenterRecord = async (
     listActiveEmployeeRecords(prisma, profile.id)
   ]);
   const activeTrackIds = new Set(markets.map((market) => market.trackId));
+  const usedActionIdsByTrack = new Map<string, Set<string>>();
+  for (const action of actions) {
+    const usedActionIds = usedActionIdsByTrack.get(action.trackId) ?? new Set<string>();
+    usedActionIds.add(action.actionId);
+    usedActionIdsByTrack.set(action.trackId, usedActionIds);
+  }
 
   return {
     offers: configs.map((config) => ({
@@ -3808,7 +3816,13 @@ const toMarketCenterRecord = async (
       isAvailable: !activeTrackIds.has(config.id),
       lockedReason: activeTrackIds.has(config.id) ? "赛道已进入" : null
     })),
-    markets: markets.map(toPlayerMarketRecord),
+    markets: markets.map((market) => {
+      const usedActionIds = usedActionIdsByTrack.get(market.trackId) ?? new Set<string>();
+      return {
+        ...toPlayerMarketRecord(market),
+        availableCompetitorActionCount: competitorActionConfigs.filter((config) => config.trackId === market.trackId && !usedActionIds.has(config.id)).length
+      };
+    }),
     actions: actions.map(toCompetitorActionRecord),
     finance: toCompanyFinanceRecord(profile),
     employeeEffect: buildEmployeeEffect(employees, "market")
