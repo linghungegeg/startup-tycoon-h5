@@ -5273,14 +5273,19 @@ const employeePressureTaskIds = [
   "random-employee-overtime-run",
   "random-employee-project-rework",
   "random-employee-customer-onsite",
-  "random-employee-pace-too-fast"
+  "random-employee-pace-too-fast",
+  "random-employee-ops-runbook",
+  "random-employee-remote-collaboration"
 ];
 
 const employeeLoyaltyTaskIds = [
   "random-employee-resignation-warning",
   "random-employee-salary-talk",
   "random-employee-poaching",
-  "random-employee-equity-talk"
+  "random-employee-equity-talk",
+  "random-employee-customer-complaint",
+  "random-employee-key-person-backup",
+  "random-employee-after-sales-training"
 ];
 
 const employeeOnboardingTaskIds = [
@@ -5288,7 +5293,9 @@ const employeeOnboardingTaskIds = [
   "random-employee-mentoring-gap",
   "random-employee-career-growth",
   "random-employee-role-transition",
-  "random-employee-training-plan"
+  "random-employee-training-plan",
+  "random-employee-hr-probation-check",
+  "random-employee-sales-script-drift"
 ];
 
 const employeeOperationTaskIds = [
@@ -5297,7 +5304,12 @@ const employeeOperationTaskIds = [
   "random-employee-guild-shift",
   "random-employee-product-engineering-dispute",
   "random-employee-sales-delivery-conflict",
-  "random-employee-management-sync"
+  "random-employee-management-sync",
+  "random-employee-finance-reconcile",
+  "random-employee-legal-review",
+  "random-employee-product-quality-review",
+  "random-employee-market-campaign-review",
+  "random-employee-data-access-audit"
 ];
 
 export const selectEmployeeRandomTaskConfig = <TConfig extends { id: string; category: string }>(
