@@ -91,9 +91,14 @@ test("phase 31 profile center owns honor and collection summaries", () => {
 
 test("phase 31 manager owns long-term goals", () => {
   assert.match(source, /useState<"events" \| "random" \| "goals">/, "manager tab state should include goals");
+  assert.match(managerSource, />今日建议</, "manager should expose a primary recommendation");
+  assert.match(managerSource, />经理提醒</, "manager should use player-facing reminder tab copy");
+  assert.match(managerSource, />经营机会</, "manager should use player-facing random task tab copy");
   assert.match(managerSource, />成长目标</, "manager should expose the growth goals tab");
+  assert.match(source, /primaryManagerRecommendation/, "manager should compute one primary recommendation");
   assert.match(managerSource, /longTermGoals\.sections\.map/, "manager should render long-term goal sections");
   assert.match(managerSource, /今天做什么，本周追什么，赛季争什么，长期收集什么/, "manager should own the long-term goal summary");
+  assert.doesNotMatch(managerSource, /随机任务第一触达使用独立短决策弹窗|查看 2 个经营选择/, "manager should not expose system-like random task copy");
 });
 
 test("phase 31 commerce privilege and pass drop entrance navigation copy", () => {

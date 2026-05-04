@@ -2028,6 +2028,24 @@ const createTestRepository = (): GameRepository => {
       usageHint: "赛季通行证、活动奖励"
     },
     {
+      id: "founder-title-shard",
+      name: "限定称号碎片",
+      category: "season",
+      rarity: "稀缺",
+      icon: "award",
+      summary: "用于兑换赛季展示荣誉。",
+      usageHint: "赛季通行证、活动奖励"
+    },
+    {
+      id: "office-skin-ticket",
+      name: "办公室皮肤券",
+      category: "season",
+      rarity: "稀缺",
+      icon: "building-2",
+      summary: "用于兑换办公室外观资产。",
+      usageHint: "赛季通行证、活动奖励"
+    },
+    {
       id: "training-manual",
       name: "培养手册",
       category: "employee",
@@ -5378,7 +5396,7 @@ const createTestRepository = (): GameRepository => {
         return "RANDOM_TASK_ALREADY_RESOLVED";
       }
       task.status = "dismissed";
-      task.resultSummary = "已转入专属经理待办，本次不消耗行动力。";
+      task.resultSummary = "已暂时跳过本次展示，本次不消耗行动力。";
       const center = await this.listRandomTasks(accountId, serverId, today);
       assert.notEqual(center, "PLAYER_NOT_FOUND");
       return { center, task, profile, result: task.resultSummary } satisfies RandomTaskActionRecord;
@@ -6468,12 +6486,12 @@ const createTestRepository = (): GameRepository => {
           }))
       };
     },
-    async useInventoryItem(accountId, serverId, itemId) {
+    async useInventoryItem(accountId, serverId, itemId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      if (itemId !== "action-drink") {
+      if (itemId !== "action-drink" && itemId !== "season-exp-ticket") {
         return "ITEM_NOT_USABLE";
       }
       const key = `${profile.id}:${itemId}`;
@@ -6494,7 +6512,15 @@ const createTestRepository = (): GameRepository => {
         reason: "使用行动力饮料",
         createdAt: updatedAt
       });
-      profile.actionPower += 40;
+      let result = "行动力饮料已使用，行动力 +40。";
+      if (itemId === "action-drink") {
+        profile.actionPower += 40;
+      } else {
+        const progress = seasonProgresses.get(seasonKey(profile.id)) ?? { points: 0 };
+        progress.points += 100;
+        seasonProgresses.set(seasonKey(profile.id), progress);
+        result = "赛季经验券已使用，赛季积分 +100。";
+      }
       const inventory = await this.listInventory(accountId, serverId);
       assert.notEqual(inventory, "PLAYER_NOT_FOUND");
       const config = itemConfigs.find((item) => item.id === itemId);
@@ -6503,7 +6529,7 @@ const createTestRepository = (): GameRepository => {
         item: { ...config, id: existing.id, itemId, quantity: nextQuantity, updatedAt },
         inventory,
         profile,
-        result: "行动力饮料已使用，行动力 +40。"
+        result
       };
     },
     async purchaseShopProduct(accountId, serverId, productId, requestId, today) {
@@ -6759,6 +6785,9 @@ const createTestRepository = (): GameRepository => {
       profile.platformCoins = wallet.balance;
       seasonPassPurchases.set(`${profile.id}:${requestId}`, { profileId: profile.id, seasonId, requestId, pricePlatformCoins: seasonConfig.passPricePlatformCoins });
       addLedger(profile.id, -seasonConfig.passPricePlatformCoins, wallet.balance, "season_pass_purchase", requestId, `购买赛季通行证：${seasonConfig.name}`);
+      grantInventoryItem(profile.id, "season-exp-ticket", 3, "season_pass_purchase", `开通通行证：${seasonConfig.name}`);
+      grantInventoryItem(profile.id, "founder-title-shard", 2, "season_pass_purchase", `开通通行证：${seasonConfig.name}`);
+      grantInventoryItem(profile.id, "office-skin-ticket", 1, "season_pass_purchase", `开通通行证：${seasonConfig.name}`);
       return { season: toSeasonCenter(profile, today).season, wallet, isDuplicate: false };
     },
     async joinActivity(accountId, serverId, activityId, today) {
@@ -10502,6 +10531,20 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
     assert.equal(task.body.data?.task.isClaimed, true);
     assert.equal(task.body.data?.season.points, 120);
 
+    const duplicateTask = await requestJson<{ season: { points: number }; task: { progress: number; isClaimed: boolean } }>(
+      baseUrl,
+      "/season/tasks/season-daily-project/progress",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify({ serverId: "s1" })
+      }
+    );
+    assert.equal(duplicateTask.status, 200);
+    assert.equal(duplicateTask.body.data?.task.progress, 1);
+    assert.equal(duplicateTask.body.data?.task.isClaimed, true);
+    assert.equal(duplicateTask.body.data?.season.points, 120);
+
     const pass = await requestJson<{ wallet: { balance: number; vipExperience: number }; isDuplicate: boolean }>(
       baseUrl,
       "/season/pass/purchase",
@@ -10528,6 +10571,20 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
     assert.equal(duplicatePass.body.data?.isDuplicate, true);
     assert.equal(duplicatePass.body.data?.wallet.vipExperience, 880);
 
+    const usedSeasonTicket = await requestJson<{ inventory: InventoryCenterRecord }>(baseUrl, "/inventory/use", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
+      body: JSON.stringify({ serverId: "s1", itemId: "season-exp-ticket" })
+    });
+    assert.equal(usedSeasonTicket.status, 200, JSON.stringify(usedSeasonTicket.body));
+    assert.equal(usedSeasonTicket.body.data?.inventory.items.find((item) => item.itemId === "season-exp-ticket")?.quantity, 2);
+
+    const seasonAfterTicket = await requestJson<{ season: { points: number } }>(baseUrl, "/season?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    });
+    assert.equal(seasonAfterTicket.status, 200);
+    assert.equal(seasonAfterTicket.body.data?.season.points, 220);
+
     const joined = await requestJson<{ activity: { isJoined: boolean } }>(baseUrl, "/activities/ai-agent-growth/join", {
       method: "POST",
       headers: { authorization: `Bearer ${token}` },
@@ -10547,7 +10604,7 @@ test("phase 19 runs season activity pass rewards and scenario scoring", async ()
     );
     assert.equal(progressed.status, 200, JSON.stringify(progressed.body));
     assert.equal(progressed.body.data?.activity.score, 200);
-    assert.equal(progressed.body.data?.season.points, 320);
+    assert.equal(progressed.body.data?.season.points, 420);
 
     const claimed = await requestJson<{ activity: { rewardClaimed: boolean }; profile: { cash: number; reputation: number } }>(
       baseUrl,
@@ -10971,6 +11028,8 @@ test("regular random task generation excludes season tasks", async () => {
         }
       );
       assert.equal(dismissed.status, 200, JSON.stringify(dismissed.body));
+      assert.match(dismissed.body.data?.result ?? "", /暂时跳过本次展示/);
+      assert.doesNotMatch(dismissed.body.data?.result ?? "", /转入专属经理待办/);
       center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
         headers: auth
       });

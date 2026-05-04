@@ -38,7 +38,7 @@ test("phase 32 activity and pass pages expose the retention commerce loop", () =
   assert.match(activitySource, /道具效果|确认兑换/, "activity shop modal should be translated into Chinese");
   assert.doesNotMatch(activitySource, /Pass Buffs|Current Points|Claim Now|Honor Board|Season Shop|Buff Status|Item Effect|Confirm Exchange|Pts|闭环|增益状态|可查看通行证加成|高速算力加持/, "migrated activity design should not leave English or system-like UI copy");
 
-  for (const copy of ["活动增益说明", "开通即得", "今日可完成", "待推进", "已完成"]) {
+  for (const copy of ["赛季追赶", "每日赛季随机任务 \\+1", "奖励已入背包", "开通即得", "今日可完成", "待推进", "已完成"]) {
     assert.match(passSource, new RegExp(copy), `pass page should expose ${copy}`);
   }
   for (const copy of ["赛季经验券 x3", "限定称号碎片 x2", "办公室皮肤券 x1"]) {
@@ -46,6 +46,9 @@ test("phase 32 activity and pass pages expose the retention commerce loop", () =
   }
   assert.match(passSource, /passImmediateRewards\.map/, "pass page should render immediate reward chips");
   assert.match(passSource, /purchaseSeasonPass\(\)/, "pass page should keep the existing purchase action");
+  assert.match(passSource, /progressSeasonTask\(task\.id\)/, "pass page should progress season tasks directly");
+  assert.doesNotMatch(passSource, /Pass 通行证|扣 880 平台币送 880 经验|后续奖励线继续承接/, "pass page should not keep hard or unclosed pass copy");
+  assert.match(source, /selectedInventoryItem\?\.itemId === "season-exp-ticket"/, "inventory should allow season exp ticket usage");
 });
 
 test("phase 32 manager receives activity claim and shop reminders", () => {

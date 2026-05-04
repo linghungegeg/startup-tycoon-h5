@@ -2978,7 +2978,7 @@ export const createApiServer = (
           return;
         }
 
-        const result = await repository.useInventoryItem(account.id, serverId, itemId);
+        const result = await repository.useInventoryItem(account.id, serverId, itemId, readToday(request));
         if (result === "PLAYER_NOT_FOUND") {
           sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
           return;

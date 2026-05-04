@@ -2438,7 +2438,7 @@ export type GameRepository = {
   respondCompetitorAction(accountId: string, serverId: string, actionId: string, response: "defend" | "counter"): Promise<MarketActionRecord | "PLAYER_NOT_FOUND" | "MARKET_NOT_FOUND" | "COMPETITOR_ACTION_NOT_FOUND" | "COMPETITOR_ACTION_SETTLED" | "INSUFFICIENT_CASH">;
   getWallet(accountId: string, serverId: string): Promise<PlatformWalletRecord | "PLAYER_NOT_FOUND">;
   listInventory(accountId: string, serverId: string): Promise<InventoryCenterRecord | "PLAYER_NOT_FOUND">;
-  useInventoryItem(accountId: string, serverId: string, itemId: string): Promise<InventoryUseRecord | "PLAYER_NOT_FOUND" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
+  useInventoryItem(accountId: string, serverId: string, itemId: string, today: string): Promise<InventoryUseRecord | "PLAYER_NOT_FOUND" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
   listShop(accountId: string, serverId: string, today: string): Promise<ShopCenterRecord | "PLAYER_NOT_FOUND">;
   purchaseShopProduct(accountId: string, serverId: string, productId: string, requestId: string, today: string): Promise<ShopPurchaseRecord | "PLAYER_NOT_FOUND" | "SHOP_PRODUCT_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS" | "PURCHASE_LIMIT_REACHED">;
   claimPrivilegeDailyReward(accountId: string, serverId: string, purchaseId: string, requestId: string, today: string): Promise<PrivilegeDailyClaimRecord | "PLAYER_NOT_FOUND" | "PRIVILEGE_PURCHASE_NOT_FOUND" | "PRIVILEGE_NOT_DAILY_CLAIMABLE" | "PRIVILEGE_EXPIRED" | "PRIVILEGE_DAILY_ALREADY_CLAIMED">;
@@ -4464,6 +4464,8 @@ const FULL_LEVEL_CHEST_REWARD_REPUTATION = 300;
 const FULL_LEVEL_CHEST_REWARD_ACTION_POWER = 40;
 const FULL_LEVEL_CHEST_REWARD_ITEM_ID = "season-exp-ticket";
 const FULL_LEVEL_CHEST_REWARD_ITEM_QUANTITY = 1;
+const SEASON_EXP_TICKET_ITEM_ID = "season-exp-ticket";
+const SEASON_EXP_TICKET_POINTS = 100;
 const VIP3_START_EXPERIENCE = 3000;
 
 const clampNumber = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
@@ -7346,7 +7348,7 @@ export const createPrismaGameRepository = (
       where: { id: randomTask.id },
       data: {
         status: "dismissed",
-        resultSummary: "已转入专属经理待办，本次不消耗行动力。",
+        resultSummary: "已暂时跳过本次展示，本次不消耗行动力。",
         resolvedAt: new Date()
       }
     });
@@ -7362,7 +7364,7 @@ export const createPrismaGameRepository = (
       center,
       task: nextTask,
       profile: center.profile,
-      result: "已转入专属经理待办，本次不消耗行动力。"
+      result: "已暂时跳过本次展示，本次不消耗行动力。"
     };
   },
 
@@ -9814,7 +9816,7 @@ export const createPrismaGameRepository = (
     return toInventoryCenterRecord(prisma, profile.id);
   },
 
-  async useInventoryItem(accountId, serverId, itemId) {
+  async useInventoryItem(accountId, serverId, itemId, today) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -9826,7 +9828,7 @@ export const createPrismaGameRepository = (
     if (profile === null) {
       return "PLAYER_NOT_FOUND";
     }
-    if (itemId !== "action-drink") {
+    if (itemId !== "action-drink" && itemId !== SEASON_EXP_TICKET_ITEM_ID) {
       return "ITEM_NOT_USABLE";
     }
 
@@ -9836,6 +9838,56 @@ export const createPrismaGameRepository = (
     });
     if (inventoryItem === null || inventoryItem.quantity <= 0) {
       return "ITEM_NOT_FOUND";
+    }
+
+    if (itemId === SEASON_EXP_TICKET_ITEM_ID) {
+      const season = await prisma.seasonConfig.findFirst({ orderBy: [{ sortOrder: "asc" }, { startDate: "asc" }] });
+      if (season === null || readSeasonStatus(season.startDate, season.endDate, today) !== "active") {
+        return "ITEM_NOT_USABLE";
+      }
+
+      await prisma.$transaction(async (tx) => {
+        const nextQuantity = inventoryItem.quantity - 1;
+        await tx.playerInventoryItem.update({
+          where: { id: inventoryItem.id },
+          data: { quantity: nextQuantity }
+        });
+        await tx.playerItemLedger.create({
+          data: {
+            profileId: profile.id,
+            itemId,
+            changeQuantity: -1,
+            balanceAfter: nextQuantity,
+            source: "item_use",
+            referenceId: inventoryItem.id,
+            reason: "使用赛季经验券"
+          }
+        });
+        await tx.playerSeasonProgress.upsert({
+          where: { profileId_seasonId: { profileId: profile.id, seasonId: season.id } },
+          update: { points: { increment: SEASON_EXP_TICKET_POINTS } },
+          create: { profileId: profile.id, seasonId: season.id, points: SEASON_EXP_TICKET_POINTS }
+        });
+      });
+
+      const inventory = await toInventoryCenterRecord(prisma, profile.id);
+      return {
+        item: {
+          id: inventoryItem.id,
+          itemId: inventoryItem.itemId,
+          name: inventoryItem.item.name,
+          category: inventoryItem.item.category,
+          rarity: inventoryItem.item.rarity,
+          icon: inventoryItem.item.icon,
+          summary: inventoryItem.item.summary,
+          usageHint: inventoryItem.item.usageHint,
+          quantity: inventoryItem.quantity - 1,
+          updatedAt: new Date().toISOString()
+        },
+        inventory,
+        profile: toProfileRecord(profile),
+        result: `赛季经验券已使用，赛季积分 +${SEASON_EXP_TICKET_POINTS}。`
+      };
     }
 
     const updatedProfile = await prisma.$transaction(async (tx) => {
@@ -12213,12 +12265,18 @@ export const createPrismaGameRepository = (
     if (task === null || task.seasonId !== season.id) return "SEASON_TASK_NOT_FOUND";
 
     await prisma.$transaction(async (tx) => {
-      const state = await tx.playerSeasonTaskProgress.upsert({
-        where: { profileId_taskId: { profileId: profile.id, taskId } },
-        update: { progress: { increment: 1 } },
-        create: { profileId: profile.id, taskId, progress: 1 }
+      const existingState = await tx.playerSeasonTaskProgress.findUnique({
+        where: { profileId_taskId: { profileId: profile.id, taskId } }
       });
-      if (state.claimedAt === null && state.progress + 1 >= task.target) {
+      if (existingState?.claimedAt !== null && existingState?.claimedAt !== undefined) {
+        return;
+      }
+
+      const nextProgress = Math.min(task.target, (existingState?.progress ?? 0) + 1);
+      const state = existingState === null
+        ? await tx.playerSeasonTaskProgress.create({ data: { profileId: profile.id, taskId, progress: nextProgress } })
+        : await tx.playerSeasonTaskProgress.update({ where: { id: existingState.id }, data: { progress: nextProgress } });
+      if (state.claimedAt === null && nextProgress >= task.target) {
         await tx.playerSeasonTaskProgress.update({ where: { id: state.id }, data: { progress: task.target, claimedAt: new Date() } });
         await tx.playerSeasonProgress.upsert({
           where: { profileId_seasonId: { profileId: profile.id, seasonId: season.id } },

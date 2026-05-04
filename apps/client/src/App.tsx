@@ -2889,8 +2889,8 @@ function App() {
         ? "今日重点：完成当前活动推进，积累赛季积分和榜单荣誉。"
         : "今日重点：查看赛季任务和通行证收益，准备下一轮活动。";
   const passBenefitCopy = seasonCenter?.season.pass.isPurchased
-    ? "通行证已开通：额外赛季随机任务、付费线奖励和 VIP 经验收益已激活。"
-    : "未开通通行证：开通后获得额外赛季随机任务、立即奖励、VIP 经验，并帮助追赶赛季进度。";
+    ? "通行证已开通：每日多 1 个赛季随机任务，奖励已入背包。"
+    : "未开通通行证：开通后获得赛季经验券、限定资产和每日额外赛季任务。";
   const passImmediateRewards = ["赛季经验券 x3", "限定称号碎片 x2", "办公室皮肤券 x1"];
   const passTaskRows = (seasonCenter?.tasks ?? []).map((task, index) => ({
     ...task,
@@ -2916,6 +2916,56 @@ function App() {
       status: "可兑换"
     }))
   ];
+  const primaryManagerRecommendation = (() => {
+    const activityReminder = activityManagerReminders[0];
+    if (activityReminder !== undefined) {
+      return {
+        kind: "activity" as const,
+        id: activityReminder.id,
+        source: activityReminder.source,
+        title: activityReminder.title,
+        summary: activityReminder.summary,
+        actionLabel: "去处理"
+      };
+    }
+
+    const randomTask = pendingRandomTasks[0];
+    if (randomTask !== undefined) {
+      return {
+        kind: "random" as const,
+        id: randomTask.id,
+        source: randomTask.source,
+        title: randomTask.title,
+        summary: randomTask.description,
+        actionLabel: "打开机会"
+      };
+    }
+
+    const pendingEvent = pendingEvents[0];
+    if (pendingEvent !== undefined) {
+      return {
+        kind: "event" as const,
+        id: pendingEvent.id,
+        source: pendingEvent.source,
+        title: pendingEvent.title,
+        summary: pendingEvent.summary,
+        actionLabel: "查看提醒"
+      };
+    }
+
+    if (longTermGoals !== null && longTermGoals.summaries.todayClaimableCount > 0) {
+      return {
+        kind: "goal" as const,
+        id: "goals",
+        source: "成长",
+        title: "有成长目标可领取",
+        summary: "先领取今日目标奖励，再继续推进经营。",
+        actionLabel: "查看目标"
+      };
+    }
+
+    return null;
+  })();
   const hasActivityAttention = seasonActivities.some((activity) =>
     activity.status === "active" && (!activity.isJoined || activity.score >= activity.targetScore && !activity.rewardClaimed)
   ) || activityShopItems.some((item) => item.isAvailable);
@@ -3388,6 +3438,9 @@ function App() {
       setProfile(response.data.profile);
       setInventoryCenter(response.data.inventory);
       setInventoryError(response.data.result);
+      if (itemId === "season-exp-ticket") {
+        await loadSeasonCenter(account.token, selectedServer.id);
+      }
       return;
     }
 
@@ -4889,7 +4942,7 @@ function App() {
       setSnoozedRandomTaskIds((currentIds) => currentIds.includes(activeRandomTask.id) ? currentIds : [...currentIds, activeRandomTask.id]);
       setSelectedRandomTaskId(activeRandomTask.id);
       setManagerTab("random");
-      setRandomTaskNotice("已转入专属经理待办，本次不消耗行动力。");
+      setRandomTaskNotice("已保留在经理待办中，本次不消耗行动力。");
       setRandomTaskError("");
     }
 
@@ -7756,7 +7809,7 @@ function App() {
                 <div className="flex items-center gap-3">
                   <Icon name="ticket" className="w-7 h-7 text-emerald-400" />
                   <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Pass 通行证</h2>
+                    <h2 className="text-xl font-black text-white">赛季通行证</h2>
                     <span className="text-[10px] text-slate-500">{seasonCenter ? `${seasonCenter.season.startDate} 至 ${seasonCenter.season.endDate}` : "赛季配置读取中"}</span>
                   </div>
                 </div>
@@ -7773,9 +7826,9 @@ function App() {
                 <section className="glass-panel rounded-3xl p-5 border-emerald-400/30 bg-gradient-to-br from-emerald-400/15 to-slate-950">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-[10px] text-emerald-300 font-black uppercase">赛季通行证</div>
-                      <h3 className="mt-1 text-2xl font-black italic text-white">{seasonCenter?.season.name ?? "赛季通行证"}</h3>
-                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">购买消耗平台币并计入 VIP 经验；开通后每日额外获得 1 个赛季随机任务，帮助追赶活动积分和赛季奖励线。</p>
+                      <div className="text-[10px] text-emerald-300 font-black">赛季追赶</div>
+                      <h3 className="mt-1 text-2xl font-black text-white">{seasonCenter?.season.name ?? "赛季通行证"}</h3>
+                      <p className="mt-2 text-xs leading-5 text-slate-300 font-bold">开通后立即获得赛季经验券、称号碎片和办公室皮肤券。每日额外出现 1 个赛季随机任务，帮助补齐赛季进度。</p>
                     </div>
                     <span className="rounded-2xl bg-slate-900/70 border border-emerald-400/30 px-3 py-2 text-xs text-emerald-200 font-black">
                       {seasonCenter?.season.pass.isPurchased ? "已开通" : "未开通"}
@@ -7825,14 +7878,14 @@ function App() {
                     {passImmediateRewards.map((reward) => (
                       <div className="rounded-2xl border border-emerald-400/20 bg-slate-950/50 p-2" key={reward}>
                         <strong className="block text-[10px] font-black text-emerald-200">{reward}</strong>
-                        <span className="text-[8px] text-slate-500">开通即得</span>
+                        <span className="text-[8px] text-slate-500">{seasonCenter?.season.pass.isPurchased ? "奖励已入背包" : "开通即得"}</span>
                       </div>
                     ))}
                   </div>
                   <div className="mt-3 rounded-2xl border border-business-gold/20 bg-business-gold/10 p-3">
-                    <strong className="block text-xs font-black text-business-gold">活动增益说明</strong>
+                    <strong className="block text-xs font-black text-business-gold">每日赛季随机任务 +1</strong>
                     <span className="mt-1 block text-[10px] font-bold leading-4 text-slate-300">
-                      通行证不直接提高排行榜结算，但会提供赛季随机任务、经验券和限定资源，让玩家更稳定地完成每日活动和商店兑换目标。
+                      通行证不提高排行榜结算，只提供更多赛季任务和追赶资源。{seasonCenter?.season.pass.isPurchased ? "奖励已入背包" : "开通后奖励进入背包"}，可在背包查看和使用。
                     </span>
                   </div>
                   <button
@@ -7846,15 +7899,15 @@ function App() {
                 </section>
                 <section className="grid grid-cols-2 gap-3">
                   <article className="glass-panel rounded-3xl p-4">
-                    <strong className="block text-sm text-white font-black">免费线</strong>
+                    <strong className="block text-sm text-white font-black">赛季任务</strong>
                     <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">
-                      完成赛季任务获得积分、经验券、培养手册和活动资源。
+                      完成任务获得赛季积分和经营道具，轻度玩家也能稳步追赶进度。
                     </p>
                   </article>
                   <article className="glass-panel rounded-3xl p-4 border-business-gold/30">
-                    <strong className="block text-sm text-business-gold font-black">付费线</strong>
+                    <strong className="block text-sm text-business-gold font-black">限定资产</strong>
                     <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">
-                      开通即得赛季经验券、限定称号碎片和办公室皮肤券，后续奖励线继续承接员工与外观深度。
+                      称号碎片和办公室皮肤券进入背包，作为赛季身份和外观资产保存。
                     </p>
                   </article>
                 </section>
@@ -7889,6 +7942,14 @@ function App() {
                                 <span className="text-emerald-300">积分 +{task.rewardPoints}</span>
                                 <span className="text-business-gold">{task.rewardItem ? `${task.rewardItem.name} x${task.rewardItem.quantity}` : "基础奖励"}</span>
                               </div>
+                              <button
+                                className="mt-3 w-full rounded-xl bg-emerald-400/15 border border-emerald-400/20 py-2 text-[10px] font-black text-emerald-100 disabled:opacity-45"
+                                disabled={task.isClaimed}
+                                type="button"
+                                onClick={() => void progressSeasonTask(task.id)}
+                              >
+                                {task.isClaimed ? "已领取" : task.progress >= task.target ? "领取奖励" : "推进任务"}
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -8061,10 +8122,10 @@ function App() {
                   <button
                     className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark"
                     type="button"
-                    disabled={selectedInventoryItem?.itemId !== "action-drink"}
-                    onClick={() => selectedInventoryItem?.itemId === "action-drink" && void useInventoryItem(selectedInventoryItem.itemId)}
+                    disabled={selectedInventoryItem?.itemId !== "action-drink" && selectedInventoryItem?.itemId !== "season-exp-ticket"}
+                    onClick={() => (selectedInventoryItem?.itemId === "action-drink" || selectedInventoryItem?.itemId === "season-exp-ticket") && void useInventoryItem(selectedInventoryItem.itemId)}
                   >
-                    {selectedInventoryItem?.itemId === "action-drink" ? "使用" : selectedInventoryItem ? "查看用途" : "待获得"}
+                    {selectedInventoryItem?.itemId === "action-drink" || selectedInventoryItem?.itemId === "season-exp-ticket" ? "使用" : selectedInventoryItem ? "查看用途" : "待获得"}
                   </button>
                 </div>
               </footer>
@@ -9123,7 +9184,7 @@ function App() {
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
                   <strong>专属经理</strong>
-                  <span>经营提醒 / 随机任务 / 成长规划</span>
+                  <span>经理会把风险、机会和成长目标整理成今天的行动建议。</span>
                 </div>
                 <button
                   type="button"
@@ -9149,9 +9210,45 @@ function App() {
               {randomTaskNotice && <p className="event-notice">{randomTaskNotice}</p>}
               {randomTaskError && <p className="event-error">{randomTaskError}</p>}
 
+              <section className="event-result" aria-label="今日建议">
+                <strong>今日建议</strong>
+                {primaryManagerRecommendation ? (
+                  <>
+                    <p>{primaryManagerRecommendation.source}：{primaryManagerRecommendation.title}</p>
+                    <span>{primaryManagerRecommendation.summary}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (primaryManagerRecommendation.kind === "activity") {
+                          setActiveNav("公司");
+                          setNativeHomePage("season");
+                          return;
+                        }
+                        if (primaryManagerRecommendation.kind === "random") {
+                          setManagerTab("random");
+                          setSelectedRandomTaskId(primaryManagerRecommendation.id);
+                          openRandomTaskModal(primaryManagerRecommendation.id);
+                          return;
+                        }
+                        if (primaryManagerRecommendation.kind === "event") {
+                          setManagerTab("events");
+                          setSelectedEventId(primaryManagerRecommendation.id);
+                          return;
+                        }
+                        setManagerTab("goals");
+                      }}
+                    >
+                      {primaryManagerRecommendation.actionLabel}
+                    </button>
+                  </>
+                ) : (
+                  <p>暂无紧急事项，继续推进业务后会出现新的经营机会。</p>
+                )}
+              </section>
+
               <nav className="business-tabs manager-tabs" aria-label="专属经理待办分类">
-                <button className={managerTab === "events" ? "active" : undefined} type="button" onClick={() => setManagerTab("events")}>经营提醒</button>
-                <button className={managerTab === "random" ? "active" : undefined} type="button" onClick={() => setManagerTab("random")}>随机任务</button>
+                <button className={managerTab === "events" ? "active" : undefined} type="button" onClick={() => setManagerTab("events")}>经理提醒</button>
+                <button className={managerTab === "random" ? "active" : undefined} type="button" onClick={() => setManagerTab("random")}>经营机会</button>
                 <button className={managerTab === "goals" ? "active" : undefined} type="button" onClick={() => setManagerTab("goals")}>成长目标</button>
               </nav>
 
@@ -9358,7 +9455,7 @@ function App() {
                           </div>
                           <div>
                             <dt>待办说明</dt>
-                            <dd>随机任务第一触达使用独立短决策弹窗；在专属经理中可随时重新打开。</dd>
+                            <dd>选择一种处理方式，立即结算收益和风险；也可以稍后处理。</dd>
                           </div>
                           {selectedRandomTask.knowledge && (
                             <div>
@@ -9371,7 +9468,7 @@ function App() {
                         <div className="event-options">
                           <button type="button" onClick={() => openRandomTaskModal(selectedRandomTask.id)}>
                             <strong>打开决策弹窗</strong>
-                            <span>查看 2 个经营选择、行动力消耗和收益预览</span>
+                            <span>选择处理方式，查看行动力消耗和收益预览</span>
                           </button>
                         </div>
                       </>
@@ -9560,7 +9657,7 @@ function App() {
                   </div>
 
                   <button className="random-task-snooze" type="button" onClick={snoozeRandomTaskModal}>
-                    稍后处理，转入专属经理待办
+                    稍后处理，保留在经理待办中
                   </button>
                 </div>
               </article>
