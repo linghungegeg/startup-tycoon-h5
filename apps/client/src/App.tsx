@@ -2145,6 +2145,18 @@ const rarityClass = (rarity: string): string => {
   return "r";
 };
 
+const employeeFrameLabel = (avatarFrameId: string | null | undefined, rarity: string): string => {
+  if (avatarFrameId === "employee-frame-legend") {
+    return "传奇头像框已预留";
+  }
+
+  if (avatarFrameId === "employee-frame-elite") {
+    return "顶尖头像框已预留";
+  }
+
+  return `${rarity}基础头像位`;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -2373,6 +2385,7 @@ function App() {
   const [employeeViewTab, setEmployeeViewTab] = useState<EmployeeViewTab>("team");
   const [employeeRecruitMode, setEmployeeRecruitMode] = useState<EmployeeRecruitMode>("normal");
   const [targetRecruitRole, setTargetRecruitRole] = useState("");
+  const [lastRecruitedEmployee, setLastRecruitedEmployee] = useState<Employee | null>(null);
   const [employeeCodexRoleFilter, setEmployeeCodexRoleFilter] = useState("全部岗位");
   const [employeeCodexRarityFilter, setEmployeeCodexRarityFilter] = useState("全部稀有度");
   const [activeActivityView, setActiveActivityView] = useState<ActivityNativeView>("main");
@@ -2478,6 +2491,10 @@ function App() {
   const selectedEmployeeCollectionEntry = useMemo(
     () => (selectedEmployee ? (employeeCollection?.entries ?? []).find((entry) => entry.id === selectedEmployee.configId) : undefined),
     [employeeCollection?.entries, selectedEmployee]
+  );
+  const lastRecruitedCollectionEntry = useMemo(
+    () => (lastRecruitedEmployee ? (employeeCollection?.entries ?? []).find((entry) => entry.id === lastRecruitedEmployee.configId) : undefined),
+    [employeeCollection?.entries, lastRecruitedEmployee]
   );
   const activeEmployees = useMemo(() => employees.filter((employee) => employee.isActive), [employees]);
   const employeePower = useMemo(
@@ -5415,6 +5432,9 @@ function App() {
 
     if (response.success) {
       setSelectedEmployeeId(response.data.id);
+      if (path === "/employees/recruit") {
+        setLastRecruitedEmployee(response.data);
+      }
       setEmployeeError("");
       refreshCompanyAndEmployees();
       void loadInventoryCenter(account.token, selectedServer.id);
@@ -8614,7 +8634,7 @@ function App() {
                   <article className="employee-detail" aria-label="员工详情">
                     {selectedEmployee ? (
                       <>
-                        <div className={`employee-portrait ${selectedEmployeeCollectionEntry?.avatarFrameId ?? ""}`}>
+                        <div className={`employee-portrait employee-appearance-card ${selectedEmployeeCollectionEntry?.avatarFrameId ?? ""}`}>
                           <span>
                             {selectedEmployeeCollectionEntry?.portraitUrl && <img src={selectedEmployeeCollectionEntry.portraitUrl} alt="" />}
                             {selectedEmployeeCollectionEntry?.portraitUrl ? "" : selectedEmployee.name.slice(0, 1)}
@@ -8622,6 +8642,7 @@ function App() {
                           <strong>{selectedEmployee.name}</strong>
                           <em>{selectedEmployee.rarity} · {selectedEmployee.role} · {selectedEmployee.careerLevel} · {selectedEmployee.pressureState}</em>
                           <small className="employee-avatar-source">{selectedEmployeeCollectionEntry?.obtainSource ?? "常驻人才池"}</small>
+                          <small className="employee-frame-note">{employeeFrameLabel(selectedEmployeeCollectionEntry?.avatarFrameId, selectedEmployee.rarity)}</small>
                         </div>
 
                         <dl className="employee-stats">
@@ -8757,6 +8778,19 @@ function App() {
                     )}
                     <button type="button" onClick={recruitEmployee} disabled={!canRecruitEmployee}>{employeeRecruitLockedReason || "招募"}</button>
                   </div>
+                  {lastRecruitedEmployee && (
+                    <article className="employee-recruit-result" aria-label="招募结果">
+                      <div className={`employee-avatar-slot ${lastRecruitedCollectionEntry?.avatarFrameId ?? ""}`}>
+                        {lastRecruitedCollectionEntry?.portraitUrl && <img src={lastRecruitedCollectionEntry.portraitUrl} alt="" />}
+                        <span>{lastRecruitedCollectionEntry?.portraitUrl ? "" : lastRecruitedEmployee.name.slice(0, 1)}</span>
+                      </div>
+                      <div>
+                        <strong>新成员已入队</strong>
+                        <em>{lastRecruitedEmployee.name} · {lastRecruitedEmployee.rarity} · {lastRecruitedEmployee.role}</em>
+                        <small>{employeeFrameLabel(lastRecruitedCollectionEntry?.avatarFrameId, lastRecruitedEmployee.rarity)} · 可在团队页培养</small>
+                      </div>
+                    </article>
+                  )}
                 </section>
               ) : (
                 <section className="employee-growth-panel" aria-label="员工养成">

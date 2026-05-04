@@ -2942,6 +2942,23 @@ VIP 权益：
 - 验证命令：`node --import tsx --test --test-name-pattern "employee collection reward goals" apps/api/test/http.test.ts`、`node apps/client/test/phase43-employee-collection-rewards.test.mjs`，以及员工收集、头像、typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：稳定后再评估正式头像资源替换或商会/员工外观展示；不在本批加入皮肤商店、剧情树、复杂羁绊或新付费池。
 
+### Phase 39：员工外观展示层
+
+- 当前稳定点：`e993156 feat: close employee collection reward loop`。
+- 阶段目标：不生产正式头像资源、不新增外观商店和付费池，只把员工详情、图鉴和招募结果的头像展示规则统一，让长期收集价值更可见。
+- 完成内容：
+  - 员工详情保留大头像位，继续优先使用 `portraitUrl`，无资源时显示姓名首字占位。
+  - 传奇、顶尖头像框增加短说明，普通员工显示基础头像位，避免玩家误解为新皮肤系统。
+  - 招募成功后在招募页展示最新入队员工，复用图鉴头像、头像框和姓名占位规则。
+  - 图鉴、团队详情和招募结果只做展示承载，不改变员工数值、招募概率、保底、收集奖励和经营闭环。
+- 四插件证据：
+  - Superpowers：先提交 Phase 38 稳定点，再按 TDD 新增 Phase 44 红灯后落最小 UI 实现。
+  - Build Web Apps：员工详情和招募结果保持竖屏紧凑层级，不新增大画廊或后台表格感面板。
+  - Game Studio：外观展示只增强员工收集的可见反馈，不扩大剧情、数值或付费深度。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工四标签、图鉴 `X/60`、头像位、招募反馈和 Console。
+- 验证命令：`node apps/client/test/phase44-employee-appearance-layer.test.mjs`、员工头像/收集奖励相关测试、client typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估正式头像资源替换或员工事件轻档案；不在本批加入皮肤商店、头像抽取、剧情树、复杂羁绊或新付费池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

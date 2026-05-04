@@ -2347,6 +2347,47 @@ input {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.employee-recruit-result {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(246, 204, 116, 0.34);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.employee-recruit-result div:last-child {
+  min-width: 0;
+}
+
+.employee-recruit-result strong,
+.employee-recruit-result em,
+.employee-recruit-result small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-recruit-result strong {
+  color: #fff6d8;
+  font-size: clamp(13px, 3.5vw, 17px);
+  font-weight: 900;
+}
+
+.employee-recruit-result em,
+.employee-recruit-result small {
+  margin-top: 3px;
+  color: #d8c9a8;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-style: normal;
+  font-weight: 800;
+}
+
 .employee-error {
   margin: 0;
   color: #ffd7c0;
@@ -2471,6 +2512,10 @@ input {
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 
+.employee-appearance-card {
+  min-height: 142px;
+}
+
 .employee-portrait span {
   display: grid;
   width: min(24vw, 92px);
@@ -2513,6 +2558,13 @@ input {
   color: #f6cc74;
   font-size: clamp(9px, 2.5vw, 12px);
   font-weight: 900;
+  letter-spacing: 0;
+}
+
+.employee-frame-note {
+  color: #d8c9a8;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-weight: 800;
   letter-spacing: 0;
 }
 
