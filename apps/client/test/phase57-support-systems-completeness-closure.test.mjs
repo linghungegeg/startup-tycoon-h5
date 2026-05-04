@@ -26,5 +26,5 @@ test("phase 57 audit closes the support-system batch without expanding admin sys
   assert.match(auditSource, /\| 商会 \| 已闭环 \|[^|\n]*按钮边界、反馈浮层/, "guild audit should record closed button and feedback boundaries");
   assert.match(auditSource, /\| 商城 \/ 活动 \| 已闭环 \|[^|\n]*商城、首充、赛季/, "commerce and activity audit should be closed");
   assert.match(auditSource, /\| 排行榜 \/ 跨服 \| 已闭环 \|[^|\n]*排行榜和跨服榜/, "leaderboard and cross-server audit should be closed");
-  assert.match(auditSource, /\| 邮件 \/ 聊天 \/ 管理后台 \| 后续阶段 \|/, "mail, chat and admin should remain out of scope");
+  assert.match(auditSource, /\| 邮件 \/ 聊天 \/ 管理后台 \| 已闭环 \|/, "mail, chat and admin should be closed by the support-system follow-up batch");
 });

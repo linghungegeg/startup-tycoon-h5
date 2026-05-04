@@ -3221,6 +3221,13 @@ function App() {
       : currentSeasonActivity?.canProgress
         ? "今日重点：完成当前活动推进，积累赛季积分和榜单荣誉。"
         : "今日重点：查看赛季任务和通行证收益，准备下一轮活动。";
+  const guildRewardCadence = `今日 ${guildDailySummary.claimableTaskCount + guildDailySummary.claimableProjectCount} 项可领 · 本周看贡献榜 · 赛季看跨服商会`;
+  const activityRewardCadence = currentSeasonActivity === null
+    ? "今日暂无活动 · 本周看赛季任务 · 赛季奖励进背包"
+    : `今日${currentActivityClaimable ? "先领奖" : currentSeasonActivity.canProgress ? "先推进" : "看任务"} · 本周攒积分 · 赛季奖励进背包`;
+  const crossServerRewardCadence = crossRewardClaimable
+    ? "今日有跨服奖励可领 · 本周看榜单 · 赛季结算后邮件发放"
+    : "今日完成跨服目标 · 本周看榜单 · 赛季结算后邮件发放";
   const passBenefitCopy = seasonCenter?.season.pass.isPurchased
     ? "通行证已开通：每日多 1 个赛季随机任务，奖励已入背包。"
     : "未开通通行证：开通后获得赛季经验券、限定资产和每日额外赛季任务。";
@@ -3344,6 +3351,9 @@ function App() {
   const hasActivityAttention = seasonActivities.some((activity) =>
     activity.status === "active" && (!activity.isJoined || activity.score >= activity.targetScore && !activity.rewardClaimed)
   ) || activityShopItems.some((item) => item.isAvailable);
+  const mailClaimableCount = mailCenter?.mails.filter((mail) => mail.canClaim).length ?? 0;
+  const mailUnreadCount = mailCenter?.summary.unreadCount ?? profile?.unreadMailCount ?? 0;
+  const canSendChatMessage = Boolean(activeChatChannelConfig?.canSend) && chatDraft.trim().length > 0;
   const hasPassAttention = (seasonCenter?.tasks ?? []).some((task) => task.progress >= task.target && !task.isClaimed)
     || companyGrowth !== null && companyGrowth.fullLevelChest.claimableCount > 0;
   const hasLeaderboardAttention = activeActivityBoards.length > 0
@@ -4833,6 +4843,32 @@ function App() {
 
     return () => window.clearTimeout(timer);
   }, [shopNotice, shopError]);
+
+  useEffect(() => {
+    if (!mailNotice && !mailError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setMailNotice("");
+      setMailError("");
+    }, mailError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [mailNotice, mailError]);
+
+  useEffect(() => {
+    if (!chatNotice && !chatError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setChatNotice("");
+      setChatError("");
+    }, chatError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [chatNotice, chatError]);
 
   useEffect(() => {
     if (!seasonNotice && !seasonError) {
@@ -6694,8 +6730,6 @@ function App() {
                       ))}
                     </section>
 
-                    {(chatNotice || chatError) && <p className={chatError ? "task-error mx-3 mb-2" : "task-notice mx-3 mb-2"}>{chatError || chatNotice}</p>}
-
                     <form className="shrink-0 border-t border-business-gold/15 bg-slate-950/45 p-3" data-testid="chat-input-bar" onSubmit={(event) => {
                       event.preventDefault();
                       void sendChatMessage();
@@ -6712,8 +6746,8 @@ function App() {
                             value={chatDraft}
                           />
                         </label>
-                        <button className="btn-gold h-10 w-16 shrink-0 rounded-full text-sm font-black text-business-dark disabled:opacity-50" disabled={!activeChatChannelConfig?.canSend} type="submit">
-                          {activeChatChannel === "system" ? "只读" : "发送"}
+                        <button className="btn-gold h-10 w-16 shrink-0 rounded-full text-sm font-black text-business-dark disabled:opacity-50" disabled={!canSendChatMessage} type="submit">
+                          {!activeChatChannelConfig?.canSend ? "只读" : chatDraft.trim().length === 0 ? "输入" : "发送"}
                         </button>
                       </div>
                     </form>
@@ -6738,11 +6772,11 @@ function App() {
                           <span className="text-[10px] font-bold text-business-gold">未读 {mailCenter?.summary.unreadCount ?? profile.unreadMailCount} / 共 {mailCenter?.summary.totalCount ?? 0}</span>
                         </div>
                         <div className="flex shrink-0 gap-2">
-                          <button className="rounded-full border border-business-gold/40 px-3 py-2 text-[11px] font-black text-business-gold" data-testid="mail-claim-attachments" type="button" onClick={() => void claimMailAttachments()}>
-                            领取附件
+                          <button className="rounded-full border border-business-gold/40 px-3 py-2 text-[11px] font-black text-business-gold disabled:opacity-45" data-testid="mail-claim-attachments" disabled={mailClaimableCount <= 0} type="button" onClick={() => void claimMailAttachments()}>
+                            {mailClaimableCount > 0 ? "领取附件" : "无附件"}
                           </button>
-                          <button className="btn-gold rounded-full px-3 py-2 text-[11px] font-black text-business-dark" data-testid="mail-mark-all-read" type="button" onClick={() => void markAllMailsRead()}>
-                            全部已读
+                          <button className="btn-gold rounded-full px-3 py-2 text-[11px] font-black text-business-dark disabled:opacity-45" data-testid="mail-mark-all-read" disabled={mailUnreadCount <= 0} type="button" onClick={() => void markAllMailsRead()}>
+                            {mailUnreadCount > 0 ? "全部已读" : "已读完"}
                           </button>
                         </div>
                       </div>
@@ -6776,7 +6810,6 @@ function App() {
                           ))}
                         </div>
                       </div>
-                      {(mailNotice || mailError) && <p className={mailError ? "task-error mt-2" : "task-notice mt-2"}>{mailError || mailNotice}</p>}
                     </div>
                     <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
                       <section className="min-h-0 overflow-y-auto scroll-hide divide-y divide-white/5" data-testid="mail-list" aria-label="邮件列表">
@@ -7077,6 +7110,7 @@ function App() {
                               <span className="rounded-full bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-300">{currentActivityProgressLabel}</span>
                               <span className="rounded-full bg-amber-400/10 px-2 py-1 text-[10px] font-black text-amber-300">{currentActivityClaimable ? "目标已达成" : currentActivityProgressButtonLabel}</span>
                             </div>
+                            <p className="mt-2 text-[10px] font-bold leading-4 text-slate-400" data-testid="activity-reward-cadence">{activityRewardCadence}</p>
                           </div>
                         </div>
                         <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/5 p-[2px]">
@@ -7587,6 +7621,9 @@ function App() {
                   <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
                     今日任务：{crossServerCenter?.dailyGoals.find((goal) => goal.id === "cross-daily-reward")?.statusLabel ?? todayGoalSection?.goals[0]?.statusLabel ?? "推进经营目标"} · 待领奖励 {longTermGoals?.summaries.todayClaimableCount ?? 0}
                   </p>
+                  <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] leading-5 text-business-gold font-bold" data-testid="cross-server-reward-cadence">
+                    {crossServerRewardCadence}
+                  </p>
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
@@ -7890,6 +7927,7 @@ function App() {
                         <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-[11px] text-business-gold">{guildDailySummary.projectStatus}</strong><span className="text-[9px] text-slate-500">协作项目</span></div>
                       </div>
                       <p className="mt-3 text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.valueTips.slice(0, 3).join(" · ")}</p>
+                      <p className="mt-2 rounded-2xl bg-business-gold/10 px-3 py-2 text-[10px] leading-5 text-business-gold font-bold" data-testid="guild-reward-cadence">{guildRewardCadence}</p>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -8171,6 +8209,7 @@ function App() {
                           <span className="rounded-xl bg-slate-950/70 px-2 py-2 text-[9px] font-black text-business-gold" key={tip}>{tip}</span>
                         ))}
                       </div>
+                      <p className="mt-3 rounded-2xl bg-business-gold/10 px-3 py-2 text-[10px] leading-5 text-business-gold font-bold" data-testid="guild-reward-cadence">{guildRewardCadence}</p>
                     </section>
                     <button className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={() => void joinGuild()}>
                       加入本服商会
@@ -10489,6 +10528,18 @@ function App() {
           {(phase14Notice || phase14Error) && (nativeHomePage === "guild" || nativeHomePage === "cross-server" || nativeHomePage === "leaderboard") && (
             <div className={`main-gameplay-toast ${phase14Error ? "is-error" : "is-success"}`} role="status" aria-live="polite">
               {phase14Error || phase14Notice}
+            </div>
+          )}
+
+          {(mailNotice || mailError) && nativeHomePage === "mail" && (
+            <div className={`main-gameplay-toast ${mailError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+              {mailError || mailNotice}
+            </div>
+          )}
+
+          {(chatNotice || chatError) && nativeHomePage === "chat" && (
+            <div className={`main-gameplay-toast ${chatError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+              {chatError || chatNotice}
             </div>
           )}
 
