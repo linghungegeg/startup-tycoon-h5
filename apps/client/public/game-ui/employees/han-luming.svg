@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="han-luming portrait">
+  <defs>
+    <linearGradient id="bg" x1="32" y1="22" x2="226" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ca8a04"/>
+      <stop offset="1" stop-color="#fde68a"/>
+    </linearGradient>
+    <linearGradient id="suit" x1="73" y1="154" x2="183" y2="244" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7f1d1d"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="236" height="236" rx="42" fill="#07111f"/>
+  <rect x="18" y="18" width="220" height="220" rx="36" fill="url(#bg)" opacity=".95"/>
+  <path d="M31 199c39-22 65-36 98-36 32 0 63 14 96 36v39H31v-39Z" fill="url(#suit)"/>
+  <path d="M88 168l40 42 40-42 16 22-28 48H100l-28-48 16-22Z" fill="#f8fafc"/>
+  <path d="M115 193h26l7 45h-40l7-45Z" fill="#ca8a04"/>
+  <ellipse cx="128" cy="124" rx="54" ry="62" fill="#d9a078"/>
+  <path d="M75 111c8-39 35-62 72-57 36 5 58 29 62 66-23-19-48-28-78-24-22 3-39 9-56 15Z" fill="#263238"/>
+  <path d="M75 107c7-34 30-55 65-55 37 0 63 23 69 57-13-15-30-25-52-30-35-8-62 2-82 28Z" fill="#263238" opacity=".55"/>
+  <circle cx="107" cy="129" r="5" fill="#111827"/>
+  <circle cx="149" cy="129" r="5" fill="#111827"/>
+  
+  <path d="M119 147c6 4 13 4 19 0" fill="none" stroke="#8a4f38" stroke-width="4" stroke-linecap="round"/>
+  <path d="M91 118c8-6 19-7 27-3M138 115c10-4 20-3 29 4" fill="none" stroke="#2b1d16" stroke-width="5" stroke-linecap="round" opacity=".75"/>
+  <path d="M55 55c19-18 44-28 73-28 30 0 56 10 74 29" fill="none" stroke="#ffffff" stroke-opacity=".24" stroke-width="7" stroke-linecap="round"/>
+  <rect x="18" y="18" width="220" height="220" rx="36" fill="none" stroke="#c4b5fd" stroke-width="6"/>
+  <path d="M199 36h15v15M42 201v15h15" fill="none" stroke="#c4b5fd" stroke-width="5" stroke-linecap="round"/>
+</svg>

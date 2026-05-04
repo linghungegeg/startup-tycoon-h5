@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
+const EMPLOYEE_CULTIVATE_COST = 20_000;
 const SESSION_KEY = "wenziyouxi.client.session";
 const REMEMBER_AUTH_KEY = "wenziyouxi.client.rememberAuth";
 const SESSION_VERSION = 1;
@@ -665,6 +666,8 @@ type CompetitorAction = {
   summary: string;
   status: "pending" | "resolved";
   response: "defend" | "counter" | null;
+  defendCost: number;
+  counterCost: number;
   resultSummary: string | null;
   createdAt: string;
   resolvedAt: string | null;
@@ -2564,6 +2567,8 @@ function App() {
     () => (selectedEmployee ? (employeeCollection?.entries ?? []).find((entry) => entry.id === selectedEmployee.configId) : undefined),
     [employeeCollection?.entries, selectedEmployee]
   );
+  const employeeCash = companyFinance?.cash ?? profile?.cash ?? 0;
+  const canCultivateSelectedEmployee = selectedEmployee !== undefined && selectedEmployee.isActive && employeeCash >= EMPLOYEE_CULTIVATE_COST;
   const lastRecruitedCollectionEntry = useMemo(
     () => (lastRecruitedEmployee ? (employeeCollection?.entries ?? []).find((entry) => entry.id === lastRecruitedEmployee.configId) : undefined),
     [employeeCollection?.entries, lastRecruitedEmployee]
@@ -2761,6 +2766,11 @@ function App() {
     () => activeLoans.find((item) => item.configId === selectedLoanOffer?.id),
     [activeLoans, selectedLoanOffer?.id]
   );
+  const loanCash = loanCenter?.finance.cash ?? profile?.cash ?? 0;
+  const selectedLoanScheduledRepayCost = selectedOfferLoan ? selectedOfferLoan.monthlyPayment + selectedOfferLoan.penaltyAccrued : 0;
+  const selectedLoanFullRepayCost = selectedLoan ? selectedLoan.remainingPrincipal + selectedLoan.penaltyAccrued : 0;
+  const canRepaySelectedLoanScheduled = selectedOfferLoan !== undefined && loanCash >= selectedLoanScheduledRepayCost;
+  const canRepaySelectedLoanFull = selectedLoan !== undefined && loanCash >= selectedLoanFullRepayCost;
   const sortedLoanOffers = useMemo(() => {
     const statusRank = (offer: LoanOffer): number => {
       const active = activeLoans.some((loan) => loan.configId === offer.id);
@@ -2853,6 +2863,11 @@ function App() {
     () => activeProducts.find((item) => item.id === selectedProductId) ?? activeProducts[0],
     [activeProducts, selectedProductId]
   );
+  const productCash = productCenter?.finance.cash ?? profile?.cash ?? 0;
+  const selectedProductAdvanceCost = selectedProduct?.acquisitionCost ?? 0;
+  const selectedProductRefactorCost = selectedProduct ? Math.max(120000, Math.round(selectedProduct.acquisitionCost * 0.8)) : 0;
+  const canAdvanceSelectedProduct = selectedProduct !== undefined && productCash >= selectedProductAdvanceCost;
+  const canRefactorSelectedProduct = selectedProduct !== undefined && productCash >= selectedProductRefactorCost;
   const totalProductUsers = useMemo(
     () => activeProducts.reduce((total, item) => total + item.users, 0),
     [activeProducts]
@@ -2876,6 +2891,11 @@ function App() {
   const hasAvailableCompetitorAction = selectedMarket
     ? selectedMarket.availableCompetitorActionCount === undefined || selectedMarket.availableCompetitorActionCount > 0
     : false;
+  const marketCash = marketCenter?.finance.cash ?? profile?.cash ?? 0;
+  const selectedCompetitorDefendCost = selectedCompetitorAction?.defendCost ?? 0;
+  const selectedCompetitorCounterCost = selectedCompetitorAction?.counterCost ?? 0;
+  const canDefendSelectedCompetitorAction = selectedCompetitorAction !== undefined && marketCash >= selectedCompetitorDefendCost;
+  const canCounterSelectedCompetitorAction = selectedCompetitorAction !== undefined && marketCash >= selectedCompetitorCounterCost;
   const selectedShopProduct = useMemo(
     () => shopCenter?.products.find((item) => item.id === selectedShopProductId) ?? null,
     [selectedShopProductId, shopCenter?.products]
@@ -3067,6 +3087,8 @@ function App() {
   );
   const exchangeableActivityShopItems = activityShopItems.filter((item) => item.isAvailable);
   const seasonPoints = seasonCenter?.season.points ?? 0;
+  const seasonPlatformCoins = seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile?.platformCoins ?? 0;
+  const canPurchaseSeasonPass = seasonCenter !== null && seasonPlatformCoins >= seasonCenter.season.pass.pricePlatformCoins;
   const selectedActivityShopItem = activityShopItems.find((item) => item.id === selectedActivityShopItemId) ?? null;
   const primaryActivityBoard = activeActivityBoards[0] ?? null;
   const getLeaderboardSelfValue = (boardKey: string): number => {
@@ -4760,6 +4782,46 @@ function App() {
   }, [projectNotice, projectError]);
 
   useEffect(() => {
+    if (!employeeError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setEmployeeError("");
+    }, 3200);
+
+    return () => window.clearTimeout(timer);
+  }, [employeeError]);
+
+  useEffect(() => {
+    if (!taskNotice && !taskError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setTaskNotice("");
+      setTaskError("");
+    }, taskError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [taskNotice, taskError]);
+
+  useEffect(() => {
+    if (!eventNotice && !eventError && !randomTaskNotice && !randomTaskError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setEventNotice("");
+      setEventError("");
+      setRandomTaskNotice("");
+      setRandomTaskError("");
+    }, eventError || randomTaskError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [eventNotice, eventError, randomTaskNotice, randomTaskError]);
+
+  useEffect(() => {
     if (!shopNotice && !shopError) {
       return;
     }
@@ -4771,6 +4833,32 @@ function App() {
 
     return () => window.clearTimeout(timer);
   }, [shopNotice, shopError]);
+
+  useEffect(() => {
+    if (!seasonNotice && !seasonError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setSeasonNotice("");
+      setSeasonError("");
+    }, seasonError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [seasonNotice, seasonError]);
+
+  useEffect(() => {
+    if (!phase14Notice && !phase14Error) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPhase14Notice("");
+      setPhase14Error("");
+    }, phase14Error ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [phase14Notice, phase14Error]);
 
   useEffect(() => {
     setGuildAnnouncementDraft(guildCenter?.guild?.announcement ?? "");
@@ -5597,6 +5685,10 @@ function App() {
 
   const cultivateEmployee = async (): Promise<void> => {
     if (!selectedEmployee || !selectedEmployee.isActive) {
+      return;
+    }
+    if (!canCultivateSelectedEmployee) {
+      setEmployeeError("现金不足，暂时无法培养员工。");
       return;
     }
 
@@ -6899,12 +6991,6 @@ function App() {
 
               {activeActivityView === "main" && (
                 <div className="relative z-10 flex-1 overflow-y-auto px-6 pb-28 pt-12 scroll-hide">
-                  {(seasonNotice || seasonError) && (
-                    <p className={`mb-4 rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                      {seasonError || seasonNotice}
-                    </p>
-                  )}
-
                   <header className="mb-6 flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <span className="mb-1 inline-block rounded border border-cyan-400/30 bg-cyan-400/20 px-2 py-0.5 text-[10px] font-bold tracking-[0.08em] text-cyan-300">第4赛季 新纪元</span>
@@ -7336,12 +7422,6 @@ function App() {
               </nav>
 
               <div className="leaderboard-content scroll-hide">
-                {(phase14Notice || phase14Error) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {phase14Error || phase14Notice}
-                  </p>
-                )}
-
                 <section className="leaderboard-podium" aria-label="巅峰席位">
                   {podiumLeaderboardCards.length > 0 ? (
                     <div className="leaderboard-podium-grid">
@@ -7490,12 +7570,6 @@ function App() {
                       </nav>
                     </div>
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-hide">
-                {(phase14Notice || phase14Error) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {phase14Error || phase14Notice}
-                  </p>
-                )}
-
                 <div className="space-y-3" hidden={activeCrossServerMode !== "season"}>
                 <section className="rounded-2xl border border-business-gold/25 bg-slate-950/40 p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -7732,19 +7806,19 @@ function App() {
                   <button
                     className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
                     data-testid="cross-server-register-button"
-                    disabled={crossServerCenter?.isRegistered}
+                    disabled={!crossServerCenter || crossServerCenter.isRegistered}
                     type="button"
                     onClick={() => void registerCrossServer()}
                   >
                     {crossServerCenter?.isRegistered ? "已报名" : "报名跨服"}
                   </button>
-                  <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold" type="button" onClick={() => void settleCrossServer()}>
+                  <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!crossServerCenter} type="button" onClick={() => void settleCrossServer()}>
                     结算跨服
                   </button>
                   <button
                     className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45"
                     data-testid="cross-server-guild-register-button"
-                    disabled={!crossServerCenter?.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
+                    disabled={!crossServerCenter || !crossServerCenter.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
                     type="button"
                     onClick={() => void registerCrossServerGuild()}
                   >
@@ -7805,7 +7879,7 @@ function App() {
                           <strong className="block text-sm text-white font-black">今日商会目标</strong>
                           <span className="mt-1 block text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.recommendedAction.reason}</span>
                         </div>
-                        <button className="shrink-0 btn-gold rounded-xl px-3 py-2 text-[10px] font-black text-business-dark" type="button" onClick={() => void handleGuildRecommendedAction()}>
+                        <button className="shrink-0 btn-gold rounded-xl px-3 py-2 text-[10px] font-black text-business-dark disabled:opacity-45" disabled={!guildCenter} type="button" onClick={() => void handleGuildRecommendedAction()}>
                           {guildDailySummary.recommendedAction.label}
                         </button>
                       </div>
@@ -8103,11 +8177,6 @@ function App() {
                     </button>
                   </section>
                 )}
-                {(phase14Notice || phase14Error) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${phase14Error ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {phase14Error || phase14Notice}
-                  </p>
-                )}
                 {!guildCenter && <p className="glass-panel rounded-3xl p-4 text-xs text-slate-300 font-bold">暂无商会数据。</p>}
               </div>
             </section>
@@ -8368,11 +8437,6 @@ function App() {
                 </button>
               </header>
               <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
-                {(seasonNotice || seasonError) && (
-                  <p className={`rounded-2xl px-4 py-3 text-xs font-bold ${seasonError ? "bg-red-500/15 text-red-200" : "bg-emerald-500/15 text-emerald-100"}`}>
-                    {seasonError || seasonNotice}
-                  </p>
-                )}
                 <section className="glass-panel rounded-3xl p-5 border-emerald-400/30 bg-gradient-to-br from-emerald-400/15 to-slate-950">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -8387,7 +8451,7 @@ function App() {
                   <div className="mt-5 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonCenter?.season.points ?? 0}</strong><span className="text-[9px] text-slate-500">赛季积分</span></div>
                     <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-business-gold">{seasonCenter?.season.pass.pricePlatformCoins ?? 0}</strong><span className="text-[9px] text-slate-500">开通价格</span></div>
-                    <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonCenter?.wallet.balance ?? shopCenter?.wallet.balance ?? profile.platformCoins}</strong><span className="text-[9px] text-slate-500">平台币</span></div>
+                    <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-sm text-white">{seasonPlatformCoins}</strong><span className="text-[9px] text-slate-500">平台币</span></div>
                   </div>
                   {companyGrowth && companyGrowth.nextLevelExperience === null && (
                     <div className="mt-3 rounded-2xl bg-slate-900/60 border border-business-gold/20 p-3">
@@ -8440,11 +8504,11 @@ function App() {
                   </div>
                   <button
                     className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark disabled:opacity-45"
-                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased}
+                    disabled={!seasonCenter || seasonCenter.season.pass.isPurchased || !canPurchaseSeasonPass}
                     type="button"
                     onClick={() => void purchaseSeasonPass()}
                   >
-                    {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : `开通通行证 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
+                    {seasonCenter?.season.pass.isPurchased ? "通行证已开通" : !canPurchaseSeasonPass ? "平台币不足" : `开通通行证 ${seasonCenter?.season.pass.pricePlatformCoins ?? 0}`}
                   </button>
                 </section>
                 <section className="grid grid-cols-2 gap-3">
@@ -8772,7 +8836,11 @@ function App() {
                 <button className={employeeViewTab === "recruit" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("recruit")}>招募</button>
                 <button className={employeeViewTab === "growth" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("growth")}>养成</button>
               </nav>
-              {employeeError && <p className="employee-error">{employeeError}</p>}
+              {employeeError && (
+                <div className="main-gameplay-toast is-error" role="status" aria-live="polite">
+                  {employeeError}
+                </div>
+              )}
 
               {employeeViewTab === "team" ? (
                 <section className="employee-layout">
@@ -8843,11 +8911,11 @@ function App() {
 
                         <p>{selectedEmployee.specialty} 成长潜力 {selectedEmployee.growthPotential}。</p>
                         <p>
-                          培养消耗资金，提升属性和月薪；员工关怀消耗员工好感礼物，降低压力并提升忠诚；股权激励消耗创始人 1% 股权。
+                          培养消耗资金 {compactNumber(EMPLOYEE_CULTIVATE_COST)}，提升属性和月薪；员工关怀消耗员工好感礼物，降低压力并提升忠诚；股权激励消耗创始人 1% 股权。
                         </p>
 
                         <div className="employee-actions">
-                          <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
+                          <button type="button" onClick={() => void cultivateEmployee()} disabled={!canCultivateSelectedEmployee}>{selectedEmployee.isActive && !canCultivateSelectedEmployee ? "现金不足" : "培养"}</button>
                           <button type="button" onClick={() => void supportEmployee()} disabled={!selectedEmployee.isActive || employeeGiftCount <= 0}>{employeeGiftCount > 0 ? "关怀" : "需要礼物"}</button>
                           <button type="button" onClick={grantEmployeeEquity} disabled={!selectedEmployee.isActive}>股权</button>
                           <button type="button" onClick={() => void dismissEmployee()} disabled={!selectedEmployee.isActive}>裁员</button>
@@ -8957,7 +9025,7 @@ function App() {
                 <section className="employee-growth-panel" aria-label="员工养成">
                   <article>
                     <strong>养成资源</strong>
-                    <span>培养资金 2 万 · 培训手册 {trainingManualCount} · 员工好感礼物 {employeeGiftCount}</span>
+                    <span>培养资金 {compactNumber(EMPLOYEE_CULTIVATE_COST)} · 培训手册 {trainingManualCount} · 员工好感礼物 {employeeGiftCount}</span>
                     <p>培养提升等级、三项能力和月薪，也会增强岗位对融资、产品和市场的支撑；关怀降低压力、提升忠诚；股权激励消耗创始人 1% 股权并稳定核心员工。</p>
                   </article>
                   {selectedEmployee ? (
@@ -8966,7 +9034,7 @@ function App() {
                       <span>经验 {selectedEmployee.experience} · 压力状态 {selectedEmployee.pressureState} · 事件 {formatEmployeeEventState(selectedEmployee.eventState)}</span>
                       <p>{selectedEmployee.specialty}</p>
                       <div className="employee-actions">
-                        <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
+                        <button type="button" onClick={() => void cultivateEmployee()} disabled={!canCultivateSelectedEmployee}>{selectedEmployee.isActive && !canCultivateSelectedEmployee ? "现金不足" : "培养"}</button>
                         <button type="button" onClick={() => void supportEmployee()} disabled={!selectedEmployee.isActive || employeeGiftCount <= 0}>{employeeGiftCount > 0 ? "关怀" : "需要礼物"}</button>
                         <button type="button" onClick={grantEmployeeEquity} disabled={!selectedEmployee.isActive}>股权</button>
                       </div>
@@ -9235,7 +9303,7 @@ function App() {
                       {selectedProduct && (
                         <section className="funding-active">
                           <strong>{productStageLabels[selectedProduct.stage]} · {selectedProduct.category}</strong>
-                          <span>服务器成本 {compactNumber(selectedProduct.serverCost)}，获客成本 {compactNumber(selectedProduct.acquisitionCost)}。</span>
+                          <span>服务器成本 {compactNumber(selectedProduct.serverCost)}，推进成本 {compactNumber(selectedProductAdvanceCost)}，重构成本 {compactNumber(selectedProductRefactorCost)}。</span>
                           <small>口碑 {selectedProduct.reputationScore} · 状态 {selectedProduct.status === "closed" ? "已关闭" : "运营中"}</small>
                         </section>
                       )}
@@ -9250,17 +9318,35 @@ function App() {
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedProduct}
-                          onClick={() => selectedProduct && void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/advance`)}
+                          disabled={!canAdvanceSelectedProduct}
+                          onClick={() => {
+                            if (!selectedProduct) {
+                              return;
+                            }
+                            if (!canAdvanceSelectedProduct) {
+                              setProductError("现金不足，暂时无法推进产品。");
+                              return;
+                            }
+                            void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/advance`);
+                          }}
                         >
-                          推进
+                          {selectedProduct && !canAdvanceSelectedProduct ? "现金不足" : "推进"}
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedProduct}
-                          onClick={() => selectedProduct && void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/refactor`)}
+                          disabled={!canRefactorSelectedProduct}
+                          onClick={() => {
+                            if (!selectedProduct) {
+                              return;
+                            }
+                            if (!canRefactorSelectedProduct) {
+                              setProductError("现金不足，暂时无法推进产品。");
+                              return;
+                            }
+                            void runProductAction(`/products/${encodeURIComponent(selectedProduct.id)}/refactor`);
+                          }}
                         >
-                          重构
+                          {selectedProduct && !canRefactorSelectedProduct ? "现金不足" : "重构"}
                         </button>
                         <button
                           type="button"
@@ -9381,7 +9467,7 @@ function App() {
                         <section className="funding-active">
                           <strong>{competitorActionLabels[selectedCompetitorAction.actionType]} · {selectedCompetitorAction.competitorName}</strong>
                           <span>{selectedCompetitorAction.title}</span>
-                          <small>{selectedCompetitorAction.summary}</small>
+                          <small>{selectedCompetitorAction.summary} · 防守 {compactNumber(selectedCompetitorDefendCost)} · 反击 {compactNumber(selectedCompetitorCounterCost)}</small>
                         </section>
                       )}
 
@@ -9418,17 +9504,35 @@ function App() {
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedCompetitorAction}
-                          onClick={() => selectedCompetitorAction && void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "defend" })}
+                          disabled={!canDefendSelectedCompetitorAction}
+                          onClick={() => {
+                            if (!selectedCompetitorAction) {
+                              return;
+                            }
+                            if (!canDefendSelectedCompetitorAction) {
+                              setMarketError("现金不足，暂时无法应对市场行动。");
+                              return;
+                            }
+                            void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "defend" });
+                          }}
                         >
-                          防守
+                          {selectedCompetitorAction && !canDefendSelectedCompetitorAction ? "现金不足" : "防守"}
                         </button>
                         <button
                           type="button"
-                          disabled={!selectedCompetitorAction}
-                          onClick={() => selectedCompetitorAction && void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "counter" })}
+                          disabled={!canCounterSelectedCompetitorAction}
+                          onClick={() => {
+                            if (!selectedCompetitorAction) {
+                              return;
+                            }
+                            if (!canCounterSelectedCompetitorAction) {
+                              setMarketError("现金不足，暂时无法应对市场行动。");
+                              return;
+                            }
+                            void runMarketAction(`/markets/actions/${encodeURIComponent(selectedCompetitorAction.id)}/respond`, { response: "counter" });
+                          }}
                         >
-                          反击
+                          {selectedCompetitorAction && !canCounterSelectedCompetitorAction ? "现金不足" : "反击"}
                         </button>
                       </div>
                     </>
@@ -9822,6 +9926,9 @@ function App() {
                     {selectedOfferLoan && (
                       <p className="loan-native-due-text">下期账单：{selectedOfferLoan.nextDueText || `还差 ${selectedOfferLoan.nextDueTicks} 次经营脉冲`}</p>
                     )}
+                    {selectedOfferLoan && (
+                      <p className="loan-native-due-text">本期还款 ¥{compactNumber(selectedLoanScheduledRepayCost)} · 提前结清 ¥{compactNumber(selectedLoanFullRepayCost)}</p>
+                    )}
                     <p>{selectedLoanOffer.summary}</p>
                     <small className="loan-native-impact-note">月供压力高 · 逾期会降信用</small>
                     <ul>
@@ -9839,17 +9946,30 @@ function App() {
                 <div>
                   <button
                     type="button"
-                    disabled={!selectedLoan}
-                    onClick={() => selectedLoan && void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "full" })}
+                    disabled={!canRepaySelectedLoanFull}
+                    onClick={() => {
+                      if (!selectedLoan) {
+                        return;
+                      }
+                      if (!canRepaySelectedLoanFull) {
+                        setLoanError("现金不足，暂时无法还款。");
+                        return;
+                      }
+                      void runLoanAction(`/finance/loans/${encodeURIComponent(selectedLoan.id)}/repay`, { mode: "full" });
+                    }}
                   >
-                    提前结清
+                    {selectedLoan && !canRepaySelectedLoanFull ? "现金不足" : "提前结清"}
                   </button>
                 </div>
                 <button
                   type="button"
-                  disabled={!selectedLoanOffer || (!selectedLoanOffer.isAvailable && !selectedOfferLoan)}
+                  disabled={!selectedLoanOffer || (!selectedLoanOffer.isAvailable && !selectedOfferLoan) || (selectedOfferLoan !== undefined && !canRepaySelectedLoanScheduled)}
                   onClick={() => {
                     if (selectedOfferLoan) {
+                      if (!canRepaySelectedLoanScheduled) {
+                        setLoanError("现金不足，暂时无法还款。");
+                        return;
+                      }
                       void runLoanAction(`/finance/loans/${encodeURIComponent(selectedOfferLoan.id)}/repay`, { mode: "scheduled" });
                       return;
                     }
@@ -9858,7 +9978,7 @@ function App() {
                     }
                   }}
                 >
-                  {selectedOfferLoan ? loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan) : selectedLoanOffer?.isAvailable ? "申请签约拨备" : loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan)}
+                  {selectedOfferLoan && !canRepaySelectedLoanScheduled ? "现金不足" : selectedOfferLoan ? loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan) : selectedLoanOffer?.isAvailable ? "申请签约拨备" : loanPrimaryActionLabel(selectedLoanOffer, selectedOfferLoan)}
                 </button>
               </footer>
 
@@ -9924,8 +10044,11 @@ function App() {
               </nav>
 
               <p className="task-tip">{activeTaskTip}</p>
-              {taskNotice && <p className="task-notice">{taskNotice}</p>}
-              {taskError && <p className="task-error">{taskError}</p>}
+              {(taskNotice || taskError) && (
+                <div className={`main-gameplay-toast ${taskError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {taskError || taskNotice}
+                </div>
+              )}
 
               <section className="task-list" aria-label="任务列表">
                 {visibleTasks.length === 0 ? (
@@ -9981,10 +10104,11 @@ function App() {
                 <span>随机待办 {pendingRandomTasks.length}</span>
                 <span>今日处理 {randomTaskCenter?.handledToday ?? 0}/{randomTaskCenter?.dailyLimit ?? 6}</span>
               </section>
-              {eventNotice && <p className="event-notice">{eventNotice}</p>}
-              {eventError && <p className="event-error">{eventError}</p>}
-              {randomTaskNotice && <p className="event-notice">{randomTaskNotice}</p>}
-              {randomTaskError && <p className="event-error">{randomTaskError}</p>}
+              {(eventNotice || eventError || randomTaskNotice || randomTaskError) && (
+                <div className={`main-gameplay-toast ${eventError || randomTaskError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {eventError || randomTaskError || eventNotice || randomTaskNotice}
+                </div>
+              )}
 
               <section className="event-result" aria-label="今日建议">
                 <strong>今日建议</strong>
@@ -10356,6 +10480,18 @@ function App() {
             </section>
           )}
 
+          {(seasonNotice || seasonError) && (nativeHomePage === "season" || nativeHomePage === "pass") && (
+            <div className={`main-gameplay-toast ${seasonError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+              {seasonError || seasonNotice}
+            </div>
+          )}
+
+          {(phase14Notice || phase14Error) && (nativeHomePage === "guild" || nativeHomePage === "cross-server" || nativeHomePage === "leaderboard") && (
+            <div className={`main-gameplay-toast ${phase14Error ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+              {phase14Error || phase14Notice}
+            </div>
+          )}
+
           {activeRandomTask && (
             <section className="random-task-overlay" aria-label="随机经营任务弹窗" data-testid="random-task-modal">
               <article className="random-task-modal">
@@ -10381,7 +10517,7 @@ function App() {
                   )}
 
                   {(randomTaskNotice || randomTaskError) && (
-                    <span className={randomTaskError ? "random-task-error" : "random-task-notice"}>
+                    <span className={`main-gameplay-toast is-modal ${randomTaskError ? "is-error" : "is-success"}`}>
                       {randomTaskError || randomTaskNotice}
                     </span>
                   )}

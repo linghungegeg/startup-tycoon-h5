@@ -725,6 +725,8 @@ export type CompetitorActionRecord = {
   summary: string;
   status: "pending" | "resolved";
   response: "defend" | "counter" | null;
+  defendCost: number;
+  counterCost: number;
   resultSummary: string | null;
   createdAt: string;
   resolvedAt: string | null;
@@ -2907,6 +2909,14 @@ const marketActionSupportRoles: Record<CompetitorActionType, string[]> = {
 const calculateMarketEmployeeSupport = (employees: EmployeeRecord[], actionType: CompetitorActionType): number =>
   Math.min(4, countCoveredRoles(employees, employeeEffectRoles.market) + countCoveredRoles(employees, marketActionSupportRoles[actionType]));
 
+const calculateCompetitorResponseCosts = (responseCost: number, employeeSupport: number): { defendCost: number; counterCost: number } => {
+  const discountBasis = (100 - Math.min(12, employeeSupport * 3)) / 100;
+  return {
+    defendCost: Math.max(0, Math.round(Math.round(responseCost * 0.55) * discountBasis)),
+    counterCost: Math.max(0, Math.round(responseCost * discountBasis))
+  };
+};
+
 const readJsonStringArray = (value: string | null): string[] => {
   if (value === null) {
     return [];
@@ -3475,6 +3485,8 @@ const toCompetitorActionRecord = (action: {
   summary: string;
   status: string;
   response: string | null;
+  defendCost?: number;
+  counterCost?: number;
   resultSummary: string | null;
   createdAt: Date;
   resolvedAt: Date | null;
@@ -3488,6 +3500,8 @@ const toCompetitorActionRecord = (action: {
   summary: action.summary,
   status: readCompetitorActionStatus(action.status),
   response: readCompetitorResponse(action.response),
+  defendCost: action.defendCost ?? 0,
+  counterCost: action.counterCost ?? 0,
   resultSummary: action.resultSummary,
   createdAt: action.createdAt.toISOString(),
   resolvedAt: action.resolvedAt?.toISOString() ?? null
@@ -3815,6 +3829,7 @@ const toMarketCenterRecord = async (
     }),
     prisma.playerCompetitorAction.findMany({
       where: { profileId: profile.id },
+      include: { config: true },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }]
     }),
     listActiveEmployeeRecords(prisma, profile.id)
@@ -3847,7 +3862,15 @@ const toMarketCenterRecord = async (
         availableCompetitorActionCount: competitorActionConfigs.filter((config) => config.trackId === market.trackId && !usedActionIds.has(config.id)).length
       };
     }),
-    actions: actions.map(toCompetitorActionRecord),
+    actions: actions.map((action) => {
+      const employeeSupport = calculateMarketEmployeeSupport(employees, readCompetitorActionType(action.actionType));
+      const costs = calculateCompetitorResponseCosts(action.config.responseCost, employeeSupport);
+      return toCompetitorActionRecord({
+        ...action,
+        defendCost: costs.defendCost,
+        counterCost: costs.counterCost
+      });
+    }),
     finance: toCompanyFinanceRecord(profile),
     employeeEffect: buildEmployeeEffect(employees, "market")
   };
@@ -10792,6 +10815,9 @@ export const createPrismaGameRepository = (
     if (config === null) {
       return "COMPETITOR_ACTION_NOT_FOUND";
     }
+    const employees = await listActiveEmployeeRecords(prisma, profile.id);
+    const employeeSupport = calculateMarketEmployeeSupport(employees, readCompetitorActionType(config.actionType));
+    const costs = calculateCompetitorResponseCosts(config.responseCost, employeeSupport);
 
     const result = await prisma.$transaction(async (tx) => {
       const action = await tx.playerCompetitorAction.create({
@@ -10837,7 +10863,11 @@ export const createPrismaGameRepository = (
 
     return {
       market: toPlayerMarketRecord(result.market),
-      action: toCompetitorActionRecord(result.action),
+      action: toCompetitorActionRecord({
+        ...result.action,
+        defendCost: costs.defendCost,
+        counterCost: costs.counterCost
+      }),
       marketCenter: await toMarketCenterRecord(prisma, toProfileRecord(result.profile)),
       result: `${config.competitorName} 已发起${config.title}。`
     };
@@ -10882,8 +10912,8 @@ export const createPrismaGameRepository = (
     const employees = await listActiveEmployeeRecords(prisma, profile.id);
     const marketEmployeeEffect = buildEmployeeEffect(employees, "market");
     const employeeSupport = calculateMarketEmployeeSupport(employees, readCompetitorActionType(action.actionType));
-    const baseResponseCost = response === "counter" ? action.config.responseCost : Math.round(action.config.responseCost * 0.55);
-    const responseCost = Math.max(0, Math.round(baseResponseCost * (100 - Math.min(12, employeeSupport * 3)) / 100));
+    const costs = calculateCompetitorResponseCosts(action.config.responseCost, employeeSupport);
+    const responseCost = response === "counter" ? costs.counterCost : costs.defendCost;
     if (profile.cash < responseCost) {
       return "INSUFFICIENT_CASH";
     }

@@ -3466,7 +3466,7 @@ const employeeConfigs = [
 ].map((config) => ({
   ...config,
   portraitAssetId: `employee-portrait-${config.id}`,
-  portraitUrl: null,
+  portraitUrl: `/game-ui/employees/${config.id}.svg`,
   avatarFrameId: config.rarity === "传奇" ? "employee-frame-legend" : config.rarity === "顶尖" ? "employee-frame-elite" : null,
   obtainSource: config.sortOrder >= 28 && config.sortOrder <= 30 ? "限时人才池" : "常驻人才池",
   tagsJson: JSON.stringify([config.role, config.careerLevel, config.rarity]),

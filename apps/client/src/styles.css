@@ -3899,6 +3899,41 @@ input {
   color: #ffd1d1;
 }
 
+.main-gameplay-toast {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  z-index: 18;
+  width: min(72%, 310px);
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(246, 204, 116, 0.44);
+  border-left-width: 4px;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  padding: 10px 14px;
+  color: #fff1c9;
+  background: rgba(18, 35, 28, 0.96);
+  font-size: clamp(11px, 3vw, 13px);
+  font-weight: 950;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+  animation: operationToastIn 0.18s ease-out;
+}
+
+.main-gameplay-toast.is-error {
+  border-color: rgba(239, 68, 68, 0.52);
+  background: rgba(48, 20, 20, 0.96);
+  color: #ffd1d1;
+}
+
+.main-gameplay-toast.is-modal {
+  position: static;
+  display: block;
+  width: auto;
+  transform: none;
+}
+
 .shop-purchase-popup {
   position: absolute;
   top: 42%;
