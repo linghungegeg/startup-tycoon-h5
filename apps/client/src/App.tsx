@@ -2526,7 +2526,9 @@ function App() {
     return [
       buildGoal("资本团队", ["投资关系", "财务", "法务", "高管", "顾问"], "支撑融资路演和贷款判断"),
       buildGoal("市场团队", ["市场", "公关", "销售", "客服", "法务"], "支撑竞品应对和客户迁移"),
-      buildGoal("产品团队", ["产品经理", "工程师", "运营", "市场"], "支撑产品推进和留存增长")
+      buildGoal("产品团队", ["产品经理", "工程师", "运营", "市场"], "支撑产品推进和留存增长"),
+      buildGoal("管理团队", ["高管", "HR", "财务", "顾问"], "支撑扩张节奏和团队稳定"),
+      buildGoal("服务团队", ["客服", "公关", "销售", "法务"], "支撑客户续约和风险降温")
     ];
   }, [employeeCollection?.entries]);
   const selectedTargetRecruitRole = targetRecruitRole || employeeRecruitRoles[0] || "";
@@ -8552,7 +8554,7 @@ function App() {
                 <span>月薪合计 {formatWan(totalEmployeeSalary)}</span>
               </section>
               <section className="employee-summary" aria-label="员工收集">
-                <span>已招募 {employeeCollection?.owned ?? 0}/{employeeCollection?.total ?? 48}</span>
+                <span>已招募 {employeeCollection?.owned ?? 0}/{employeeCollection?.total ?? 60}</span>
                 <span>岗位覆盖 {employeeCollection?.roleCount ?? 0}</span>
                 <span>稀有人才 {employeeCollection?.rareOwned ?? 0}</span>
               </section>

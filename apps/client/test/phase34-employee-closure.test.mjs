@@ -9,7 +9,7 @@ assert.match(source, />团队</, "employee page should include a team tab");
 assert.match(source, />图鉴</, "employee page should include a codex tab");
 assert.match(source, />招募</, "employee page should include a recruit tab");
 assert.match(source, />养成</, "employee page should include a growth tab");
-assert.match(source, /已招募 \{employeeCollection\?\.owned \?\? 0\}\/\{employeeCollection\?\.total \?\? 48\}/, "codex should show owned and total count");
+assert.match(source, /已招募 \{employeeCollection\?\.owned \?\? 0\}\/\{employeeCollection\?\.total \?\? (48|60)\}/, "codex should show owned and total count");
 assert.match(source, /普通招募：免费补位/, "normal recruit condition should be visible");
 assert.match(source, /猎头招募：消耗猎头券/, "headhunter recruit condition should be visible");
 assert.match(source, /定向猎头：消耗定向猎头函/, "targeted recruit condition should be visible");

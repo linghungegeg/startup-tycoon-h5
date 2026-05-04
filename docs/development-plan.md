@@ -2890,6 +2890,23 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase40-employee-collection-loop.test.mjs`、`node --import tsx --test --test-name-pattern "employee collection goals route" apps/api/test/http.test.ts`，以及员工、经理、主流程、typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：本批稳定后再考虑员工 60 人长期池或正式头像资源；不在本批加入员工剧情树、皮肤商店或限定池。
 
+### Phase 36：员工长期收集层
+
+- 当前稳定点：`c662e26 feat: connect employee collection goals to recruitment`。
+- 阶段目标：将 48 人中期池扩为 60 人长期池，补齐头像资源承载和长期收集目标；不做正式头像美术、不新增剧情树、皮肤商店、复杂羁绊或新付费池。
+- 完成内容：
+  - 员工配置新增 12 名虚构员工，继续覆盖投资关系、财务、法务、高管、顾问、公关、客服、市场、产品经理、工程师、HR、销售等长期经营岗位。
+  - 图鉴总量进入 `X/60`，保留 `portraitAssetId`、`portraitUrl`、`avatarFrameId` 和姓名占位头像，后续替换正式头像不改布局结构。
+  - 收集目标从资本、市场、产品扩展到管理团队和服务团队，仍只展示岗位进度和经营用途，不提供直接战力膨胀奖励。
+  - 招募、经理建议、产品、市场、融资、商会既有闭环不改接口、不新增付费池，定向猎头继续作为补岗位选择权。
+- 四插件证据：
+  - Superpowers：按 TDD 先补 Phase 41 红灯，再做最小 seed 和 UI 实现。
+  - Build Web Apps：检查图鉴目标仍为紧凑信息条，头像位继续稳定，不新增大卡片或营销式说明。
+  - Game Studio：员工 60 人服务长期收集、岗位补齐和回访目标，不打乱现有经营循环。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工图鉴 `X/60`、五类收集目标、招募页和 Console。
+- 验证命令：`node apps/client/test/phase41-employee-long-term-collection.test.mjs`、`node apps/client/test/phase39-employee-48-collection.test.mjs`、`node apps/client/test/phase40-employee-collection-loop.test.mjs`，以及员工、经理、typecheck、lint、build、`db:seed` 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估正式头像资源替换或员工外观展示；不在本批加入新付费池或剧情树。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
