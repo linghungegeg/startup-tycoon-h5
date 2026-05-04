@@ -1048,6 +1048,27 @@ type CrossServerCenter = {
       valueLabel: string;
     }>;
   };
+  matchup: {
+    selfLabel: string;
+    selfName: string;
+    selfRank: number | null;
+    selfValueLabel: string;
+    opponentLabel: string;
+    opponentName: string;
+    opponentServerName: string;
+    opponentRank: number | null;
+    opponentValueLabel: string;
+    valueGapLabel: string;
+    statusLabel: string;
+    pressureLabel: string;
+    guildPressureLabel: string;
+  };
+  round: {
+    zoneLabel: string;
+    phaseLabel: string;
+    statusLabel: string;
+    settlementLabel: string;
+  };
   battleReport: CrossServerBattleReport;
 };
 
@@ -3025,6 +3046,8 @@ function App() {
   const personalCrossRank = profile === null ? "-" : primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-";
   const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
   const crossServerBattleReport = crossServerCenter?.battleReport ?? null;
+  const crossServerMatchup = crossServerCenter?.matchup ?? null;
+  const crossServerRound = crossServerCenter?.round ?? null;
   const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
   const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
   const todayGoalSection = longTermGoals?.sections.find((section) => section.key === "today") ?? null;
@@ -7576,8 +7599,8 @@ function App() {
                             <Icon name="trophy" className="h-5 w-5" />
                             <span className="text-[10px] font-black">跨服中心</span>
                           </div>
-                          <h2 className="mt-1 text-xl font-black text-white">跨服创业赛</h2>
-                          <p className="mt-1 truncate text-[10px] leading-5 text-slate-400">{crossServerCenter?.group.name ?? "暂无跨服数据"} · {crossServerCenter?.isRegistered ? "已报名" : "未报名"} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</p>
+                          <h2 className="mt-1 text-xl font-black text-white">跨服经营战</h2>
+                          <p className="mt-1 truncate text-[10px] leading-5 text-slate-400">{crossServerRound?.phaseLabel ?? crossServerCenter?.group.name ?? "暂无跨服战区"} · {crossServerRound?.statusLabel ?? (crossServerCenter?.isRegistered ? "对阵中" : "未报名")} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</p>
                         </div>
                         <div className="shrink-0 pr-14 text-right">
                           <strong className="block text-lg text-business-gold">{personalCrossRank}</strong>
@@ -7586,9 +7609,9 @@ function App() {
                       </div>
                       <nav className="mt-3 flex gap-2 overflow-x-auto scroll-hide" data-testid="cross-server-stage-bar" aria-label="跨服赛事阶段">
                         {[
-                          ["season", "赛季"],
+                          ["season", "对阵"],
                           ["board", "榜单"],
-                          ["guild", "商会"],
+                          ["guild", "商会战"],
                           ["rewards", "奖励"],
                           ["history", "战报"]
                         ].map(([mode, label]) => (
@@ -7605,10 +7628,37 @@ function App() {
                     </div>
                     <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-hide">
                 <div className="space-y-3" hidden={activeCrossServerMode !== "season"}>
+                <section className="rounded-2xl border border-business-gold/30 bg-gradient-to-br from-business-gold/15 to-slate-950/70 p-4" data-testid="cross-server-matchup-panel" data-status-options="暂居上风 / 对手压线领先">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <strong className="block text-sm text-white font-black">本轮赛况</strong>
+                      <span className="text-[9px] text-slate-400">{crossServerRound?.zoneLabel ?? "跨服战区"} · {crossServerRound?.settlementLabel ?? "结算后邮件发奖"}</span>
+                    </div>
+                    <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerMatchup?.statusLabel ?? "待形成对阵"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 text-center">
+                    <div className="rounded-2xl bg-slate-950/70 p-3">
+                      <span className="text-[9px] text-business-gold">{crossServerMatchup?.selfLabel ?? "我方"}</span>
+                      <strong className="mt-1 block truncate text-sm text-white">{crossServerMatchup?.selfName ?? "我方公司"}</strong>
+                      <span className="mt-1 block text-[9px] text-slate-400">第 {crossServerMatchup?.selfRank ?? personalCrossRank} · {crossServerMatchup?.selfValueLabel ?? "暂无跨服战力"}</span>
+                    </div>
+                    <div className="flex items-center justify-center text-sm font-black text-business-gold">VS</div>
+                    <div className="rounded-2xl bg-slate-950/70 p-3">
+                      <span className="text-[9px] text-business-gold">{crossServerMatchup?.opponentLabel ?? "对手"}</span>
+                      <strong className="mt-1 block truncate text-sm text-white">{crossServerMatchup?.opponentName ?? "待形成对阵"}</strong>
+                      <span className="mt-1 block text-[9px] text-slate-400">第 {crossServerMatchup?.opponentRank ?? "-"} · {crossServerMatchup?.opponentValueLabel ?? "待形成对阵"}</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.valueGapLabel ?? "待形成对阵"}</strong><span className="text-[9px] text-slate-500">估值差</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.pressureLabel ?? "差一轮冲刺"}</strong><span className="text-[9px] text-slate-500">下一步</span></div>
+                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.guildPressureLabel ?? "商会活跃不足"}</strong><span className="text-[9px] text-slate-500">商会战</span></div>
+                  </div>
+                </section>
                 <section className="rounded-2xl border border-business-gold/25 bg-slate-950/40 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">今日跨服目标</strong>
+                      <strong className="block text-sm text-white font-black">今日备战目标</strong>
                       <span className="text-[9px] text-slate-500">完成今日目标，领取跨服声望。</span>
                     </div>
                     <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</span>
@@ -7761,12 +7811,12 @@ function App() {
                 <section className="glass-panel rounded-3xl p-4" aria-label="跨服战报" data-testid="cross-server-battle-report" hidden={activeCrossServerMode !== "history"}>
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">赛果回放</strong>
+                      <strong className="block text-sm text-white font-black">本轮赛报</strong>
                       <span className="text-[9px] text-slate-500">{crossServerBattleReport?.snapshotDate ?? "跨服赛季结算后生成战报"}</span>
                     </div>
                     <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerBattleReport?.personal.rewardStatus ?? "赛前情报"}</span>
                   </div>
-                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">赛果摘要：个人排名、商会表现和奖励去向已汇总。</p>
+                  <p className="mt-3 rounded-2xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">本轮赛况：{crossServerMatchup?.statusLabel ?? "待形成对阵"}，{crossServerMatchup?.valueGapLabel ?? "等待对手入场"}。</p>
                   <div className="mt-3 space-y-2">
                     {(crossServerBattleReport?.lines.length ?? 0) === 0 ? (
                       <p className="rounded-2xl bg-slate-900/60 px-3 py-3 text-[10px] text-slate-500 font-bold">赛前情报将在跨服数据生成后显示。</p>

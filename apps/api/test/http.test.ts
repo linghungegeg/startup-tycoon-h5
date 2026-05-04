@@ -3720,8 +3720,35 @@ const createTestRepository = (): GameRepository => {
         ? "当前暂无相邻名次差距。"
         : `领先下一名 ${(personalRow.value - nextRow.value).toLocaleString("zh-CN")} 估值。`
       : `距离上一名还差 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值。`;
+    const opponentRow = previousRow ?? nextRow ?? boards[0]?.rows.find((row) => row.profileId !== profile.id);
+    const selfAhead = personalRow !== undefined && opponentRow !== undefined && personalRow.value >= opponentRow.value;
+    const matchup = {
+      selfLabel: "我方",
+      selfName: personalRow === undefined ? "我方公司" : `${personalRow.founderName} · ${personalRow.companyName}`,
+      selfRank: personalRow?.rank ?? null,
+      selfValueLabel: personalRow?.valueLabel ?? "暂无跨服战力",
+      opponentLabel: "对手",
+      opponentName: opponentRow === undefined ? "待形成对阵" : `${opponentRow.founderName} · ${opponentRow.companyName}`,
+      opponentServerName: opponentRow === undefined ? group.name : `${group.name} 对手`,
+      opponentRank: opponentRow?.rank ?? null,
+      opponentValueLabel: opponentRow?.valueLabel ?? "待形成对阵",
+      valueGapLabel: personalRow === undefined || opponentRow === undefined ? "待形成对阵" : `${selfAhead ? "领先" : "落后"} ${Math.abs(personalRow.value - opponentRow.value).toLocaleString("zh-CN")} 估值`,
+      statusLabel: personalRow === undefined || opponentRow === undefined ? "待形成对阵" : selfAhead ? "暂居上风" : "对手压线领先",
+      pressureLabel: personalRow === undefined || opponentRow === undefined ? "报名后进入备战" : selfAhead ? "守住现金和产品增长" : "差一轮冲刺",
+      guildPressureLabel: member !== undefined && crossServerGuildSignups.has(`${member.guildId}|${group.id}`)
+        ? todayActiveMemberCount >= seasonRequirements.minTodayActiveMembers ? "商会活跃已达标" : "商会活跃不足"
+        : "商会战待报名"
+    };
+    const round = {
+      zoneLabel: `${group.serverIds.length} 服战区`,
+      phaseLabel: `${group.name} · 对阵赛段`,
+      statusLabel: !isRegistered ? "报名后进入备战" : matchup.statusLabel === "待形成对阵" ? "备战中" : "对阵中",
+      settlementLabel: "结算后邮件发奖"
+    };
     return {
       ...center,
+      matchup,
+      round,
       battleReport: {
         snapshotDate: today,
         groupName: group.name,
@@ -3743,11 +3770,13 @@ const createTestRepository = (): GameRepository => {
           rewardStatus: "待结算"
         },
         lines: [
-          "赛前情报：结算后生成赛果回放。",
+          "跨服赛果回放：本轮仍在对阵，结算后邮件发奖。",
+          `本轮赛况：${matchup.statusLabel}，${matchup.valueGapLabel}。`,
           `个人对比：${personalRow === undefined ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`}，${gapLabel}`,
           `榜首对比：${boards[0]?.rows[0]?.founderName ?? "榜首待定"} 领跑 ${group.serverIds.length} 个区服。`,
-          `商会对比：${guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`}，活跃 ${todayActiveMemberCount}/${seasonRequirements.minTodayActiveMembers}。`,
-          "奖励去向：结算后通过邮件发放。"
+          `商会对比：${guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`}，${matchup.guildPressureLabel}。`,
+          `下一步：${matchup.pressureLabel}，继续推进今日目标。`,
+          "奖励去向：结算后邮件发奖。"
         ]
       }
     };
@@ -7872,8 +7901,8 @@ const createTestRepository = (): GameRepository => {
           personal: { ...center.battleReport.personal, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
           guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
           lines: [
-            deliveredRewards > 0 ? "赛果回放：本次跨服结算已生成奖励邮件。" : "赛果回放：本次跨服排名已复核，无重复奖励。",
-            ...center.battleReport.lines.slice(1, 5).map((line) => line.replace("结算后通过邮件发放", "奖励通过邮件发放"))
+            deliveredRewards > 0 ? "跨服赛果回放：本次结算已生成奖励邮件。" : "跨服赛果回放：本次奖励已处理，无重复发放。",
+            ...center.battleReport.lines.slice(1).map((line) => line.replace("结算后邮件发奖", "奖励已通过邮件处理"))
           ]
         }
       } satisfies LeaderboardSettlementRecord;
@@ -13617,6 +13646,15 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(center.body.data?.battleReport.groupName, "开服成长池");
     assert.equal(center.body.data?.battleReport.personal.rewardStatus, "待结算");
     assert.ok((center.body.data?.battleReport.lines.length ?? 0) >= 3);
+    assert.equal(center.body.data?.matchup.selfLabel, "我方");
+    assert.equal(center.body.data?.matchup.opponentLabel, "对手");
+    assert.match(center.body.data?.matchup.statusLabel ?? "", /暂居上风|对手压线领先|待形成对阵/);
+    assert.match(center.body.data?.matchup.valueGapLabel ?? "", /领先|落后|待形成对阵/);
+    assert.match(center.body.data?.round.phaseLabel ?? "", /战区|赛段|对阵/);
+    assert.match(center.body.data?.round.statusLabel ?? "", /备战|对阵|结算/);
+    assert.ok(center.body.data?.battleReport.lines.some((line) => line.includes("本轮赛况")));
+    assert.ok(center.body.data?.battleReport.lines.some((line) => line.includes("下一步")));
+    assert.doesNotMatch(center.body.data?.battleReport.lines.join("\n"), /算法|快照|数据生成|实时战斗|即时开打/);
 
     const registered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/register", {
       method: "POST",

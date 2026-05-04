@@ -2237,7 +2237,32 @@ export type CrossServerCenterRecord = {
       valueLabel: string;
     }>;
   };
+  matchup: CrossServerMatchupRecord;
+  round: CrossServerRoundRecord;
   battleReport: CrossServerBattleReportRecord;
+};
+
+export type CrossServerMatchupRecord = {
+  selfLabel: string;
+  selfName: string;
+  selfRank: number | null;
+  selfValueLabel: string;
+  opponentLabel: string;
+  opponentName: string;
+  opponentServerName: string;
+  opponentRank: number | null;
+  opponentValueLabel: string;
+  valueGapLabel: string;
+  statusLabel: string;
+  pressureLabel: string;
+  guildPressureLabel: string;
+};
+
+export type CrossServerRoundRecord = {
+  zoneLabel: string;
+  phaseLabel: string;
+  statusLabel: string;
+  settlementLabel: string;
 };
 
 export type CrossServerBattleReportRecord = {
@@ -6082,10 +6107,10 @@ const buildCrossServerBattleReport = (
   const guildRankLabel = guildRow === null ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`;
   const settlementLine =
     rewardStatus === "待结算"
-      ? "赛前情报：结算后生成赛果回放。"
+      ? "跨服赛果回放：本轮仍在对阵，结算后邮件发奖。"
       : rewardStatus === "已生成邮件"
-        ? "赛果回放：本次跨服结算已生成奖励邮件。"
-        : "赛果回放：本次跨服排名已复核，无重复奖励。";
+        ? "跨服赛果回放：本次结算已生成奖励邮件。"
+        : "跨服赛果回放：本次奖励已处理，无重复发放。";
   const gapLabel = previousRow === null
     ? nextRow === null
       ? "当前暂无相邻名次差距。"
@@ -6114,13 +6139,60 @@ const buildCrossServerBattleReport = (
     },
     lines: [
       settlementLine,
+      `本轮赛况：${center.matchup.statusLabel}，${center.matchup.valueGapLabel}。`,
       `个人对比：${personalRankLabel}，${gapLabel}`,
       `榜首对比：${personalRows[0]?.founderName ?? "榜首待定"} 领跑 ${center.group.serverIds.length} 个区服。`,
-      `商会对比：${guildRankLabel}，活跃 ${center.guildSeason.todayActiveMemberCount}/${center.guildSeason.minTodayActiveMembers}。`,
-      `奖励去向：${rewardStatus === "待结算" ? "结算后通过邮件发放。" : "奖励通过邮件发放。"}`
+      `商会对比：${guildRankLabel}，${center.matchup.guildPressureLabel}。`,
+      `下一步：${center.matchup.pressureLabel}，继续推进今日目标。`,
+      `奖励去向：${rewardStatus === "待结算" ? "结算后邮件发奖。" : "奖励已通过邮件处理。"}`
     ]
   };
 };
+
+type CrossServerCenterCoreRecord = Omit<CrossServerCenterRecord, "matchup" | "round" | "battleReport">;
+
+const buildCrossServerMatchup = (center: CrossServerCenterCoreRecord, profileId: string): CrossServerMatchupRecord => {
+  const personalBoard = center.boards.find((board) => board.key === "cross-company-value") ?? center.boards[0];
+  const rows = personalBoard?.rows ?? [];
+  const self = rows.find((row) => row.profileId === profileId) ?? null;
+  const previous = self === null ? null : rows.find((row) => row.rank === self.rank - 1) ?? null;
+  const next = self === null ? null : rows.find((row) => row.rank === self.rank + 1) ?? null;
+  const opponent = previous ?? next ?? rows.find((row) => row.profileId !== profileId) ?? null;
+  const selfValue = self?.value ?? 0;
+  const opponentValue = opponent?.value ?? 0;
+  const gap = Math.abs(selfValue - opponentValue);
+  const selfAhead = opponent !== null && selfValue >= opponentValue;
+  const hasMatchup = self !== null && opponent !== null;
+  const activeGap = gap.toLocaleString("zh-CN");
+  const guildActiveEnough = center.guildSeason.todayActiveMemberCount >= center.guildSeason.minTodayActiveMembers;
+
+  return {
+    selfLabel: "我方",
+    selfName: self === null ? "我方公司" : `${self.founderName} · ${self.companyName}`,
+    selfRank: self?.rank ?? null,
+    selfValueLabel: self?.valueLabel ?? "暂无跨服战力",
+    opponentLabel: "对手",
+    opponentName: opponent === null ? "待形成对阵" : `${opponent.founderName} · ${opponent.companyName}`,
+    opponentServerName: opponent === null ? center.group.name : `${center.group.name} 对手`,
+    opponentRank: opponent?.rank ?? null,
+    opponentValueLabel: opponent?.valueLabel ?? "待形成对阵",
+    valueGapLabel: hasMatchup ? `${selfAhead ? "领先" : "落后"} ${activeGap} 估值` : "待形成对阵",
+    statusLabel: hasMatchup ? selfAhead ? "暂居上风" : "对手压线领先" : "待形成对阵",
+    pressureLabel: hasMatchup ? selfAhead ? "守住现金和产品增长" : "差一轮冲刺" : "报名后进入备战",
+    guildPressureLabel: center.guildSeason.isRegistered
+      ? guildActiveEnough
+        ? "商会活跃已达标"
+        : "商会活跃不足"
+      : "商会战待报名"
+  };
+};
+
+const buildCrossServerRound = (center: CrossServerCenterCoreRecord, matchup: CrossServerMatchupRecord): CrossServerRoundRecord => ({
+  zoneLabel: `${center.group.serverIds.length} 服战区`,
+  phaseLabel: `${center.group.name} · 对阵赛段`,
+  statusLabel: !center.isRegistered ? "报名后进入备战" : matchup.statusLabel === "待形成对阵" ? "备战中" : "对阵中",
+  settlementLabel: "结算后邮件发奖"
+});
 
 const guildTechUpgradeCost = (currentLevel: number): number | null =>
   currentLevel >= 5 ? null : [40, 120, 240, 400, 600][currentLevel] ?? null;
@@ -14174,7 +14246,7 @@ export const createPrismaGameRepository = (
       };
     });
 
-    const center = {
+    const baseCenter = {
       group: {
         id: groupServer.group.id,
         name: groupServer.group.name,
@@ -14221,6 +14293,13 @@ export const createPrismaGameRepository = (
         snapshotDate: today,
         rows: guildRows
       }
+    };
+    const matchup = buildCrossServerMatchup(baseCenter, profile.id);
+    const round = buildCrossServerRound(baseCenter, matchup);
+    const center = {
+      ...baseCenter,
+      matchup,
+      round
     };
     return {
       ...center,

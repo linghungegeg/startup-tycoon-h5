@@ -97,8 +97,8 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
 
 test("phase 29 client promotes cross-server into an independent full-screen center", () => {
   for (const copy of [
-    "跨服创业赛",
-    "今日跨服目标",
+    "跨服经营战",
+    "今日备战目标",
     "跨服进度",
     "目标完成",
     "今日奖励",
@@ -121,7 +121,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
     "战报",
     "赛果回放",
     "赛果回放已生成",
-    "赛果摘要",
+    "本轮赛况",
     "个人对比",
     "商会对比",
     "奖励去向",
@@ -150,6 +150,7 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.doesNotMatch(source, /data-testid="cross-server-mode-rail"/, "cross-server should not reuse the chat-style left rail");
   assert.match(source, /data-testid="cross-server-stage-bar"/, "cross-server stages should use a horizontal tournament stage bar");
   assert.match(source, /data-testid="cross-server-content-pane"/, "cross-server content should stay addressable");
+  assert.match(source, /data-testid="cross-server-matchup-panel"/, "cross-server matchup panel should stay addressable");
   assert.match(source, /activeCrossServerMode !== "season"/, "cross-server season overview should be controlled by the stage bar");
   assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should be controlled by the stage bar");
   assert.match(source, /activeCrossServerMode !== "guild"/, "cross-server guild content should be controlled by the stage bar");
