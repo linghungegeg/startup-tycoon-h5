@@ -2879,6 +2879,57 @@ input {
   line-height: 1.45;
 }
 
+.employee-event-archive {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.employee-event-row {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid rgba(246, 204, 116, 0.28);
+  border-radius: 5px;
+  padding: 7px;
+  text-align: left;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.employee-event-row strong,
+.employee-event-row em,
+.employee-event-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-event-row strong {
+  color: #fff6d8;
+  font-size: clamp(12px, 3.2vw, 15px);
+  font-weight: 900;
+}
+
+.employee-event-row em,
+.employee-event-row small {
+  color: #d8c9a8;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-style: normal;
+  font-weight: 800;
+}
+
+.employee-event-action {
+  min-height: 30px;
+  margin-top: 8px;
+  border: 1px solid rgba(246, 204, 116, 0.5);
+  border-radius: 5px;
+  color: #57360f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+}
+
 .project-screen {
   position: absolute;
   inset: 8.8% 2.4% 9.8%;

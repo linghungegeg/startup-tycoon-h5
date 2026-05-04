@@ -296,6 +296,9 @@ type RandomTask = {
   expiresAt: string;
   selectedOption: "A" | "B" | null;
   resultSummary: string | null;
+  impactLabel?: string;
+  targetEmployeeName?: string;
+  targetTab?: "growth";
   knowledge: KnowledgeLink | null;
   options: Array<{
     key: "A" | "B";
@@ -2636,6 +2639,19 @@ function App() {
   const pendingEmployeeRandomTasks = useMemo(
     () => pendingRandomTasks.filter((task) => task.category === "employee"),
     [pendingRandomTasks]
+  );
+  const employeeEventArchiveRows = useMemo(
+    () =>
+      pendingEmployeeRandomTasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        statusLabel: task.status === "pending" ? "待处理" : "已处理",
+        impactLabel: task.impactLabel ?? task.riskLabel,
+        targetEmployeeName: task.targetEmployeeName ?? selectedEmployee?.name ?? "当前团队",
+        targetTab: task.targetTab ?? "growth"
+      })),
+    [pendingEmployeeRandomTasks, selectedEmployee?.name]
   );
   const selectedRandomTask = useMemo(
     () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
@@ -5278,6 +5294,14 @@ function App() {
     setRandomTaskModifierItemId("");
     setRandomTaskNotice("");
     setRandomTaskError("");
+  };
+
+  const openEmployeeEventManager = (taskId?: string): void => {
+    setActivePanel(null);
+    setNativeHomePage(null);
+    setActiveNav("事件");
+    setManagerTab("random");
+    setSelectedRandomTaskId(taskId ?? pendingEmployeeRandomTasks[0]?.id ?? selectedRandomTaskId);
   };
 
   const snoozeRandomTaskModal = (): void => {
@@ -8818,8 +8842,25 @@ function App() {
                   )}
                   <article>
                     <strong>员工事件</strong>
-                    <span>{pendingEmployeeRandomTasks.length > 0 ? `待处理 ${pendingEmployeeRandomTasks.length} 件` : "暂无待处理员工事件"}</span>
-                    <p>{pendingEmployeeRandomTasks[0]?.description ?? "员工压力、离职和成长机会会进入专属经理待办，也会在这里提示处理。"}</p>
+                    <span>{employeeEventArchiveRows.length > 0 ? `待处理 ${employeeEventArchiveRows.length} 件` : "团队状态稳定，继续关注压力和忠诚。"}</span>
+                    <div className="employee-event-archive" aria-label="员工事件轻档案">
+                      {employeeEventArchiveRows.length > 0 ? (
+                        employeeEventArchiveRows.slice(0, 3).map((event) => (
+                          <button className="employee-event-row" key={event.id} type="button" onClick={() => openEmployeeEventManager(event.id)}>
+                            <strong>{event.title}</strong>
+                            <em>{event.impactLabel} · {event.statusLabel}</em>
+                            <small>关联：{event.targetEmployeeName} · {event.description}</small>
+                          </button>
+                        ))
+                      ) : (
+                        <p>团队状态稳定，继续关注压力和忠诚。</p>
+                      )}
+                    </div>
+                    {employeeEventArchiveRows.length > 0 && (
+                      <button className="employee-event-action" type="button" onClick={() => openEmployeeEventManager(employeeEventArchiveRows[0]?.id)}>
+                        去专属经理处理
+                      </button>
+                    )}
                   </article>
                 </section>
               )}

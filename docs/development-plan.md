@@ -2959,6 +2959,23 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase44-employee-appearance-layer.test.mjs`、员工头像/收集奖励相关测试、client typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：稳定后再评估正式头像资源替换或员工事件轻档案；不在本批加入皮肤商店、头像抽取、剧情树、复杂羁绊或新付费池。
 
+### Phase 40：员工事件轻档案
+
+- 当前稳定点：`f9f0ad4 feat: add employee appearance feedback layer`。
+- 阶段目标：不新增员工剧情接口和大表，只把现有员工类随机任务、压力状态和忠诚提醒收口到员工养成页，形成每日回访理由。
+- 完成内容：
+  - 员工养成页的“员工事件”升级为轻档案，展示待处理事件、影响方向、处理状态和关联员工提示。
+  - 有待处理员工事件时提供“去专属经理处理”入口，复用现有随机任务处理链路。
+  - 无员工事件时显示“团队状态稳定，继续关注压力和忠诚。”，避免空白和系统感文案。
+  - 不改变随机任务结算、员工数值、招募概率、员工收集奖励、市场、融资和商会闭环。
+- 四插件证据：
+  - Superpowers：先提交 Phase 39 稳定点，再按 TDD 新增 Phase 45 红灯后落最小实现。
+  - Build Web Apps：事件区保持紧凑列表，不新增大卡片和表格化后台布局。
+  - Game Studio：员工事件成为回访和养成处理理由，但不扩大剧情树、数值或付费深度。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工养成页事件轻档案、专属经理入口和 Console。
+- 验证命令：`node apps/client/test/phase45-employee-event-archive.test.mjs`、员工头像/收集奖励相关测试、client typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估员工事件结果展示或员工事件配置扩容；不在本批加入剧情树、羁绊奖励、皮肤商店或新付费池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
