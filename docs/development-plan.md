@@ -2856,6 +2856,23 @@ VIP 权益：
 - 验证命令：`node --import tsx --test --test-name-pattern "guild center summarizes daily retention action and manager goal" apps/api/test/http.test.ts`、`node apps/client/test/phase38-guild-retention-depth.test.mjs`，以及相关主流程、typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：本批稳定后再评估员工 48/60 扩容或头像资源替换；商会侧后续只做浏览器验收发现的问题，不继续扩玩法。
 
+### Phase 34：员工 48 人内容池与收集目标
+
+- 当前稳定点：`bbc5e82 feat: add guild daily retention guidance`。
+- 阶段目标：不做正式头像资源、不新增付费池和复杂羁绊，只把员工从 36 人扩到 48 人，并让图鉴形成中期收集目标。
+- 完成内容：
+  - 员工配置池新增 12 名虚构员工，补资本、市场、公关、客服、顾问、高管、法务、财务、产品、工程、销售和运营等经营支撑岗位。
+  - 员工图鉴进度自动显示 `X/48`，保留头像资源预留字段和姓名占位头像。
+  - 图鉴新增轻量“收集目标”，展示资本团队、市场团队和产品团队的已拥有进度，说明对应经营短板。
+  - 定向猎头文案收口为按岗位补位，适合补齐融资、产品、市场和商会经营岗位；不写“买了就赢”“直接冲榜”。
+- 四插件证据：
+  - Superpowers：按 TDD 先让员工 48 数量、图鉴目标和招募文案测试红灯，再做最小实现。
+  - Build Web Apps：图鉴目标作为紧凑信息条插入，不改变员工四标签结构，不新增大卡片和教学弹窗。
+  - Game Studio：员工扩容服务岗位补齐、稀有收集、定向猎头和长期培养目标，不打乱员工、市场、融资、商会既有闭环。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工 48 人图鉴、岗位筛选、招募门槛、团队支撑和 Console。
+- 验证命令：`node apps/client/test/phase34-employee-closure.test.mjs`、`node apps/client/test/phase35-employee-system-depth.test.mjs`、`node apps/client/test/phase36-employee-business-effect.test.mjs`、`node apps/client/test/phase37-manager-employee-guidance.test.mjs`、`node apps/client/test/phase38-guild-retention-depth.test.mjs`、`node apps/client/test/phase39-employee-48-collection.test.mjs`，以及员工、市场、融资、商会相关 API 定向测试、typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：本批稳定后再评估员工 60 人长期池或头像资源替换；不在本批加入新员工剧情树、皮肤商店或限定付费池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

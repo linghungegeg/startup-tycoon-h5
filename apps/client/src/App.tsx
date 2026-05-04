@@ -2509,6 +2509,17 @@ function App() {
       ),
     [employeeCodexRarityFilter, employeeCodexRoleFilter, employeeCollection?.entries]
   );
+  const employeeCollectionGoalRows = useMemo(() => {
+    const entries = employeeCollection?.entries ?? [];
+    const ownedStatuses = new Set(["已招募", "已离岗"]);
+    const countOwnedByRoles = (roles: string[]) =>
+      entries.filter((entry) => ownedStatuses.has(entry.status) && roles.includes(entry.role)).length;
+    return [
+      { label: "资本团队", value: countOwnedByRoles(["投资关系", "财务", "法务", "高管", "顾问"]), hint: "支撑融资路演和贷款判断" },
+      { label: "市场团队", value: countOwnedByRoles(["市场", "公关", "销售", "客服", "法务"]), hint: "支撑竞品应对和客户迁移" },
+      { label: "产品团队", value: countOwnedByRoles(["产品经理", "工程师", "运营", "市场"]), hint: "支撑产品推进和留存增长" }
+    ];
+  }, [employeeCollection?.entries]);
   const selectedTargetRecruitRole = targetRecruitRole || employeeRecruitRoles[0] || "";
   const canRecruitEmployee =
     employeeRecruitMode === "normal"
@@ -8527,7 +8538,7 @@ function App() {
                 <span>月薪合计 {formatWan(totalEmployeeSalary)}</span>
               </section>
               <section className="employee-summary" aria-label="员工收集">
-                <span>已招募 {employeeCollection?.owned ?? 0}/{employeeCollection?.total ?? 24}</span>
+                <span>已招募 {employeeCollection?.owned ?? 0}/{employeeCollection?.total ?? 48}</span>
                 <span>岗位覆盖 {employeeCollection?.roleCount ?? 0}</span>
                 <span>稀有人才 {employeeCollection?.rareOwned ?? 0}</span>
               </section>
@@ -8636,6 +8647,18 @@ function App() {
                       ))}
                     </select>
                   </div>
+                  <section className="employee-collection-goals" aria-label="收集目标">
+                    <strong>收集目标</strong>
+                    <div>
+                      {employeeCollectionGoalRows.map((goal) => (
+                        <span key={goal.label}>
+                          <b>{goal.label}</b>
+                          <em>{goal.value}</em>
+                          <small>{goal.hint}</small>
+                        </span>
+                      ))}
+                    </div>
+                  </section>
                   {filteredEmployeeCollectionEntries.map((entry) => (
                     <article className={entry.status === "未招募" ? "locked" : undefined} key={entry.id}>
                       <div className={`employee-avatar-slot ${entry.avatarFrameId ?? ""}`}>
@@ -8664,7 +8687,7 @@ function App() {
                   </div>
                   <div>
                     <strong>定向猎头：消耗定向猎头函</strong>
-                    <span>当前持有 {targetedHeadhuntLetterCount} 张，按岗位补位，适合补齐融资、产品和市场短板。</span>
+                    <span>当前持有 {targetedHeadhuntLetterCount} 张，按岗位补位，适合补齐融资、产品、市场和商会经营岗位。</span>
                   </div>
                   <div>
                     <strong>限时人才池：消耗猎头券</strong>

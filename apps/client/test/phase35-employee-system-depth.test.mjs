@@ -14,7 +14,7 @@ const employeeIds = [...seedSource.matchAll(/id: "[a-z]+-[a-z]+"/g)]
     return index > employeeStart && index < projectStart;
   });
 
-assert.ok(employeeIds.length >= 36, "first employee big-system phase should seed at least 36 employees");
+assert.ok(employeeIds.length >= 48, "employee mid-term pool should seed at least 48 employees");
 assert.match(seedSource, /role: "公关"/, "employee seed should include PR role");
 assert.match(seedSource, /role: "高管"/, "employee seed should include executive role");
 assert.match(seedSource, /role: "顾问"/, "employee seed should include advisor role");
@@ -31,5 +31,8 @@ assert.match(appSource, /10 抽内保底顶尖或传奇/, "recruit UI should exp
 assert.match(appSource, /限时人才池/, "recruit UI should expose limited pool");
 assert.match(appSource, /图鉴岗位筛选/, "codex should include role filtering");
 assert.match(appSource, /图鉴稀有度筛选/, "codex should include rarity filtering");
+assert.match(appSource, /资本团队/, "codex should summarize capital team collection");
+assert.match(appSource, /市场团队/, "codex should summarize market team collection");
+assert.match(appSource, /产品团队/, "codex should summarize product team collection");
 
 console.log("phase35 employee big-system depth static checks passed");
