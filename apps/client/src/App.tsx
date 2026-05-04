@@ -1746,7 +1746,7 @@ const homePanelContent: Record<string, { title: string; lines: string[]; action:
   },
   "商会": {
     title: "商会",
-    lines: ["加入商会可参与集体投资、商会任务和成员互助。", "商会入口按公司等级和服务器规则进入。"],
+    lines: ["加入后参与互助、贡献、协作项目和跨服商会赛季。", "每日目标会提示可做事项和可领取奖励。"],
     action: "查看商会"
   },
   "背包": {
@@ -8008,7 +8008,7 @@ function App() {
                       </span>
                       <div className="flex-1">
                         <h3 className="text-lg font-black text-white">加入本服商会</h3>
-                        <p className="mt-1 text-xs leading-5 text-slate-400 font-medium">加入后可参与成员互助、贡献任务、协作项目和跨服商会赛季。</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-400 font-medium">加入后可参与成员互助、商会任务、协作项目和跨服商会赛季。</p>
                       </div>
                     </div>
                     <section className="mt-4 rounded-2xl bg-slate-900/60 p-3" data-testid="guild-join-value">
@@ -8532,7 +8532,7 @@ function App() {
               <header className="p-6 pt-10 flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <Icon name="package" className="w-7 h-7 text-business-gold" />
-                  <h2 className="text-xl font-black text-white italic uppercase">Inventory 背包</h2>
+                  <h2 className="text-xl font-black text-white">经营背包</h2>
                 </div>
                 <button className="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center" type="button" aria-label="关闭背包" onClick={closeNativeHomePage}>
                   <Icon name="x" className="w-6 h-6" />
@@ -8589,7 +8589,8 @@ function App() {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-black text-white">{selectedInventoryItem?.name ?? "暂无道具"}</h3>
-                  <p className="text-xs text-slate-400 mt-2 font-medium">{selectedInventoryItem?.summary ?? "背包用于承载任务、商城、特权和通行证奖励。"}</p>
+                  <p className="text-xs text-slate-400 mt-2 font-medium">{selectedInventoryItem?.summary ?? "背包用于承载任务、商城、特权、通行证和活动奖励。"}</p>
+                  <p className="mt-2 text-[10px] leading-4 text-slate-400 font-bold">行动力饮料、赛季经验券可在背包直接使用；风险保险、市场情报、财务顾问卡会在专属经理随机任务中使用。</p>
                   <p className="mt-2 text-[10px] font-black text-business-gold">{selectedInventoryItem?.usageHint ?? "完成经营循环后获得"}</p>
                   <button
                     className="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark"
