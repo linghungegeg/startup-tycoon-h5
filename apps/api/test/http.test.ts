@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildEmployeeCollectionGoals, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildEmployeeCollectionGoals, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectEmployeeRandomTaskConfig, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -114,6 +114,67 @@ test("fair random task selection prioritizes unseen categories", () => {
   assert.deepEqual(
     selectFairRandomTaskConfigs(configs, ["finance", "market", "loan"], 2).map((config) => config.id),
     ["finance-1", "finance-2"]
+  );
+});
+
+test("employee random task selection rotates by team risk", () => {
+  const configs = [
+    { id: "random-employee-burnout", category: "employee" },
+    { id: "random-employee-overtime-run", category: "employee" },
+    { id: "random-employee-resignation-warning", category: "employee" },
+    { id: "random-employee-onboarding", category: "employee" },
+    { id: "random-employee-market-staffing", category: "employee" }
+  ];
+
+  assert.equal(
+    selectEmployeeRandomTaskConfig(configs, {
+      usedConfigIds: [],
+      pressureRisk: true,
+      loyaltyRisk: false,
+      onboardingRisk: false,
+      operationRisk: false
+    })?.id,
+    "random-employee-burnout"
+  );
+  assert.equal(
+    selectEmployeeRandomTaskConfig(configs, {
+      usedConfigIds: ["random-employee-burnout"],
+      pressureRisk: true,
+      loyaltyRisk: false,
+      onboardingRisk: false,
+      operationRisk: false
+    })?.id,
+    "random-employee-overtime-run"
+  );
+  assert.equal(
+    selectEmployeeRandomTaskConfig(configs, {
+      usedConfigIds: [],
+      pressureRisk: false,
+      loyaltyRisk: true,
+      onboardingRisk: false,
+      operationRisk: false
+    })?.id,
+    "random-employee-resignation-warning"
+  );
+  assert.equal(
+    selectEmployeeRandomTaskConfig(configs, {
+      usedConfigIds: [],
+      pressureRisk: false,
+      loyaltyRisk: false,
+      onboardingRisk: true,
+      operationRisk: false
+    })?.id,
+    "random-employee-onboarding"
+  );
+  assert.equal(
+    selectEmployeeRandomTaskConfig(configs, {
+      usedConfigIds: [],
+      pressureRisk: false,
+      loyaltyRisk: false,
+      onboardingRisk: false,
+      operationRisk: true
+    })?.id,
+    "random-employee-market-staffing"
   );
 });
 

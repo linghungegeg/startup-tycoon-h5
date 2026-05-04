@@ -5199,6 +5199,82 @@ export const selectFairRandomTaskConfigs = <TConfig extends { category: string }
   return selected;
 };
 
+type EmployeeRandomTaskSelectionSignal = {
+  usedConfigIds: string[];
+  pressureRisk: boolean;
+  loyaltyRisk: boolean;
+  onboardingRisk: boolean;
+  operationRisk: boolean;
+};
+
+const employeePressureTaskIds = [
+  "random-employee-burnout",
+  "random-employee-overtime-run",
+  "random-employee-project-rework",
+  "random-employee-customer-onsite",
+  "random-employee-pace-too-fast"
+];
+
+const employeeLoyaltyTaskIds = [
+  "random-employee-resignation-warning",
+  "random-employee-salary-talk",
+  "random-employee-poaching",
+  "random-employee-equity-talk"
+];
+
+const employeeOnboardingTaskIds = [
+  "random-employee-onboarding",
+  "random-employee-mentoring-gap",
+  "random-employee-career-growth",
+  "random-employee-role-transition",
+  "random-employee-training-plan"
+];
+
+const employeeOperationTaskIds = [
+  "random-employee-market-staffing",
+  "random-employee-funding-roadshow-support",
+  "random-employee-guild-shift",
+  "random-employee-product-engineering-dispute",
+  "random-employee-sales-delivery-conflict",
+  "random-employee-management-sync"
+];
+
+export const selectEmployeeRandomTaskConfig = <TConfig extends { id: string; category: string }>(
+  configs: TConfig[],
+  signal: EmployeeRandomTaskSelectionSignal
+): TConfig | null => {
+  const usedConfigIds = new Set(signal.usedConfigIds);
+  const availableConfigs = configs.filter((config) => config.category === "employee" && !usedConfigIds.has(config.id));
+  const pickByIds = (ids: string[]): TConfig | null => {
+    for (const id of ids) {
+      const config = availableConfigs.find((candidate) => candidate.id === id);
+      if (config !== undefined) {
+        return config;
+      }
+    }
+    return null;
+  };
+
+  if (signal.pressureRisk) {
+    const config = pickByIds(employeePressureTaskIds);
+    if (config !== null) return config;
+  }
+  if (signal.loyaltyRisk) {
+    const config = pickByIds(employeeLoyaltyTaskIds);
+    if (config !== null) return config;
+  }
+  if (signal.onboardingRisk) {
+    const config = pickByIds(employeeOnboardingTaskIds);
+    if (config !== null) return config;
+  }
+  if (signal.operationRisk) {
+    const config = pickByIds(employeeOperationTaskIds);
+    if (config !== null) return config;
+  }
+
+  return availableConfigs[0] ?? null;
+};
+
 const readFullLevelChest = (fullLevelOverflowExperience: number, claimedCount: number): CompanyGrowthRecord["fullLevelChest"] => {
   const earnedCount = Math.floor(fullLevelOverflowExperience / FULL_LEVEL_CHEST_REQUIRED_EXPERIENCE);
   return {
@@ -7811,17 +7887,24 @@ export const createPrismaGameRepository = (
       const usedConfigIds = new Set(existingToday.map((task) => task.configId));
       const usedCategories = new Set(existingToday.map((task) => task.config.category));
       const selectedConfigs = [];
-      const employeeRisk = await prisma.playerEmployee.findFirst({
+      const activeEmployees = await prisma.playerEmployee.findMany({
         where: {
           profileId: profile.id,
-          isActive: true,
-          OR: [{ pressure: { gte: 60 } }, { loyalty: { lte: 55 } }]
-        }
+          isActive: true
+        },
+        select: { pressure: true, loyalty: true, level: true }
       });
-      if (employeeRisk !== null && !usedConfigIds.has("random-employee-burnout")) {
-        const employeeConfig = await prisma.randomTaskConfig.findFirst({
-          where: { id: "random-employee-burnout", isActive: true },
+      if (activeEmployees.length > 0) {
+        const employeeConfigs = await prisma.randomTaskConfig.findMany({
+          where: { isActive: true, category: "employee", id: { notIn: [...usedConfigIds] } },
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+        });
+        const employeeConfig = selectEmployeeRandomTaskConfig(employeeConfigs, {
+          usedConfigIds: [...usedConfigIds],
+          pressureRisk: activeEmployees.some((employee) => employee.pressure >= 60),
+          loyaltyRisk: activeEmployees.some((employee) => employee.loyalty <= 55),
+          onboardingRisk: activeEmployees.some((employee) => employee.level <= 1),
+          operationRisk: currentProfile.companyLevel >= 3 || activeEmployees.length >= 3
         });
         if (employeeConfig !== null) {
           selectedConfigs.push(employeeConfig);
