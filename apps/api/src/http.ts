@@ -4424,6 +4424,28 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/projects/availability") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const availability = await repository.getProjectAvailability(account.id, serverId);
+      if (availability === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(availability, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/projects/start") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -4493,6 +4515,10 @@ export const createApiServer = (
       }
       if (result === "PROJECT_ALREADY_SETTLED") {
         sendJson(response, 409, failure("PROJECT_ALREADY_SETTLED", "项目已经结算。", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "现金不足，暂时无法推进项目。", traceId));
         return;
       }
       if (result === "PROJECT_INCOMPLETE") {

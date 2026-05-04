@@ -434,6 +434,7 @@ export type ProjectRecord = {
   budget: number;
   risk: string;
   successRate: number;
+  advanceCost: number;
   revenueReward: number;
   assignedEmployeeId: string | null;
   assignedEmployeeName: string | null;
@@ -446,6 +447,10 @@ export type ProjectRecord = {
 export type ProjectSettlementRecord = {
   project: ProjectRecord;
   finance: CompanyFinanceRecord;
+};
+
+export type ProjectAvailabilityRecord = {
+  availableProjectCount: number;
 };
 
 export type EventOptionRecord = {
@@ -2520,9 +2525,10 @@ export type GameRepository = {
   grantEmployeeEquity(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "EQUITY_LIMIT_REACHED">;
   dismissEmployee(accountId: string, serverId: string, employeeId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
   listProjects(accountId: string, serverId: string): Promise<ProjectRecord[] | "PLAYER_NOT_FOUND">;
+  getProjectAvailability(accountId: string, serverId: string): Promise<ProjectAvailabilityRecord | "PLAYER_NOT_FOUND">;
   startProject(accountId: string, serverId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "NO_PROJECT_AVAILABLE">;
   assignProjectEmployee(accountId: string, serverId: string, projectId: string, employeeId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
-  advanceProject(accountId: string, serverId: string, projectId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_SETTLED">;
+  advanceProject(accountId: string, serverId: string, projectId: string): Promise<ProjectRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_ALREADY_SETTLED" | "INSUFFICIENT_CASH">;
   settleProject(accountId: string, serverId: string, projectId: string): Promise<ProjectSettlementRecord | "PLAYER_NOT_FOUND" | "PROJECT_NOT_FOUND" | "PROJECT_INCOMPLETE">;
   listEvents(accountId: string, serverId: string): Promise<EventRecord[] | "PLAYER_NOT_FOUND">;
   chooseEvent(accountId: string, serverId: string, eventId: string, option: "A" | "B"): Promise<EventChoiceRecord | "PLAYER_NOT_FOUND" | "EVENT_NOT_FOUND" | "EVENT_ALREADY_RESOLVED" | "INVALID_EVENT_OPTION">;
@@ -3069,6 +3075,23 @@ const readProjectStatus = (status: string): ProjectRecord["status"] =>
 const readProjectResult = (result: string | null): ProjectRecord["result"] =>
   result === "success" || result === "failure" ? result : null;
 
+const calculateProjectAdvanceCost = (
+  project: { progress: number; budget: number; status: string },
+  employeeExecution?: number
+): number => {
+  if (readProjectStatus(project.status) !== "active") {
+    return 0;
+  }
+
+  const progressGain = calculateProjectProgressGain(employeeExecution);
+  const actualProgressGain = Math.min(100 - project.progress, progressGain);
+  if (actualProgressGain <= 0) {
+    return 0;
+  }
+
+  return Math.ceil((project.budget * actualProgressGain) / 100);
+};
+
 const toProjectRecord = (
   project: {
     id: string;
@@ -3106,6 +3129,7 @@ const toProjectRecord = (
     employeeNegotiation: employee?.negotiation,
     employeeExecution: employee?.execution
   }),
+  advanceCost: calculateProjectAdvanceCost(project, employee?.execution),
   revenueReward: project.revenueReward,
   assignedEmployeeId: project.assignedEmployeeId,
   assignedEmployeeName: project.assignedEmployeeName,
@@ -9157,6 +9181,29 @@ export const createPrismaGameRepository = (
     return projects.map((project) => toProjectRecord(project, project.assignedEmployeeId === null ? null : employeesById.get(project.assignedEmployeeId)));
   },
 
+  async getProjectAvailability(accountId, serverId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const [totalConfigCount, ownedProjectCount] = await Promise.all([
+      prisma.projectConfig.count(),
+      prisma.playerProject.count({ where: { profileId: profile.id } })
+    ]);
+
+    return {
+      availableProjectCount: Math.max(0, totalConfigCount - ownedProjectCount)
+    };
+  },
+
   async startProject(accountId, serverId) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
@@ -9281,15 +9328,32 @@ export const createPrismaGameRepository = (
         : await prisma.playerEmployee.findFirst({
             where: { id: project.assignedEmployeeId, profileId: profile.id, isActive: true }
           });
-    const progress = Math.min(100, project.progress + calculateProjectProgressGain(employee?.execution));
-    const updated = await prisma.playerProject.update({
-      where: { id: project.id },
-      data: {
-        progress,
-        stage: progress >= 100 ? project.stage + 1 : project.stage,
-        status: progress >= 100 ? "ready" : "active"
-      }
-    });
+    const progressGain = calculateProjectProgressGain(employee?.execution);
+    const actualProgressGain = Math.min(100 - project.progress, progressGain);
+    const advanceCost = Math.ceil((project.budget * actualProgressGain) / 100);
+    if (profile.cash < advanceCost) {
+      return "INSUFFICIENT_CASH";
+    }
+
+    const progress = Math.min(100, project.progress + actualProgressGain);
+    const [updated] = await prisma.$transaction([
+      prisma.playerProject.update({
+        where: { id: project.id },
+        data: {
+          progress,
+          stage: project.progress < 100 && progress >= 100 ? project.stage + 1 : project.stage,
+          status: progress >= 100 ? "ready" : "active"
+        }
+      }),
+      prisma.playerProfile.update({
+        where: { id: profile.id },
+        data: {
+          cash: {
+            decrement: advanceCost
+          }
+        }
+      })
+    ]);
 
     return toProjectRecord(updated, employee);
   },

@@ -10,7 +10,7 @@ import { calculateFinanceReport } from "../src/finance.js";
 import { calculateMarketShare, type CompetitorActionType } from "../src/market.js";
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
-import { calculateProjectSuccessRate } from "../src/project.js";
+import { calculateProjectProgressGain, calculateProjectSuccessRate } from "../src/project.js";
 import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildEmployeeCollectionGoals, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectEmployeeRandomTaskConfig, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
@@ -2030,6 +2030,8 @@ const createTestRepository = (): GameRepository => {
   const refreshProjectSuccessRate = (project: ProjectRecord): ProjectRecord => {
     const employee =
       project.assignedEmployeeId === null ? undefined : employees.get(project.assignedEmployeeId);
+    const progressGain = calculateProjectProgressGain(employee?.execution);
+    const actualProgressGain = project.status === "active" ? Math.min(100 - project.progress, progressGain) : 0;
     return {
       ...project,
       successRate: calculateProjectSuccessRate({
@@ -2037,7 +2039,8 @@ const createTestRepository = (): GameRepository => {
         employeeManagement: employee?.management,
         employeeNegotiation: employee?.negotiation,
         employeeExecution: employee?.execution
-      })
+      }),
+      advanceCost: actualProgressGain > 0 ? Math.ceil((project.budget * actualProgressGain) / 100) : 0
     };
   };
 
@@ -6401,6 +6404,18 @@ const createTestRepository = (): GameRepository => {
 
       return projectForProfile(profile.id).map(refreshProjectSuccessRate);
     },
+    async getProjectAvailability(accountId, serverId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const ownedConfigIds = new Set(projectForProfile(profile.id).map((project) => project.configId));
+
+      return {
+        availableProjectCount: projectConfigs.filter((config) => !ownedConfigIds.has(config.id)).length
+      };
+    },
     async startProject(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
@@ -6424,6 +6439,7 @@ const createTestRepository = (): GameRepository => {
         budget: selected.budget,
         risk: selected.risk,
         successRate: calculateProjectSuccessRate({ baseRate: selected.successRateBase }),
+        advanceCost: Math.ceil((selected.budget * calculateProjectProgressGain()) / 100),
         revenueReward: selected.revenueReward,
         assignedEmployeeId: null,
         assignedEmployeeName: null,
@@ -6471,9 +6487,20 @@ const createTestRepository = (): GameRepository => {
         return "PROJECT_ALREADY_SETTLED";
       }
 
-      const nextProgress = Math.min(100, project.progress + 40);
+      const employee =
+        project.assignedEmployeeId === null ? undefined : employees.get(project.assignedEmployeeId);
+      const progressGain = calculateProjectProgressGain(employee?.execution);
+      const actualProgressGain = Math.min(100 - project.progress, progressGain);
+      const advanceCost = Math.ceil((project.budget * actualProgressGain) / 100);
+      if (profile.cash < advanceCost) {
+        return "INSUFFICIENT_CASH";
+      }
+
+      const previousProgress = project.progress;
+      const nextProgress = Math.min(100, previousProgress + actualProgressGain);
+      profile.cash -= advanceCost;
       project.progress = nextProgress;
-      project.stage = nextProgress >= 100 ? project.stage + 1 : project.stage;
+      project.stage = previousProgress < 100 && nextProgress >= 100 ? project.stage + 1 : project.stage;
       project.status = nextProgress >= 100 ? "ready" : "active";
       return refreshProjectSuccessRate(project);
     },
@@ -9232,6 +9259,10 @@ test("runs projects through assignment, progress, settlement, and restore flows"
     assert.equal(emptyList.status, 200);
     assert.equal(emptyList.body.data?.length, 0);
 
+    const initialAvailability = await requestJson<{ availableProjectCount: number }>(baseUrl, "/projects/availability?serverId=s1", { headers: auth });
+    assert.equal(initialAvailability.status, 200);
+    assert.ok((initialAvailability.body.data?.availableProjectCount ?? 0) > 0);
+
     const project = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
       method: "POST",
       headers: auth,
@@ -9239,6 +9270,7 @@ test("runs projects through assignment, progress, settlement, and restore flows"
     });
     assert.equal(project.status, 201);
     assert.equal(project.body.data?.status, "active");
+    assert.equal(project.body.data?.advanceCost, 43200);
     const projectId = project.body.data?.id;
     assert.ok(projectId);
 
@@ -9267,7 +9299,19 @@ test("runs projects through assignment, progress, settlement, and restore flows"
     assert.equal(earlySettle.status, 409);
     assert.equal(earlySettle.body.error?.code, "PROJECT_INCOMPLETE");
 
-    for (let index = 0; index < 3; index += 1) {
+    const cashBeforeAdvance = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    const firstAdvance = await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(firstAdvance.status, 200);
+    assert.equal(firstAdvance.body.data?.progress, 42);
+    assert.equal(firstAdvance.body.data?.advanceCost, 75600);
+    const cashAfterAdvance = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    assert.equal(cashAfterAdvance.body.data?.cash, (cashBeforeAdvance.body.data?.cash ?? 0) - 75600);
+
+    for (let index = 0; index < 2; index += 1) {
       await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
         method: "POST",
         headers: auth,
@@ -9279,8 +9323,10 @@ test("runs projects through assignment, progress, settlement, and restore flows"
     assert.equal(restoredReady.body.data?.[0]?.progress, 100);
     assert.equal(restoredReady.body.data?.[0]?.status, "ready");
     assert.equal(restoredReady.body.data?.[0]?.assignedEmployeeId, employeeId);
+    assert.equal(restoredReady.body.data?.[0]?.advanceCost, 0);
 
     const beforeSettle = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers: auth });
+    assert.equal(beforeSettle.body.data?.cash, (cashBeforeAdvance.body.data?.cash ?? 0) - (project.body.data?.budget ?? 0));
     const settled = await requestJson<ProjectSettlementRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/settle`, {
       method: "POST",
       headers: auth,
@@ -9304,6 +9350,88 @@ test("runs projects through assignment, progress, settlement, and restore flows"
     assert.equal(session.status, 200);
     const restoredSettled = await requestJson<ProjectRecord[]>(baseUrl, "/projects?serverId=s1", { headers: auth });
     assert.equal(restoredSettled.body.data?.[0]?.result, "success");
+  });
+});
+
+test("rejects project advance when cash is not enough", async () => {
+  const repository = createTestRepository();
+  const profile = await repository.createProfile({
+    accountId: "lowcash-account",
+    serverId: "s1",
+    avatarId: "strategist",
+    founderName: "Low",
+    companyName: "Low Cash"
+  });
+  assert.notEqual(profile, "PLAYER_EXISTS");
+  if (profile !== "PLAYER_EXISTS") {
+    profile.cash = 1000;
+  }
+
+  const project = await repository.startProject("lowcash-account", "s1");
+  assert.notEqual(project, "PLAYER_NOT_FOUND");
+  assert.notEqual(project, "NO_PROJECT_AVAILABLE");
+  if (project === "PLAYER_NOT_FOUND" || project === "NO_PROJECT_AVAILABLE") {
+    await repository.disconnect();
+    return;
+  }
+
+  const blocked = await repository.advanceProject("lowcash-account", "s1", project.id);
+  assert.equal(blocked, "INSUFFICIENT_CASH");
+
+  const restoredProjects = await repository.listProjects("lowcash-account", "s1");
+  assert.notEqual(restoredProjects, "PLAYER_NOT_FOUND");
+  assert.equal(restoredProjects === "PLAYER_NOT_FOUND" ? undefined : restoredProjects[0]?.progress, 0);
+  assert.equal(profile.cash, 1000);
+  await repository.disconnect();
+});
+
+test("reports when no more projects are available", async () => {
+  await withServer(async (baseUrl) => {
+    const register = await requestJson<{ token: string }>(baseUrl, "/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username: "projectpool", password: "secret12" })
+    });
+    const token = register.body.data?.token;
+    assert.ok(token);
+    const auth = { authorization: `Bearer ${token}` };
+
+    await requestJson(baseUrl, "/players", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({
+        serverId: "s1",
+        avatarId: "strategist",
+        founderName: "Pool",
+        companyName: "Pool Studio"
+      })
+    });
+
+    const initialAvailability = await requestJson<{ availableProjectCount: number }>(baseUrl, "/projects/availability?serverId=s1", { headers: auth });
+    assert.equal(initialAvailability.status, 200);
+    const availableProjectCount = initialAvailability.body.data?.availableProjectCount ?? 0;
+    assert.ok(availableProjectCount > 0);
+
+    for (let index = 0; index < availableProjectCount; index += 1) {
+      const started = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(started.status, 201, JSON.stringify(started.body));
+    }
+
+    const availability = await requestJson<{ availableProjectCount: number }>(baseUrl, "/projects/availability?serverId=s1", { headers: auth });
+    assert.equal(availability.status, 200);
+    assert.equal(availability.body.data?.availableProjectCount, 0);
+
+    const exhausted = await requestJson<ProjectRecord>(baseUrl, "/projects/start", {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(exhausted.status, 409);
+    assert.equal(exhausted.body.error?.code, "NO_PROJECT_AVAILABLE");
+    assert.equal(exhausted.body.error?.message, "暂无可接项目。");
   });
 });
 
@@ -9341,7 +9469,7 @@ test("settles failed projects once and applies company losses", async () => {
     const projectId = failedProject.body.data?.id;
     assert.ok(projectId);
 
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       await requestJson<ProjectRecord>(baseUrl, `/projects/${encodeURIComponent(projectId)}/advance`, {
         method: "POST",
         headers: auth,

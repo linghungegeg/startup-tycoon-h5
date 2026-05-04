@@ -185,6 +185,7 @@ type BusinessProject = {
   budget: number;
   risk: string;
   successRate: number;
+  advanceCost: number;
   revenueReward: number;
   assignedEmployeeId: string | null;
   assignedEmployeeName: string | null;
@@ -192,6 +193,10 @@ type BusinessProject = {
   result: "success" | "failure" | null;
   summary: string;
   settledAt: string | null;
+};
+
+type ProjectAvailability = {
+  availableProjectCount: number;
 };
 
 type TaskItem = {
@@ -2383,6 +2388,7 @@ function App() {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(initialEmployees[0]?.id ?? "");
   const [projects, setProjects] = useState<BusinessProject[]>(initialProjects);
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjects[0]?.id ?? "");
+  const [projectCanStartMore, setProjectCanStartMore] = useState(true);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeTaskType, setActiveTaskType] = useState<TaskItem["type"]>("main");
   const [taskError, setTaskError] = useState("");
@@ -2404,6 +2410,7 @@ function App() {
   const [financeError, setFinanceError] = useState("");
   const [employeeError, setEmployeeError] = useState("");
   const [projectError, setProjectError] = useState("");
+  const [projectNotice, setProjectNotice] = useState("");
   const [events, setEvents] = useState<BusinessEvent[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [eventError, setEventError] = useState("");
@@ -4564,6 +4571,14 @@ function App() {
       setProjects(response.data);
       setSelectedProjectId((currentId) => response.data.find((project) => project.id === currentId)?.id ?? response.data[0]?.id ?? "");
       setProjectError("");
+      const availability = await apiRequest<ProjectAvailability>(
+        `/projects/availability?serverId=${encodeURIComponent(nextServerId)}`,
+        {},
+        token
+      );
+      if (availability.success) {
+        setProjectCanStartMore(availability.data.availableProjectCount > 0);
+      }
       return;
     }
 
@@ -4730,6 +4745,19 @@ function App() {
 
     return () => window.clearTimeout(timer);
   }, [marketNotice, marketError]);
+
+  useEffect(() => {
+    if (!projectNotice && !projectError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setProjectNotice("");
+      setProjectError("");
+    }, projectError ? 3200 : 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [projectNotice, projectError]);
 
   useEffect(() => {
     if (!shopNotice && !shopError) {
@@ -5652,10 +5680,18 @@ function App() {
     if (response.success) {
       setSelectedProjectId(response.data.id);
       setProjectError("");
+      setProjectNotice(`已接下 ${response.data.name}`);
+      setProjectCanStartMore(true);
       refreshCompanyAndProjects();
       return;
     }
 
+    if (response.error.code === "NO_PROJECT_AVAILABLE") {
+      setProjectCanStartMore(false);
+      setProjectNotice("项目已全部接完，暂无新项目。");
+      setProjectError("");
+      return;
+    }
     setProjectError(formatPlayerActionError(response));
   };
 
@@ -5675,6 +5711,7 @@ function App() {
     if (response.success) {
       setSelectedProjectId(response.data.id);
       setProjectError("");
+      setProjectNotice(`已派遣 ${response.data.assignedEmployeeName ?? "负责人"}，负责人会影响推进速度和结算成功率。`);
       refreshCompanyAndProjects();
       return;
     }
@@ -5695,10 +5732,17 @@ function App() {
     if (response.success) {
       setSelectedProjectId(response.data.id);
       setProjectError("");
+      setProjectNotice("项目进度已推进，完成后可结算现金、声誉和客户满意度。");
       refreshCompanyAndProjects();
       if (account && selectedServer) {
         void loadTasks(account.token, selectedServer.id);
       }
+      return;
+    }
+
+    if (response.error.code === "INSUFFICIENT_CASH") {
+      setProjectNotice("");
+      setProjectError("现金不足，暂时无法推进项目。");
       return;
     }
 
@@ -5721,11 +5765,16 @@ function App() {
       setCompanyFinance(response.data.finance);
       setSelectedProjectId(response.data.project.id);
       setProjectError("");
+      setProjectNotice(
+        response.data.project.result === "success"
+          ? `项目结算成功，现金增加 ${compactNumber(response.data.project.revenueReward)}，声誉和客户满意度提升。`
+          : "项目结算失败，现金、声誉和客户满意度已受到影响。"
+      );
       refreshCompanyAndProjects();
       return;
     }
 
-    setProjectError(response.error.message);
+    setProjectError(formatPlayerActionError(response));
   };
 
   const chooseEvent = async (eventId: string, option: "A" | "B"): Promise<void> => {
@@ -8979,7 +9028,11 @@ function App() {
                 <span>最高阶段 {highestProjectStage}</span>
                 <span>可结算 {projects.filter((project) => project.status === "ready").length}</span>
               </section>
-              {projectError && <p className="project-error">{projectError}</p>}
+              {(projectNotice || projectError) && (
+                <div className={`project-toast ${projectError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
+                  {projectError || projectNotice}
+                </div>
+              )}
 
               <section className="project-layout">
                 <div className="project-list" aria-label="项目列表">
@@ -9023,6 +9076,10 @@ function App() {
                           <dd>{compactNumber(selectedProject.budget)}</dd>
                         </div>
                         <div>
+                          <dt>推进成本</dt>
+                          <dd>{selectedProject.advanceCost > 0 ? compactNumber(selectedProject.advanceCost) : "-"}</dd>
+                        </div>
+                        <div>
                           <dt>回款</dt>
                           <dd>{compactNumber(selectedProject.revenueReward)}</dd>
                         </div>
@@ -9051,6 +9108,7 @@ function App() {
                           ))}
                         </select>
                       </label>
+                      <p>负责人会影响推进速度和结算成功率。</p>
 
                       <div className="project-progress" aria-label="项目进度">
                         <span>
@@ -9062,17 +9120,17 @@ function App() {
                       <p>{selectedProject.summary}</p>
 
                       <div className="project-actions">
-                        <button type="button" onClick={() => void advanceProject()} disabled={selectedProject.status !== "active"}>推进</button>
-                        <button type="button" onClick={() => void startProject()}>接项目</button>
+                        <button type="button" onClick={() => void advanceProject()} disabled={selectedProject.status !== "active" || profile.cash < selectedProject.advanceCost}>推进</button>
+                        <button type="button" onClick={() => void startProject()} disabled={!projectCanStartMore}>{projectCanStartMore ? "接项目" : "暂无新项目"}</button>
                         <button type="button" onClick={() => void settleProject()} disabled={selectedProject.status !== "ready"}>结算</button>
-                        <button type="button" onClick={() => selectedProject.assignedEmployeeId && void assignProjectEmployee(selectedProject.assignedEmployeeId)} disabled={selectedProject.assignedEmployeeId === null || selectedProject.status === "settled" || selectedProject.status === "failed"}>派遣</button>
+                        <button type="button" onClick={() => selectedProject.assignedEmployeeId && void assignProjectEmployee(selectedProject.assignedEmployeeId)} disabled={selectedProject.assignedEmployeeId === null || selectedProject.status === "settled" || selectedProject.status === "failed"}>重新派遣</button>
                       </div>
                     </>
                   ) : (
                     <div className="project-empty">
                       <strong>暂无项目</strong>
                       <p>接下第一单项目，分配员工后推进交付，结算结果会影响现金、声誉和客户满意度。</p>
-                      <button type="button" onClick={() => void startProject()}>接项目</button>
+                      <button type="button" onClick={() => void startProject()} disabled={!projectCanStartMore}>{projectCanStartMore ? "接项目" : "暂无新项目"}</button>
                     </div>
                   )}
                 </article>
