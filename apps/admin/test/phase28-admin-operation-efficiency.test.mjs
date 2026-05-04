@@ -19,14 +19,27 @@ test("phase 28 admin replaces browser confirms with an in-app confirmation modal
 test("phase 28 admin exposes settlement automation without unattended rewards", () => {
   for (const copy of [
     "/admin/settlement-candidates",
+    "/admin/cross-server/rules",
+    "/admin/cross-server/settlement-runs",
     "待结算队列",
     "批量结算",
-    "自动识别，不自动发奖",
+    "规则配置",
+    "自动结算记录",
+    "每日22:00",
+    "每周六20:00",
+    "异常补结算",
+    "跨服经营战榜",
+    "跨服个人榜",
+    "当前对阵预览",
+    "主服",
     "批量结算结果",
     "幂等重试"
   ]) {
     assert.match(source, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${copy} should be wired into admin settlement workspace`);
   }
+  assert.match(source, /crossLeaderboard/, "settlement candidates should distinguish cross-server personal leaderboard rows");
+  assert.match(source, /crossServerRuleConfig/, "admin should store cross-server rule config state");
+  assert.match(source, /crossServerSettlementRuns/, "admin should store automatic settlement run rows");
   assert.match(source, /selectedSettlementCandidateIds/, "settlement candidates should support explicit selection");
   assert.match(source, /runSelectedSettlementCandidates/, "batch settlement should run through a dedicated action");
 });

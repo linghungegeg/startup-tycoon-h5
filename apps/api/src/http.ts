@@ -1468,6 +1468,47 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/cross-server/rules") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(await repository.getAdminCrossServerRules(), traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/cross-server/rules") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      if (!isRecord(body) || !isRecord(body.config)) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "config is required.", traceId));
+        return;
+      }
+      const current = await repository.getAdminCrossServerRules();
+      const config = { ...current, ...body.config, id: "default" };
+      const reason = readString(body, "reason") || "更新跨服规则";
+      sendJson(response, 200, success(await repository.upsertAdminCrossServerRules(admin.id, config, reason), traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/cross-server/settlement-runs") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+      sendJson(response, 200, success(await repository.listAdminCrossServerSettlementRuns(), traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/admin/activities") {
       const token = readBearerToken(request);
       const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
@@ -1627,6 +1668,45 @@ export const createApiServer = (
         }
         if (result === "GUILD_NOT_JOINED") {
           sendJson(response, 409, failure("GUILD_NOT_JOINED", "No guild membership available for settlement.", traceId));
+          return;
+        }
+
+        sendJson(response, 200, success(result, traceId));
+      } catch (error) {
+        const code = error instanceof Error ? error.message : "BAD_REQUEST";
+        sendJson(response, 400, failure(code, "Invalid request body.", traceId));
+      }
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/cross-server/settle") {
+      const token = readBearerToken(request);
+      const admin = token === undefined ? undefined : await repository.getAdminBySessionToken(token);
+      if (admin === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid admin session token.", traceId));
+        return;
+      }
+
+      try {
+        const body = await readBody(request);
+        if (!isRecord(body)) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "Request body must be a JSON object.", traceId));
+          return;
+        }
+        const serverId = readString(body, "serverId");
+        const reason = readString(body, "reason");
+        if (serverId === "" || reason.length < 2) {
+          sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and reason are required.", traceId));
+          return;
+        }
+
+        const result = await repository.settleAdminCrossServerLeaderboards(admin.id, serverId, readToday(request), reason);
+        if (result === "PLAYER_NOT_FOUND") {
+          sendJson(response, 404, failure("PLAYER_NOT_FOUND", "No player profile found in this server.", traceId));
+          return;
+        }
+        if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+          sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross server group not found.", traceId));
           return;
         }
 
@@ -1879,7 +1959,7 @@ export const createApiServer = (
         return;
       }
 
-      const result = await repository.getCrossServerCenter(account.id, serverId, readToday(request));
+      const result = await repository.getCrossServerCenter(account.id, serverId, readToday(request), readServerNow(request));
       if (result === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
@@ -1924,6 +2004,41 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/guild/cross-server") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const result = await repository.getCrossServerCenter(account.id, serverId, readToday(request), readServerNow(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success({
+        group: result.group,
+        guildSeason: result.guildSeason,
+        guildBoard: result.guildBoard,
+        schedule: {
+          openLabel: "每周六20:00开放",
+          closeLabel: "每周日22:00结束",
+          settlementLabel: "结束后邮件发奖"
+        }
+      }, traceId));
+      return;
+    }
+
     if (request.method === "POST" && url.pathname === "/cross-server/register") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -1946,6 +2061,70 @@ export const createApiServer = (
         return;
       }
 
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/challenge") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const body = await readBody(request);
+      const serverId = readServerId(body);
+      const opponentId = readOptionalString(body, "opponentId");
+      if (serverId === undefined || opponentId === null) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId and opponentId are required.", traceId));
+        return;
+      }
+      const result = await repository.challengeCrossServerOpponent(account.id, serverId, opponentId, readToday(request), readServerNow(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_OPPONENT_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_OPPONENT_NOT_FOUND", "跨服对手已刷新，请重新选择。", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_ATTEMPTS_EMPTY") {
+        sendJson(response, 409, failure("CROSS_SERVER_ATTEMPTS_EMPTY", "挑战次数不足，稍后再来。", traceId));
+        return;
+      }
+      sendJson(response, 200, success(result, traceId));
+      return;
+    }
+
+    if (request.method === "POST" && url.pathname === "/cross-server/recover-attempts") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+      const serverId = readServerId(await readBody(request));
+      if (serverId === undefined) {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
+        return;
+      }
+      const result = await repository.recoverCrossServerAttempts(account.id, serverId, readToday(request), readServerNow(request));
+      if (result === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        sendJson(response, 404, failure("CROSS_SERVER_GROUP_NOT_FOUND", "Cross-server group is not configured.", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_ATTEMPTS_FULL") {
+        sendJson(response, 409, failure("CROSS_SERVER_ATTEMPTS_FULL", "挑战次数已满。", traceId));
+        return;
+      }
+      if (result === "CROSS_SERVER_VIP_RECOVER_LIMIT") {
+        sendJson(response, 409, failure("CROSS_SERVER_VIP_RECOVER_LIMIT", "今日恢复次数已用完。", traceId));
+        return;
+      }
       sendJson(response, 200, success(result, traceId));
       return;
     }

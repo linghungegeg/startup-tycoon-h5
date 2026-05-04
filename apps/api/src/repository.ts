@@ -1584,7 +1584,7 @@ export type AdminActivityScheduleRecord = {
   }>;
 };
 
-export type AdminSettlementCandidateKind = "leaderboard" | "activity" | "guild" | "crossGuild";
+export type AdminSettlementCandidateKind = "leaderboard" | "crossLeaderboard" | "activity" | "guild" | "crossGuild";
 
 export type AdminSettlementCandidateRecord = {
   id: string;
@@ -2043,6 +2043,8 @@ export type LeaderboardRowRecord = {
   profileId: string;
   founderName: string;
   companyName: string;
+  serverId?: string;
+  serverName?: string;
   value: number;
   valueLabel: string;
   equippedTitle: string | null;
@@ -2161,11 +2163,13 @@ export type CrossServerGroupRecord = {
   name: string;
   ruleLabel: string;
   serverIds: string[];
+  serverNames?: Record<string, string>;
 };
 
 export type CrossServerCenterRecord = {
   group: CrossServerGroupRecord;
   isRegistered: boolean;
+  arena: CrossServerArenaRecord;
   dailyReward: {
     isClaimed: boolean;
     canClaim: boolean;
@@ -2242,13 +2246,93 @@ export type CrossServerCenterRecord = {
   battleReport: CrossServerBattleReportRecord;
 };
 
+export type CrossServerArenaRecord = {
+  rank: number;
+  rankLabel: string;
+  opponentBandLabel: string;
+  attemptsRemaining: number;
+  attemptLimit: number;
+  recoverIntervalMinutes: number;
+  nextRecoverAt: string | null;
+  nextRecoverLabel: string;
+  vipRecoverLimit: number;
+  vipRecoverUsed: number;
+  settlementLabel: string;
+  opponents: CrossServerArenaOpponentRecord[];
+  lineup: Array<{
+    employeeId: string;
+    name: string;
+    role: string;
+    power: number;
+  }>;
+  lastBattleReport: CrossServerArenaBattleReportRecord | null;
+};
+
+export type CrossServerArenaOpponentRecord = {
+  id: string;
+  serverId: string;
+  serverName: string;
+  companyName: string;
+  founderName: string;
+  rank: number;
+  rankLabel: string;
+  power: number;
+  keyEmployeeName: string;
+};
+
+export type CrossServerArenaBattleReportRecord = {
+  result: "win" | "lose";
+  opponentId: string;
+  opponentName: string;
+  rankBefore: number;
+  rankAfter: number;
+  attemptsRemaining: number;
+  lines: string[];
+};
+
+export type CrossServerRuleConfigRecord = {
+  id: string;
+  personalAttemptLimit: number;
+  personalRecoverIntervalMinutes: number;
+  personalResetTime: string;
+  personalSettlementTime: string;
+  guildOpenDay: number;
+  guildOpenTime: string;
+  guildCloseDay: number;
+  guildCloseTime: string;
+  guildSettlementTime: string;
+  rewardTiers: Array<{
+    rankStart: number;
+    rankEnd: number | null;
+    rewardPlatformCoins: number;
+    rewardReputation: number;
+    rewardActionPower: number;
+    rewardTitleId: string | null;
+    rewardItemId: string | null;
+    rewardItemQuantity: number;
+  }>;
+};
+
+export type CrossServerSettlementRunRecord = {
+  id: string;
+  settlementType: "personal" | "guild";
+  settlementKey: string;
+  status: "pending" | "success" | "failed" | "skipped";
+  deliveredRewards: number;
+  errorMessage: string | null;
+  createdAt: string;
+};
+
 export type CrossServerMatchupRecord = {
   selfLabel: string;
   selfName: string;
+  selfServerId: string;
+  selfServerName: string;
   selfRank: number | null;
   selfValueLabel: string;
   opponentLabel: string;
   opponentName: string;
+  opponentServerId: string | null;
   opponentServerName: string;
   opponentRank: number | null;
   opponentValueLabel: string;
@@ -2261,6 +2345,7 @@ export type CrossServerMatchupRecord = {
 export type CrossServerRoundRecord = {
   zoneLabel: string;
   phaseLabel: string;
+  pairingLabel: string;
   statusLabel: string;
   settlementLabel: string;
 };
@@ -2645,6 +2730,10 @@ export type GameRepository = {
   sendAdminMailCompensation(adminUserId: string, profileId: string, subject: string, body: string, platformCoins: number, reason: string): Promise<AdminMailCompensationRecord | "PLAYER_NOT_FOUND" | "INSUFFICIENT_PLATFORM_COINS">;
   updateAdminProfileStatus(adminUserId: string, profileId: string, status: "active" | "banned", reason: string): Promise<AdminProfileStatusRecord | "PLAYER_NOT_FOUND">;
   settleAdminLeaderboards(adminUserId: string, serverId: string, today: string, reason: string): Promise<(LeaderboardSettlementRecord & { auditLogId: string }) | "PLAYER_NOT_FOUND">;
+  settleAdminCrossServerLeaderboards(adminUserId: string, serverId: string, today: string, reason: string): Promise<(LeaderboardSettlementRecord & { auditLogId: string }) | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  getAdminCrossServerRules(): Promise<CrossServerRuleConfigRecord>;
+  upsertAdminCrossServerRules(adminUserId: string, config: CrossServerRuleConfigRecord, reason: string): Promise<{ config: CrossServerRuleConfigRecord; auditLogId: string }>;
+  listAdminCrossServerSettlementRuns(): Promise<{ rows: CrossServerSettlementRunRecord[] }>;
   listAdminCrossServerGroups(): Promise<AdminCrossServerGroupListRecord>;
   assignAdminCrossServerGroup(adminUserId: string, serverId: string, groupId: string, reason: string): Promise<AdminCrossServerGroupAssignmentRecord | "SERVER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   listAdminActivities(today: string): Promise<AdminActivityListRecord>;
@@ -2664,9 +2753,11 @@ export type GameRepository = {
   settleScenario(accountId: string, serverId: string, runId: string, choices: string[]): Promise<ScenarioRunRecord | "PLAYER_NOT_FOUND" | "SCENARIO_RUN_NOT_FOUND">;
   getLeaderboards(accountId: string, serverId: string, today: string): Promise<LeaderboardCenterRecord | "PLAYER_NOT_FOUND">;
   settleLeaderboardRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND">;
-  getCrossServerCenter(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  getCrossServerCenter(accountId: string, serverId: string, today: string, now?: Date): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   getCrossServerGuildHistory(accountId: string, serverId: string): Promise<CrossServerGuildHistoryRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "GUILD_NOT_JOINED">;
   registerCrossServer(accountId: string, serverId: string, today: string): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
+  challengeCrossServerOpponent(accountId: string, serverId: string, opponentId: string, today: string, now?: Date): Promise<{ crossServer: CrossServerCenterRecord; battleReport: CrossServerArenaBattleReportRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_ATTEMPTS_EMPTY" | "CROSS_SERVER_OPPONENT_NOT_FOUND">;
+  recoverCrossServerAttempts(accountId: string, serverId: string, today: string, now?: Date): Promise<CrossServerCenterRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_ATTEMPTS_FULL" | "CROSS_SERVER_VIP_RECOVER_LIMIT">;
   settleCrossServerRewards(accountId: string, serverId: string, today: string): Promise<LeaderboardSettlementRecord | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND">;
   claimCrossServerDailyReward(accountId: string, serverId: string, today: string): Promise<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_NOT_REGISTERED">;
   claimCrossServerStageReward(accountId: string, serverId: string, stageId: string, today: string): Promise<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord } | "PLAYER_NOT_FOUND" | "CROSS_SERVER_GROUP_NOT_FOUND" | "CROSS_SERVER_NOT_REGISTERED" | "CROSS_STAGE_REWARD_NOT_FOUND" | "CROSS_STAGE_REWARD_NOT_READY">;
@@ -6071,6 +6162,134 @@ const crossServerStageRewardConfigs = [
 const guildLeaderboardRewards = [120, 80, 50];
 const crossServerGuildSeasonRewards = [180, 120, 80];
 
+const defaultCrossServerRules: CrossServerRuleConfigRecord = {
+  id: "default",
+  personalAttemptLimit: 10,
+  personalRecoverIntervalMinutes: 60,
+  personalResetTime: "05:00",
+  personalSettlementTime: "22:00",
+  guildOpenDay: 6,
+  guildOpenTime: "20:00",
+  guildCloseDay: 0,
+  guildCloseTime: "22:00",
+  guildSettlementTime: "22:00",
+  rewardTiers: [
+    { rankStart: 1, rankEnd: 1, rewardPlatformCoins: 180, rewardReputation: 300, rewardActionPower: 0, rewardTitleId: "cross-unicorn", rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 2, rankEnd: 2, rewardPlatformCoins: 120, rewardReputation: 220, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 3, rankEnd: 3, rewardPlatformCoins: 80, rewardReputation: 160, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 4, rankEnd: 10, rewardPlatformCoins: 50, rewardReputation: 120, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 11, rankEnd: 50, rewardPlatformCoins: 30, rewardReputation: 90, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 51, rankEnd: 100, rewardPlatformCoins: 20, rewardReputation: 60, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 101, rankEnd: 500, rewardPlatformCoins: 10, rewardReputation: 40, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+    { rankStart: 501, rankEnd: null, rewardPlatformCoins: 5, rewardReputation: 20, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 }
+  ]
+};
+
+const formatCrossServerArenaRank = (rank: number): string => rank > 1000 ? "1200+" : `第 ${rank} 名`;
+
+const crossServerArenaOpponentBand = (rank: number): { start: number; end: number; label: string } => {
+  const end = rank > 1000 ? 1001 : Math.max(1, Math.floor((rank - 1) / 100) * 100 + 1);
+  const start = rank > 1000 ? 1100 : Math.min(1000, end + 99);
+  return { start, end, label: `${start}-${end}` };
+};
+
+const crossServerArenaBots = [
+  { suffix: "星河资本", founder: "顾寒舟", employee: "资本参谋" },
+  { suffix: "云启集团", founder: "程晚星", employee: "增长统帅" },
+  { suffix: "天璟科技", founder: "陆青川", employee: "交付王牌" },
+  { suffix: "智创未来", founder: "林知夏", employee: "运营智囊" }
+] as const;
+
+const buildCrossServerArenaOpponents = (
+  rank: number,
+  serverIds: string[],
+  serverNames: Record<string, string>
+): CrossServerArenaOpponentRecord[] => {
+  const band = crossServerArenaOpponentBand(rank);
+  const span = Math.max(1, band.start - band.end);
+  const ranks = [
+    band.start,
+    Math.max(band.end, band.start - Math.floor(span * 0.32)),
+    Math.max(band.end, band.start - Math.floor(span * 0.68)),
+    band.end
+  ].filter((item, index, list) => list.indexOf(item) === index);
+  return ranks.slice(0, 4).map((opponentRank, index) => {
+    const bot = crossServerArenaBots[index] ?? crossServerArenaBots[0];
+    const serverId = serverIds[(index + 1) % Math.max(serverIds.length, 1)] ?? serverIds[0] ?? "s1";
+    return {
+      id: `arena-bot-${opponentRank}`,
+      serverId,
+      serverName: serverNames[serverId] ?? serverId.toUpperCase(),
+      founderName: bot.founder,
+      companyName: bot.suffix,
+      rank: opponentRank,
+      rankLabel: rank > 1000 ? band.label : `第 ${opponentRank} 名`,
+      power: Math.max(8000, 42000 - opponentRank * 18 + index * 1200),
+      keyEmployeeName: bot.employee
+    };
+  });
+};
+
+const pickCrossServerRewardTier = (rank: number, rules = defaultCrossServerRules) =>
+  rules.rewardTiers.find((tier) => rank >= tier.rankStart && (tier.rankEnd === null || rank <= tier.rankEnd)) ?? rules.rewardTiers[rules.rewardTiers.length - 1] ?? null;
+
+const toCrossServerRuleConfigRecord = (config: {
+  id: string;
+  personalAttemptLimit: number;
+  personalRecoverIntervalMinutes: number;
+  personalResetTime: string;
+  personalSettlementTime: string;
+  guildOpenDay: number;
+  guildOpenTime: string;
+  guildCloseDay: number;
+  guildCloseTime: string;
+  guildSettlementTime: string;
+  rewardTiersJson: string;
+} | null): CrossServerRuleConfigRecord => {
+  if (config === null) {
+    return defaultCrossServerRules;
+  }
+  const rewardTiers = (() => {
+    try {
+      const parsed = JSON.parse(config.rewardTiersJson) as CrossServerRuleConfigRecord["rewardTiers"];
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultCrossServerRules.rewardTiers;
+    } catch {
+      return defaultCrossServerRules.rewardTiers;
+    }
+  })();
+  return {
+    id: config.id,
+    personalAttemptLimit: config.personalAttemptLimit,
+    personalRecoverIntervalMinutes: config.personalRecoverIntervalMinutes,
+    personalResetTime: config.personalResetTime,
+    personalSettlementTime: config.personalSettlementTime,
+    guildOpenDay: config.guildOpenDay,
+    guildOpenTime: config.guildOpenTime,
+    guildCloseDay: config.guildCloseDay,
+    guildCloseTime: config.guildCloseTime,
+    guildSettlementTime: config.guildSettlementTime,
+    rewardTiers
+  };
+};
+
+const toCrossServerSettlementRunRecord = (run: {
+  id: string;
+  settlementType: string;
+  settlementKey: string;
+  status: string;
+  deliveredRewards: number;
+  errorMessage: string | null;
+  createdAt: Date;
+}): CrossServerSettlementRunRecord => ({
+  id: run.id,
+  settlementType: run.settlementType === "guild" ? "guild" : "personal",
+  settlementKey: run.settlementKey,
+  status: run.status === "failed" ? "failed" : run.status === "skipped" ? "skipped" : run.status === "pending" ? "pending" : "success",
+  deliveredRewards: run.deliveredRewards,
+  errorMessage: run.errorMessage,
+  createdAt: run.createdAt.toISOString()
+});
+
 const formatLeaderboardValue = (key: string, value: number): string => {
   if (key === "cashflow") {
     return `净现金流 ${value.toLocaleString("zh-CN")}`;
@@ -6103,20 +6322,14 @@ const buildCrossServerBattleReport = (
   const nextRow = personalRow === null ? null : personalRows.find((row) => row.rank === personalRow.rank + 1) ?? null;
   const guildRow = center.guildSeason.guildId === null ? null : center.guildBoard.rows.find((row) => row.guildId === center.guildSeason.guildId) ?? null;
   const topGuild = center.guildBoard.rows[0] ?? null;
-  const personalRankLabel = personalRow === null ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`;
-  const guildRankLabel = guildRow === null ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`;
+  const personalRankLabel = `当前天梯排名 ${center.arena.rankLabel}`;
+  const guildRankLabel = guildRow === null ? "本轮专注个人天梯" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`;
   const settlementLine =
     rewardStatus === "待结算"
-      ? "跨服赛果回放：本轮仍在对阵，结算后邮件发奖。"
+      ? "跨服竞技场：今日22:00结算，奖励将通过邮件发放。"
       : rewardStatus === "已生成邮件"
         ? "跨服赛果回放：本次结算已生成奖励邮件。"
         : "跨服赛果回放：本次奖励已处理，无重复发放。";
-  const gapLabel = previousRow === null
-    ? nextRow === null
-      ? "当前暂无相邻名次差距。"
-      : `领先下一名 ${Math.max((personalRow?.value ?? 0) - nextRow.value, 0).toLocaleString("zh-CN")} 估值。`
-    : `距离上一名还差 ${Math.max(previousRow.value - (personalRow?.value ?? 0), 0).toLocaleString("zh-CN")} 估值。`;
-
   return {
     snapshotDate: personalBoard?.snapshotDate ?? center.guildBoard.snapshotDate,
     groupName: center.group.name,
@@ -6139,11 +6352,10 @@ const buildCrossServerBattleReport = (
     },
     lines: [
       settlementLine,
-      `本轮赛况：${center.matchup.statusLabel}，${center.matchup.valueGapLabel}。`,
-      `个人对比：${personalRankLabel}，${gapLabel}`,
-      `榜首对比：${personalRows[0]?.founderName ?? "榜首待定"} 领跑 ${center.group.serverIds.length} 个区服。`,
-      `商会对比：${guildRankLabel}，${center.matchup.guildPressureLabel}。`,
-      `下一步：${center.matchup.pressureLabel}，继续推进今日目标。`,
+      `个人对比：${personalRankLabel}，本轮可挑战 ${center.arena.opponentBandLabel}。`,
+      `上阵员工：${center.arena.lineup.map((employee) => employee.name).slice(0, 3).join("、") || "员工就绪"}。`,
+      `天梯对手：${center.arena.opponents.map((opponent) => `${opponent.serverId.toUpperCase()} ${opponent.companyName}`).join("、")}。`,
+      `备战建议：${guildRankLabel}。`,
       `奖励去向：${rewardStatus === "待结算" ? "结算后邮件发奖。" : "奖励已通过邮件处理。"}`
     ]
   };
@@ -6155,9 +6367,16 @@ const buildCrossServerMatchup = (center: CrossServerCenterCoreRecord, profileId:
   const personalBoard = center.boards.find((board) => board.key === "cross-company-value") ?? center.boards[0];
   const rows = personalBoard?.rows ?? [];
   const self = rows.find((row) => row.profileId === profileId) ?? null;
+  const selfServerId = self?.serverId ?? center.group.serverIds[0] ?? "";
+  const selfServerName = self?.serverName ?? center.group.serverNames?.[selfServerId] ?? selfServerId.toUpperCase();
   const previous = self === null ? null : rows.find((row) => row.rank === self.rank - 1) ?? null;
   const next = self === null ? null : rows.find((row) => row.rank === self.rank + 1) ?? null;
-  const opponent = previous ?? next ?? rows.find((row) => row.profileId !== profileId) ?? null;
+  const opponent =
+    (previous?.serverId !== undefined && previous.serverId !== selfServerId ? previous : null) ??
+    (next?.serverId !== undefined && next.serverId !== selfServerId ? next : null) ??
+    rows.find((row) => row.profileId !== profileId && row.serverId !== selfServerId) ??
+    rows.find((row) => row.profileId !== profileId) ??
+    null;
   const selfValue = self?.value ?? 0;
   const opponentValue = opponent?.value ?? 0;
   const gap = Math.abs(selfValue - opponentValue);
@@ -6165,15 +6384,20 @@ const buildCrossServerMatchup = (center: CrossServerCenterCoreRecord, profileId:
   const hasMatchup = self !== null && opponent !== null;
   const activeGap = gap.toLocaleString("zh-CN");
   const guildActiveEnough = center.guildSeason.todayActiveMemberCount >= center.guildSeason.minTodayActiveMembers;
+  const opponentServerId = opponent?.serverId ?? center.group.serverIds.find((serverId) => serverId !== selfServerId) ?? null;
+  const opponentServerName = opponent?.serverName ?? (opponentServerId === null ? "待形成对阵" : center.group.serverNames?.[opponentServerId] ?? opponentServerId.toUpperCase());
 
   return {
     selfLabel: "我方",
     selfName: self === null ? "我方公司" : `${self.founderName} · ${self.companyName}`,
+    selfServerId,
+    selfServerName,
     selfRank: self?.rank ?? null,
     selfValueLabel: self?.valueLabel ?? "暂无跨服战力",
     opponentLabel: "对手",
     opponentName: opponent === null ? "待形成对阵" : `${opponent.founderName} · ${opponent.companyName}`,
-    opponentServerName: opponent === null ? center.group.name : `${center.group.name} 对手`,
+    opponentServerId,
+    opponentServerName,
     opponentRank: opponent?.rank ?? null,
     opponentValueLabel: opponent?.valueLabel ?? "待形成对阵",
     valueGapLabel: hasMatchup ? `${selfAhead ? "领先" : "落后"} ${activeGap} 估值` : "待形成对阵",
@@ -6190,6 +6414,9 @@ const buildCrossServerMatchup = (center: CrossServerCenterCoreRecord, profileId:
 const buildCrossServerRound = (center: CrossServerCenterCoreRecord, matchup: CrossServerMatchupRecord): CrossServerRoundRecord => ({
   zoneLabel: `${center.group.serverIds.length} 服战区`,
   phaseLabel: `${center.group.name} · 对阵赛段`,
+  pairingLabel: `${matchup.selfServerId.toUpperCase()} ${matchup.selfServerName} VS ${
+    matchup.opponentServerId === null ? "待形成对阵" : `${matchup.opponentServerId.toUpperCase()} ${matchup.opponentServerName}`
+  }`,
   statusLabel: !center.isRegistered ? "报名后进入备战" : matchup.statusLabel === "待形成对阵" ? "备战中" : "对阵中",
   settlementLabel: "结算后邮件发奖"
 });
@@ -12242,9 +12469,14 @@ export const createPrismaGameRepository = (
   },
 
   async getAdminSettlementCandidates(today) {
-    const [servers, profiles, activities, guilds, crossGuildServers, auditLogs, deliveries] = await Promise.all([
+    const [servers, profiles, crossGroups, activities, guilds, crossGuildServers, auditLogs, deliveries] = await Promise.all([
       prisma.gameServer.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
       prisma.playerProfile.findMany({ select: { serverId: true }, distinct: ["serverId"] }),
+      prisma.crossServerGroup.findMany({
+        where: { isActive: true },
+        include: { servers: { include: { server: true }, orderBy: { sortOrder: "asc" } } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
       prisma.activityConfig.findMany({ orderBy: [{ endDate: "desc" }, { sortOrder: "asc" }, { id: "asc" }] }),
       prisma.guild.findMany({ include: { members: true }, orderBy: [{ serverId: "asc" }, { contributionScore: "desc" }, { createdAt: "asc" }] }),
       prisma.gameServer.findMany({
@@ -12258,6 +12490,7 @@ export const createPrismaGameRepository = (
               "admin_leaderboard_settle",
               "admin_activity_leaderboard_settle",
               "admin_guild_leaderboard_settle",
+              "admin_cross_server_leaderboard_settle",
               "admin_cross_guild_season_settle"
             ]
           }
@@ -12286,6 +12519,25 @@ export const createPrismaGameRepository = (
         reasonPreset: "运营自动识别排行榜待结算",
         riskLabel: "普通排行榜奖励",
         isSettled,
+        lastAuditLogId: auditLogId
+      });
+    }
+
+    for (const group of crossGroups.filter((item) => item.servers.some((server) => serverIdsWithProfiles.has(server.serverId)))) {
+      const primaryServer = group.servers.find((server) => serverIdsWithProfiles.has(server.serverId)) ?? group.servers[0];
+      if (primaryServer === undefined) {
+        continue;
+      }
+      const auditLogId = latestAuditLogId("admin_cross_server_leaderboard_settle", group.id);
+      rows.push({
+        id: `crossLeaderboard:${group.id}`,
+        kind: "crossLeaderboard",
+        targetId: group.id,
+        serverId: primaryServer.serverId,
+        name: `${group.name} 跨服经营战榜`,
+        reasonPreset: "运营自动识别跨服经营战榜待结算",
+        riskLabel: "跨服个人榜奖励",
+        isSettled: auditLogId !== null || deliveries.some((delivery) => delivery.serverId === group.id && delivery.boardKey === "cross-company-value" && delivery.snapshotDate === today),
         lastAuditLogId: auditLogId
       });
     }
@@ -12343,7 +12595,7 @@ export const createPrismaGameRepository = (
         activity: rows.filter((row) => row.kind === "activity").length,
         guild: rows.filter((row) => row.kind === "guild").length,
         crossGuild: rows.filter((row) => row.kind === "crossGuild").length,
-        leaderboard: rows.filter((row) => row.kind === "leaderboard").length
+        leaderboard: rows.filter((row) => row.kind === "leaderboard" || row.kind === "crossLeaderboard").length
       },
       rows
     };
@@ -13247,6 +13499,97 @@ export const createPrismaGameRepository = (
     return { ...settlement, auditLogId: audit.id };
   },
 
+  async settleAdminCrossServerLeaderboards(adminUserId, serverId, today, reason) {
+    const groupServer = await prisma.crossServerGroupServer.findUnique({
+      where: { serverId },
+      include: { group: true }
+    });
+    if (groupServer === null || !groupServer.group.isActive) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const profile = await prisma.playerProfile.findFirst({ where: { serverId }, orderBy: { createdAt: "asc" } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const settlement = await this.settleCrossServerRewards(profile.accountId, serverId, today);
+    if (settlement === "PLAYER_NOT_FOUND" || settlement === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return settlement;
+    }
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "admin_cross_server_leaderboard_settle",
+        targetType: "cross_server_leaderboard",
+        targetId: groupServer.groupId,
+        detail: JSON.stringify({
+          serverId,
+          groupId: groupServer.groupId,
+          today,
+          reason,
+          deliveredRewards: settlement.deliveredRewards,
+          isRetry: settlement.deliveredRewards === 0,
+          rewardBoundary: "cross_server_personal_mail"
+        })
+      }
+    });
+
+    return { ...settlement, auditLogId: audit.id };
+  },
+
+  async getAdminCrossServerRules() {
+    return toCrossServerRuleConfigRecord(await prisma.crossServerRuleConfig.findUnique({ where: { id: "default" } }));
+  },
+
+  async upsertAdminCrossServerRules(adminUserId, config, reason) {
+    const saved = await prisma.crossServerRuleConfig.upsert({
+      where: { id: config.id },
+      update: {
+        personalAttemptLimit: config.personalAttemptLimit,
+        personalRecoverIntervalMinutes: config.personalRecoverIntervalMinutes,
+        personalResetTime: config.personalResetTime,
+        personalSettlementTime: config.personalSettlementTime,
+        guildOpenDay: config.guildOpenDay,
+        guildOpenTime: config.guildOpenTime,
+        guildCloseDay: config.guildCloseDay,
+        guildCloseTime: config.guildCloseTime,
+        guildSettlementTime: config.guildSettlementTime,
+        rewardTiersJson: JSON.stringify(config.rewardTiers)
+      },
+      create: {
+        id: config.id,
+        personalAttemptLimit: config.personalAttemptLimit,
+        personalRecoverIntervalMinutes: config.personalRecoverIntervalMinutes,
+        personalResetTime: config.personalResetTime,
+        personalSettlementTime: config.personalSettlementTime,
+        guildOpenDay: config.guildOpenDay,
+        guildOpenTime: config.guildOpenTime,
+        guildCloseDay: config.guildCloseDay,
+        guildCloseTime: config.guildCloseTime,
+        guildSettlementTime: config.guildSettlementTime,
+        rewardTiersJson: JSON.stringify(config.rewardTiers)
+      }
+    });
+    const audit = await prisma.adminAuditLog.create({
+      data: {
+        adminUserId,
+        action: "admin_cross_server_rules_update",
+        targetType: "cross_server_rules",
+        targetId: saved.id,
+        detail: reason
+      }
+    });
+    return { config: toCrossServerRuleConfigRecord(saved), auditLogId: audit.id };
+  },
+
+  async listAdminCrossServerSettlementRuns() {
+    const rows = await prisma.crossServerSettlementRun.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 30
+    });
+    return { rows: rows.map(toCrossServerSettlementRunRecord) };
+  },
+
   async listAdminCrossServerGroups() {
     const groups = await prisma.crossServerGroup.findMany({
       include: {
@@ -14043,7 +14386,7 @@ export const createPrismaGameRepository = (
     };
   },
 
-  async getCrossServerCenter(accountId, serverId, today) {
+  async getCrossServerCenter(accountId, serverId, today, now = new Date(`${today}T00:00:00.000Z`)) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -14061,7 +14404,7 @@ export const createPrismaGameRepository = (
       include: {
         group: {
           include: {
-            servers: { orderBy: { sortOrder: "asc" } }
+            servers: { include: { server: true }, orderBy: { sortOrder: "asc" } }
           }
         }
       }
@@ -14071,10 +14414,11 @@ export const createPrismaGameRepository = (
     }
 
     const serverIds = groupServer.group.servers.map((item) => item.serverId);
+    const serverNames = new Map(groupServer.group.servers.map((item) => [item.serverId, item.server.name]));
     const dayStart = new Date(`${today}T00:00:00.000Z`);
     const dayEnd = new Date(`${today}T23:59:59.999Z`);
     const stageBoardKeys = crossServerStageRewardConfigs.map((reward) => reward.id);
-    const [profiles, signup, rewardDeliveries, guildMember, guildSignups] = await Promise.all([
+    const [profiles, signup, rewardDeliveries, guildMember, guildSignups, ruleConfig, arenaState, playerEmployees] = await Promise.all([
       prisma.playerProfile.findMany({
         where: { serverId: { in: serverIds } },
         include: {
@@ -14110,8 +14454,25 @@ export const createPrismaGameRepository = (
             }
           }
         }
+      }),
+      prisma.crossServerRuleConfig.findUnique({ where: { id: "default" } }),
+      prisma.playerCrossServerArenaState.upsert({
+        where: { profileId: profile.id },
+        update: {},
+        create: {
+          profileId: profile.id,
+          groupId: groupServer.groupId,
+          rank: 1200,
+          attemptsRemaining: defaultCrossServerRules.personalAttemptLimit,
+          lastRecoveredAt: new Date(`${today}T00:00:00.000Z`),
+          recoverUsedDate: today
+        }
+      }),
+      prisma.playerEmployee.findMany({
+        where: { profileId: profile.id, isActive: true }
       })
     ]);
+    const rules = toCrossServerRuleConfigRecord(ruleConfig);
 
     const boards = await Promise.all(crossServerLeaderboardConfigs.map(async (config) => {
       const rows = profiles
@@ -14123,6 +14484,8 @@ export const createPrismaGameRepository = (
             profileId: item.id,
             founderName: item.founderName,
             companyName: item.companyName,
+            serverId: item.serverId,
+            serverName: serverNames.get(item.serverId) ?? item.serverId.toUpperCase(),
             value,
             valueLabel: formatLeaderboardValue(config.key, value),
             equippedTitle: equipped?.title.name ?? null
@@ -14246,14 +14609,92 @@ export const createPrismaGameRepository = (
       };
     });
 
+    const recoveredArenaState = await (async () => {
+      if (arenaState.recoverUsedDate !== today) {
+        return prisma.playerCrossServerArenaState.update({
+          where: { id: arenaState.id },
+          data: {
+            attemptsRemaining: rules.personalAttemptLimit,
+            recoverUsedDate: today,
+            vipRecoverUsed: 0,
+            lastRecoveredAt: now
+          }
+        });
+      }
+      if (arenaState.attemptsRemaining >= rules.personalAttemptLimit) {
+        return arenaState;
+      }
+      const elapsedRecoveries = Math.floor((now.getTime() - arenaState.lastRecoveredAt.getTime()) / (rules.personalRecoverIntervalMinutes * 60_000));
+      if (elapsedRecoveries <= 0) {
+        return arenaState;
+      }
+      const nextAttempts = Math.min(rules.personalAttemptLimit, arenaState.attemptsRemaining + elapsedRecoveries);
+      return prisma.playerCrossServerArenaState.update({
+        where: { id: arenaState.id },
+        data: {
+          attemptsRemaining: nextAttempts,
+          lastRecoveredAt: nextAttempts >= rules.personalAttemptLimit ? now : new Date(arenaState.lastRecoveredAt.getTime() + elapsedRecoveries * rules.personalRecoverIntervalMinutes * 60_000)
+        }
+      });
+    })();
+    const serverNameRecord = Object.fromEntries(serverNames);
+    const opponents = buildCrossServerArenaOpponents(recoveredArenaState.rank, serverIds, serverNameRecord);
+    const ownedLineup = playerEmployees
+      .map((employee) => ({
+        employeeId: employee.id,
+        name: employee.name,
+        role: employee.role,
+        power: employee.management + employee.negotiation + employee.execution + employee.level * 3
+      }));
+    const fallbackEmployees = ownedLineup.length > 0 ? [] : await prisma.employeeConfig.findMany({
+      orderBy: [{ recruitWeight: "asc" }, { sortOrder: "asc" }],
+      take: 5
+    });
+    const fallbackLineup = fallbackEmployees.map((employee) => ({
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.role,
+      power: employee.management + employee.negotiation + employee.execution + 3
+    }));
+    const lineup = (ownedLineup.length > 0 ? ownedLineup : fallbackLineup)
+      .sort((left, right) => right.power - left.power)
+      .slice(0, 5);
+    const lastBattleReport = recoveredArenaState.lastBattleReportJson === null
+      ? null
+      : (() => {
+          try {
+            return JSON.parse(recoveredArenaState.lastBattleReportJson ?? "null") as CrossServerArenaBattleReportRecord | null;
+          } catch {
+            return null;
+          }
+        })();
+    const arena = {
+      rank: recoveredArenaState.rank,
+      rankLabel: formatCrossServerArenaRank(recoveredArenaState.rank),
+      opponentBandLabel: crossServerArenaOpponentBand(recoveredArenaState.rank).label,
+      attemptsRemaining: recoveredArenaState.attemptsRemaining,
+      attemptLimit: rules.personalAttemptLimit,
+      recoverIntervalMinutes: rules.personalRecoverIntervalMinutes,
+      nextRecoverAt: recoveredArenaState.attemptsRemaining >= rules.personalAttemptLimit ? null : new Date(recoveredArenaState.lastRecoveredAt.getTime() + rules.personalRecoverIntervalMinutes * 60_000).toISOString(),
+      nextRecoverLabel: recoveredArenaState.attemptsRemaining >= rules.personalAttemptLimit ? "已满" : "下次恢复 1小时内",
+      vipRecoverLimit: 1,
+      vipRecoverUsed: recoveredArenaState.recoverUsedDate === today ? recoveredArenaState.vipRecoverUsed : 0,
+      settlementLabel: `今日${rules.personalSettlementTime}结算`,
+      opponents,
+      lineup,
+      lastBattleReport
+    } satisfies CrossServerArenaRecord;
+
     const baseCenter = {
       group: {
         id: groupServer.group.id,
         name: groupServer.group.name,
         ruleLabel: groupServer.group.ruleLabel,
-        serverIds
+        serverIds,
+        serverNames: serverNameRecord
       },
       isRegistered,
+      arena,
       dailyReward: {
         isClaimed: isDailyRewardClaimed,
         canClaim: isRegistered && !isDailyRewardClaimed,
@@ -14325,7 +14766,7 @@ export const createPrismaGameRepository = (
       include: {
         group: {
           include: {
-            servers: { orderBy: { sortOrder: "asc" } }
+            servers: { include: { server: true }, orderBy: { sortOrder: "asc" } }
           }
         }
       }
@@ -14390,6 +14831,94 @@ export const createPrismaGameRepository = (
     });
 
     return this.getCrossServerCenter(accountId, serverId, today);
+  },
+
+  async challengeCrossServerOpponent(accountId, serverId, opponentId, today, now = new Date(`${today}T00:00:00.000Z`)) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today, now);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+    const profile = await prisma.playerProfile.findUnique({
+      where: { accountId_serverId: { accountId, serverId } }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const opponent = center.arena.opponents.find((item) => item.id === opponentId) ?? null;
+    if (opponent === null) {
+      return "CROSS_SERVER_OPPONENT_NOT_FOUND";
+    }
+    const state = await prisma.playerCrossServerArenaState.findUnique({ where: { profileId: profile.id } });
+    if (state === null) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    if (state.attemptsRemaining <= 0) {
+      return "CROSS_SERVER_ATTEMPTS_EMPTY";
+    }
+    const lineupPower = center.arena.lineup.reduce((sum, employee) => sum + employee.power, 0);
+    const profilePower = Math.max(1, Math.round(profile.valuation / 1000) + lineupPower);
+    const isWin = profilePower >= opponent.power || state.rank > opponent.rank;
+    const rankBefore = state.rank;
+    const rankAfter = isWin ? Math.min(state.rank, opponent.rank) : state.rank;
+    const battleReport: CrossServerArenaBattleReportRecord = {
+      result: isWin ? "win" : "lose",
+      opponentId,
+      opponentName: `${opponent.serverId.toUpperCase()} ${opponent.companyName}`,
+      rankBefore,
+      rankAfter,
+      attemptsRemaining: state.attemptsRemaining - 1,
+      lines: [
+        `第1回合：${center.arena.lineup[0]?.name ?? "核心员工"}顶住对方资本压阵，交付节奏没有乱。`,
+        `第2回合：${opponent.keyEmployeeName}试图抢走市场声量，我方团队强行扳回一城。`,
+        isWin ? `第3回合：关键报价落定，排名提升到${formatCrossServerArenaRank(rankAfter)}。` : "第3回合：对手守住领先，排名暂时不变。"
+      ]
+    };
+    await prisma.playerCrossServerArenaState.update({
+      where: { id: state.id },
+      data: {
+        rank: rankAfter,
+        attemptsRemaining: { decrement: 1 },
+        lastRecoveredAt: state.attemptsRemaining >= center.arena.attemptLimit ? now : state.lastRecoveredAt,
+        lastBattleReportJson: JSON.stringify(battleReport)
+      }
+    });
+    const nextCenter = await this.getCrossServerCenter(accountId, serverId, today, now);
+    if (nextCenter === "PLAYER_NOT_FOUND" || nextCenter === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return nextCenter;
+    }
+    return { crossServer: nextCenter, battleReport };
+  },
+
+  async recoverCrossServerAttempts(accountId, serverId, today, now = new Date(`${today}T00:00:00.000Z`)) {
+    const center = await this.getCrossServerCenter(accountId, serverId, today, now);
+    if (center === "PLAYER_NOT_FOUND" || center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+      return center;
+    }
+    const profile = await prisma.playerProfile.findUnique({ where: { accountId_serverId: { accountId, serverId } } });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+    const state = await prisma.playerCrossServerArenaState.findUnique({ where: { profileId: profile.id } });
+    if (state === null) {
+      return "CROSS_SERVER_GROUP_NOT_FOUND";
+    }
+    const usedToday = state.recoverUsedDate === today ? state.vipRecoverUsed : 0;
+    if (state.attemptsRemaining >= center.arena.attemptLimit) {
+      return "CROSS_SERVER_ATTEMPTS_FULL";
+    }
+    if (usedToday >= center.arena.vipRecoverLimit) {
+      return "CROSS_SERVER_VIP_RECOVER_LIMIT";
+    }
+    await prisma.playerCrossServerArenaState.update({
+      where: { id: state.id },
+      data: {
+        attemptsRemaining: { increment: 1 },
+        lastRecoveredAt: now,
+        recoverUsedDate: today,
+        vipRecoverUsed: usedToday + 1
+      }
+    });
+    return this.getCrossServerCenter(accountId, serverId, today, now);
   },
 
   async registerCrossServerGuild(accountId, serverId, today) {
@@ -14474,41 +15003,50 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
 
+    const rules = toCrossServerRuleConfigRecord(await prisma.crossServerRuleConfig.findUnique({ where: { id: "default" } }));
+    const rewardTier = pickCrossServerRewardTier(center.arena.rank, rules);
     let deliveredRewards = 0;
-    for (const board of center.boards) {
-      for (const row of board.rows.slice(0, 3)) {
-        const rewardPlatformCoins = row.rank === 1 ? 180 : row.rank === 2 ? 120 : 80;
-        const rewardTitleId = board.key === "cross-company-value" && row.rank === 1 ? "cross-unicorn" : null;
-        const existing = await prisma.leaderboardRewardDelivery.findUnique({
-          where: {
-            profileId_boardKey_snapshotDate: {
-              profileId: row.profileId,
-              boardKey: board.key,
-              snapshotDate: today
-            }
-          }
-        });
-        if (existing === null) {
-          await prisma.leaderboardRewardDelivery.create({
-            data: {
-              profileId: row.profileId,
-              serverId: center.group.id,
-              boardKey: board.key,
-              snapshotDate: today,
-              rank: row.rank,
-              rewardPlatformCoins,
-              rewardTitleId,
-              mailSubject: `${board.name} 第 ${row.rank} 名奖励`,
-              mailBody: "跨服奖励已送达邮箱。"
-            }
-          });
-          deliveredRewards += 1;
-          if (rewardTitleId !== null) {
-            await grantTitle(prisma, row.profileId, rewardTitleId, "cross_server", new Date(`${today}T00:00:00.000Z`));
-          }
+    const existing = await prisma.leaderboardRewardDelivery.findUnique({
+      where: {
+        profileId_boardKey_snapshotDate: {
+          profileId: profile.id,
+          boardKey: "cross-arena",
+          snapshotDate: today
         }
       }
+    });
+    if (existing === null && rewardTier !== null) {
+      await prisma.leaderboardRewardDelivery.create({
+        data: {
+          profileId: profile.id,
+          serverId: center.group.id,
+          boardKey: "cross-arena",
+          snapshotDate: today,
+          rank: center.arena.rank,
+          rewardPlatformCoins: rewardTier.rewardPlatformCoins,
+          rewardTitleId: rewardTier.rewardTitleId,
+          mailSubject: `跨服竞技场 ${center.arena.rankLabel} 奖励`,
+          mailBody: "奖励将通过邮件发放。"
+        }
+      });
+      deliveredRewards = 1;
+      if (rewardTier.rewardTitleId !== null) {
+        await grantTitle(prisma, profile.id, rewardTier.rewardTitleId, "cross_server", new Date(`${today}T00:00:00.000Z`));
+      }
     }
+    await prisma.crossServerSettlementRun.upsert({
+      where: { settlementKey: `personal:${today}:${center.group.id}` },
+      update: {
+        status: deliveredRewards > 0 ? "success" : "skipped",
+        deliveredRewards
+      },
+      create: {
+        settlementType: "personal",
+        settlementKey: `personal:${today}:${center.group.id}`,
+        status: deliveredRewards > 0 ? "success" : "skipped",
+        deliveredRewards
+      }
+    });
 
     return {
       leaderboard: {

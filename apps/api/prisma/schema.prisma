@@ -129,6 +129,7 @@ model CrossServerGroup {
   servers     CrossServerGroupServer[]
   signups     CrossServerSignup[]
   guildSignups CrossServerGuildSignup[]
+  arenaStates PlayerCrossServerArenaState[]
 
   @@index([isActive, sortOrder])
 }
@@ -252,6 +253,7 @@ model PlayerProfile {
   guildJoinRequests GuildJoinRequest[]
   guildActivityLogs GuildActivityLog[]
   crossServerSignups CrossServerSignup[]
+  crossServerArenaState PlayerCrossServerArenaState?
   mailCompensations AdminMailCompensation[]
   seasonProgresses PlayerSeasonProgress[]
   seasonTasks PlayerSeasonTaskProgress[]
@@ -266,6 +268,52 @@ model PlayerProfile {
   @@unique([accountId, serverId])
   @@index([serverId])
   @@index([avatarId])
+}
+
+model PlayerCrossServerArenaState {
+  id                 String        @id @default(uuid()) @db.VarChar(36)
+  profileId          String        @unique @db.VarChar(36)
+  groupId            String        @db.VarChar(32)
+  rank               Int           @default(1200)
+  attemptsRemaining  Int           @default(10)
+  lastRecoveredAt    DateTime
+  recoverUsedDate    String        @default("") @db.VarChar(10)
+  vipRecoverUsed     Int           @default(0)
+  lastBattleReportJson String?     @db.Text
+  lastSettlementDate String?       @db.VarChar(10)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  profile            PlayerProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  group              CrossServerGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, rank])
+}
+
+model CrossServerRuleConfig {
+  id                              String   @id @db.VarChar(32)
+  personalAttemptLimit            Int      @default(10)
+  personalRecoverIntervalMinutes  Int      @default(60)
+  personalResetTime               String   @default("05:00") @db.VarChar(5)
+  personalSettlementTime          String   @default("22:00") @db.VarChar(5)
+  guildOpenDay                    Int      @default(6)
+  guildOpenTime                   String   @default("20:00") @db.VarChar(5)
+  guildCloseDay                   Int      @default(0)
+  guildCloseTime                  String   @default("22:00") @db.VarChar(5)
+  guildSettlementTime             String   @default("22:00") @db.VarChar(5)
+  rewardTiersJson                 String   @db.Text
+  updatedAt                       DateTime @updatedAt
+}
+
+model CrossServerSettlementRun {
+  id               String   @id @default(uuid()) @db.VarChar(36)
+  settlementType   String   @db.VarChar(16)
+  settlementKey    String   @unique @db.VarChar(64)
+  status           String   @db.VarChar(16)
+  deliveredRewards Int      @default(0)
+  errorMessage     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([settlementType, createdAt])
 }
 
 model PlayerPlatformWallet {

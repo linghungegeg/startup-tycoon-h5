@@ -3018,6 +3018,30 @@ const createTestRepository = (): GameRepository => {
   const achievements = new Map<string, { profileId: string; achievementId: string; progress: number; completedAt: string | null; claimedAt: string | null }>();
   const knowledgeUnlocks = new Map<string, { profileId: string; knowledgeId: string; source: string; unlockedAt: string }>();
   const leaderboardRewards = new Set<string>();
+  const crossServerArenaStates = new Map<string, { rank: number; attemptsRemaining: number; vipRecoverUsed: number; recoverUsedDate: string; lastRecoveredAt: string; lastBattleReport: { result: "win" | "lose"; opponentId: string; opponentName: string; rankBefore: number; rankAfter: number; attemptsRemaining: number; lines: string[] } | null }>();
+  const crossServerSettlementRuns: Array<{ id: string; settlementType: "personal" | "guild"; settlementKey: string; status: "success" | "skipped"; deliveredRewards: number; errorMessage: string | null; createdAt: string }> = [];
+  const crossServerRuleConfig = {
+    id: "default",
+    personalAttemptLimit: 10,
+    personalRecoverIntervalMinutes: 60,
+    personalResetTime: "05:00",
+    personalSettlementTime: "22:00",
+    guildOpenDay: 6,
+    guildOpenTime: "20:00",
+    guildCloseDay: 0,
+    guildCloseTime: "22:00",
+    guildSettlementTime: "22:00",
+    rewardTiers: [
+      { rankStart: 1, rankEnd: 1, rewardPlatformCoins: 180, rewardReputation: 300, rewardActionPower: 0, rewardTitleId: "cross-unicorn", rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 2, rankEnd: 2, rewardPlatformCoins: 120, rewardReputation: 220, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 3, rankEnd: 3, rewardPlatformCoins: 80, rewardReputation: 160, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 4, rankEnd: 10, rewardPlatformCoins: 50, rewardReputation: 120, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 11, rankEnd: 50, rewardPlatformCoins: 30, rewardReputation: 90, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 51, rankEnd: 100, rewardPlatformCoins: 20, rewardReputation: 60, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 101, rankEnd: 500, rewardPlatformCoins: 10, rewardReputation: 40, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 },
+      { rankStart: 501, rankEnd: null, rewardPlatformCoins: 5, rewardReputation: 20, rewardActionPower: 0, rewardTitleId: null, rewardItemId: null, rewardItemQuantity: 0 }
+    ]
+  };
   const claimedMailRewardIds = new Set<string>();
   const guildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
   const crossGuildLeaderboardDeliveries: Array<{ guildId: string; profileId: string; serverId: string; groupId: string; snapshotDate: string; rank: number; reputationReward: number }> = [];
@@ -3511,6 +3535,8 @@ const createTestRepository = (): GameRepository => {
           profileId: profile.id,
           founderName: profile.founderName,
           companyName: profile.companyName,
+          serverId: profile.serverId,
+          serverName: servers.find((server) => server.id === profile.serverId)?.name ?? profile.serverId.toUpperCase(),
           value,
           valueLabel: `${value.toLocaleString("zh-CN")}`,
           equippedTitle: toTitleCenter(profile, today).equippedTitle?.name ?? null
@@ -3545,7 +3571,43 @@ const createTestRepository = (): GameRepository => {
       activityBoards
     };
   };
-  const buildCrossServerCenter = (profile: PlayerProfileRecord, today: string): CrossServerCenterRecord | "CROSS_SERVER_GROUP_NOT_FOUND" => {
+  const arenaRankLabel = (rank: number): string => rank > 1000 ? "1200+" : `第 ${rank} 名`;
+  const arenaBand = (rank: number): { start: number; end: number; label: string } => {
+    const end = rank > 1000 ? 1001 : Math.max(1, Math.floor((rank - 1) / 100) * 100 + 1);
+    const start = rank > 1000 ? 1100 : Math.min(1000, end + 99);
+    return { start, end, label: `${start}-${end}` };
+  };
+  const buildArenaOpponents = (rank: number, groupServerIds: string[]) => {
+    const band = arenaBand(rank);
+    const names = [
+      { companyName: "星河资本", founderName: "顾寒舟", keyEmployeeName: "资本参谋" },
+      { companyName: "云启集团", founderName: "程晚星", keyEmployeeName: "增长统帅" },
+      { companyName: "天璟科技", founderName: "陆青川", keyEmployeeName: "交付王牌" },
+      { companyName: "智创未来", founderName: "林知夏", keyEmployeeName: "运营智囊" }
+    ];
+    const span = Math.max(1, band.start - band.end);
+    return [
+      band.start,
+      Math.max(band.end, band.start - Math.floor(span * 0.32)),
+      Math.max(band.end, band.start - Math.floor(span * 0.68)),
+      band.end
+    ].map((opponentRank, index) => {
+      const serverId = groupServerIds[(index + 1) % groupServerIds.length] ?? "s1";
+      const bot = names[index] ?? names[0]!;
+      return {
+        id: `arena-bot-${opponentRank}`,
+        serverId,
+        serverName: servers.find((server) => server.id === serverId)?.name ?? serverId.toUpperCase(),
+        founderName: bot.founderName,
+        companyName: bot.companyName,
+        rank: opponentRank,
+        rankLabel: rank > 1000 ? band.label : `第 ${opponentRank} 名`,
+        power: Math.max(8000, 42000 - opponentRank * 18 + index * 1200),
+        keyEmployeeName: bot.keyEmployeeName
+      };
+    });
+  };
+  const buildCrossServerCenter = (profile: PlayerProfileRecord, today: string, now = new Date(`${today}T00:00:00.000Z`)): CrossServerCenterRecord | "CROSS_SERVER_GROUP_NOT_FOUND" => {
     const group = crossServerGroups.find((item) => item.serverIds.includes(profile.serverId));
     if (group === undefined) {
       return "CROSS_SERVER_GROUP_NOT_FOUND";
@@ -3561,6 +3623,8 @@ const createTestRepository = (): GameRepository => {
           profileId: item.id,
           founderName: item.founderName,
           companyName: item.companyName,
+          serverId: item.serverId,
+          serverName: servers.find((server) => server.id === item.serverId)?.name ?? item.serverId.toUpperCase(),
           value,
           valueLabel: `${value.toLocaleString("zh-CN")}`,
           equippedTitle: toTitleCenter(item, today).equippedTitle?.name ?? null
@@ -3609,7 +3673,35 @@ const createTestRepository = (): GameRepository => {
       { key: "cross-company-value", name: "跨服创业大赛榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-company-value"), snapshotDate: today },
       { key: "cross-guild", name: "跨服商会榜", scope: "cross" as const, isActive: true, rows: rowsFor("cross-guild"), snapshotDate: today }
     ];
-    const isRegistered = crossServerSignups.has(`${profile.id}:${group.id}`);
+    const state = crossServerArenaStates.get(profile.id) ?? { rank: 1200, attemptsRemaining: 10, vipRecoverUsed: 0, recoverUsedDate: today, lastRecoveredAt: now.toISOString(), lastBattleReport: null };
+    if (state.recoverUsedDate !== today) {
+      state.attemptsRemaining = 10;
+      state.vipRecoverUsed = 0;
+      state.recoverUsedDate = today;
+      state.lastRecoveredAt = now.toISOString();
+    }
+    if (state.attemptsRemaining < 10) {
+      const elapsedRecoveries = Math.floor((now.getTime() - new Date(state.lastRecoveredAt).getTime()) / (60 * 60_000));
+      if (elapsedRecoveries > 0) {
+        state.attemptsRemaining = Math.min(10, state.attemptsRemaining + elapsedRecoveries);
+        state.lastRecoveredAt = state.attemptsRemaining >= 10 ? now.toISOString() : new Date(new Date(state.lastRecoveredAt).getTime() + elapsedRecoveries * 60 * 60_000).toISOString();
+      }
+    }
+    crossServerArenaStates.set(profile.id, state);
+    const opponents = buildArenaOpponents(state.rank, group.serverIds);
+    const ownedLineup = [...employees.values()]
+      .filter((employee) => employee.isActive)
+      .map((employee) => ({ employeeId: employee.id, name: employee.name, role: employee.role, power: employee.management + employee.negotiation + employee.execution + employee.level * 3 }));
+    const fallbackLineup = employeeConfigs.map((employee) => ({
+      employeeId: employee.id,
+      name: employee.name,
+      role: employee.role,
+      power: employee.management + employee.negotiation + employee.execution + 3
+    }));
+    const lineup = (ownedLineup.length > 0 ? ownedLineup : fallbackLineup)
+      .sort((left, right) => right.power - left.power)
+      .slice(0, 5);
+    const isRegistered = true;
     const isDailyRewardClaimed = leaderboardRewards.has(`${profile.id}:cross-daily-goal:${today}`);
     const guildGoalProgress = Math.min(todayActiveMemberCount, seasonRequirements.minTodayActiveMembers);
     const dailyGoals = [
@@ -3667,6 +3759,22 @@ const createTestRepository = (): GameRepository => {
     const center = {
       group,
       isRegistered,
+      arena: {
+        rank: state.rank,
+        rankLabel: arenaRankLabel(state.rank),
+        opponentBandLabel: arenaBand(state.rank).label,
+        attemptsRemaining: state.attemptsRemaining,
+        attemptLimit: crossServerRuleConfig.personalAttemptLimit,
+        recoverIntervalMinutes: crossServerRuleConfig.personalRecoverIntervalMinutes,
+        nextRecoverAt: state.attemptsRemaining >= 10 ? null : `${today}T01:00:00.000Z`,
+        nextRecoverLabel: state.attemptsRemaining >= 10 ? "已满" : "下次恢复 1小时内",
+        vipRecoverLimit: 1,
+        vipRecoverUsed: state.recoverUsedDate === today ? state.vipRecoverUsed : 0,
+        settlementLabel: `今日${crossServerRuleConfig.personalSettlementTime}结算`,
+        opponents,
+        lineup,
+        lastBattleReport: state.lastBattleReport
+      },
       dailyReward: {
         isClaimed: isDailyRewardClaimed,
         canClaim: isRegistered && !isDailyRewardClaimed,
@@ -3712,24 +3820,31 @@ const createTestRepository = (): GameRepository => {
       }
     };
     const personalRow = boards[0]?.rows.find((row) => row.profileId === profile.id);
+    const selfServerId = personalRow?.serverId ?? profile.serverId;
+    const serverNames = Object.fromEntries(servers.map((server) => [server.id, server.name]));
+    const selfServerName = personalRow?.serverName ?? serverNames[selfServerId] ?? selfServerId.toUpperCase();
     const previousRow = personalRow === undefined ? undefined : boards[0]?.rows.find((row) => row.rank === personalRow.rank - 1);
     const nextRow = personalRow === undefined ? undefined : boards[0]?.rows.find((row) => row.rank === personalRow.rank + 1);
     const guildRow = member === undefined ? undefined : guildRows.find((row) => row.guildId === member.guildId);
-    const gapLabel = previousRow === undefined || personalRow === undefined
-      ? nextRow === undefined || personalRow === undefined
-        ? "当前暂无相邻名次差距。"
-        : `领先下一名 ${(personalRow.value - nextRow.value).toLocaleString("zh-CN")} 估值。`
-      : `距离上一名还差 ${(previousRow.value - personalRow.value).toLocaleString("zh-CN")} 估值。`;
-    const opponentRow = previousRow ?? nextRow ?? boards[0]?.rows.find((row) => row.profileId !== profile.id);
+    const opponentRow =
+      (previousRow?.serverId !== undefined && previousRow.serverId !== selfServerId ? previousRow : undefined) ??
+      (nextRow?.serverId !== undefined && nextRow.serverId !== selfServerId ? nextRow : undefined) ??
+      boards[0]?.rows.find((row) => row.profileId !== profile.id && row.serverId !== selfServerId) ??
+      boards[0]?.rows.find((row) => row.profileId !== profile.id);
     const selfAhead = personalRow !== undefined && opponentRow !== undefined && personalRow.value >= opponentRow.value;
+    const opponentServerId = opponentRow?.serverId ?? group.serverIds.find((serverId) => serverId !== selfServerId) ?? null;
+    const opponentServerName = opponentRow?.serverName ?? (opponentServerId === null ? "待形成对阵" : serverNames[opponentServerId] ?? opponentServerId.toUpperCase());
     const matchup = {
       selfLabel: "我方",
       selfName: personalRow === undefined ? "我方公司" : `${personalRow.founderName} · ${personalRow.companyName}`,
+      selfServerId,
+      selfServerName,
       selfRank: personalRow?.rank ?? null,
       selfValueLabel: personalRow?.valueLabel ?? "暂无跨服战力",
       opponentLabel: "对手",
       opponentName: opponentRow === undefined ? "待形成对阵" : `${opponentRow.founderName} · ${opponentRow.companyName}`,
-      opponentServerName: opponentRow === undefined ? group.name : `${group.name} 对手`,
+      opponentServerId,
+      opponentServerName,
       opponentRank: opponentRow?.rank ?? null,
       opponentValueLabel: opponentRow?.valueLabel ?? "待形成对阵",
       valueGapLabel: personalRow === undefined || opponentRow === undefined ? "待形成对阵" : `${selfAhead ? "领先" : "落后"} ${Math.abs(personalRow.value - opponentRow.value).toLocaleString("zh-CN")} 估值`,
@@ -3742,11 +3857,16 @@ const createTestRepository = (): GameRepository => {
     const round = {
       zoneLabel: `${group.serverIds.length} 服战区`,
       phaseLabel: `${group.name} · 对阵赛段`,
+      pairingLabel: `${selfServerId.toUpperCase()} ${selfServerName} VS ${opponentServerId === null ? "待形成对阵" : `${opponentServerId.toUpperCase()} ${opponentServerName}`}`,
       statusLabel: !isRegistered ? "报名后进入备战" : matchup.statusLabel === "待形成对阵" ? "备战中" : "对阵中",
-      settlementLabel: "结算后邮件发奖"
+      settlementLabel: "今日22:00结算"
     };
     return {
       ...center,
+      group: {
+        ...center.group,
+        serverNames
+      },
       matchup,
       round,
       battleReport: {
@@ -3770,12 +3890,11 @@ const createTestRepository = (): GameRepository => {
           rewardStatus: "待结算"
         },
         lines: [
-          "跨服赛果回放：本轮仍在对阵，结算后邮件发奖。",
-          `本轮赛况：${matchup.statusLabel}，${matchup.valueGapLabel}。`,
-          `个人对比：${personalRow === undefined ? "暂无个人排名" : `本赛季估值进入跨服第 ${personalRow.rank}`}，${gapLabel}`,
-          `榜首对比：${boards[0]?.rows[0]?.founderName ?? "榜首待定"} 领跑 ${group.serverIds.length} 个区服。`,
-          `商会对比：${guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`}，${matchup.guildPressureLabel}。`,
-          `下一步：${matchup.pressureLabel}，继续推进今日目标。`,
+          "跨服竞技场：今日22:00结算，奖励将通过邮件发放。",
+          `个人对比：当前天梯排名 ${arenaRankLabel(state.rank)}，本轮可挑战 ${arenaBand(state.rank).label}。`,
+          `上阵员工：${lineup.map((employee) => employee.name).slice(0, 3).join("、") || "员工就绪"}。`,
+          `天梯对手：${opponents.map((opponent) => `${opponent.serverId.toUpperCase()} ${opponent.companyName}`).join("、")}。`,
+          `商会跨服：${guildRow === undefined ? "商会报名后生成商会战报" : `${guildRow.guildName} 当前跨服商会第 ${guildRow.rank}`}。`,
           "奖励去向：结算后邮件发奖。"
         ]
       }
@@ -4694,7 +4813,25 @@ const createTestRepository = (): GameRepository => {
             lastAuditLogId: audit?.id ?? null
           };
         });
-      const rows = [...activityRows, ...serverRows];
+      const crossRows = crossServerGroups
+        .filter((group) => group.serverIds.some((serverId) => [...profiles.values()].some((profile) => profile.serverId === serverId)))
+        .map((group) => {
+          const serverId = group.serverIds.find((item) => [...profiles.values()].some((profile) => profile.serverId === item)) ?? group.serverIds[0] ?? "s1";
+          const audit = hasAudit("admin_cross_server_leaderboard_settle", group.id);
+          const isSettled = [...leaderboardRewards].some((key) => key.includes(":cross-company-value:"));
+          return {
+            id: `crossLeaderboard:${group.id}`,
+            kind: "crossLeaderboard" as const,
+            targetId: group.id,
+            serverId,
+            name: `${group.name} 跨服经营战榜`,
+            reasonPreset: "运营自动识别跨服经营战榜待结算",
+            riskLabel: "跨服个人榜奖励",
+            isSettled,
+            lastAuditLogId: audit?.id ?? null
+          };
+        });
+      const rows = [...activityRows, ...serverRows, ...crossRows];
       return {
         summary: {
           total: rows.length,
@@ -4703,7 +4840,7 @@ const createTestRepository = (): GameRepository => {
           activity: rows.filter((row) => row.kind === "activity").length,
           guild: 0,
           crossGuild: 0,
-          leaderboard: rows.filter((row) => row.kind === "leaderboard").length
+          leaderboard: rows.filter((row) => row.kind === "leaderboard" || row.kind === "crossLeaderboard").length
         },
         rows
       };
@@ -7819,12 +7956,12 @@ const createTestRepository = (): GameRepository => {
       }
       return { leaderboard, deliveredRewards } satisfies LeaderboardSettlementRecord;
     },
-    async getCrossServerCenter(accountId, serverId, today) {
+    async getCrossServerCenter(accountId, serverId, today, now) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      return buildCrossServerCenter(profile, today);
+      return buildCrossServerCenter(profile, today, now);
     },
     async getCrossServerGuildHistory(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -7844,6 +7981,67 @@ const createTestRepository = (): GameRepository => {
       }
       crossServerSignups.add(`${profile.id}:${group.id}`);
       return buildCrossServerCenter(profile, today);
+    },
+    async challengeCrossServerOpponent(accountId, serverId, opponentId, today, now) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const center = buildCrossServerCenter(profile, today, now);
+      if (center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return center;
+      }
+      const state = crossServerArenaStates.get(profile.id)!;
+      if (state.attemptsRemaining <= 0) {
+        return "CROSS_SERVER_ATTEMPTS_EMPTY";
+      }
+      const opponent = center.arena.opponents.find((item) => item.id === opponentId);
+      if (opponent === undefined) {
+        return "CROSS_SERVER_OPPONENT_NOT_FOUND";
+      }
+      const rankBefore = state.rank;
+      const rankAfter = Math.min(state.rank, opponent.rank);
+      const battleReport = {
+        result: "win" as const,
+        opponentId,
+        opponentName: `${opponent.serverId.toUpperCase()} ${opponent.companyName}`,
+        rankBefore,
+        rankAfter,
+        attemptsRemaining: state.attemptsRemaining - 1,
+        lines: [
+          `第1回合：${center.arena.lineup[0]?.name ?? "核心员工"}顶住对方资本压阵，交付节奏没有乱。`,
+          `第2回合：${opponent.keyEmployeeName}试图抢走市场声量，我方团队强行扳回一城。`,
+          `第3回合：关键报价落定，排名提升到${arenaRankLabel(rankAfter)}。`
+        ]
+      };
+      state.rank = rankAfter;
+      state.attemptsRemaining -= 1;
+      state.lastRecoveredAt = now?.toISOString() ?? `${today}T00:00:00.000Z`;
+      state.lastBattleReport = battleReport;
+      return { crossServer: buildCrossServerCenter(profile, today, now) as CrossServerCenterRecord, battleReport };
+    },
+    async recoverCrossServerAttempts(accountId, serverId, today, now) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const center = buildCrossServerCenter(profile, today, now);
+      if (center === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return center;
+      }
+      const state = crossServerArenaStates.get(profile.id)!;
+      const usedToday = state.recoverUsedDate === today ? state.vipRecoverUsed : 0;
+      if (state.attemptsRemaining >= center.arena.attemptLimit) {
+        return "CROSS_SERVER_ATTEMPTS_FULL";
+      }
+      if (usedToday >= center.arena.vipRecoverLimit) {
+        return "CROSS_SERVER_VIP_RECOVER_LIMIT";
+      }
+      state.attemptsRemaining += 1;
+      state.lastRecoveredAt = now?.toISOString() ?? `${today}T00:00:00.000Z`;
+      state.recoverUsedDate = today;
+      state.vipRecoverUsed = usedToday + 1;
+      return buildCrossServerCenter(profile, today, now);
     },
     async registerCrossServerGuild(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -7881,18 +8079,20 @@ const createTestRepository = (): GameRepository => {
         return center;
       }
       let deliveredRewards = 0;
-      for (const board of center.boards) {
-        for (const row of board.rows.slice(0, 3)) {
-          const key = `${row.profileId}:${board.key}:${today}`;
-          if (!leaderboardRewards.has(key)) {
-            leaderboardRewards.add(key);
-            deliveredRewards += 1;
-            if (board.key === "cross-company-value" && row.rank === 1) {
-              addTitle(row.profileId, "cross-unicorn", "cross_server", today);
-            }
-          }
-        }
+      const key = `${profile.id}:cross-arena:${today}`;
+      if (!leaderboardRewards.has(key)) {
+        leaderboardRewards.add(key);
+        deliveredRewards = 1;
       }
+      crossServerSettlementRuns.unshift({
+        id: `cross-run-${crossServerSettlementRuns.length + 1}`,
+        settlementType: "personal",
+        settlementKey: `personal:${today}`,
+        status: deliveredRewards > 0 ? "success" : "skipped",
+        deliveredRewards,
+        errorMessage: null,
+        createdAt: `${today}T22:00:00.000Z`
+      });
       return {
         leaderboard: { boards: center.boards, activityBoards: [] },
         deliveredRewards,
@@ -7901,11 +8101,56 @@ const createTestRepository = (): GameRepository => {
           personal: { ...center.battleReport.personal, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
           guild: { ...center.battleReport.guild, rewardStatus: deliveredRewards > 0 ? "已生成邮件" : "已结算" },
           lines: [
-            deliveredRewards > 0 ? "跨服赛果回放：本次结算已生成奖励邮件。" : "跨服赛果回放：本次奖励已处理，无重复发放。",
+            deliveredRewards > 0 ? "跨服竞技场：今日22:00已生成奖励邮件。" : "跨服竞技场：今日22:00奖励已处理。",
             ...center.battleReport.lines.slice(1).map((line) => line.replace("结算后邮件发奖", "奖励已通过邮件处理"))
           ]
         }
       } satisfies LeaderboardSettlementRecord;
+    },
+    async settleAdminCrossServerLeaderboards(adminUserId, serverId, today, reason) {
+      const profile = [...profiles.values()].find((item) => item.serverId === serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+      const group = crossServerGroups.find((item) => item.serverIds.includes(serverId));
+      if (group === undefined) {
+        return "CROSS_SERVER_GROUP_NOT_FOUND";
+      }
+      const settlement = await this.settleCrossServerRewards(profile.accountId, serverId, today);
+      if (settlement === "PLAYER_NOT_FOUND" || settlement === "CROSS_SERVER_GROUP_NOT_FOUND") {
+        return settlement;
+      }
+      const auditLogId = `audit-admin-cross-server-leaderboard-${adminAuditLogs.length + 1}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_cross_server_leaderboard_settle",
+        targetType: "cross_server_leaderboard",
+        targetId: group.id,
+        detail: JSON.stringify({ serverId, groupId: group.id, today, reason, deliveredRewards: settlement.deliveredRewards }),
+        createdAt: `${today}T00:00:00.000Z`
+      });
+      return { ...settlement, auditLogId };
+    },
+    async getAdminCrossServerRules() {
+      return crossServerRuleConfig;
+    },
+    async upsertAdminCrossServerRules(adminUserId, config, reason) {
+      Object.assign(crossServerRuleConfig, config);
+      const auditLogId = `audit-admin-cross-server-rules-${adminAuditLogs.length + 1}`;
+      adminAuditLogs.unshift({
+        id: auditLogId,
+        adminUsername: "admin",
+        action: "admin_cross_server_rules_update",
+        targetType: "cross_server_rules",
+        targetId: "default",
+        detail: reason,
+        createdAt: "2026-05-01T00:00:00.000Z"
+      });
+      return { config: crossServerRuleConfig, auditLogId };
+    },
+    async listAdminCrossServerSettlementRuns() {
+      return { rows: crossServerSettlementRuns };
     },
     async claimCrossServerDailyReward(accountId, serverId, today) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
@@ -13625,137 +13870,63 @@ test("phase 22 achievement unlock returns complete knowledge card fields for leg
   });
 });
 
-test("phase 15 cross server groups signup leaderboards and rewards are idempotent", async () => {
+test("phase 63 cross server arena initializes attempts challenges and settles idempotently", async () => {
   await withServer(async (baseUrl) => {
-    const { token } = await createPlayerSession(baseUrl, "crossranker");
+    const { token } = await createPlayerSession(baseUrl, "crossarena");
+    await createPlayerSession(baseUrl, "crossarenaopponent", "s2");
 
     const center = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01", "x-server-now": "2026-05-01T10:00:00.000Z" }
     });
     assert.equal(center.status, 200);
     assert.equal(center.body.data?.group.name, "开服成长池");
-    assert.equal(center.body.data?.isRegistered, false);
-    assert.equal(center.body.data?.boards.length, 2);
-    assert.ok(center.body.data?.boards.every((board) => board.scope === "cross"));
-    assert.equal(center.body.data?.dailyReward.isClaimed, false);
-    assert.equal(center.body.data?.dailyReward.canClaim, false);
-    assert.equal(center.body.data?.dailyReward.statusLabel, "报名后领取");
-    assert.equal(center.body.data?.dailyGoals.length, 3);
-    assert.equal(center.body.data?.seasonProgress.completedGoals, 0);
-    assert.equal(center.body.data?.nextReward.statusLabel, "报名后领取");
-    assert.equal(center.body.data?.battleReport.groupName, "开服成长池");
-    assert.equal(center.body.data?.battleReport.personal.rewardStatus, "待结算");
-    assert.ok((center.body.data?.battleReport.lines.length ?? 0) >= 3);
-    assert.equal(center.body.data?.matchup.selfLabel, "我方");
-    assert.equal(center.body.data?.matchup.opponentLabel, "对手");
-    assert.match(center.body.data?.matchup.statusLabel ?? "", /暂居上风|对手压线领先|待形成对阵/);
-    assert.match(center.body.data?.matchup.valueGapLabel ?? "", /领先|落后|待形成对阵/);
-    assert.match(center.body.data?.round.phaseLabel ?? "", /战区|赛段|对阵/);
-    assert.match(center.body.data?.round.statusLabel ?? "", /备战|对阵|结算/);
-    assert.ok(center.body.data?.battleReport.lines.some((line) => line.includes("本轮赛况")));
-    assert.ok(center.body.data?.battleReport.lines.some((line) => line.includes("下一步")));
-    assert.doesNotMatch(center.body.data?.battleReport.lines.join("\n"), /算法|快照|数据生成|实时战斗|即时开打/);
+    assert.equal(center.body.data?.isRegistered, true);
+    assert.equal(center.body.data?.arena.rankLabel, "1200+");
+    assert.equal(center.body.data?.arena.attemptLimit, 10);
+    assert.equal(center.body.data?.arena.attemptsRemaining, 10);
+    assert.equal(center.body.data?.arena.recoverIntervalMinutes, 60);
+    assert.match(center.body.data?.arena.nextRecoverLabel ?? "", /已满|下次恢复/);
+    assert.equal(center.body.data?.arena.opponentBandLabel, "1100-1001");
+      assert.equal(center.body.data?.arena.opponents.length, 4);
+    assert.ok(center.body.data?.arena.opponents.every((opponent) => opponent.rankLabel.includes("-") || opponent.rankLabel.includes("第")));
+    assert.ok((center.body.data?.arena.lineup.length ?? 0) > 0);
+    assert.equal(center.body.data?.round.settlementLabel, "今日22:00结算");
+    assert.doesNotMatch(JSON.stringify(center.body.data), /手动结算|自动结算|候选|快照|算法|实时战斗|即时开打/);
 
-    const registered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/register", {
+    const challenged = await requestJson<{ crossServer: CrossServerCenterRecord; battleReport: { result: string; lines: string[]; rankBefore: number; rankAfter: number; attemptsRemaining: number } }>(baseUrl, "/cross-server/challenge", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
-      body: JSON.stringify({ serverId: "s1" })
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01", "x-server-now": "2026-05-01T10:00:00.000Z" },
+      body: JSON.stringify({ serverId: "s1", opponentId: center.body.data?.arena.opponents[0]?.id })
     });
-    assert.equal(registered.status, 200);
-    assert.equal(registered.body.data?.isRegistered, true);
-    assert.equal(registered.body.data?.dailyReward.isClaimed, false);
-    assert.equal(registered.body.data?.dailyReward.canClaim, true);
-    assert.equal(registered.body.data?.dailyReward.statusLabel, "待领取");
-    assert.equal(registered.body.data?.seasonProgress.completedGoals, 1);
-    assert.equal(registered.body.data?.nextReward.statusLabel, "待领取");
+    assert.equal(challenged.status, 200, JSON.stringify(challenged.body));
+    assert.equal(challenged.body.data?.battleReport.lines.length, 3);
+    assert.match(challenged.body.data?.battleReport.lines.join("\n") ?? "", /回合|资本|交付|团队/);
+    assert.equal(challenged.body.data?.battleReport.attemptsRemaining, 9);
+    assert.equal(challenged.body.data?.crossServer.arena.attemptsRemaining, 9);
+    assert.ok((challenged.body.data?.battleReport.rankAfter ?? 9999) <= (challenged.body.data?.battleReport.rankBefore ?? 0));
 
-    const beforeDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
+    const naturallyRecovered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server?serverId=s1", {
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01", "x-server-now": "2026-05-01T11:01:00.000Z" }
     });
-    const dailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
-      body: JSON.stringify({ serverId: "s1" })
-    });
-    assert.equal(dailyReward.status, 200, JSON.stringify(dailyReward.body));
-    assert.equal(dailyReward.body.data?.deliveredRewards, 1);
-    assert.equal(dailyReward.body.data?.rewardReputation, 30);
-    assert.equal(dailyReward.body.data?.crossServer.isRegistered, true);
-    assert.equal(dailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
-    assert.equal(dailyReward.body.data?.crossServer.dailyReward.canClaim, false);
-    assert.equal(dailyReward.body.data?.crossServer.dailyReward.statusLabel, "今日已领取");
-    assert.equal(dailyReward.body.data?.crossServer.seasonProgress.completedGoals, 2);
-    assert.equal(dailyReward.body.data?.crossServer.nextReward.title, "冲击排名奖励");
-    assert.equal(dailyReward.body.data?.crossServer.stageRewards[0]?.isClaimable, false);
-    const afterDailyReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
-    });
-    assert.equal(afterDailyReward.body.data?.reputation, (beforeDailyReward.body.data?.reputation ?? 0) + 30);
-    assert.equal(afterDailyReward.body.data?.unreadMailCount, (beforeDailyReward.body.data?.unreadMailCount ?? 0) + 1);
-    const dailyRewardMails = await requestJson<MailCenterRecord>(baseUrl, "/mails?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" }
-    });
-    const dailyRewardMail = dailyRewardMails.body.data?.mails.find((mail) => mail.rewardSummary === "声望 +30");
-    assert.equal(dailyRewardMail?.statusLabel, "已入账");
-    assert.equal(dailyRewardMail?.canClaim, false);
-    assert.equal(dailyRewardMail?.claimStatus, "none");
+    assert.equal(naturallyRecovered.status, 200);
+    assert.equal(naturallyRecovered.body.data?.arena.attemptsRemaining, 10);
 
-    const duplicateDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
+    const challengedAgain = await requestJson<{ crossServer: CrossServerCenterRecord; battleReport: { attemptsRemaining: number } }>(baseUrl, "/cross-server/challenge", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
-      body: JSON.stringify({ serverId: "s1" })
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01", "x-server-now": "2026-05-01T11:02:00.000Z" },
+      body: JSON.stringify({ serverId: "s1", opponentId: naturallyRecovered.body.data?.arena.opponents[0]?.id })
     });
-    assert.equal(duplicateDailyReward.status, 200);
-    assert.equal(duplicateDailyReward.body.data?.deliveredRewards, 0);
-    assert.equal(duplicateDailyReward.body.data?.rewardReputation, 0);
-    assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.isClaimed, true);
-    assert.equal(duplicateDailyReward.body.data?.crossServer.dailyReward.canClaim, false);
+    assert.equal(challengedAgain.status, 200);
+    assert.equal(challengedAgain.body.data?.battleReport.attemptsRemaining, 9);
 
-    await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
+    const recovered = await requestJson<CrossServerCenterRecord>(baseUrl, "/cross-server/recover-attempts", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-02" },
+      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01", "x-server-now": "2026-05-01T11:03:00.000Z" },
       body: JSON.stringify({ serverId: "s1" })
     });
-    const dayThreeDailyReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/daily-reward/claim", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
-      body: JSON.stringify({ serverId: "s1" })
-    });
-    assert.equal(dayThreeDailyReward.body.data?.crossServer.stageRewards[0]?.isClaimable, true);
-    assert.equal(dayThreeDailyReward.body.data?.crossServer.stageRewards[0]?.statusLabel, "可领取");
-    const beforeStageReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
-    });
-    const stageReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/stage-reward/claim", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
-      body: JSON.stringify({ serverId: "s1", stageId: "cross-stage-3" })
-    });
-    assert.equal(stageReward.status, 200, JSON.stringify(stageReward.body));
-    assert.equal(stageReward.body.data?.deliveredRewards, 1);
-    assert.equal(stageReward.body.data?.rewardReputation, 60);
-    assert.equal(stageReward.body.data?.crossServer.stageRewards[0]?.isClaimed, true);
-    assert.equal(stageReward.body.data?.crossServer.stageRewards[0]?.statusLabel, "已领取");
-    const afterStageReward = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
-    });
-    assert.equal(afterStageReward.body.data?.reputation, (beforeStageReward.body.data?.reputation ?? 0) + 60);
-    assert.equal(afterStageReward.body.data?.unreadMailCount, (beforeStageReward.body.data?.unreadMailCount ?? 0) + 1);
-    const stageRewardMails = await requestJson<MailCenterRecord>(baseUrl, "/mails?serverId=s1", {
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" }
-    });
-    const stageRewardMail = stageRewardMails.body.data?.mails.find((mail) => mail.rewardSummary === "声望 +60");
-    assert.equal(stageRewardMail?.statusLabel, "已入账");
-    assert.equal(stageRewardMail?.canClaim, false);
-    assert.equal(stageRewardMail?.claimStatus, "none");
-    const duplicateStageReward = await requestJson<{ deliveredRewards: number; rewardReputation: number; crossServer: CrossServerCenterRecord }>(baseUrl, "/cross-server/stage-reward/claim", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-03" },
-      body: JSON.stringify({ serverId: "s1", stageId: "cross-stage-3" })
-    });
-    assert.equal(duplicateStageReward.status, 200);
-    assert.equal(duplicateStageReward.body.data?.deliveredRewards, 0);
-    assert.equal(duplicateStageReward.body.data?.rewardReputation, 0);
+    assert.equal(recovered.status, 200, JSON.stringify(recovered.body));
+    assert.equal(recovered.body.data?.arena.attemptsRemaining, 10);
+    assert.equal(recovered.body.data?.arena.vipRecoverUsed, 1);
 
     const settled = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",
@@ -13763,13 +13934,10 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
       body: JSON.stringify({ serverId: "s1" })
     });
     assert.equal(settled.status, 200);
-    assert.ok((settled.body.data?.deliveredRewards ?? 0) > 0);
+    assert.ok((settled.body.data?.deliveredRewards ?? 0) >= 1);
     assert.equal(settled.body.data?.battleReport.personal.rewardStatus, "已生成邮件");
-    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("赛果回放")));
-    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("个人对比")));
-    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("商会对比")));
+    assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("今日22:00")));
     assert.ok(settled.body.data?.battleReport.lines.some((line) => line.includes("奖励去向")));
-    assert.match(settled.body.data?.battleReport.lines[0] ?? "", /跨服/);
 
     const duplicate = await requestJson<LeaderboardSettlementRecord>(baseUrl, "/cross-server/settle", {
       method: "POST",
@@ -13779,21 +13947,24 @@ test("phase 15 cross server groups signup leaderboards and rewards are idempoten
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.body.data?.deliveredRewards, 0);
 
-    const equipped = await requestJson<TitleCenterRecord>(baseUrl, "/titles/equip", {
+    const admin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" },
-      body: JSON.stringify({ serverId: "s1", titleId: "cross-unicorn" })
+      body: JSON.stringify({ username: "admin", password: "admin123" })
     });
-    assert.equal(equipped.status, 200);
-    assert.equal(equipped.body.data?.equippedTitle?.name, "跨服独角兽");
-
-    const expiredEquip = await requestJson(baseUrl, "/titles/equip", {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "x-server-date": "2026-05-09" },
-      body: JSON.stringify({ serverId: "s1", titleId: "cross-unicorn" })
+    const adminToken = admin.body.data?.token ?? "";
+    const rules = await requestJson<{ personalAttemptLimit: number; personalRecoverIntervalMinutes: number; personalSettlementTime: string; rewardTiers: Array<{ rankStart: number; rankEnd: number | null }> }>(baseUrl, "/admin/cross-server/rules", {
+      headers: { authorization: `Bearer ${adminToken}` }
     });
-    assert.equal(expiredEquip.status, 409);
-    assert.equal(expiredEquip.body.error?.code, "TITLE_EXPIRED");
+    assert.equal(rules.status, 200);
+    assert.equal(rules.body.data?.personalAttemptLimit, 10);
+    assert.equal(rules.body.data?.personalRecoverIntervalMinutes, 60);
+    assert.equal(rules.body.data?.personalSettlementTime, "22:00");
+    assert.ok((rules.body.data?.rewardTiers.length ?? 0) >= 8);
+    const runs = await requestJson<{ rows: Array<{ settlementType: string; status: string; deliveredRewards: number }> }>(baseUrl, "/admin/cross-server/settlement-runs", {
+      headers: { authorization: `Bearer ${adminToken}` }
+    });
+    assert.equal(runs.status, 200);
+    assert.ok(runs.body.data?.rows.some((run) => run.settlementType === "personal" && (run.status === "success" || run.status === "skipped")));
   });
 });
 
@@ -14324,7 +14495,7 @@ test("phase 28 admin settlement candidates are authenticated read-only and mark 
     });
     const candidates = await requestJson<{
       summary: { total: number; pending: number; activity: number };
-      rows: Array<{ id: string; kind: string; targetId: string; name: string; isSettled: boolean; lastAuditLogId: string | null }>;
+      rows: Array<{ id: string; kind: string; targetId: string; name: string; riskLabel: string; isSettled: boolean; lastAuditLogId: string | null }>;
     }>(baseUrl, "/admin/settlement-candidates", {
       headers: { ...adminHeaders, "x-server-date": "2026-05-21" }
     });
@@ -14335,6 +14506,10 @@ test("phase 28 admin settlement candidates are authenticated read-only and mark 
     const activityCandidate = candidates.body.data?.rows.find((row) => row.kind === "activity" && row.targetId === "ai-agent-growth");
     assert.ok(activityCandidate);
     assert.equal(activityCandidate?.isSettled, false);
+    const crossCandidate = candidates.body.data?.rows.find((row) => row.kind === "crossLeaderboard");
+    assert.ok(crossCandidate, "settlement candidates should include cross-server personal leaderboard");
+    assert.match(crossCandidate?.name ?? "", /跨服经营战榜/);
+    assert.match(crossCandidate?.riskLabel ?? "", /跨服个人榜/);
 
     const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
       headers: playerHeaders

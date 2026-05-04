@@ -24,7 +24,7 @@ test("phase 27 client preserves pre-launch player main flow coverage", () => {
     "员工",
     "市场",
     "商会",
-    "跨服创业大赛",
+    "跨服竞技场",
     "活动",
     "排行榜",
     "商城",
@@ -97,42 +97,25 @@ test("phase 28 client exposes chat shortcut and full-screen chat center", () => 
 
 test("phase 29 client promotes cross-server into an independent full-screen center", () => {
   for (const copy of [
-    "跨服经营战",
-    "今日备战目标",
-    "跨服进度",
-    "目标完成",
-    "今日奖励",
-    "今日已领取",
-    "报名后领取",
-    "声望奖励",
-    "下一奖励",
-    "下一档",
-    "冲榜助力",
-    "完成今日目标",
-    "参与奖励",
-    "阶段奖励",
-    "三日目标",
-    "领取阶段奖励",
+    "跨服竞技",
+    "可挑战对手",
+    "挑战次数",
+    "战报回放",
+    "规则说明",
+    "恢复次数",
+    "上阵员工",
+    "当前排名",
+    "排行",
+    "奖励",
+    "回合战报",
     "排名奖励",
-    "赛季",
-    "榜单",
-    "创业大赛",
     "跨服商会",
     "战报",
-    "赛果回放",
-    "赛果回放已生成",
-    "本轮赛况",
     "个人对比",
-    "商会对比",
     "奖励去向",
-    "赛前情报",
-    "领取今日奖励",
-    "榜首",
-    "领先下一名",
+    "挑战后生成战报",
+    "当前排名",
     "称号待争夺",
-    "榜首商会待定",
-    "普通成员贡献计入商会排名",
-    "行动力、通行证、VIP 和商会协作",
     "我的排名",
     "暂无跨服数据"
   ]) {
@@ -148,24 +131,19 @@ test("phase 29 client promotes cross-server into an independent full-screen cent
   assert.match(source, /data-testid="cross-server-unified-shell"/, "cross-server should render as one unified game panel");
   assert.match(source, /data-testid="cross-server-close-button"/, "cross-server close button should stay addressable without a separate top nav");
   assert.doesNotMatch(source, /data-testid="cross-server-mode-rail"/, "cross-server should not reuse the chat-style left rail");
-  assert.match(source, /data-testid="cross-server-stage-bar"/, "cross-server stages should use a horizontal tournament stage bar");
+  assert.doesNotMatch(source, /data-testid="cross-server-stage-bar"/, "cross-server should not keep the old stage tab bar on the arena home");
   assert.match(source, /data-testid="cross-server-content-pane"/, "cross-server content should stay addressable");
-  assert.match(source, /data-testid="cross-server-matchup-panel"/, "cross-server matchup panel should stay addressable");
-  assert.match(source, /activeCrossServerMode !== "season"/, "cross-server season overview should be controlled by the stage bar");
-  assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should be controlled by the stage bar");
-  assert.match(source, /activeCrossServerMode !== "guild"/, "cross-server guild content should be controlled by the stage bar");
-  assert.match(source, /activeCrossServerMode !== "rewards"/, "cross-server rewards content should be controlled by the stage bar");
-  assert.match(source, /activeCrossServerMode !== "history"/, "cross-server history content should be controlled by the stage bar");
+  assert.match(source, /data-testid="cross-server-arena-panel"/, "cross-server arena panel should stay addressable");
+  assert.match(source, /activeCrossServerMode !== "season"/, "cross-server arena home should be controlled by the cross-server mode state");
+  assert.match(source, /activeCrossServerMode !== "board"/, "cross-server board content should stay behind a secondary entry");
+  assert.doesNotMatch(source, /"guild", "商会战"/, "personal cross-server should not keep guild battle as a tab");
+  assert.match(source, /activeCrossServerMode !== "rewards"/, "cross-server rewards content should stay behind rules entry");
+  assert.match(source, /activeCrossServerMode !== "history"/, "cross-server history content should stay behind battle-report entry");
   assert.match(source, /data-testid="cross-server-battle-report"/, "cross-server battle report should stay addressable");
   assert.doesNotMatch(source, /business-tabs mt-3/, "cross-server should not keep a second category tab row inside the content pane");
   assert.match(source, /home-cross-server-entry/, "home cross-server entry should stay addressable");
   assert.match(source, /data-testid="cross-server-personal-board"/, "personal cross-server board should stay addressable");
   assert.match(source, /data-testid="cross-server-guild-season"/, "guild cross-server season should stay addressable");
-  assert.match(source, /\/cross-server\/daily-reward\/claim/, "cross-server should claim real daily participation rewards");
-  assert.match(source, /dailyReward\.canClaim/, "cross-server daily reward button should use server-side claim state");
-  assert.match(source, /dailyReward\.actionLabel/, "cross-server daily reward button should show claimed state");
-  assert.match(source, /seasonProgress\.completedGoals/, "cross-server season page should use cross-server progress aggregation");
-  assert.match(source, /nextReward\.statusLabel/, "cross-server season page should use cross-server next reward aggregation");
   assert.match(source, /stageRewards \?\? \[\]\)\.map/, "cross-server rewards page should render real stage rewards");
   assert.match(source, /\/cross-server\/stage-reward\/claim/, "cross-server should claim real stage rewards");
   assert.doesNotMatch(source, /Cross 跨服中心/, "cross-server should not keep a separate English top title");

@@ -849,6 +849,8 @@ type LeaderboardRow = {
   profileId: string;
   founderName: string;
   companyName: string;
+  serverId?: string;
+  serverName?: string;
   value: number;
   valueLabel: string;
   equippedTitle: string | null;
@@ -975,8 +977,40 @@ type CrossServerCenter = {
     name: string;
     ruleLabel: string;
     serverIds: string[];
+    serverNames?: Record<string, string>;
   };
   isRegistered: boolean;
+  arena: {
+    rank: number;
+    rankLabel: string;
+    opponentBandLabel: string;
+    attemptsRemaining: number;
+    attemptLimit: number;
+    recoverIntervalMinutes: number;
+    nextRecoverAt: string | null;
+    nextRecoverLabel: string;
+    vipRecoverLimit: number;
+    vipRecoverUsed: number;
+    settlementLabel: string;
+    opponents: Array<{
+      id: string;
+      serverId: string;
+      serverName: string;
+      companyName: string;
+      founderName: string;
+      rank: number;
+      rankLabel: string;
+      power: number;
+      keyEmployeeName: string;
+    }>;
+    lineup: Array<{
+      employeeId: string;
+      name: string;
+      role: string;
+      power: number;
+    }>;
+    lastBattleReport: CrossServerArenaBattleReport | null;
+  };
   dailyReward: {
     isClaimed: boolean;
     canClaim: boolean;
@@ -1051,10 +1085,13 @@ type CrossServerCenter = {
   matchup: {
     selfLabel: string;
     selfName: string;
+    selfServerId: string;
+    selfServerName: string;
     selfRank: number | null;
     selfValueLabel: string;
     opponentLabel: string;
     opponentName: string;
+    opponentServerId: string | null;
     opponentServerName: string;
     opponentRank: number | null;
     opponentValueLabel: string;
@@ -1066,10 +1103,21 @@ type CrossServerCenter = {
   round: {
     zoneLabel: string;
     phaseLabel: string;
+    pairingLabel: string;
     statusLabel: string;
     settlementLabel: string;
   };
   battleReport: CrossServerBattleReport;
+};
+
+type CrossServerArenaBattleReport = {
+  result: "win" | "lose";
+  opponentId: string;
+  opponentName: string;
+  rankBefore: number;
+  rankAfter: number;
+  attemptsRemaining: number;
+  lines: string[];
 };
 
 type CrossServerBattleReport = {
@@ -1167,22 +1215,15 @@ type MailClaimAttachmentsResult = {
   profile: PlayerProfile;
 };
 
-type CrossServerDailyRewardResult = {
-  deliveredRewards: number;
-  rewardReputation: number;
-  crossServer: CrossServerCenter;
-};
-
 type CrossServerStageRewardResult = {
   deliveredRewards: number;
   rewardReputation: number;
   crossServer: CrossServerCenter;
 };
 
-type LeaderboardSettlement = {
-  leaderboard: LeaderboardCenter;
-  deliveredRewards: number;
-  battleReport?: CrossServerBattleReport;
+type CrossServerChallengeResult = {
+  crossServer: CrossServerCenter;
+  battleReport: CrossServerArenaBattleReport;
 };
 
 type TitleItem = {
@@ -1515,6 +1556,7 @@ const navIcons: Record<string, string> = {
 };
 const iconPaths: Record<string, string[]> = {
   "award": ["M12 15a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z", "m8 14-2 7 6-3 6 3-2-7"],
+  "bar-chart-3": ["M3 3v18h18", "M8 17V9", "M13 17V5", "M18 17v-6"],
   "box": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
   "briefcase": ["M10 6V5a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v1", "M4 7h16v12H4Z", "M9 12h6"],
   "building": ["M6 22V4h12v18", "M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"],
@@ -1532,6 +1574,7 @@ const iconPaths: Record<string, string[]> = {
   "gift": ["M3 9h18v4H3Z", "M5 13h14v8H5Z", "M12 9v12", "M12 9C9 9 7 7 7 5.5S9 3 12 9Zm0 0c3 0 5-2 5-3.5S15 3 12 9Z"],
   "handshake": ["M8 12 5 15a3 3 0 0 1-3-3l5-5 4 4", "m16 12 3 3a3 3 0 0 0 3-3l-5-5-4 4", "M8 12l4 4 4-4", "m12 16 2 2a2 2 0 0 0 3-3"],
   "home": ["M3 11 12 3l9 8", "M5 10v11h14V10", "M10 21v-6h4v6"],
+  "info": ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M12 10v6", "M12 7h.01"],
   "landmark": ["M3 21h18", "M5 10h14", "M12 3 4 8h16Z", "M6 10v8M10 10v8M14 10v8M18 10v8"],
   "layout-dashboard": ["M4 4h7v7H4Z", "M13 4h7v4h-7Z", "M13 10h7v10h-7Z", "M4 13h7v7H4Z"],
   "loader-2": ["M21 12a9 9 0 1 1-6.2-8.6"],
@@ -1539,9 +1582,11 @@ const iconPaths: Record<string, string[]> = {
   "mail": ["M4 6h16v12H4Z", "m4 7 8 6 8-6"],
   "megaphone": ["M3 11v4h4l10 4V7L7 11Z", "M7 15l2 5"],
   "message-circle": ["M21 11.5a8.5 8.5 0 0 1-12.8 7.3L3 20l1.2-4.2A8.5 8.5 0 1 1 21 11.5Z", "M8 10h8M8 14h5"],
+  "navigation": ["M12 2 19 21l-7-4-7 4 7-19Z"],
   "package": ["M21 8 12 3 3 8l9 5 9-5Z", "M3 8v8l9 5 9-5V8", "M12 13v8"],
   "package-open": ["M3 9 12 4l9 5-9 5Z", "M3 9v8l9 5 9-5V9", "M12 14v8"],
   "plus": ["M12 5v14", "M5 12h14"],
+  "play": ["M8 5v14l11-7Z"],
   "radar": ["M12 20a8 8 0 1 0-8-8", "M12 12l6-6", "M12 12h8", "M12 4v4", "M4 12h4"],
   "refresh-cw": ["M21 12a9 9 0 0 1-15 6.7L3 16", "M3 21v-5h5", "M3 12a9 9 0 0 1 15-6.7L21 8", "M21 3v5h-5"],
   "rocket": ["M4 14c4-8 8-10 16-10-1 8-2 12-10 16l-2-4-4-2Z", "M14 6l4 4", "M5 19l-2 2"],
@@ -3043,14 +3088,25 @@ function App() {
   );
   const primaryLeaderboard = leaderboardCenter?.boards[0] ?? null;
   const primaryCrossLeaderboard = crossServerCenter?.boards[0] ?? null;
-  const personalCrossRank = profile === null ? "-" : primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-";
+  const personalCrossRank = crossServerCenter?.arena.rankLabel ?? (profile === null ? "-" : primaryCrossLeaderboard?.rows.find((row) => row.profileId === profile.id)?.rank ?? "-");
+  const crossServerLineupCards = useMemo(
+    () =>
+      (crossServerCenter?.arena.lineup ?? []).slice(0, 5).map((member) => {
+        const employee = employees.find((item) => item.id === member.employeeId) ?? null;
+        const collectionEntry = employee === null ? null : employeeCollection?.entries.find((entry) => entry.id === employee.configId) ?? null;
+        return {
+          ...member,
+          level: employee?.level ?? 1,
+          portraitUrl: collectionEntry?.portraitUrl ?? null
+        };
+      }),
+    [crossServerCenter?.arena.lineup, employeeCollection?.entries, employees]
+  );
   const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
   const crossServerBattleReport = crossServerCenter?.battleReport ?? null;
   const crossServerMatchup = crossServerCenter?.matchup ?? null;
-  const crossServerRound = crossServerCenter?.round ?? null;
   const latestGuildSettlement = guildHistory?.settlements[0] ?? null;
   const latestCrossGuildSettlement = crossServerGuildHistory?.settlements[0] ?? null;
-  const todayGoalSection = longTermGoals?.sections.find((section) => section.key === "today") ?? null;
   const currentGuildMember = profile === null ? null : guildCenter?.members.find((member) => member.profileId === profile.id) ?? null;
   const activeChatMessages = useMemo(
     () => chatCenter?.messages.filter((message) => message.channel === activeChatChannel) ?? [],
@@ -3248,9 +3304,6 @@ function App() {
   const activityRewardCadence = currentSeasonActivity === null
     ? "今日暂无活动 · 本周看赛季任务 · 赛季奖励进背包"
     : `今日${currentActivityClaimable ? "先领奖" : currentSeasonActivity.canProgress ? "先推进" : "看任务"} · 本周攒积分 · 赛季奖励进背包`;
-  const crossServerRewardCadence = crossRewardClaimable
-    ? "今日有跨服奖励可领 · 本周看榜单 · 赛季结算后邮件发放"
-    : "今日完成跨服目标 · 本周看榜单 · 赛季结算后邮件发放";
   const passBenefitCopy = seasonCenter?.season.pass.isPurchased
     ? "通行证已开通：每日多 1 个赛季随机任务，奖励已入背包。"
     : "未开通通行证：开通后获得赛季经验券、限定资产和每日额外赛季任务。";
@@ -4079,56 +4132,6 @@ function App() {
     setPhase14Error(firstError && !firstError.success ? firstError.error.message : "");
   };
 
-  const registerCrossServer = async (): Promise<void> => {
-    if (!account || !selectedServer) {
-      return;
-    }
-
-    const response = await apiRequest<CrossServerCenter>(
-      "/cross-server/register",
-      {
-        method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
-      },
-      account.token
-    );
-
-    if (response.success) {
-      setCrossServerCenter(response.data);
-      setPhase14Notice(`${response.data.group.name} 报名成功。`);
-      setPhase14Error("");
-      return;
-    }
-
-    setPhase14Error(response.error.message);
-  };
-
-  const claimCrossServerDailyReward = async (): Promise<void> => {
-    if (!account || !selectedServer) {
-      return;
-    }
-
-    const response = await apiRequest<CrossServerDailyRewardResult>(
-      "/cross-server/daily-reward/claim",
-      {
-        method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
-      },
-      account.token
-    );
-
-    if (response.success) {
-      setCrossServerCenter(response.data.crossServer);
-      setProfile((current) => current === null ? current : { ...current, reputation: current.reputation + response.data.rewardReputation });
-      await syncMailCenterAfterReward(response.data.deliveredRewards);
-      setPhase14Notice(response.data.deliveredRewards > 0 ? `今日跨服奖励已领取：声望 +${response.data.rewardReputation}` : "今日跨服奖励已领取。");
-      setPhase14Error("");
-      return;
-    }
-
-    setPhase14Error(response.error.message);
-  };
-
   const claimCrossServerStageReward = async (stageId: string): Promise<void> => {
     if (!account || !selectedServer) {
       return;
@@ -4155,31 +4158,45 @@ function App() {
     setPhase14Error(response.error.message);
   };
 
-  const settleCrossServer = async (): Promise<void> => {
+  const challengeCrossServerOpponent = async (opponentId: string): Promise<void> => {
     if (!account || !selectedServer) {
       return;
     }
+    const response = await apiRequest<CrossServerChallengeResult>(
+      "/cross-server/challenge",
+      {
+        method: "POST",
+        body: JSON.stringify({ serverId: selectedServer.id, opponentId })
+      },
+      account.token
+    );
+    if (response.success) {
+      setCrossServerCenter(response.data.crossServer);
+      setPhase14Notice(`${response.data.battleReport.result === "win" ? "挑战胜利" : "挑战失败"}，${response.data.battleReport.rankAfter < response.data.battleReport.rankBefore ? "排名提升" : "排名不变"}。`);
+      setPhase14Error("");
+      return;
+    }
+    setPhase14Error(response.error.code === "CROSS_SERVER_ATTEMPTS_EMPTY" ? "挑战次数不足，稍后再来。" : response.error.message);
+  };
 
-    const response = await apiRequest<LeaderboardSettlement>(
-      "/cross-server/settle",
+  const recoverCrossServerAttempts = async (): Promise<void> => {
+    if (!account || !selectedServer) {
+      return;
+    }
+    const response = await apiRequest<CrossServerCenter>(
+      "/cross-server/recover-attempts",
       {
         method: "POST",
         body: JSON.stringify({ serverId: selectedServer.id })
       },
       account.token
     );
-
     if (response.success) {
-      setPhase14Notice(response.data.deliveredRewards > 0 ? `赛果回放已生成，跨服奖励已结算 ${response.data.deliveredRewards} 份。` : "赛果回放已生成，本日没有重复发放。");
+      setCrossServerCenter(response.data);
+      setPhase14Notice("挑战次数已恢复。");
       setPhase14Error("");
-      setActiveCrossServerMode("history");
-      await loadPhase14Center(account.token, selectedServer.id);
-      if (response.data.battleReport) {
-        setCrossServerCenter((current) => current === null ? current : { ...current, battleReport: response.data.battleReport! });
-      }
       return;
     }
-
     setPhase14Error(response.error.message);
   };
 
@@ -7586,144 +7603,110 @@ function App() {
 
           {nativeHomePage === "cross-server" && (
             <section className="page-container page-active" aria-label="跨服" data-testid="native-cross-server">
-              <div className="flex-1 px-4 pb-5 pt-10 overflow-hidden">
-                <div className="relative flex h-full flex-col overflow-hidden rounded-[1.7rem] border border-business-gold/30 bg-[#121722]/95 shadow-[0_18px_45px_rgba(0,0,0,0.55)]" data-testid="cross-server-unified-shell">
-                  <button className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-business-gold/30 bg-slate-950/80 text-slate-200" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
-                    <Icon name="x" className="h-5 w-5" />
+              <div className="flex-1 overflow-hidden bg-[radial-gradient(circle_at_52%_20%,rgba(245,158,11,0.18),transparent_24%),radial-gradient(circle_at_50%_38%,rgba(245,158,11,0.12),transparent_42%),linear-gradient(180deg,#111820_0%,#071019_46%,#03070c_100%)]">
+                <div className="relative flex h-full flex-col overflow-hidden" data-testid="cross-server-unified-shell">
+                  <button className="absolute left-6 top-10 z-20 flex h-12 w-12 items-center justify-center rounded-full text-business-gold" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
+                    <Icon name="chevron-left" className="h-8 w-8" />
                   </button>
-                  <div className="flex min-w-0 flex-col overflow-hidden" data-testid="cross-server-content-pane">
-                    <div className="border-b border-business-gold/20 px-4 pb-3 pt-5">
-                      <div className="flex items-start justify-between gap-10">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 text-business-gold">
-                            <Icon name="trophy" className="h-5 w-5" />
-                            <span className="text-[10px] font-black">跨服中心</span>
-                          </div>
-                          <h2 className="mt-1 text-xl font-black text-white">跨服经营战</h2>
-                          <p className="mt-1 truncate text-[10px] leading-5 text-slate-400">{crossServerRound?.phaseLabel ?? crossServerCenter?.group.name ?? "暂无跨服战区"} · {crossServerRound?.statusLabel ?? (crossServerCenter?.isRegistered ? "对阵中" : "未报名")} · {titleCenter?.equippedTitle?.name ?? "当前荣誉收集中"}</p>
-                        </div>
-                        <div className="shrink-0 pr-14 text-right">
-                          <strong className="block text-lg text-business-gold">{personalCrossRank}</strong>
-                          <span className="text-[9px] font-bold text-slate-500">我的排名</span>
+                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden" data-testid="cross-server-content-pane">
+                    <div className="px-7 pb-1 pt-12">
+                      <div className="flex items-start justify-between gap-3">
+                        <h2 className="mt-8 text-left text-6xl font-black tracking-[0.08em] text-business-gold drop-shadow-[0_5px_16px_rgba(245,158,11,0.42)]">跨服竞技</h2>
+                        <div className="flex shrink-0 flex-col gap-4 pt-1">
+                          <button className="flex h-11 items-center gap-2 rounded-full border border-business-gold/70 bg-slate-950/55 px-4 text-sm font-black text-business-gold shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" type="button" onClick={() => setActiveCrossServerMode("history")}>
+                            <Icon name="play" className="h-5 w-5" />
+                            战报回放
+                          </button>
+                          <button className="flex h-11 items-center gap-2 rounded-full border border-business-gold/70 bg-slate-950/55 px-4 text-sm font-black text-business-gold shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" type="button" onClick={() => setActiveCrossServerMode("rewards")}>
+                            <Icon name="info" className="h-5 w-5" />
+                            规则说明
+                          </button>
                         </div>
                       </div>
-                      <nav className="mt-3 flex gap-2 overflow-x-auto scroll-hide" data-testid="cross-server-stage-bar" aria-label="跨服赛事阶段">
-                        {[
-                          ["season", "对阵"],
-                          ["board", "榜单"],
-                          ["guild", "商会战"],
-                          ["rewards", "奖励"],
-                          ["history", "战报"]
-                        ].map(([mode, label]) => (
-                          <button
-                            className={`shrink-0 rounded-full border px-3 py-1.5 text-[10px] font-black transition-colors ${activeCrossServerMode === mode ? "border-business-gold bg-business-gold text-business-dark shadow-[0_8px_18px_rgba(245,158,11,0.22)]" : "border-white/10 bg-slate-950/50 text-slate-300 hover:bg-white/5"}`}
-                            key={mode}
-                            type="button"
-                            onClick={() => setActiveCrossServerMode(mode as CrossServerMode)}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </nav>
                     </div>
-                    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-hide">
-                <div className="space-y-3" hidden={activeCrossServerMode !== "season"}>
-                <section className="rounded-2xl border border-business-gold/30 bg-gradient-to-br from-business-gold/15 to-slate-950/70 p-4" data-testid="cross-server-matchup-panel" data-status-options="暂居上风 / 对手压线领先">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">本轮赛况</strong>
-                      <span className="text-[9px] text-slate-400">{crossServerRound?.zoneLabel ?? "跨服战区"} · {crossServerRound?.settlementLabel ?? "结算后邮件发奖"}</span>
+                    <div className="flex-1 overflow-hidden px-7 pb-6 pt-0">
+                <div className="space-y-4" hidden={activeCrossServerMode !== "season"}>
+                <section className="relative overflow-visible px-1 pb-8 pt-8" data-testid="cross-server-arena-panel">
+                  <div className="pointer-events-none absolute left-1/2 top-[-72px] h-72 w-72 -translate-x-1/2 rounded-full border border-business-gold/10 bg-[radial-gradient(circle,rgba(245,158,11,0.18),transparent_62%)]" />
+                  <div className="pointer-events-none absolute left-1/2 top-[92px] h-px w-[92%] -translate-x-1/2 bg-gradient-to-r from-transparent via-business-gold/65 to-transparent shadow-[0_0_16px_rgba(245,158,11,0.9)]" />
+                  <div className="relative grid grid-cols-[1fr_150px_1fr] items-center gap-4">
+                    <div className="text-left">
+                      <div className="flex items-center gap-2 text-business-gold">
+                        <Icon name="bar-chart-3" className="h-6 w-6" />
+                        <span className="text-xl font-black text-slate-100">当前排名</span>
+                      </div>
+                      <strong className="mt-3 block text-7xl font-black leading-none tracking-tight text-business-gold">{personalCrossRank}</strong>
                     </div>
-                    <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerMatchup?.statusLabel ?? "待形成对阵"}</span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 text-center">
-                    <div className="rounded-2xl bg-slate-950/70 p-3">
-                      <span className="text-[9px] text-business-gold">{crossServerMatchup?.selfLabel ?? "我方"}</span>
-                      <strong className="mt-1 block truncate text-sm text-white">{crossServerMatchup?.selfName ?? "我方公司"}</strong>
-                      <span className="mt-1 block text-[9px] text-slate-400">第 {crossServerMatchup?.selfRank ?? personalCrossRank} · {crossServerMatchup?.selfValueLabel ?? "暂无跨服战力"}</span>
+                    <div className="relative mx-auto flex h-40 w-40 items-center justify-center rounded-full border border-business-gold/45 bg-[radial-gradient(circle,rgba(245,158,11,0.34),rgba(17,24,39,0.22)_52%,rgba(2,6,23,0.62))] shadow-[0_0_42px_rgba(245,158,11,0.3)]">
+                      <div className="absolute h-24 w-24 rotate-45 rounded-[1.6rem] border border-business-gold/75 bg-business-gold/15" data-testid="cross-server-medal-placeholder" />
+                      <div className="relative h-14 w-14 rounded-full border border-business-gold/60 bg-slate-950/45" />
                     </div>
-                    <div className="flex items-center justify-center text-sm font-black text-business-gold">VS</div>
-                    <div className="rounded-2xl bg-slate-950/70 p-3">
-                      <span className="text-[9px] text-business-gold">{crossServerMatchup?.opponentLabel ?? "对手"}</span>
-                      <strong className="mt-1 block truncate text-sm text-white">{crossServerMatchup?.opponentName ?? "待形成对阵"}</strong>
-                      <span className="mt-1 block text-[9px] text-slate-400">第 {crossServerMatchup?.opponentRank ?? "-"} · {crossServerMatchup?.opponentValueLabel ?? "待形成对阵"}</span>
+                    <div className="text-right">
+                      <div className="flex items-center justify-end gap-2 text-business-gold">
+                        <Icon name="swords" className="h-6 w-6" />
+                        <span className="text-xl font-black text-slate-100">挑战次数</span>
+                      </div>
+                      <div className="mt-3 flex items-center justify-end gap-3">
+                        <strong className="text-6xl font-black leading-none text-business-gold">{crossServerCenter?.arena.attemptsRemaining ?? 10}/{crossServerCenter?.arena.attemptLimit ?? 10}</strong>
+                        <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-business-gold/70 bg-slate-950/45 text-business-gold disabled:opacity-45" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining >= crossServerCenter.arena.attemptLimit} type="button" onClick={() => void recoverCrossServerAttempts()} aria-label="恢复次数">
+                          <Icon name="plus" className="h-6 w-6" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.valueGapLabel ?? "待形成对阵"}</strong><span className="text-[9px] text-slate-500">估值差</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.pressureLabel ?? "差一轮冲刺"}</strong><span className="text-[9px] text-slate-500">下一步</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-[11px] text-white">{crossServerMatchup?.guildPressureLabel ?? "商会活跃不足"}</strong><span className="text-[9px] text-slate-500">商会战</span></div>
-                  </div>
-                </section>
-                <section className="rounded-2xl border border-business-gold/25 bg-slate-950/40 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <strong className="block text-sm text-white font-black">今日备战目标</strong>
-                      <span className="text-[9px] text-slate-500">完成今日目标，领取跨服声望。</span>
-                    </div>
-                    <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerCenter?.isRegistered ? "进行中" : "待报名"}</span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.isRegistered ? "已报名" : "待报名"}</strong><span className="text-[9px] text-slate-500">参赛状态</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.dailyReward.statusLabel ?? "报名后领取"}</strong><span className="text-[9px] text-slate-500">今日奖励</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">+{crossServerCenter?.dailyReward.rewardReputation ?? 30}</strong><span className="text-[9px] text-slate-500">声望奖励</span></div>
-                  </div>
-                  <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
-                    今日任务：{crossServerCenter?.dailyGoals.find((goal) => goal.id === "cross-daily-reward")?.statusLabel ?? todayGoalSection?.goals[0]?.statusLabel ?? "推进经营目标"} · 待领奖励 {longTermGoals?.summaries.todayClaimableCount ?? 0}
-                  </p>
-                  <p className="mt-2 rounded-xl bg-business-gold/10 px-3 py-2 text-[10px] leading-5 text-business-gold font-bold" data-testid="cross-server-reward-cadence">
-                    {crossServerRewardCadence}
-                  </p>
-                </section>
-
-                <section className="rounded-2xl border border-white/10 bg-slate-950/35 p-4">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-white font-black">跨服进度</strong>
-                    <span className="text-[9px] text-business-gold">{crossServerCenter?.seasonProgress.statusLabel ?? "0/3 目标完成"}</span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.progressPercent ?? 0}%</strong><span className="text-[9px] text-slate-500">目标完成</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.completedGoals ?? 0}</strong><span className="text-[9px] text-slate-500">已完成</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block text-sm text-white">{crossServerCenter?.seasonProgress.targetGoals ?? 3}</strong><span className="text-[9px] text-slate-500">今日目标</span></div>
                   </div>
                 </section>
 
-                <section className="rounded-2xl border border-business-gold/20 bg-slate-950/35 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <strong className="text-sm text-white font-black">下一奖励</strong>
-                    <span className="text-[9px] text-business-gold">下一档</span>
+                <section className="mt-1">
+                  <div className="mb-2 flex items-center justify-between">
+                    <strong className="text-2xl font-black tracking-[0.08em] text-business-gold">可挑战对手</strong>
+                    <button className="flex items-center gap-1 text-sm font-black text-business-gold/85" type="button" onClick={() => setPhase14Notice("可挑战对手已刷新。")}>
+                      <Icon name="refresh-cw" className="h-5 w-5" />
+                      刷新
+                    </button>
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.title ?? "今日奖励"}</strong><span className="text-[9px] text-slate-500">奖励</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.statusLabel ?? "待领取"}</strong><span className="text-[9px] text-slate-500">状态</span></div>
-                    <div className="rounded-xl bg-slate-900/70 p-2"><strong className="block truncate text-sm text-white">{crossServerCenter?.nextReward.rewardLabel ?? "声望 +30"}</strong><span className="text-[9px] text-slate-500">内容</span></div>
+                  <div className="divide-y divide-business-gold/20 border-y border-business-gold/20">
+                    {(crossServerCenter?.arena.opponents ?? []).slice(0, 4).map((opponent, index) => (
+                      <article className="bg-slate-950/20 py-3" key={opponent.id}>
+                        <div className="grid grid-cols-[56px_78px_1fr_88px_112px] items-center gap-3">
+                          <span className={`flex h-12 w-12 items-center justify-center rounded-2xl border text-2xl font-black ${index === 0 ? "border-business-gold/75 bg-business-gold/20 text-business-gold" : index === 1 ? "border-slate-300/50 bg-slate-500/20 text-slate-200" : index === 2 ? "border-amber-700/60 bg-amber-900/30 text-amber-300" : "border-business-gold/35 bg-slate-950/40 text-business-gold/80"}`}>{index + 1}</span>
+                          <span className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-full border border-business-gold/35 bg-[radial-gradient(circle,rgba(245,158,11,0.12),rgba(15,23,42,0.62))]" data-testid="cross-server-opponent-avatar-placeholder" />
+                          <div className="min-w-0">
+                            <strong className="block truncate text-xl font-black text-white">{opponent.companyName}</strong>
+                            <span className="mt-2 flex items-center gap-1 truncate text-sm font-bold text-business-gold">
+                              <Icon name="building-2" className="h-4 w-4" />
+                              战力 {compactNumber(opponent.power)}
+                            </span>
+                          </div>
+                          <span className="text-right text-sm font-black text-business-gold">排名：{opponent.rank}</span>
+                          <button className="h-11 rounded-xl border border-business-gold/75 bg-business-gold px-5 text-lg font-black text-business-dark shadow-[0_8px_20px_rgba(245,158,11,0.25)] disabled:opacity-45" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining <= 0} type="button" onClick={() => void challengeCrossServerOpponent(opponent.id)}>挑战</button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
-                  <p className="mt-3 rounded-xl bg-slate-900/60 px-3 py-2 text-[10px] leading-5 text-slate-300 font-bold">
-                    {crossServerCenter?.nextReward.conditionLabel ?? "完成今日跨服目标"}
-                  </p>
-                  <button
-                    className="mt-3 w-full btn-gold rounded-xl py-2 text-[11px] font-black text-business-dark disabled:opacity-45"
-                    disabled={!crossServerCenter?.dailyReward.canClaim}
-                    type="button"
-                    onClick={() => void claimCrossServerDailyReward()}
-                  >
-                    {crossServerCenter?.dailyReward.actionLabel ?? (crossServerCenter?.dailyReward.isClaimed ? "今日已领取" : "领取今日奖励")}
-                  </button>
                 </section>
 
-                <section className="rounded-2xl border border-business-gold/20 bg-business-gold/10 p-4">
-                  <div className="flex items-center justify-between">
-                    <strong className="text-sm text-white font-black">冲榜助力</strong>
-                    <span className="text-[9px] text-business-gold">{guildCenter?.todayCollaborationCount ?? 0} 次协作</span>
+                <section className="mt-4">
+                  <strong className="mb-2 block text-2xl font-black tracking-[0.08em] text-business-gold">上阵员工</strong>
+                  <div className="grid grid-cols-5 gap-2.5">
+                    {crossServerLineupCards.map((employee) => (
+                      <div className="relative overflow-hidden rounded-xl border border-business-gold/35 bg-slate-950/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" key={employee.employeeId}>
+                        <span className="absolute left-0 top-0 z-10 max-w-full truncate rounded-br-lg bg-business-gold/20 px-2 py-1 text-[10px] font-black text-business-gold">{employee.role}</span>
+                        <div className="flex aspect-[0.82] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_24%,rgba(245,158,11,0.11),rgba(15,23,42,0.78))]" data-testid="cross-server-lineup-avatar-placeholder" />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent px-1.5 pb-1.5 pt-5 text-center">
+                          <strong className="block truncate text-[11px] text-white">{employee.name}</strong>
+                          <span className="text-[11px] font-bold text-slate-300">Lv.{employee.level}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {crossServerLineupCards.length === 0 && <p className="col-span-5 rounded-xl bg-slate-900/70 p-3 text-[10px] font-bold text-slate-400">招募员工后自动上阵。</p>}
                   </div>
-                  <p className="mt-2 text-[10px] leading-5 text-slate-300 font-bold">行动力、通行证、VIP 和商会协作提升经营效率，不直接购买排名。</p>
                 </section>
                 </div>
 
                 <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board" hidden={activeCrossServerMode !== "board"}>
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <strong className="block text-sm text-white font-black">跨服创业大赛</strong>
+                      <strong className="block text-sm text-white font-black">跨服竞技场</strong>
                       <span className="text-[9px] text-slate-500">{crossServerCenter?.group.ruleLabel ?? "暂无跨服数据"}</span>
                     </div>
                     <span className="text-[10px] text-business-gold">{crossServerCenter?.isRegistered ? "已报名" : "未报名"}</span>
@@ -7812,7 +7795,7 @@ function App() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <strong className="block text-sm text-white font-black">本轮赛报</strong>
-                      <span className="text-[9px] text-slate-500">{crossServerBattleReport?.snapshotDate ?? "跨服赛季结算后生成战报"}</span>
+                      <span className="text-[9px] text-slate-500">回合战报 · {crossServerBattleReport?.snapshotDate ?? "挑战后生成战报"}</span>
                     </div>
                     <span className="rounded-full bg-business-gold/15 px-2 py-1 text-[9px] font-black text-business-gold">{crossServerBattleReport?.personal.rewardStatus ?? "赛前情报"}</span>
                   </div>
@@ -7888,31 +7871,6 @@ function App() {
                   <p className="mt-2 text-[10px] leading-5 text-slate-400 font-bold">奖励通过邮件发放，结算后查看邮件。</p>
                 </section>
                     </div>
-                    <div className="border-t border-business-gold/20 bg-slate-950/55 p-3" data-testid="cross-server-action-bar">
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    className="btn-gold py-2 rounded-xl text-[10px] font-black text-business-dark disabled:opacity-45"
-                    data-testid="cross-server-register-button"
-                    disabled={!crossServerCenter || crossServerCenter.isRegistered}
-                    type="button"
-                    onClick={() => void registerCrossServer()}
-                  >
-                    {crossServerCenter?.isRegistered ? "已报名" : "报名跨服"}
-                  </button>
-                  <button className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45" disabled={!crossServerCenter} type="button" onClick={() => void settleCrossServer()}>
-                    结算跨服
-                  </button>
-                  <button
-                    className="rounded-xl border border-business-gold/40 py-2 text-[10px] font-black text-business-gold disabled:opacity-45"
-                    data-testid="cross-server-guild-register-button"
-                    disabled={!crossServerCenter || !crossServerCenter.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
-                    type="button"
-                    onClick={() => void registerCrossServerGuild()}
-                  >
-                    {crossServerCenter?.guildSeason.isRegistered ? "商会已报名" : "报名商会赛季"}
-                  </button>
-                </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -7978,6 +7936,27 @@ function App() {
                       </div>
                       <p className="mt-3 text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.valueTips.slice(0, 3).join(" · ")}</p>
                       <p className="mt-2 rounded-2xl bg-business-gold/10 px-3 py-2 text-[10px] leading-5 text-business-gold font-bold" data-testid="guild-reward-cadence">{guildRewardCadence}</p>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4 border-business-gold/30" data-testid="guild-cross-server-section">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="block text-sm text-white font-black">商会跨服</strong>
+                          <span className="mt-1 block text-[10px] leading-5 text-slate-400 font-bold">每周六20:00开放，周日22:00结束，奖励将通过邮件发放。</span>
+                        </div>
+                        <button
+                          className="shrink-0 btn-gold rounded-xl px-3 py-2 text-[10px] font-black text-business-dark disabled:opacity-45"
+                          disabled={!crossServerCenter || !crossServerCenter.guildSeason.canRegister || crossServerCenter.guildSeason.isRegistered}
+                          type="button"
+                          onClick={() => void registerCrossServerGuild()}
+                        >
+                          {crossServerCenter?.guildSeason.isRegistered ? "商会已报名" : "报名商会跨服"}
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{crossServerCenter?.guildSeason.statusLabel ?? "未达标"}</strong><span className="text-[9px] text-slate-500">状态</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{currentCrossGuildRank}</strong><span className="text-[9px] text-slate-500">排名</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{crossServerCenter?.guildSeason.todayActiveMemberCount ?? 0}/{crossServerCenter?.guildSeason.minTodayActiveMembers ?? 2}</strong><span className="text-[9px] text-slate-500">活跃</span></div>
+                      </div>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">
                       <div className="flex items-center justify-between mb-3">

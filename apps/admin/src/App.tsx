@@ -110,6 +110,41 @@ type CrossServerGroupList = {
   groups: CrossServerGroup[];
 };
 
+type CrossServerRuleConfig = {
+  id: string;
+  personalAttemptLimit: number;
+  personalRecoverIntervalMinutes: number;
+  personalResetTime: string;
+  personalSettlementTime: string;
+  guildOpenDay: number;
+  guildOpenTime: string;
+  guildCloseDay: number;
+  guildCloseTime: string;
+  guildSettlementTime: string;
+  rewardTiers: Array<{
+    rankStart: number;
+    rankEnd: number | null;
+    rewardPlatformCoins: number;
+    rewardReputation: number;
+    rewardActionPower: number;
+    rewardTitleId: string | null;
+    rewardItemId: string | null;
+    rewardItemQuantity: number;
+  }>;
+};
+
+type CrossServerSettlementRunList = {
+  rows: Array<{
+    id: string;
+    settlementType: "personal" | "guild";
+    settlementKey: string;
+    status: string;
+    deliveredRewards: number;
+    errorMessage: string | null;
+    createdAt: string;
+  }>;
+};
+
 type AdminGuildRow = {
   id: string;
   serverId: string;
@@ -521,7 +556,7 @@ type ActivityPublishObservationList = {
   }>;
 };
 
-type SettlementCandidateKind = "leaderboard" | "activity" | "guild" | "crossGuild";
+type SettlementCandidateKind = "leaderboard" | "crossLeaderboard" | "activity" | "guild" | "crossGuild";
 
 type SettlementCandidate = {
   id: string;
@@ -736,6 +771,7 @@ const paidProductLabel = (product: string): string => {
   return product;
 };
 const settlementKindLabel = (kind: SettlementCandidateKind): string => {
+  if (kind === "crossLeaderboard") return "跨服个人榜";
   if (kind === "activity") return "活动榜";
   if (kind === "guild") return "商会榜";
   if (kind === "crossGuild") return "跨服商会";
@@ -898,6 +934,8 @@ export default function App() {
   const [players, setPlayers] = useState<AdminPlayerRow[]>([]);
   const [vipConfigs, setVipConfigs] = useState<VipConfig[]>([]);
   const [crossGroups, setCrossGroups] = useState<CrossServerGroup[]>([]);
+  const [crossServerRuleConfig, setCrossServerRuleConfig] = useState<CrossServerRuleConfig | null>(null);
+  const [crossServerSettlementRuns, setCrossServerSettlementRuns] = useState<CrossServerSettlementRunList>({ rows: [] });
   const [guilds, setGuilds] = useState<AdminGuildRow[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState("");
   const [selectedGuildDetail, setSelectedGuildDetail] = useState<AdminGuildDetail | null>(null);
@@ -1132,7 +1170,7 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, settlementCandidateResponse, logs, analyticsResponse, knowledgeResponse, chatKeywordsResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, settlementCandidateResponse, crossRulesResponse, crossRunsResponse, logs, analyticsResponse, knowledgeResponse, chatKeywordsResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
@@ -1142,6 +1180,8 @@ export default function App() {
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
         apiRequest<SettlementCandidateList>("/admin/settlement-candidates", {}, token),
+        apiRequest<CrossServerRuleConfig>("/admin/cross-server/rules", {}, token),
+        apiRequest<CrossServerSettlementRunList>("/admin/cross-server/settlement-runs", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token),
@@ -1183,6 +1223,14 @@ export default function App() {
         setError(settlementCandidateResponse.error.message);
         return;
       }
+      if (!crossRulesResponse.success) {
+        setError(crossRulesResponse.error.message);
+        return;
+      }
+      if (!crossRunsResponse.success) {
+        setError(crossRunsResponse.error.message);
+        return;
+      }
       if (!logs.success) {
         setError(logs.error.message);
         return;
@@ -1208,6 +1256,8 @@ export default function App() {
       setActivityDrafts(draftResponse.data);
       setActivityPublishObservations(publishObservationResponse.data);
       setSettlementCandidates(settlementCandidateResponse.data);
+      setCrossServerRuleConfig(crossRulesResponse.data);
+      setCrossServerSettlementRuns(crossRunsResponse.data);
       setSelectedSettlementCandidateIds((current) => current.filter((id) => settlementCandidateResponse.data.rows.some((candidate) => candidate.id === id && !candidate.isSettled)));
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
@@ -1988,6 +2038,8 @@ export default function App() {
         )
         : candidate.kind === "crossGuild"
           ? await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/guild/settle", { method: "POST", body }, session.token)
+          : candidate.kind === "crossLeaderboard"
+            ? await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/settle", { method: "POST", body }, session.token)
           : await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/leaderboards/settle", { method: "POST", body }, session.token);
 
     if (!response.success) {
@@ -2705,7 +2757,7 @@ export default function App() {
             <section className="table-section compact-table" aria-label="跨服分组列表">
               <div className="table-toolbar">
                 <strong>跨服分组</strong>
-                <span>{crossGroups.length} 个池</span>
+                <span>{crossGroups.length} 个战区，当前对阵预览用于运营复核</span>
               </div>
               <div className="table-wrap">
                 <table>
@@ -2713,7 +2765,10 @@ export default function App() {
                     <tr>
                       <th>分组</th>
                       <th>规则</th>
+                      <th>战区</th>
                       <th>区服</th>
+                      <th>主服</th>
+                      <th>当前对阵预览</th>
                       <th>状态</th>
                     </tr>
                   </thead>
@@ -2722,7 +2777,10 @@ export default function App() {
                       <tr key={group.id}>
                         <td>{group.name}</td>
                         <td>{group.ruleLabel}</td>
+                        <td>{group.serverIds.length} 服战区</td>
                         <td>{group.serverIds.join("、")}</td>
+                        <td>{group.serverIds[0] ?? "-"}</td>
+                        <td>{group.serverIds.length >= 2 ? `${group.serverIds[0]?.toUpperCase()} VS ${group.serverIds[1]?.toUpperCase()}` : `${group.serverIds[0]?.toUpperCase() ?? "-"} VS 待定`}</td>
                         <td>{group.isActive ? "启用" : "停用"}</td>
                       </tr>
                     ))}
@@ -3154,17 +3212,58 @@ export default function App() {
 
         {activeSection === "configs" && (
           <section className="stacked-sections" aria-label="配置与排行榜">
+            <section className="table-section compact-table" aria-label="跨服规则配置">
+              <div className="table-toolbar">
+                <strong>跨服规则配置</strong>
+                <div>
+                  <span>规则配置</span>
+                  <span>每日22:00 / 每周六20:00</span>
+                </div>
+              </div>
+              <div className="dense-kpi-strip" aria-label="跨服结算摘要">
+                <strong>个人跨服</strong>
+                <span>挑战 {crossServerRuleConfig?.personalAttemptLimit ?? 10} 次</span>
+                <span>恢复 {crossServerRuleConfig?.personalRecoverIntervalMinutes ?? 60} 分钟</span>
+                <span>重置 {crossServerRuleConfig?.personalResetTime ?? "05:00"}</span>
+                <span>每日结算 {crossServerRuleConfig?.personalSettlementTime ?? "22:00"}</span>
+                <span>商会开放 每周六20:00</span>
+              </div>
+              <div className="config-grid">
+                <div>
+                  <h3>奖励档位</h3>
+                  {(crossServerRuleConfig?.rewardTiers ?? []).map((tier) => (
+                    <p key={`${tier.rankStart}:${tier.rankEnd ?? "plus"}`}>
+                      {tier.rankEnd === null ? `${tier.rankStart}+` : tier.rankStart === tier.rankEnd ? `第${tier.rankStart}名` : `${tier.rankStart}-${tier.rankEnd}`}：
+                      平台币 {tier.rewardPlatformCoins} / 声望 {tier.rewardReputation}
+                    </p>
+                  ))}
+                </div>
+                <div>
+                  <h3>自动结算记录</h3>
+                  {crossServerSettlementRuns.rows.length === 0 && <p>暂无自动结算记录。</p>}
+                  {crossServerSettlementRuns.rows.slice(0, 6).map((run) => (
+                    <p key={run.id}>{run.settlementType === "guild" ? "商会跨服" : "个人跨服"}：{run.status} / 发奖 {run.deliveredRewards} / {run.createdAt.slice(0, 10)}</p>
+                  ))}
+                </div>
+                <div>
+                  <h3>异常补结算</h3>
+                  <p>主流程按时间执行，异常补结算保留后台确认和审计。</p>
+                  <button className="secondary-button" type="button" onClick={() => void runSelectedSettlementCandidates()}>异常补结算</button>
+                </div>
+              </div>
+            </section>
             <section className="table-section compact-table" aria-label="待结算队列">
               <div className="table-toolbar">
                 <strong>待结算队列</strong>
                 <div>
-                  <span>自动识别，不自动发奖</span>
+                  <span>按时间自动结算，异常时人工补结算</span>
                   <span>待结算 {settlementCandidates.summary.pending} / 已结算 {settlementCandidates.summary.settled}</span>
                 </div>
               </div>
               <div className="dense-kpi-strip" aria-label="结算队列摘要">
                 <strong>队列摘要</strong>
                 <span>排行榜 {settlementCandidates.summary.leaderboard}</span>
+                <span>跨服经营战榜 {settlementCandidates.rows.filter((candidate) => candidate.kind === "crossLeaderboard").length}</span>
                 <span>活动榜 {settlementCandidates.summary.activity}</span>
                 <span>商会榜 {settlementCandidates.summary.guild}</span>
                 <span>跨服商会 {settlementCandidates.summary.crossGuild}</span>
