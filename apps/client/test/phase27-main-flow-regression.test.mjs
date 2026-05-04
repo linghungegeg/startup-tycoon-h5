@@ -22,7 +22,6 @@ test("phase 27 client preserves pre-launch player main flow coverage", () => {
     "底部导航",
     "财务",
     "员工",
-    "业务",
     "市场",
     "商会",
     "跨服创业大赛",
@@ -37,6 +36,19 @@ test("phase 27 client preserves pre-launch player main flow coverage", () => {
     assert.ok(source.includes(text), `missing main flow copy or label: ${text}`);
   }
   assert.doesNotMatch(source, /请确认 API 服务已启动/, "player client source should not expose API startup wording");
+});
+
+test("phase 33 client merges business into the market center", () => {
+  assert.match(source, /const navItems = \["公司", "员工", "市场", "商会", "背包"\]/, "bottom nav should merge business into market");
+  assert.doesNotMatch(source, /const navItems = \[[^\]]*"业务"/, "bottom nav should not keep business as a separate entry");
+  assert.match(source, /useState<"项目" \| "产品" \| "市场">/, "market center should own project product and market tabs");
+  assert.match(source, /aria-label="市场分类"/, "merged center should expose market category tabs");
+  assert.match(source, />项目交付</, "merged market center should keep project delivery tab");
+  assert.match(source, />产品研发</, "merged market center should keep product development tab");
+  assert.match(source, />市场竞争</, "merged market center should keep market competition tab");
+  assert.match(source, /setMarketTab\("项目"\)/, "project guides should route into market project tab");
+  assert.match(source, /setMarketTab\("产品"\)/, "product guides should route into market product tab");
+  assert.doesNotMatch(source, /setActiveNav\("业务"\)/, "client should not route to the removed business nav");
 });
 
 test("phase 27 client keeps full-screen inner pages addressable", () => {

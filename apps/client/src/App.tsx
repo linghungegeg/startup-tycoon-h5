@@ -1311,7 +1311,7 @@ const shopCategoryGroups: Record<Exclude<ShopCategoryFilter, "recommended">, str
 const VIP_LEVEL_WINDOW_SIZE = 5;
 const sideActions = ["VIP", "财务", "融资", "贷款"];
 const rightActions = ["活动", "排行", "商城", "特权", "通行证", "专属经理"];
-const navItems = ["公司", "员工", "业务", "市场", "商会", "背包"];
+const navItems = ["公司", "员工", "市场", "商会", "背包"];
 const homeActionIcons: Record<string, string> = {
   "财务": "pie-chart",
   "融资": "handshake",
@@ -1753,8 +1753,6 @@ const getPrivilegeProductIcon = (category: string): string => {
   if (category === "growth_fund") return "landmark";
   return "award";
 };
-const getPrivilegeProductTypeLabel = (product: ShopProduct): string =>
-  product.durationDays > 0 ? `${product.durationDays}天权益` : "成长基金";
 const isDailyPrivilegeProduct = (product: Pick<ShopProduct, "durationDays">): boolean => product.durationDays > 0;
 const getPrivilegeRewardTitle = (product: Pick<ShopProduct, "durationDays">): string =>
   isDailyPrivilegeProduct(product) ? "每日可领" : "购买即得";
@@ -2209,7 +2207,7 @@ function App() {
   const [isServerPickerOpen, setIsServerPickerOpen] = useState(false);
   const [activeServerCategory, setActiveServerCategory] = useState<"recent" | "all">("all");
   const [activeNav, setActiveNav] = useState("公司");
-  const [businessTab, setBusinessTab] = useState<"项目" | "产品">("项目");
+  const [marketTab, setMarketTab] = useState<"项目" | "产品" | "市场">("市场");
   const [activePanel, setActivePanel] = useState<string | null>(null);
   const [nativeHomePage, setNativeHomePage] = useState<NativeHomePage | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
@@ -2792,7 +2790,7 @@ function App() {
     if (boardKey === "guild") {
       return { label: "去商会", panel: "商会" };
     }
-    return { label: "去业务", panel: "项目" };
+    return { label: "去市场", panel: "项目" };
   };
   const serverLeaderboardSummaries = (leaderboardCenter?.boards ?? []).map((board) => {
     const selfRowIndex = profile === null ? -1 : board.rows.findIndex((row) => row.profileId === profile.id);
@@ -4864,8 +4862,8 @@ function App() {
     if (panelName === "项目" || panelName === "产品") {
       setActivePanel(null);
       setNativeHomePage(null);
-      setBusinessTab(panelName);
-      setActiveNav("业务");
+      setMarketTab(panelName);
+      setActiveNav("市场");
       return;
     }
 
@@ -5547,14 +5545,14 @@ function App() {
     }
 
     if (task.guideAction.includes("项目")) {
-      setActiveNav("业务");
-      setBusinessTab("项目");
+      setActiveNav("市场");
+      setMarketTab("项目");
       return;
     }
 
     if (task.guideAction.includes("产品")) {
-      setActiveNav("业务");
-      setBusinessTab("产品");
+      setActiveNav("市场");
+      setMarketTab("产品");
       return;
     }
 
@@ -5590,6 +5588,7 @@ function App() {
 
     if (task.guideAction.includes("市场")) {
       setActiveNav("市场");
+      setMarketTab("市场");
       return;
     }
 
@@ -5660,12 +5659,12 @@ function App() {
   };
   const nextVipLabel = vipCenter?.nextLevel ? `距 ${vipCenter.nextLevel.name}` : "已达上限";
   const isNavActive = (item: string): boolean => {
-    if (item === "业务") {
-      return activeNav === "业务" || activeNav === "项目" || activeNav === "产品";
-    }
-
     if (item === "背包") {
       return activeNav === "背包" || nativeHomePage === "bag";
+    }
+
+    if (item === "市场") {
+      return activeNav === "市场" || activeNav === "项目" || activeNav === "产品";
     }
 
     return activeNav === item;
@@ -5846,12 +5845,12 @@ function App() {
                     setActiveNav(item);
                     setActivePanel(null);
                     setNativeHomePage(null);
-                  } else if (item === "业务") {
+                  } else if (item === "市场") {
                     setActiveNav(item);
-                    setBusinessTab("项目");
+                    setMarketTab("市场");
                     setActivePanel(null);
                     setNativeHomePage(null);
-                  } else if (item === "员工" || item === "市场") {
+                  } else if (item === "员工") {
                     setActiveNav(item);
                     setActivePanel(null);
                     setNativeHomePage(null);
@@ -8302,21 +8301,22 @@ function App() {
             </section>
           )}
 
-          {(activeNav === "项目" || (activeNav === "业务" && businessTab === "项目")) && (
+          {(activeNav === "项目" || (activeNav === "市场" && marketTab === "项目")) && (
             <section className="project-screen" aria-label="项目系统">
               <header className="project-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
-                  <strong>{activeNav === "业务" ? "业务" : "项目"}</strong>
+                  <strong>{activeNav === "市场" ? "市场" : "项目"}</strong>
                   <span>项目交付 · 预计回款 {compactNumber(totalProjectRevenue)}</span>
                 </div>
                 <button type="button" onClick={() => openHomePanel("项目")}>规则</button>
               </header>
 
-              {activeNav === "业务" && (
-                <nav className="business-tabs" aria-label="业务分类">
-                  <button className={businessTab === "项目" ? "active" : undefined} type="button" onClick={() => setBusinessTab("项目")}>项目交付</button>
-                  <button className={businessTab === "产品" ? "active" : undefined} type="button" onClick={() => setBusinessTab("产品")}>产品研发</button>
+              {activeNav === "市场" && (
+                <nav className="business-tabs" aria-label="市场分类">
+                  <button className={marketTab === "项目" ? "active" : undefined} type="button" onClick={() => setMarketTab("项目")}>项目交付</button>
+                  <button className={marketTab === "产品" ? "active" : undefined} type="button" onClick={() => setMarketTab("产品")}>产品研发</button>
+                  <button className={marketTab === "市场" ? "active" : undefined} type="button" onClick={() => setMarketTab("市场")}>市场竞争</button>
                 </nav>
               )}
 
@@ -8426,21 +8426,22 @@ function App() {
             </section>
           )}
 
-          {(activeNav === "产品" || (activeNav === "业务" && businessTab === "产品")) && (
+          {(activeNav === "产品" || (activeNav === "市场" && marketTab === "产品")) && (
             <section className="funding-screen product-screen" aria-label="产品生命周期">
               <header className="funding-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
                 <div>
-                  <strong>{activeNav === "业务" ? "业务" : "产品"}</strong>
+                  <strong>{activeNav === "市场" ? "市场" : "产品"}</strong>
                   <span>产品研发 · 用户 {compactNumber(totalProductUsers)} · 月收入 {compactNumber(productCenter?.products.reduce((total, item) => total + item.monthlyRevenue, 0) ?? 0)}</span>
                 </div>
                 <button type="button" onClick={() => account && selectedServer && void loadProductCenter(account.token, selectedServer.id)}>刷新</button>
               </header>
 
-              {activeNav === "业务" && (
-                <nav className="business-tabs" aria-label="业务分类">
-                  <button className={businessTab === "项目" ? "active" : undefined} type="button" onClick={() => setBusinessTab("项目")}>项目交付</button>
-                  <button className={businessTab === "产品" ? "active" : undefined} type="button" onClick={() => setBusinessTab("产品")}>产品研发</button>
+              {activeNav === "市场" && (
+                <nav className="business-tabs" aria-label="市场分类">
+                  <button className={marketTab === "项目" ? "active" : undefined} type="button" onClick={() => setMarketTab("项目")}>项目交付</button>
+                  <button className={marketTab === "产品" ? "active" : undefined} type="button" onClick={() => setMarketTab("产品")}>产品研发</button>
+                  <button className={marketTab === "市场" ? "active" : undefined} type="button" onClick={() => setMarketTab("市场")}>市场竞争</button>
                 </nav>
               )}
 
@@ -8555,7 +8556,7 @@ function App() {
             </section>
           )}
 
-          {activeNav === "市场" && (
+          {activeNav === "市场" && marketTab === "市场" && (
             <section className="funding-screen market-screen" aria-label="市场竞争">
               <header className="funding-header">
                 <button type="button" onClick={() => setActiveNav("公司")}>返回</button>
@@ -8565,6 +8566,12 @@ function App() {
                 </div>
                 <button type="button" onClick={() => account && selectedServer && void loadMarketCenter(account.token, selectedServer.id)}>刷新</button>
               </header>
+
+              <nav className="business-tabs" aria-label="市场分类">
+                <button type="button" onClick={() => setMarketTab("项目")}>项目交付</button>
+                <button type="button" onClick={() => setMarketTab("产品")}>产品研发</button>
+                <button className="active" type="button" onClick={() => setMarketTab("市场")}>市场竞争</button>
+              </nav>
 
               <section className="funding-summary" aria-label="市场概览">
                 <span>赛道 {marketCenter?.markets.length ?? 0}</span>

@@ -5,11 +5,11 @@ import test from "node:test";
 const source = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const styleSource = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const productSource = source.slice(
-  source.indexOf('{(activeNav === "产品"'),
-  source.indexOf('{activeNav === "市场"')
+  source.indexOf('aria-label="产品生命周期"'),
+  source.indexOf('{activeNav === "市场" && marketTab === "市场"')
 );
 const marketSource = source.slice(
-  source.indexOf('{activeNav === "市场"'),
+  source.indexOf('{activeNav === "市场" && marketTab === "市场"'),
   source.indexOf('{activeNav === "融资"')
 );
 const operationToastStyle = styleSource.match(/\.operation-toast \{[\s\S]*?\n\}/)?.[0] ?? "";
