@@ -149,11 +149,25 @@ type EmployeeCollectionEntry = {
   status: "已招募" | "已离岗" | "未招募";
 };
 
+type EmployeeCollectionGoal = {
+  id: string;
+  taskId: string;
+  label: string;
+  progress: number;
+  value: number;
+  target: number;
+  missingRoles: string[];
+  hint: string;
+  rewardLabel: string;
+  status: "继续补齐" | "可领取" | "已领取";
+};
+
 type EmployeeCollection = {
   total: number;
   owned: number;
   roleCount: number;
   rareOwned: number;
+  goals: EmployeeCollectionGoal[];
   entries: EmployeeCollectionEntry[];
 };
 
@@ -2514,27 +2528,36 @@ function App() {
     [employeeCodexRarityFilter, employeeCodexRoleFilter, employeeCollection?.entries]
   );
   const employeeCollectionGoalRows = useMemo(() => {
+    if ((employeeCollection?.goals.length ?? 0) > 0) {
+      return employeeCollection?.goals ?? [];
+    }
     const entries = employeeCollection?.entries ?? [];
     const ownedStatuses = new Set(["已招募", "已离岗"]);
     const countOwnedByRoles = (roles: string[]) =>
       entries.filter((entry) => ownedStatuses.has(entry.status) && roles.includes(entry.role)).length;
-    const buildGoal = (label: string, roles: string[], hint: string) => {
-      const value = countOwnedByRoles(roles);
+    const buildGoal = (label: string, roles: string[], hint: string, rewardLabel: string): EmployeeCollectionGoal => {
+      const progress = countOwnedByRoles(roles);
       return {
+        id: `employee-collection-${label}`,
+        taskId: "",
         label,
-        value,
+        progress,
+        value: progress,
         target: roles.length,
-        hint: `${value >= roles.length ? "岗位基本成型" : `还缺 ${roles.length - value} 个关键岗位`} · ${hint}`
+        missingRoles: roles.filter((role) => !entries.some((entry) => ownedStatuses.has(entry.status) && entry.role === role)),
+        hint,
+        rewardLabel,
+        status: "继续补齐"
       };
     };
     return [
-      buildGoal("资本团队", ["投资关系", "财务", "法务", "高管", "顾问"], "支撑融资路演和贷款判断"),
-      buildGoal("市场团队", ["市场", "公关", "销售", "客服", "法务"], "支撑竞品应对和客户迁移"),
-      buildGoal("产品团队", ["产品经理", "工程师", "运营", "市场"], "支撑产品推进和留存增长"),
-      buildGoal("管理团队", ["高管", "HR", "财务", "顾问"], "支撑扩张节奏和团队稳定"),
-      buildGoal("服务团队", ["客服", "公关", "销售", "法务"], "支撑客户续约和风险降温")
+      buildGoal("资本团队", ["投资关系", "财务", "法务", "高管", "顾问"], "支撑融资路演和贷款判断", "猎头券 1"),
+      buildGoal("市场团队", ["市场", "公关", "销售", "客服", "法务"], "支撑竞品应对和客户迁移", "员工礼物 2"),
+      buildGoal("产品团队", ["产品经理", "工程师", "运营", "市场"], "支撑产品推进和留存增长", "培养手册 2"),
+      buildGoal("管理团队", ["高管", "HR", "财务", "顾问"], "支撑扩张节奏和团队稳定", "员工礼物 2"),
+      buildGoal("服务团队", ["客服", "公关", "销售", "法务"], "支撑客户续约和风险降温", "培养手册 2")
     ];
-  }, [employeeCollection?.entries]);
+  }, [employeeCollection?.entries, employeeCollection?.goals]);
   const selectedTargetRecruitRole = targetRecruitRole || employeeRecruitRoles[0] || "";
   const canRecruitEmployee =
     employeeRecruitMode === "normal"
@@ -8677,8 +8700,8 @@ function App() {
                       {employeeCollectionGoalRows.map((goal) => (
                         <span key={goal.label}>
                           <b>{goal.label}</b>
-                          <em>{goal.value}/{goal.target}</em>
-                          <small>{goal.hint}</small>
+                          <em>{goal.progress}/{goal.target} · {goal.status}</em>
+                          <small>{goal.rewardLabel} · {goal.missingRoles.length === 0 ? "岗位基本成型" : `还缺 ${goal.missingRoles.slice(0, 2).join("、")}`} · {goal.hint}</small>
                         </span>
                       ))}
                     </div>

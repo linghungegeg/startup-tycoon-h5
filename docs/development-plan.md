@@ -2922,7 +2922,25 @@ VIP 权益：
   - Game Studio：头像展示只增强收集可见性，不改变经营循环或付费深度。
   - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工四标签、图鉴 `X/60`、头像位和 Console。
 - 验证命令：`node apps/client/test/phase42-employee-portrait-display.test.mjs`，以及员工闭环、长期收集、typecheck、lint、build 和 `git diff --check`。
-- 下一阶段入口：稳定后再评估正式头像资源替换、员工外观展示或员工收集奖励轻量化；不在本批加入皮肤商店、剧情树或羁绊奖励。
+- 下一阶段入口：员工收集奖励轻量化；不在本批加入皮肤商店、剧情树或羁绊奖励。
+
+### Phase 38：员工收集奖励轻闭环
+
+- 当前稳定点：`e243f63 feat: add employee portrait display layer`。
+- 阶段目标：不扩员工池、不生产正式头像资源、不新增付费池，只把员工图鉴中的收集目标接入轻量奖励、任务领取和专属经理建议。
+- 完成内容：
+  - `GET /employees/collection` 返回五类收集目标的进度、缺口岗位、奖励文案和状态：继续补齐 / 可领取 / 已领取。
+  - 资本团队、市场团队、产品团队、管理团队和服务团队复用支线任务承接奖励领取，奖励限定为猎头券、培养手册和员工礼物等轻材料。
+  - 打开员工图鉴或读取长期目标时同步收集任务进度；领取仍走现有任务领取链路，避免新增独立奖励系统。
+  - 专属经理优先提示可领取的员工收集奖励；没有可领取奖励时继续提示产品、市场、融资岗位短板。
+  - 图鉴目标保持紧凑信息条，展示奖励和状态，不写“战力爆发”“买了就赢”“直接冲榜”等硬卖点。
+- 四插件证据：
+  - Superpowers：按计划执行和 TDD 红绿流程，先补 Phase 43/API 失败测试，再落最小实现。
+  - Build Web Apps：图鉴目标只增加奖励和状态短句，不新增大卡片，保护竖屏信息密度。
+  - Game Studio：收集目标形成中长期回访理由，但不改变招募概率、员工数值、市场、融资和商会闭环。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工图鉴、收集目标状态、招募页和专属经理跳转。
+- 验证命令：`node --import tsx --test --test-name-pattern "employee collection reward goals" apps/api/test/http.test.ts`、`node apps/client/test/phase43-employee-collection-rewards.test.mjs`，以及员工收集、头像、typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估正式头像资源替换或商会/员工外观展示；不在本批加入皮肤商店、剧情树、复杂羁绊或新付费池。
 
 ### Phase 24-31 全局验证要求
 

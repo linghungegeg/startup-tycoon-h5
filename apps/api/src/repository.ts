@@ -394,11 +394,25 @@ export type EmployeeCollectionEntry = {
   status: "已招募" | "已离岗" | "未招募";
 };
 
+export type EmployeeCollectionGoalRecord = {
+  id: string;
+  taskId: string;
+  label: string;
+  progress: number;
+  value: number;
+  target: number;
+  missingRoles: string[];
+  hint: string;
+  rewardLabel: string;
+  status: "继续补齐" | "可领取" | "已领取";
+};
+
 export type EmployeeCollectionRecord = {
   total: number;
   owned: number;
   roleCount: number;
   rareOwned: number;
+  goals: EmployeeCollectionGoalRecord[];
   entries: EmployeeCollectionEntry[];
 };
 
@@ -2975,6 +2989,79 @@ const toEmployeeCollectionEntry = (
   status: employee === undefined ? "未招募" : employee.isActive ? "已招募" : "已离岗"
 });
 
+const employeeCollectionGoalConfigs = [
+  {
+    id: "employee-collection-capital",
+    taskId: "side-employee-collection-capital",
+    label: "资本团队",
+    roles: ["投资关系", "财务", "法务", "高管", "顾问"],
+    hint: "支撑融资路演和贷款判断",
+    rewardLabel: "猎头券 1"
+  },
+  {
+    id: "employee-collection-market",
+    taskId: "side-employee-collection-market",
+    label: "市场团队",
+    roles: ["市场", "销售", "公关", "客服", "法务"],
+    hint: "支撑竞品应对和客户迁移",
+    rewardLabel: "员工礼物 2"
+  },
+  {
+    id: "employee-collection-product",
+    taskId: "side-employee-collection-product",
+    label: "产品团队",
+    roles: ["产品经理", "工程师", "运营", "市场"],
+    hint: "支撑研发推进和留存增长",
+    rewardLabel: "培养手册 2"
+  },
+  {
+    id: "employee-collection-management",
+    taskId: "side-employee-collection-management",
+    label: "管理团队",
+    roles: ["高管", "HR", "财务", "顾问"],
+    hint: "支撑扩张节奏和团队稳定",
+    rewardLabel: "员工礼物 2"
+  },
+  {
+    id: "employee-collection-service",
+    taskId: "side-employee-collection-service",
+    label: "服务团队",
+    roles: ["客服", "公关", "销售", "法务"],
+    hint: "支撑客户续约和风险降温",
+    rewardLabel: "培养手册 2"
+  }
+] as const;
+
+export const buildEmployeeCollectionGoals = (
+  entries: Array<Pick<EmployeeCollectionEntry, "role" | "status">>,
+  tasks: Array<Pick<TaskRecord, "id" | "rewardLabel" | "isClaimable" | "isClaimed">> = []
+): EmployeeCollectionGoalRecord[] => {
+  const ownedRoles = new Set(entries.filter((entry) => entry.status !== "未招募").map((entry) => entry.role));
+  const tasksById = new Map(tasks.map((task) => [task.id, task]));
+
+  return employeeCollectionGoalConfigs.map((goal) => {
+    const progress = goal.roles.filter((role) => ownedRoles.has(role)).length;
+    const task = tasksById.get(goal.taskId);
+    const status: EmployeeCollectionGoalRecord["status"] = task?.isClaimed === true
+      ? "已领取"
+      : task?.isClaimable === true
+        ? "可领取"
+        : "继续补齐";
+    return {
+      id: goal.id,
+      taskId: goal.taskId,
+      label: goal.label,
+      progress,
+      value: progress,
+      target: goal.roles.length,
+      missingRoles: goal.roles.filter((role) => !ownedRoles.has(role)),
+      hint: goal.hint,
+      rewardLabel: task?.rewardLabel ?? goal.rewardLabel,
+      status
+    };
+  });
+};
+
 const readProjectStatus = (status: string): ProjectRecord["status"] =>
   status === "ready" || status === "settled" || status === "failed" ? status : "active";
 
@@ -5175,7 +5262,19 @@ export const buildEmployeeBusinessGuidance = (input: {
   fundingEffect: EmployeeEffectRecord | null;
   employeeEvents: RandomTaskRecord[];
   pendingMarketActionCount: number;
+  collectionRewardTask?: Pick<TaskRecord, "id" | "title" | "rewardLabel"> | null;
 }): EmployeeBusinessGuidanceRecord | null => {
+  if (input.collectionRewardTask !== undefined && input.collectionRewardTask !== null) {
+    return {
+      title: "领取员工收集奖励",
+      description: `${input.collectionRewardTask.title}已完成，可领取${input.collectionRewardTask.rewardLabel}。`,
+      targetNav: "员工",
+      targetTab: "图鉴",
+      reason: `员工收集目标已达成，可领取${input.collectionRewardTask.rewardLabel}`,
+      missingRoles: []
+    };
+  }
+
   if (input.employeeEvents.length > 0) {
     return {
       title: "处理员工状态提醒",
@@ -7345,6 +7444,10 @@ export const createPrismaGameRepository = (
     if (profile === undefined) {
       return "PLAYER_NOT_FOUND";
     }
+    const collection = await this.listEmployeeCollection(accountId, serverId);
+    if (collection === "PLAYER_NOT_FOUND") {
+      return "PLAYER_NOT_FOUND";
+    }
 
     const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild, products, markets, fundings, employeeEvents] = await Promise.all([
       this.getCompanyGrowth(accountId, serverId),
@@ -7375,12 +7478,14 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
 
+    const collectionRewardTask = tasks.find((task) => task.id.startsWith("side-employee-collection-") && task.isClaimable) ?? null;
     const employeeBusinessGuidance = buildEmployeeBusinessGuidance({
       productEffect: products.employeeEffect,
       marketEffect: markets.employeeEffect,
       fundingEffect: fundings.employeeEffect,
       employeeEvents,
-      pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length
+      pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length,
+      collectionRewardTask
     });
 
     return buildLongTermGoalsRecord({
@@ -8459,13 +8564,52 @@ export const createPrismaGameRepository = (
     ]);
     const employeesByConfigId = new Map(employees.map((employee) => [employee.configId, employee]));
     const ownedEmployees = employees.filter((employee) => employee.isActive);
+    const entries = configs.map((config) => toEmployeeCollectionEntry(config, employeesByConfigId.get(config.id)));
+    const baseGoals = buildEmployeeCollectionGoals(entries);
+    const collectionTaskIds = baseGoals.map((goal) => goal.taskId);
+    const [collectionTaskConfigs, collectionTaskProgresses] = await Promise.all([
+      prisma.taskConfig.findMany({ where: { id: { in: collectionTaskIds } }, include: { rewardItem: true } }),
+      prisma.playerTaskProgress.findMany({ where: { profileId: profile.id, taskId: { in: collectionTaskIds } } })
+    ]);
+    const progressByTaskId = new Map(collectionTaskProgresses.map((progress) => [progress.taskId, progress]));
+    if (collectionTaskConfigs.length > 0) {
+      await prisma.$transaction(collectionTaskConfigs.map((task) => {
+        const goal = baseGoals.find((item) => item.taskId === task.id);
+        const existing = progressByTaskId.get(task.id);
+        const nextProgress = Math.max(existing?.progress ?? task.initialProgress, goal?.progress ?? 0);
+        return prisma.playerTaskProgress.upsert({
+          where: {
+            profileId_taskId: {
+              profileId: profile.id,
+              taskId: task.id
+            }
+          },
+          update: {
+            progress: nextProgress,
+            claimedAt: existing?.claimedAt ?? null
+          },
+          create: {
+            profileId: profile.id,
+            taskId: task.id,
+            progress: nextProgress
+          }
+        });
+      }));
+    }
+    const nextProgresses = await prisma.playerTaskProgress.findMany({
+      where: { profileId: profile.id, taskId: { in: collectionTaskIds } }
+    });
+    const nextProgressByTaskId = new Map(nextProgresses.map((progress) => [progress.taskId, progress]));
+    const today = new Date().toISOString().slice(0, 10);
+    const collectionTasks = collectionTaskConfigs.map((task) => toTaskRecord(task, nextProgressByTaskId.get(task.id), today));
 
     return {
       total: configs.length,
       owned: employees.length,
       roleCount: new Set(ownedEmployees.map((employee) => employee.role)).size,
       rareOwned: ownedEmployees.filter((employee) => rareEmployeeRarities.has(employee.rarity)).length,
-      entries: configs.map((config) => toEmployeeCollectionEntry(config, employeesByConfigId.get(config.id)))
+      goals: buildEmployeeCollectionGoals(entries, collectionTasks),
+      entries
     };
   },
 

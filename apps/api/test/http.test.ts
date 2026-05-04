@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildEmployeeCollectionGoals, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -415,6 +415,91 @@ const createTestRepository = (): GameRepository => {
       rewardPlatformCoins: 0,
       rewardReputation: 120,
       rewardActionPower: 0,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-employee-collection-capital",
+      type: "side" as const,
+      title: "集结资本团队",
+      description: "补齐投资关系、财务、法务、高管和顾问岗位，让融资路演更稳。",
+      target: 5,
+      initialProgress: 0,
+      rewardLabel: "猎头券 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      rewardItemId: "headhunter-ticket",
+      rewardItemQuantity: 1,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-employee-collection-market",
+      type: "side" as const,
+      title: "补齐市场团队",
+      description: "补齐市场、销售、公关、客服和法务岗位，让竞品应对更稳。",
+      target: 5,
+      initialProgress: 0,
+      rewardLabel: "员工礼物 2",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      rewardItemId: "employee-gift",
+      rewardItemQuantity: 2,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-employee-collection-product",
+      type: "side" as const,
+      title: "组建产品团队",
+      description: "补齐产品经理、工程师、运营和市场岗位，让产品推进更稳。",
+      target: 4,
+      initialProgress: 0,
+      rewardLabel: "培养手册 2",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      rewardItemId: "training-manual",
+      rewardItemQuantity: 2,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-employee-collection-management",
+      type: "side" as const,
+      title: "完善管理团队",
+      description: "补齐高管、HR、财务和顾问岗位，让扩张节奏更稳。",
+      target: 4,
+      initialProgress: 0,
+      rewardLabel: "员工礼物 2",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      rewardItemId: "employee-gift",
+      rewardItemQuantity: 2,
+      guideAction: "前往员工",
+      unlockKind: "none" as const
+    },
+    {
+      id: "side-employee-collection-service",
+      type: "side" as const,
+      title: "完善服务团队",
+      description: "补齐客服、公关、销售和法务岗位，让客户续约更稳。",
+      target: 4,
+      initialProgress: 0,
+      rewardLabel: "培养手册 2",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 120,
+      rewardActionPower: 0,
+      rewardItemId: "training-manual",
+      rewardItemQuantity: 2,
       guideAction: "前往员工",
       unlockKind: "none" as const
     },
@@ -5386,6 +5471,10 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
+      const collection = await this.listEmployeeCollection(accountId, serverId);
+      if (collection === "PLAYER_NOT_FOUND") {
+        return "PLAYER_NOT_FOUND";
+      }
       const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild, products, markets, fundings, employeeEvents] = await Promise.all([
         this.getCompanyGrowth(accountId, serverId),
         this.listTasks(accountId, serverId, today),
@@ -5414,12 +5503,14 @@ const createTestRepository = (): GameRepository => {
       ) {
         return "PLAYER_NOT_FOUND";
       }
+      const collectionRewardTask = tasks.find((task) => task.id.startsWith("side-employee-collection-") && task.isClaimable) ?? null;
       const employeeBusinessGuidance = buildEmployeeBusinessGuidance({
         productEffect: products.employeeEffect,
         marketEffect: markets.employeeEffect,
         fundingEffect: fundings.employeeEffect,
         employeeEvents,
-        pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length
+        pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length,
+        collectionRewardTask
       });
       return buildLongTermGoalsRecord({
         profile,
@@ -5955,41 +6046,58 @@ const createTestRepository = (): GameRepository => {
       const employeesByConfigId = new Map(ownedEmployees.map((employee) => [employee.configId, employee]));
       const activeEmployees = ownedEmployees.filter((employee) => employee.isActive);
       const rareRarities = new Set(["稀缺", "顶尖", "传奇"]);
+      const entries = employeeConfigs.map((config) => {
+        const employee = employeesByConfigId.get(config.id);
+        return {
+          id: config.id,
+          name: config.name,
+          role: config.role,
+          careerLevel: config.careerLevel,
+          rarity: config.rarity,
+          baseSalary: config.baseSalary,
+          basePressure: config.basePressure,
+          loyalty: config.loyalty,
+          growthPotential: config.growthPotential,
+          management: config.management,
+          negotiation: config.negotiation,
+          execution: config.execution,
+          specialty: config.specialty,
+          portraitAssetId: `employee-portrait-${config.id}`,
+          portraitUrl: null,
+          avatarFrameId: config.rarity === "传奇" ? "employee-frame-legend" : config.rarity === "顶尖" ? "employee-frame-elite" : null,
+          obtainSource: "常驻人才池",
+          tags: [config.role, config.careerLevel, config.rarity],
+          skills: [{ id: `${config.id}-core`, name: config.role, effect: config.specialty }],
+          bondGroupIds: ["company-management"],
+          isLimited: false,
+          isRecruitable: employee === undefined,
+          recruitWeight: config.recruitWeight,
+          ownedEmployeeId: employee?.id ?? null,
+          status: employee === undefined ? "未招募" : employee.isActive ? "已招募" : "已离岗"
+        };
+      });
+      const baseGoals = buildEmployeeCollectionGoals(entries as never);
+      for (const goal of baseGoals) {
+        const config = taskConfigs.find((task) => task.id === goal.taskId);
+        if (config === undefined) continue;
+        const key = `${profile.id}:${goal.taskId}`;
+        const existing = taskProgress.get(key);
+        taskProgress.set(key, {
+          progress: Math.max(existing?.progress ?? config.initialProgress, goal.progress),
+          dailyDate: existing?.dailyDate,
+          claimedAt: existing?.claimedAt
+        });
+      }
+      const collectionTasks = taskConfigs
+        .filter((task) => task.id.startsWith("side-employee-collection-"))
+        .map((task) => toTaskRecord(profile.id, task, "2026-05-10"));
       return {
         total: employeeConfigs.length,
         owned: ownedEmployees.length,
         roleCount: new Set(activeEmployees.map((employee) => employee.role)).size,
         rareOwned: activeEmployees.filter((employee) => rareRarities.has(employee.rarity)).length,
-        entries: employeeConfigs.map((config) => {
-          const employee = employeesByConfigId.get(config.id);
-          return {
-            id: config.id,
-            name: config.name,
-            role: config.role,
-            careerLevel: config.careerLevel,
-            rarity: config.rarity,
-            baseSalary: config.baseSalary,
-            basePressure: config.basePressure,
-            loyalty: config.loyalty,
-            growthPotential: config.growthPotential,
-            management: config.management,
-            negotiation: config.negotiation,
-            execution: config.execution,
-            specialty: config.specialty,
-            portraitAssetId: `employee-portrait-${config.id}`,
-            portraitUrl: null,
-            avatarFrameId: config.rarity === "传奇" ? "employee-frame-legend" : config.rarity === "顶尖" ? "employee-frame-elite" : null,
-            obtainSource: "常驻人才池",
-            tags: [config.role, config.careerLevel, config.rarity],
-            skills: [{ id: `${config.id}-core`, name: config.role, effect: config.specialty }],
-            bondGroupIds: ["company-management"],
-            isLimited: false,
-            isRecruitable: employee === undefined,
-            recruitWeight: config.recruitWeight,
-            ownedEmployeeId: employee?.id ?? null,
-            status: employee === undefined ? "未招募" : employee.isActive ? "已招募" : "已离岗"
-          };
-        })
+        goals: buildEmployeeCollectionGoals(entries as never, collectionTasks),
+        entries
       };
     },
     async recruitEmployee(accountId, serverId, options = {}) {
@@ -14550,6 +14658,69 @@ test("employee collection goals route to targeted recruit and daily recruit task
     assert.equal(recruitTaskAfter?.progress, 1);
     assert.equal(recruitTaskAfter?.isClaimable, true);
   });
+});
+
+test("employee collection reward goals expose claim state and manager priority", () => {
+  const capitalRoles = ["投资关系", "财务", "法务", "高管", "顾问"];
+  const completeCapitalEntries = capitalRoles.map((role, index) => ({
+    id: `capital-${index}`,
+    role,
+    status: "已招募"
+  }));
+  const goals = buildEmployeeCollectionGoals(completeCapitalEntries as never, [
+    {
+      id: "side-employee-collection-capital",
+      type: "side",
+      title: "集结资本团队",
+      description: "补齐投资关系、财务、法务、高管和顾问岗位。",
+      progress: 5,
+      target: 5,
+      rewardLabel: "猎头券 1",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 0,
+      rewardActionPower: 0,
+      rewardCompanyExperience: 0,
+      rewardItem: null,
+      guideAction: "前往员工",
+      unlockKind: "none",
+      knowledgeId: null,
+      isClaimed: false,
+      isClaimable: true
+    }
+  ]);
+  const capitalGoal = goals.find((goal) => goal.id === "employee-collection-capital");
+  assert.equal(capitalGoal?.status, "可领取");
+  assert.equal(capitalGoal?.rewardLabel, "猎头券 1");
+  assert.deepEqual(capitalGoal?.missingRoles, []);
+
+  const incompleteGoals = buildEmployeeCollectionGoals([{ id: "sales-one", role: "销售", status: "已招募" }] as never, []);
+  const marketGoal = incompleteGoals.find((goal) => goal.id === "employee-collection-market");
+  assert.equal(marketGoal?.status, "继续补齐");
+  assert.ok(marketGoal?.missingRoles.includes("市场"));
+
+  const guidance = buildEmployeeBusinessGuidance({
+    productEffect: {
+      summary: "产品团队薄弱",
+      bonusLabels: [],
+      missingRoles: ["产品经理"],
+      primaryMissingRoles: ["产品经理"]
+    },
+    marketEffect: null,
+    fundingEffect: null,
+    employeeEvents: [{ id: "employee-risk" }] as never,
+    pendingMarketActionCount: 0,
+    collectionRewardTask: {
+      id: "side-employee-collection-capital",
+      title: "集结资本团队",
+      rewardLabel: "猎头券 1"
+    }
+  });
+  assert.equal(guidance?.title, "领取员工收集奖励");
+  assert.equal(guidance?.targetNav, "员工");
+  assert.equal(guidance?.targetTab, "图鉴");
+  assert.match(guidance?.description ?? "", /猎头券 1/);
+  assert.match(guidance?.reason ?? "", /猎头券 1/);
 });
 
 test("phase 24 admin activity schedule reports rotation cadence and reward boundaries", async () => {
