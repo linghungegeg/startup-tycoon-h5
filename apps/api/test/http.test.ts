@@ -3583,10 +3583,48 @@ const createTestRepository = (): GameRepository => {
   };
   const getProfileById = (profileId: string): PlayerProfileRecord | undefined =>
     [...profiles.values()].find((profile) => profile.id === profileId);
+  const buildGuildDailySummary = (input: {
+    guildJoined: boolean;
+    tasks: GuildCenterRecord["tasks"];
+    techs: GuildCenterRecord["techs"];
+    helpRequests: GuildCenterRecord["helpRequests"];
+    projects: GuildCenterRecord["projects"];
+    todayActiveMemberCount: number;
+    todayCollaborationCount: number;
+  }): NonNullable<GuildCenterRecord["dailySummary"]> => {
+    const claimableTaskCount = input.tasks.filter((task) => task.isClaimable).length;
+    const claimableProjectCount = input.projects.filter((project) => project.isClaimable).length;
+    const recommendedAction = !input.guildJoined
+      ? { label: "加入商会", reason: "加入后可参与互助、贡献、协作项目和跨服商会赛季。", targetSection: "join" }
+      : claimableProjectCount > 0
+        ? { label: "领取项目", reason: "协作项目已达成，先领取声望奖励。", targetSection: "projects" }
+        : claimableTaskCount > 0
+          ? { label: "领取任务", reason: "今日商会任务已完成，先领取贡献奖励。", targetSection: "tasks" }
+          : input.helpRequests.some((request) => request.canFulfill === true)
+            ? { label: "协助成员", reason: "有成员互助等待处理，协助后增加商会贡献。", targetSection: "help" }
+            : input.todayCollaborationCount <= 0
+              ? { label: "发布互助", reason: "今日还没有商会协作，发布互助可推进任务和项目。", targetSection: "help" }
+              : input.techs.some((tech) => tech.isUpgradable)
+                ? { label: "升级科技", reason: "当前贡献足够，升级科技可提升协作效率。", targetSection: "tech" }
+                : { label: "查看商会", reason: "今日协作已推进，继续关注贡献榜和项目进度。", targetSection: "overview" };
+    return {
+      activeMembers: input.todayActiveMemberCount,
+      collaborations: input.todayCollaborationCount,
+      claimableTaskCount,
+      claimableProjectCount,
+      taskStatus: claimableTaskCount > 0 ? "可领取" : input.tasks.some((task) => !task.isClaimed) ? "今日可做" : "已完成",
+      projectStatus: claimableProjectCount > 0 ? "可领取" : "推进中",
+      valueTips: input.guildJoined
+        ? ["贡献会推进协作项目", "活跃会影响跨服商会赛季", "历史荣誉会沉淀商会表现"]
+        : ["加入后可发布互助", "贡献会推进协作项目", "活跃会影响跨服商会赛季"],
+      recommendedAction
+    };
+  };
   const toGuildCenter = (profile: PlayerProfileRecord, today = "2026-05-01"): GuildCenterRecord => {
     const member = guildMembers.get(profile.id);
     if (member === undefined) {
-      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], projects: [], todayActiveMemberCount: 0, todayCollaborationCount: 0, recentActivities: [], leaderboard: [] };
+      const dailySummary = buildGuildDailySummary({ guildJoined: false, tasks: [], techs: [], helpRequests: [], projects: [], todayActiveMemberCount: 0, todayCollaborationCount: 0 });
+      return { guild: null, members: [], joinRequests: [], tasks: [], techs: [], helpRequests: [], projects: [], todayActiveMemberCount: 0, todayCollaborationCount: 0, recentActivities: [], leaderboard: [], dailySummary, recommendedAction: dailySummary.recommendedAction };
     }
     const guild = guilds.get(member.guildId);
     const members = [...guildMembers.values()].filter((item) => item.guildId === member.guildId);
@@ -3598,6 +3636,48 @@ const createTestRepository = (): GameRepository => {
     const isHelpClaimed = guildTaskClaims.get(`${member.guildId}:guild-daily-help`)?.claimedAt.slice(0, 10) === today;
     const sharedOfficeLevel = guildTechStates.get(`${member.guildId}:shared-office`)?.level ?? 0;
     const upgradeCost = guildTechUpgradeCost(sharedOfficeLevel);
+    const taskRecords = [{ id: "guild-daily-help", title: "成员互助", description: "发布或完成一次商会协作。", progress: Math.min(todayHelpCount, 1), target: 1, contributionReward: 20, isClaimed: isHelpClaimed, isClaimable: todayHelpCount >= 1 && !isHelpClaimed }];
+    const techRecords = [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: sharedOfficeLevel, maxLevel: 5, upgradeCost, isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost, bonusLabel: sharedOfficeLevel <= 0 ? "待激活" : `协作效率 +${sharedOfficeLevel * 2}%` }];
+    const helpRequestRecords = [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId).map((request) => {
+      const requestProfile = getProfileById(request.profileId);
+      return {
+        id: request.id,
+        profileId: request.profileId,
+        founderName: requestProfile?.founderName ?? "",
+        companyName: requestProfile?.companyName ?? "",
+        requestType: request.requestType,
+        status: request.status,
+        createdAt: request.createdAt,
+        fulfilledAt: request.fulfilledAt,
+        canFulfill: request.status === "open" && request.profileId !== profile.id
+      };
+    });
+    const projectRecords = guildProjectConfigs.map((project) => {
+      const progress = guildProjectProgresses.get(`${member.guildId}:${project.id}`);
+      const currentProgress = progress?.progress ?? 0;
+      const isClaimed = progress?.claimedAt !== null && progress?.claimedAt !== undefined;
+      return {
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        progress: Math.min(currentProgress, project.target),
+        target: project.target,
+        rewardReputation: project.rewardReputation,
+        rewardLabel: `声望 +${project.rewardReputation}`,
+        isClaimed,
+        isClaimable: currentProgress >= project.target && !isClaimed
+      };
+    });
+    const todayActiveMemberCount = new Set(todayActivities.map((activity) => activity.profileId)).size;
+    const dailySummary = buildGuildDailySummary({
+      guildJoined: guild !== undefined,
+      tasks: taskRecords,
+      techs: techRecords,
+      helpRequests: helpRequestRecords,
+      projects: projectRecords,
+      todayActiveMemberCount,
+      todayCollaborationCount: todayActivities.length
+    });
     return {
       guild: guild === undefined ? null : { id: guild.id, name: guild.name, level: guild.level, contributionScore: guild.contributionScore, announcement: guild.announcement, collaborationRules: guild.collaborationRules },
       members: members.map((item) => {
@@ -3623,39 +3703,11 @@ const createTestRepository = (): GameRepository => {
           };
         })
         : [],
-      tasks: [{ id: "guild-daily-help", title: "成员互助", description: "发布或完成一次商会协作。", progress: Math.min(todayHelpCount, 1), target: 1, contributionReward: 20, isClaimed: isHelpClaimed, isClaimable: todayHelpCount >= 1 && !isHelpClaimed }],
-      techs: [{ id: "shared-office", name: "联合办公", description: "提升商会成员协作效率展示。", level: sharedOfficeLevel, maxLevel: 5, upgradeCost, isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost, bonusLabel: sharedOfficeLevel <= 0 ? "待激活" : `协作效率 +${sharedOfficeLevel * 2}%` }],
-      helpRequests: [...guildHelpRequests.values()].filter((request) => request.guildId === member.guildId).map((request) => {
-        const requestProfile = getProfileById(request.profileId);
-        return {
-          id: request.id,
-          profileId: request.profileId,
-          founderName: requestProfile?.founderName ?? "",
-          companyName: requestProfile?.companyName ?? "",
-          requestType: request.requestType,
-          status: request.status,
-          createdAt: request.createdAt,
-          fulfilledAt: request.fulfilledAt,
-          canFulfill: request.status === "open" && request.profileId !== profile.id
-        };
-      }),
-      projects: guildProjectConfigs.map((project) => {
-        const progress = guildProjectProgresses.get(`${member.guildId}:${project.id}`);
-        const currentProgress = progress?.progress ?? 0;
-        const isClaimed = progress?.claimedAt !== null && progress?.claimedAt !== undefined;
-        return {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          progress: Math.min(currentProgress, project.target),
-          target: project.target,
-          rewardReputation: project.rewardReputation,
-          rewardLabel: `声望 +${project.rewardReputation}`,
-          isClaimed,
-          isClaimable: currentProgress >= project.target && !isClaimed
-        };
-      }),
-      todayActiveMemberCount: new Set(todayActivities.map((activity) => activity.profileId)).size,
+      tasks: taskRecords,
+      techs: techRecords,
+      helpRequests: helpRequestRecords,
+      projects: projectRecords,
+      todayActiveMemberCount,
       todayCollaborationCount: todayActivities.length,
       recentActivities: [...guildActivityLogs.values()]
         .filter((activity) => activity.guildId === member.guildId)
@@ -3685,7 +3737,9 @@ const createTestRepository = (): GameRepository => {
             valueLabel: `${item.contributionScore}`,
             equippedTitle: null
           };
-      })
+      }),
+      dailySummary,
+      recommendedAction: dailySummary.recommendedAction
     };
   };
   const toGuildHistory = (profile: PlayerProfileRecord): GuildHistoryRecord | "GUILD_NOT_JOINED" => {
@@ -12921,6 +12975,67 @@ test("guild collaboration projects progress from activity and claim reputation r
     });
     assert.equal(duplicate.status, 409);
     assert.equal(duplicate.body.error?.code, "GUILD_PROJECT_REWARD_CLAIMED");
+  });
+});
+
+test("guild center summarizes daily retention action and manager goal", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "guilddailyretention");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-07" };
+
+    const noGuild = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s1", {
+      headers
+    });
+    assert.equal(noGuild.status, 200, JSON.stringify(noGuild.body));
+    assert.equal(noGuild.body.data?.dailySummary.recommendedAction.label, "加入商会");
+    assert.equal(noGuild.body.data?.recommendedAction.targetSection, "join");
+    assert.ok(noGuild.body.data?.dailySummary.valueTips.some((tip) => tip.includes("跨服商会赛季")));
+
+    const noGuildGoals = await requestJson<LongTermGoalsRecord>(baseUrl, "/long-term-goals?serverId=s1", {
+      headers
+    });
+    const noGuildToday = noGuildGoals.body.data?.sections.find((section) => section.key === "today");
+    const noGuildGoal = noGuildToday?.goals.find((goal) => goal.id === "today-guild-guidance");
+    assert.equal(noGuildGoal?.title, "加入商会协作");
+    assert.equal(noGuildGoal?.action.href, "#guild");
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/join", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", guildName: "日常留存会" })
+    });
+
+    const joined = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s1", {
+      headers
+    });
+    assert.equal(joined.status, 200, JSON.stringify(joined.body));
+    assert.equal(joined.body.data?.dailySummary.activeMembers, 0);
+    assert.equal(joined.body.data?.dailySummary.collaborations, 0);
+    assert.equal(joined.body.data?.recommendedAction.label, "发布互助");
+    assert.equal(joined.body.data?.recommendedAction.targetSection, "help");
+    assert.equal(joined.body.data?.dailySummary.taskStatus, "今日可做");
+    assert.equal(joined.body.data?.dailySummary.projectStatus, "推进中");
+
+    await requestJson<GuildActionRecord>(baseUrl, "/guild/help", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", requestType: "project-advice" })
+    });
+
+    const claimable = await requestJson<GuildCenterRecord>(baseUrl, "/guild?serverId=s1", {
+      headers
+    });
+    assert.equal(claimable.body.data?.recommendedAction.label, "领取任务");
+    assert.equal(claimable.body.data?.recommendedAction.targetSection, "tasks");
+
+    const goals = await requestJson<LongTermGoalsRecord>(baseUrl, "/long-term-goals?serverId=s1", {
+      headers
+    });
+    const today = goals.body.data?.sections.find((section) => section.key === "today");
+    const guildGoal = today?.goals.find((goal) => goal.id === "today-guild-guidance");
+    assert.equal(guildGoal?.title, "领取商会任务");
+    assert.equal(guildGoal?.action.label, "领取任务");
+    assert.equal(guildGoal?.action.href, "#guild");
   });
 });
 

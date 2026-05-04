@@ -1269,6 +1269,25 @@ type GuildCenter = {
     createdAt: string;
   }>;
   leaderboard: LeaderboardRow[];
+  dailySummary?: {
+    activeMembers: number;
+    collaborations: number;
+    claimableTaskCount: number;
+    claimableProjectCount: number;
+    taskStatus: string;
+    projectStatus: string;
+    valueTips: string[];
+    recommendedAction: {
+      label: string;
+      reason: string;
+      targetSection: string;
+    };
+  };
+  recommendedAction?: {
+    label: string;
+    reason: string;
+    targetSection: string;
+  };
 };
 
 type AchievementClaimResult = {
@@ -2847,6 +2866,22 @@ function App() {
     role === "leader" ? "会长" : role === "vice_leader" ? "副会长" : "成员";
   const guildAnnouncement = guildCenter?.guild?.announcement.trim() || "暂无公告";
   const guildRules = guildCenter?.guild?.collaborationRules.trim() || "暂无协作规则";
+  const guildDailySummary = guildCenter?.dailySummary ?? {
+    activeMembers: guildCenter?.todayActiveMemberCount ?? 0,
+    collaborations: guildCenter?.todayCollaborationCount ?? 0,
+    claimableTaskCount: guildCenter?.tasks.filter((task) => task.isClaimable).length ?? 0,
+    claimableProjectCount: guildCenter?.projects.filter((project) => project.isClaimable).length ?? 0,
+    taskStatus: guildCenter?.tasks.some((task) => task.isClaimable) ? "可领取" : "今日可做",
+    projectStatus: guildCenter?.projects.some((project) => project.isClaimable) ? "可领取" : "推进中",
+    valueTips: guildCenter?.guild
+      ? ["贡献会推进协作项目", "活跃会影响跨服商会赛季", "历史荣誉会沉淀商会表现"]
+      : ["加入后可发布互助", "贡献会推进协作项目", "活跃会影响跨服商会赛季"],
+    recommendedAction: guildCenter?.recommendedAction ?? {
+      label: guildCenter?.guild ? "发布互助" : "加入商会",
+      reason: guildCenter?.guild ? "今日还没有商会协作，发布互助可推进任务和项目。" : "加入后可参与互助、贡献、协作项目和跨服商会赛季。",
+      targetSection: guildCenter?.guild ? "help" : "join"
+    }
+  };
   const primarySeasonTask = seasonCenter?.tasks[0] ?? null;
   const seasonActivities = seasonCenter?.activities ?? [];
   const groupedSeasonActivities = [
@@ -3041,6 +3076,21 @@ function App() {
         summary: employeeGuidanceGoal.action.reason ?? employeeGuidanceGoal.description,
         actionLabel: employeeGuidanceGoal.action.label,
         goal: employeeGuidanceGoal
+      };
+    }
+
+    const guildGuidanceGoal = longTermGoals?.sections
+      .find((section) => section.key === "today")
+      ?.goals.find((goal) => goal.id === "today-guild-guidance");
+    if (guildGuidanceGoal !== undefined) {
+      return {
+        kind: "goal" as const,
+        id: guildGuidanceGoal.id,
+        source: "商会",
+        title: guildGuidanceGoal.title,
+        summary: guildGuidanceGoal.action.reason ?? guildGuidanceGoal.description,
+        actionLabel: guildGuidanceGoal.action.label,
+        goal: guildGuidanceGoal
       };
     }
 
@@ -4157,6 +4207,46 @@ function App() {
     }
 
     setPhase14Error(response.error.message);
+  };
+
+  const handleGuildRecommendedAction = async (): Promise<void> => {
+    const targetSection = guildDailySummary.recommendedAction.targetSection;
+    if (targetSection === "join") {
+      await joinGuild();
+      return;
+    }
+    if (targetSection === "tasks") {
+      const task = guildCenter?.tasks.find((item) => item.isClaimable);
+      if (task !== undefined) {
+        await claimGuildTask(task.id);
+        return;
+      }
+    }
+    if (targetSection === "projects") {
+      const project = guildCenter?.projects.find((item) => item.isClaimable);
+      if (project !== undefined) {
+        await claimGuildProjectReward(project.id);
+        return;
+      }
+    }
+    if (targetSection === "help") {
+      const request = guildCenter?.helpRequests.find((item) => item.canFulfill === true);
+      if (request !== undefined) {
+        await fulfillGuildHelp(request.id);
+        return;
+      }
+      await requestGuildHelp();
+      return;
+    }
+    if (targetSection === "tech") {
+      const tech = guildCenter?.techs.find((item) => item.isUpgradable);
+      if (tech !== undefined) {
+        await upgradeGuildTech(tech.id);
+        return;
+      }
+    }
+    setPhase14Notice(guildDailySummary.recommendedAction.reason);
+    setPhase14Error("");
   };
 
   const updateGuildSettings = async (): Promise<void> => {
@@ -7440,7 +7530,7 @@ function App() {
                 <div className="flex items-center gap-3">
                   <Icon name="building-2" className="w-7 h-7 text-business-gold" />
                   <div>
-                    <h2 className="text-xl font-black text-white italic uppercase">Guild 商会</h2>
+                    <h2 className="text-xl font-black text-white">商会</h2>
                     <span className="text-[10px] text-slate-500">{guildCenter?.guild?.name ?? "加入后解锁成员互助"}</span>
                   </div>
                 </div>
@@ -7474,6 +7564,24 @@ function App() {
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayActiveMemberCount}</strong><span className="text-[9px] text-slate-500">活跃</span></div>
                         <div className="rounded-2xl bg-slate-900/60 p-3"><strong className="block text-lg text-white">{guildCenter.todayCollaborationCount}</strong><span className="text-[9px] text-slate-500">协作</span></div>
                       </div>
+                    </section>
+                    <section className="glass-panel rounded-3xl p-4 border-business-gold/30" data-testid="guild-daily-retention">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <strong className="block text-sm text-white font-black">今日商会目标</strong>
+                          <span className="mt-1 block text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.recommendedAction.reason}</span>
+                        </div>
+                        <button className="shrink-0 btn-gold rounded-xl px-3 py-2 text-[10px] font-black text-business-dark" type="button" onClick={() => void handleGuildRecommendedAction()}>
+                          {guildDailySummary.recommendedAction.label}
+                        </button>
+                      </div>
+                      <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildDailySummary.activeMembers}</strong><span className="text-[9px] text-slate-500">今日活跃</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-sm text-white">{guildDailySummary.collaborations}</strong><span className="text-[9px] text-slate-500">今日协作</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-[11px] text-business-gold">{guildDailySummary.taskStatus}</strong><span className="text-[9px] text-slate-500">商会任务</span></div>
+                        <div className="rounded-2xl bg-slate-900/60 p-2"><strong className="block text-[11px] text-business-gold">{guildDailySummary.projectStatus}</strong><span className="text-[9px] text-slate-500">协作项目</span></div>
+                      </div>
+                      <p className="mt-3 text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.valueTips.slice(0, 3).join(" · ")}</p>
                     </section>
                     <section className="glass-panel rounded-3xl p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -7744,9 +7852,18 @@ function App() {
                       </span>
                       <div className="flex-1">
                         <h3 className="text-lg font-black text-white">加入本服商会</h3>
-                        <p className="mt-1 text-xs leading-5 text-slate-400 font-medium">加入后可参与集体投资、商会任务和成员互助。</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-400 font-medium">加入后可参与成员互助、贡献任务、协作项目和跨服商会赛季。</p>
                       </div>
                     </div>
+                    <section className="mt-4 rounded-2xl bg-slate-900/60 p-3" data-testid="guild-join-value">
+                      <strong className="block text-sm text-white font-black">今日商会目标</strong>
+                      <p className="mt-1 text-[10px] leading-5 text-slate-400 font-bold">{guildDailySummary.recommendedAction.reason}</p>
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                        {guildDailySummary.valueTips.map((tip) => (
+                          <span className="rounded-xl bg-slate-950/70 px-2 py-2 text-[9px] font-black text-business-gold" key={tip}>{tip}</span>
+                        ))}
+                      </div>
+                    </section>
                     <button className="mt-5 w-full btn-gold py-3 rounded-2xl text-sm font-black text-business-dark" type="button" onClick={() => void joinGuild()}>
                       加入本服商会
                     </button>

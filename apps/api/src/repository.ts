@@ -2406,6 +2406,25 @@ export type GuildCenterRecord = {
     createdAt: string;
   }>;
   leaderboard: LeaderboardRowRecord[];
+  dailySummary?: {
+    activeMembers: number;
+    collaborations: number;
+    claimableTaskCount: number;
+    claimableProjectCount: number;
+    taskStatus: string;
+    projectStatus: string;
+    valueTips: string[];
+    recommendedAction: {
+      label: string;
+      reason: string;
+      targetSection: string;
+    };
+  };
+  recommendedAction?: {
+    label: string;
+    reason: string;
+    targetSection: string;
+  };
 };
 
 export type GuildActionRecord = {
@@ -5236,6 +5255,24 @@ export const buildLongTermGoalsRecord = (input: {
   const activityGoal = activeActivities.find((activity) => activity.isJoined) ?? activeActivities[0] ?? null;
   const seasonTask = input.season?.tasks.find((task) => !task.isClaimed) ?? null;
   const guildTask = input.guild?.tasks.find((task) => !task.isClaimed) ?? null;
+  const guildRecommendedAction = input.guild?.recommendedAction
+    ?? (input.guild?.guild === null || input.guild === null
+      ? {
+          label: "加入商会",
+          reason: "加入后可参与互助、贡献、协作项目和跨服商会赛季。",
+          targetSection: "join"
+        }
+      : null);
+  const guildGuidanceTitle = (() => {
+    if (guildRecommendedAction === null) return "查看商会进度";
+    if (guildRecommendedAction.label === "加入商会") return "加入商会协作";
+    if (guildRecommendedAction.label === "领取任务") return "领取商会任务";
+    if (guildRecommendedAction.label === "领取项目") return "领取协作项目";
+    if (guildRecommendedAction.label === "协助成员") return "完成成员互助";
+    if (guildRecommendedAction.label === "发布互助") return "发布商会互助";
+    if (guildRecommendedAction.label === "升级科技") return "升级商会科技";
+    return "查看商会进度";
+  })();
   const completedAchievements = input.achievements.filter((achievement) => achievement.isCompleted).length;
   const claimableAchievements = input.achievements.filter((achievement) => achievement.isCompleted && !achievement.isClaimed).length;
   const activeTitleCount = input.titles.titles.filter((title) => !title.isExpired).length;
@@ -5311,6 +5348,27 @@ export const buildLongTermGoalsRecord = (input: {
                     targetTab: input.employeeBusinessGuidance.targetTab,
                     reason: input.employeeBusinessGuidance.reason,
                     missingRoles: input.employeeBusinessGuidance.missingRoles
+                  }
+                })
+              ]),
+          ...(guildRecommendedAction === null
+            ? []
+            : [
+                createLongTermGoal({
+                  id: "today-guild-guidance",
+                  title: guildGuidanceTitle,
+                  description: guildRecommendedAction.reason,
+                  source: "guild",
+                  sourceId: input.guild?.guild?.id ?? "guild",
+                  progress: input.guild?.dailySummary?.collaborations ?? 0,
+                  target: 1,
+                  isClaimable: guildRecommendedAction.label === "领取任务" || guildRecommendedAction.label === "领取项目",
+                  isCompleted: guildRecommendedAction.label === "查看商会",
+                  rewardLabel: guildRecommendedAction.label === "领取任务" ? "商会贡献" : guildRecommendedAction.label === "领取项目" ? "声望奖励" : null,
+                  action: {
+                    label: guildRecommendedAction.label,
+                    href: "#guild",
+                    reason: guildRecommendedAction.reason
                   }
                 })
               ]),
@@ -5743,6 +5801,84 @@ const guildActivityLabel = (action: string): string => {
   }
 
   return "参与商会协作";
+};
+
+const buildGuildDailyRetention = (input: {
+  guildJoined: boolean;
+  tasks: GuildCenterRecord["tasks"];
+  helpRequests: GuildCenterRecord["helpRequests"];
+  projects: GuildCenterRecord["projects"];
+  techs: GuildCenterRecord["techs"];
+  todayActiveMemberCount: number;
+  todayCollaborationCount: number;
+}): NonNullable<GuildCenterRecord["dailySummary"]> => {
+  const claimableTaskCount = input.tasks.filter((task) => task.isClaimable).length;
+  const claimableProjectCount = input.projects.filter((project) => project.isClaimable).length;
+  const openHelpToFulfill = input.helpRequests.some((request) => request.canFulfill === true);
+  const upgradableTech = input.techs.some((tech) => tech.isUpgradable);
+  const recommendedAction = (() => {
+    if (!input.guildJoined) {
+      return {
+        label: "加入商会",
+        reason: "加入后可参与互助、贡献、协作项目和跨服商会赛季。",
+        targetSection: "join"
+      };
+    }
+    if (claimableProjectCount > 0) {
+      return {
+        label: "领取项目",
+        reason: "协作项目已达成，先领取声望奖励。",
+        targetSection: "projects"
+      };
+    }
+    if (claimableTaskCount > 0) {
+      return {
+        label: "领取任务",
+        reason: "今日商会任务已完成，先领取贡献奖励。",
+        targetSection: "tasks"
+      };
+    }
+    if (openHelpToFulfill) {
+      return {
+        label: "协助成员",
+        reason: "有成员互助等待处理，协助后增加商会贡献。",
+        targetSection: "help"
+      };
+    }
+    if (input.todayCollaborationCount <= 0) {
+      return {
+        label: "发布互助",
+        reason: "今日还没有商会协作，发布互助可推进任务和项目。",
+        targetSection: "help"
+      };
+    }
+    if (upgradableTech) {
+      return {
+        label: "升级科技",
+        reason: "当前贡献足够，升级科技可提升协作效率。",
+        targetSection: "tech"
+      };
+    }
+
+    return {
+      label: "查看商会",
+      reason: "今日协作已推进，继续关注贡献榜和项目进度。",
+      targetSection: "overview"
+    };
+  })();
+
+  return {
+    activeMembers: input.todayActiveMemberCount,
+    collaborations: input.todayCollaborationCount,
+    claimableTaskCount,
+    claimableProjectCount,
+    taskStatus: claimableTaskCount > 0 ? "可领取" : input.tasks.some((task) => !task.isClaimed) ? "今日可做" : "已完成",
+    projectStatus: claimableProjectCount > 0 ? "可领取" : "推进中",
+    valueTips: input.guildJoined
+      ? ["贡献会推进协作项目", "活跃会影响跨服商会赛季", "历史荣誉会沉淀商会表现"]
+      : ["加入后可发布互助", "贡献会推进协作项目", "活跃会影响跨服商会赛季"],
+    recommendedAction
+  };
 };
 
 const readCrossGuildIdFromMailBody = (mailBody: string | null): string | null => {
@@ -14188,6 +14324,15 @@ export const createPrismaGameRepository = (
     }
     const member = await prisma.guildMember.findUnique({ where: { profileId: profile.id } });
     if (member === null) {
+      const dailySummary = buildGuildDailyRetention({
+        guildJoined: false,
+        tasks: [],
+        techs: [],
+        helpRequests: [],
+        projects: [],
+        todayActiveMemberCount: 0,
+        todayCollaborationCount: 0
+      });
       return {
         guild: null,
         members: [],
@@ -14199,7 +14344,9 @@ export const createPrismaGameRepository = (
         todayActiveMemberCount: 0,
         todayCollaborationCount: 0,
         recentActivities: [],
-        leaderboard: []
+        leaderboard: [],
+        dailySummary,
+        recommendedAction: dailySummary.recommendedAction
       };
     }
     const dayStart = new Date(`${today}T00:00:00.000Z`);
@@ -14253,6 +14400,72 @@ export const createPrismaGameRepository = (
       prisma.guildProjectProgress.findMany({ where: { guildId: member.guildId } })
     ]);
 
+    const taskRecords = taskConfigs.map((task) => {
+      const progress = progresses.find((item) => item.taskId === task.id);
+      const currentProgress = task.id === "guild-daily-help" ? todayHelpCount : progress?.progress ?? 0;
+      const isClaimed = progress?.claimedAt?.toISOString().slice(0, 10) === today;
+      return {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        progress: Math.min(currentProgress, task.target),
+        target: task.target,
+        contributionReward: task.contributionReward,
+        isClaimed,
+        isClaimable: currentProgress >= task.target && !isClaimed
+      };
+    });
+    const techRecords = techConfigs.map((tech) => {
+      const level = techs.find((item) => item.techId === tech.id)?.level ?? 0;
+      const upgradeCost = level >= tech.maxLevel ? null : guildTechUpgradeCost(level);
+      return {
+        id: tech.id,
+        name: tech.name,
+        description: tech.description,
+        level,
+        maxLevel: tech.maxLevel,
+        upgradeCost,
+        isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost,
+        bonusLabel: guildTechBonusLabel(level)
+      };
+    });
+    const helpRequestRecords = helpRequests.map((request) => ({
+      id: request.id,
+      profileId: request.profileId,
+      founderName: request.profile.founderName,
+      companyName: request.profile.companyName,
+      requestType: request.requestType,
+      status: request.status,
+      createdAt: request.createdAt.toISOString(),
+      fulfilledAt: request.fulfilledAt?.toISOString() ?? null,
+      canFulfill: request.status === "open" && request.profileId !== profile.id
+    }));
+    const projectRecords = guildProjectConfigs.map((project) => {
+      const progress = projectProgress.find((item) => item.projectId === project.id);
+      const currentProgress = progress?.progress ?? 0;
+      const isClaimed = progress?.claimedAt !== null && progress?.claimedAt !== undefined;
+      return {
+        id: project.id,
+        name: project.name,
+        description: project.description,
+        progress: Math.min(currentProgress, project.target),
+        target: project.target,
+        rewardReputation: project.rewardReputation,
+        rewardLabel: `声望 +${project.rewardReputation}`,
+        isClaimed,
+        isClaimable: currentProgress >= project.target && !isClaimed
+      };
+    });
+    const dailySummary = buildGuildDailyRetention({
+      guildJoined: guild !== null,
+      tasks: taskRecords,
+      techs: techRecords,
+      helpRequests: helpRequestRecords,
+      projects: projectRecords,
+      todayActiveMemberCount: todayActivityProfiles.length,
+      todayCollaborationCount
+    });
+
     return {
       guild: guild === null ? null : {
         id: guild.id,
@@ -14279,62 +14492,10 @@ export const createPrismaGameRepository = (
           createdAt: request.createdAt.toISOString()
         }))
         : [],
-      tasks: taskConfigs.map((task) => {
-        const progress = progresses.find((item) => item.taskId === task.id);
-        const currentProgress = task.id === "guild-daily-help" ? todayHelpCount : progress?.progress ?? 0;
-        const isClaimed = progress?.claimedAt?.toISOString().slice(0, 10) === today;
-        return {
-          id: task.id,
-          title: task.title,
-          description: task.description,
-          progress: Math.min(currentProgress, task.target),
-          target: task.target,
-          contributionReward: task.contributionReward,
-          isClaimed,
-          isClaimable: currentProgress >= task.target && !isClaimed
-        };
-      }),
-      techs: techConfigs.map((tech) => {
-        const level = techs.find((item) => item.techId === tech.id)?.level ?? 0;
-        const upgradeCost = level >= tech.maxLevel ? null : guildTechUpgradeCost(level);
-        return {
-          id: tech.id,
-          name: tech.name,
-          description: tech.description,
-          level,
-          maxLevel: tech.maxLevel,
-          upgradeCost,
-          isUpgradable: upgradeCost !== null && (guild?.contributionScore ?? 0) >= upgradeCost,
-          bonusLabel: guildTechBonusLabel(level)
-        };
-      }),
-      helpRequests: helpRequests.map((request) => ({
-        id: request.id,
-        profileId: request.profileId,
-        founderName: request.profile.founderName,
-        companyName: request.profile.companyName,
-        requestType: request.requestType,
-        status: request.status,
-        createdAt: request.createdAt.toISOString(),
-        fulfilledAt: request.fulfilledAt?.toISOString() ?? null,
-        canFulfill: request.status === "open" && request.profileId !== profile.id
-      })),
-      projects: guildProjectConfigs.map((project) => {
-        const progress = projectProgress.find((item) => item.projectId === project.id);
-        const currentProgress = progress?.progress ?? 0;
-        const isClaimed = progress?.claimedAt !== null && progress?.claimedAt !== undefined;
-        return {
-          id: project.id,
-          name: project.name,
-          description: project.description,
-          progress: Math.min(currentProgress, project.target),
-          target: project.target,
-          rewardReputation: project.rewardReputation,
-          rewardLabel: `声望 +${project.rewardReputation}`,
-          isClaimed,
-          isClaimable: currentProgress >= project.target && !isClaimed
-        };
-      }),
+      tasks: taskRecords,
+      techs: techRecords,
+      helpRequests: helpRequestRecords,
+      projects: projectRecords,
       todayActiveMemberCount: todayActivityProfiles.length,
       todayCollaborationCount,
       recentActivities: recentActivities.map((activity) => ({
@@ -14353,7 +14514,9 @@ export const createPrismaGameRepository = (
         value: item.contributionScore,
         valueLabel: formatLeaderboardValue("guild", item.contributionScore),
         equippedTitle: null
-      }))
+      })),
+      dailySummary,
+      recommendedAction: dailySummary.recommendedAction
     };
   },
 

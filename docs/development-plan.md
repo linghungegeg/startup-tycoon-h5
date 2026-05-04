@@ -2838,6 +2838,24 @@ VIP 权益：
 - 浏览器验收结果：员工页四标签完整、图鉴显示 `7/36`；招募门槛可见，图鉴不显示技术感羁绊 id；市场页三标签正常；融资页团队支撑显示加成或短板，“补齐岗位”可跳员工图鉴并筛到资本岗位；专属经理今日建议能指向员工经营缺口；新页面未发现本轮新增阻塞错误，控制台中旧 `05:44` fetch 记录来自此前 API/CORS 修复前的历史日志。
 - 下一阶段入口：在本批稳定后，再评估商会深度、员工 48/60 扩容或头像资源替换，不能在本批混入。
 
+### Phase 33：商会日常留存深度
+
+- 当前稳定点：`2092086 feat: stabilize employee market funding loops`。
+- 阶段目标：不新增商会聊天、实时多人或新付费池，只把现有商会任务、互助、科技和协作项目收口成玩家每天能看懂的回访入口。
+- 完成内容：
+  - `GET /guild` 复用现有商会中心结构，新增轻量只读 `dailySummary` 和 `recommendedAction`，聚合今日活跃、今日协作、可领取任务、可领奖项目和推荐动作。
+  - 未入会状态说明加入后可参与成员互助、贡献任务、协作项目和跨服商会赛季，不再只是单个加入按钮。
+  - 已入会状态新增“今日商会目标”，统一展示商会任务、互助、协作项目的今日状态，并提供推荐动作按钮。
+  - 专属经理今日建议接入 `today-guild-guidance`，可指向加入商会、发布互助、协助成员、领取任务、领取协作项目或升级科技。
+  - 商会页标题清理为纯中文“商会”，去掉 `Guild 商会` 英文装饰，保持竖版 H5 手游短句和紧凑信息密度。
+- 四插件证据：
+  - Superpowers：按 TDD 先补商会日常聚合和前端静态红灯，再做最小实现。
+  - Build Web Apps：检查商会页保持深色商务手游结构，今日目标为紧凑信息条，不新增后台大表格。
+  - Game Studio：商会推荐动作形成每日回访理由，同时不遮挡 HUD、底部导航和原有商会操作。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收商会页今日目标、经理建议跳转和 Console。
+- 验证命令：`node --import tsx --test --test-name-pattern "guild center summarizes daily retention action and manager goal" apps/api/test/http.test.ts`、`node apps/client/test/phase38-guild-retention-depth.test.mjs`，以及相关主流程、typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：本批稳定后再评估员工 48/60 扩容或头像资源替换；商会侧后续只做浏览器验收发现的问题，不继续扩玩法。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：
