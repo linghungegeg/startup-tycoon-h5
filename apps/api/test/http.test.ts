@@ -4629,6 +4629,56 @@ const createTestRepository = (): GameRepository => {
     async getAdminActivitySchedule(today) {
       return buildAdminActivitySchedule(activityConfigs, today, new Set());
     },
+    async getAdminSettlementCandidates(today) {
+      const hasAudit = (action: string, targetId: string) =>
+        adminAuditLogs.find((log) => log.action === action && log.targetId === targetId) ?? null;
+      const activityRows = activityConfigs
+        .filter((activity) => seasonStatus(activity.startDate, activity.endDate, today) === "ended" && activity.leaderboardKey.trim() !== "")
+        .map((activity) => {
+          const audit = hasAudit("admin_activity_leaderboard_settle", activity.id);
+          const isSettled = [...leaderboardRewards].some((key) => key.includes(`:${activity.leaderboardKey}:${activity.endDate}`));
+          return {
+            id: `activity:${activity.id}`,
+            kind: "activity" as const,
+            targetId: activity.id,
+            serverId: "activity",
+            name: `${activity.name} 活动榜`,
+            reasonPreset: "运营自动识别活动榜待结算",
+            riskLabel: "活动已结束",
+            isSettled,
+            lastAuditLogId: audit?.id ?? null
+          };
+        });
+      const serverRows = servers
+        .filter((server) => [...profiles.values()].some((profile) => profile.serverId === server.id))
+        .map((server) => {
+          const audit = hasAudit("admin_leaderboard_settle", server.id);
+          return {
+            id: `leaderboard:${server.id}`,
+            kind: "leaderboard" as const,
+            targetId: server.id,
+            serverId: server.id,
+            name: `${server.name} 排行榜`,
+            reasonPreset: "运营自动识别排行榜待结算",
+            riskLabel: "普通排行榜奖励",
+            isSettled: audit !== null,
+            lastAuditLogId: audit?.id ?? null
+          };
+        });
+      const rows = [...activityRows, ...serverRows];
+      return {
+        summary: {
+          total: rows.length,
+          pending: rows.filter((row) => !row.isSettled).length,
+          settled: rows.filter((row) => row.isSettled).length,
+          activity: rows.filter((row) => row.kind === "activity").length,
+          guild: 0,
+          crossGuild: 0,
+          leaderboard: rows.filter((row) => row.kind === "leaderboard").length
+        },
+        rows
+      };
+    },
     async validateAdminActivityConfigDraft(draft, today) {
       return validateAdminActivityConfigDraft(draft, activityConfigs, today);
     },
@@ -14196,6 +14246,88 @@ test("phase 24 activity leaderboard opens recaps and settles idempotently", asyn
     });
     assert.equal(logs.status, 200);
     assert.ok(logs.body.data?.rows.some((log) => log.action === "admin_activity_leaderboard_settle"));
+  });
+});
+
+test("phase 28 admin settlement candidates are authenticated read-only and mark settled rows", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "settlementcandidate01");
+    const playerHeaders = { authorization: `Bearer ${player.token}` };
+
+    await requestJson(baseUrl, "/activities/ai-agent-growth/join", {
+      method: "POST",
+      headers: { ...playerHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson(baseUrl, "/activities/ai-agent-growth/progress", {
+      method: "POST",
+      headers: { ...playerHeaders, "x-server-date": "2026-05-05" },
+      body: JSON.stringify({ serverId: "s1", scoreDelta: 120 })
+    });
+
+    const blocked = await requestJson(baseUrl, "/admin/settlement-candidates", {
+      headers: { "x-server-date": "2026-05-21" }
+    });
+    assert.equal(blocked.status, 401);
+    assert.equal(blocked.body.error?.code, "UNAUTHORIZED");
+
+    const adminLogin = await requestJson<{ token: string }>(baseUrl, "/admin/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "admin123" })
+    });
+    assert.equal(adminLogin.status, 200);
+    const adminHeaders = { authorization: `Bearer ${adminLogin.body.data?.token ?? ""}` };
+
+    const beforeProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: playerHeaders
+    });
+    const beforeLogs = await requestJson<{ rows: Array<{ action: string }> }>(baseUrl, "/admin/audit-logs", {
+      headers: adminHeaders
+    });
+    const candidates = await requestJson<{
+      summary: { total: number; pending: number; activity: number };
+      rows: Array<{ id: string; kind: string; targetId: string; name: string; isSettled: boolean; lastAuditLogId: string | null }>;
+    }>(baseUrl, "/admin/settlement-candidates", {
+      headers: { ...adminHeaders, "x-server-date": "2026-05-21" }
+    });
+    assert.equal(candidates.status, 200, JSON.stringify(candidates.body));
+    assert.ok((candidates.body.data?.summary.total ?? 0) > 0);
+    assert.ok((candidates.body.data?.summary.pending ?? 0) > 0);
+    assert.ok((candidates.body.data?.summary.activity ?? 0) > 0);
+    const activityCandidate = candidates.body.data?.rows.find((row) => row.kind === "activity" && row.targetId === "ai-agent-growth");
+    assert.ok(activityCandidate);
+    assert.equal(activityCandidate?.isSettled, false);
+
+    const afterProfile = await requestJson<PlayerProfileRecord>(baseUrl, "/players?serverId=s1", {
+      headers: playerHeaders
+    });
+    const afterLogs = await requestJson<{ rows: Array<{ action: string }> }>(baseUrl, "/admin/audit-logs", {
+      headers: adminHeaders
+    });
+    assert.equal(afterProfile.body.data?.cash, beforeProfile.body.data?.cash);
+    assert.equal(afterProfile.body.data?.platformCoins, beforeProfile.body.data?.platformCoins);
+    assert.equal(afterLogs.body.data?.rows.length, beforeLogs.body.data?.rows.length);
+
+    const settled = await requestJson<{ deliveredRewards: number; auditLogId: string }>(
+      baseUrl,
+      "/admin/activities/ai-agent-growth/leaderboard/settle",
+      {
+        method: "POST",
+        headers: { ...adminHeaders, "x-server-date": "2026-05-21" },
+        body: JSON.stringify({ reason: "阶段28待结算队列验证" })
+      }
+    );
+    assert.equal(settled.status, 200, JSON.stringify(settled.body));
+
+    const afterSettle = await requestJson<{ rows: Array<{ kind: string; targetId: string; isSettled: boolean; lastAuditLogId: string | null }> }>(
+      baseUrl,
+      "/admin/settlement-candidates",
+      { headers: { ...adminHeaders, "x-server-date": "2026-05-21" } }
+    );
+    assert.equal(afterSettle.status, 200, JSON.stringify(afterSettle.body));
+    const settledActivity = afterSettle.body.data?.rows.find((row) => row.kind === "activity" && row.targetId === "ai-agent-growth");
+    assert.equal(settledActivity?.isSettled, true);
+    assert.ok(settledActivity?.lastAuditLogId);
   });
 });
 

@@ -25,7 +25,7 @@ test("phase 58 mail and chat actions expose client-side boundaries", () => {
 });
 
 test("phase 58 admin support systems stay covered without broad player-surface changes", () => {
-  for (const copy of ["/admin/mail/compensate", "/admin/chat-keywords", "/admin/audit-logs", "window.confirm"]) {
+  for (const copy of ["/admin/mail/compensate", "/admin/chat-keywords", "/admin/audit-logs", "admin-confirm-modal"]) {
     assert.match(adminSource, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), `${copy} should remain wired in admin app`);
   }
   assert.match(auditSource, /\| 邮件 \/ 聊天 \/ 管理后台 \| 已闭环 \|[^|\n]*邮件中心/, "audit should close mail chat and admin support systems");

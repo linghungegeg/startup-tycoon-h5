@@ -1584,6 +1584,33 @@ export type AdminActivityScheduleRecord = {
   }>;
 };
 
+export type AdminSettlementCandidateKind = "leaderboard" | "activity" | "guild" | "crossGuild";
+
+export type AdminSettlementCandidateRecord = {
+  id: string;
+  kind: AdminSettlementCandidateKind;
+  targetId: string;
+  serverId: string;
+  name: string;
+  reasonPreset: string;
+  riskLabel: string;
+  isSettled: boolean;
+  lastAuditLogId: string | null;
+};
+
+export type AdminSettlementCandidateListRecord = {
+  summary: {
+    total: number;
+    pending: number;
+    settled: number;
+    activity: number;
+    guild: number;
+    crossGuild: number;
+    leaderboard: number;
+  };
+  rows: AdminSettlementCandidateRecord[];
+};
+
 export type AdminActivityConfigDraftInput = {
   id: string;
   name: string;
@@ -2575,6 +2602,7 @@ export type GameRepository = {
   getAdminMonetizationBoundaries(today: string): Promise<AdminMonetizationBoundaryRecord>;
   getAdminEconomyAlerts(today: string): Promise<AdminEconomyAlertListRecord>;
   getAdminActivitySchedule(today: string): Promise<AdminActivityScheduleRecord>;
+  getAdminSettlementCandidates(today: string): Promise<AdminSettlementCandidateListRecord>;
   validateAdminActivityConfigDraft(draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftValidationRecord>;
   listAdminActivityConfigDrafts(status: string, today: string): Promise<AdminActivityConfigDraftListRecord>;
   saveAdminActivityConfigDraft(adminUserId: string, draft: AdminActivityConfigDraftInput, today: string): Promise<AdminActivityConfigDraftActionRecord>;
@@ -12139,6 +12167,114 @@ export const createPrismaGameRepository = (
     );
 
     return buildAdminActivitySchedule(activities, today, platformCoinRewardBoardKeys);
+  },
+
+  async getAdminSettlementCandidates(today) {
+    const [servers, profiles, activities, guilds, crossGuildServers, auditLogs, deliveries] = await Promise.all([
+      prisma.gameServer.findMany({ orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.playerProfile.findMany({ select: { serverId: true }, distinct: ["serverId"] }),
+      prisma.activityConfig.findMany({ orderBy: [{ endDate: "desc" }, { sortOrder: "asc" }, { id: "asc" }] }),
+      prisma.guild.findMany({ include: { members: true }, orderBy: [{ serverId: "asc" }, { contributionScore: "desc" }, { createdAt: "asc" }] }),
+      prisma.gameServer.findMany({
+        where: { profiles: { some: { guildMembership: { isNot: null } } } },
+        orderBy: [{ sortOrder: "asc" }, { id: "asc" }]
+      }),
+      prisma.adminAuditLog.findMany({
+        where: {
+          action: {
+            in: [
+              "admin_leaderboard_settle",
+              "admin_activity_leaderboard_settle",
+              "admin_guild_leaderboard_settle",
+              "admin_cross_guild_season_settle"
+            ]
+          }
+        },
+        orderBy: { createdAt: "desc" }
+      }),
+      prisma.leaderboardRewardDelivery.findMany({
+        select: { serverId: true, boardKey: true, snapshotDate: true, mailBody: true }
+      })
+    ]);
+
+    const latestAuditLogId = (action: string, targetId: string): string | null =>
+      auditLogs.find((log) => log.action === action && log.targetId === targetId)?.id ?? null;
+    const serverIdsWithProfiles = new Set(profiles.map((profile) => profile.serverId));
+    const rows: AdminSettlementCandidateRecord[] = [];
+
+    for (const server of servers.filter((item) => serverIdsWithProfiles.has(item.id))) {
+      const auditLogId = latestAuditLogId("admin_leaderboard_settle", server.id);
+      const isSettled = auditLogId !== null || deliveries.some((delivery) => delivery.serverId === server.id && delivery.snapshotDate === today && delivery.boardKey !== "guild-contribution" && delivery.boardKey !== "cross-guild-season");
+      rows.push({
+        id: `leaderboard:${server.id}`,
+        kind: "leaderboard",
+        targetId: server.id,
+        serverId: server.id,
+        name: `${server.name} 排行榜`,
+        reasonPreset: "运营自动识别排行榜待结算",
+        riskLabel: "普通排行榜奖励",
+        isSettled,
+        lastAuditLogId: auditLogId
+      });
+    }
+
+    for (const activity of activities.filter((item) => readSeasonStatus(item.startDate, item.endDate, today) === "ended" && item.leaderboardKey.trim() !== "")) {
+      const auditLogId = latestAuditLogId("admin_activity_leaderboard_settle", activity.id);
+      rows.push({
+        id: `activity:${activity.id}`,
+        kind: "activity",
+        targetId: activity.id,
+        serverId: "activity",
+        name: `${activity.name} 活动榜`,
+        reasonPreset: "运营自动识别活动榜待结算",
+        riskLabel: activity.rewardCash > 0 ? "奖励边界需复核" : "活动已结束",
+        isSettled: auditLogId !== null || deliveries.some((delivery) => delivery.boardKey === activity.leaderboardKey && delivery.snapshotDate === activity.endDate),
+        lastAuditLogId: auditLogId
+      });
+    }
+
+    for (const guild of guilds.filter((item) => item.members.length > 0)) {
+      const auditLogId = latestAuditLogId("admin_guild_leaderboard_settle", guild.id);
+      rows.push({
+        id: `guild:${guild.id}`,
+        kind: "guild",
+        targetId: guild.id,
+        serverId: guild.serverId,
+        name: `${guild.name} 商会贡献榜`,
+        reasonPreset: "运营自动识别商会贡献榜待结算",
+        riskLabel: "商会成员奖励",
+        isSettled: auditLogId !== null || deliveries.some((delivery) => delivery.serverId === guild.serverId && delivery.boardKey === "guild-contribution" && delivery.snapshotDate === today && delivery.mailBody === `guild:${guild.id}`),
+        lastAuditLogId: auditLogId
+      });
+    }
+
+    for (const server of crossGuildServers) {
+      const auditLogId = latestAuditLogId("admin_cross_guild_season_settle", server.id);
+      rows.push({
+        id: `crossGuild:${server.id}`,
+        kind: "crossGuild",
+        targetId: server.id,
+        serverId: server.id,
+        name: `${server.name} 跨服商会赛季`,
+        reasonPreset: "运营自动识别跨服商会赛季待结算",
+        riskLabel: "跨服赛季奖励",
+        isSettled: auditLogId !== null || deliveries.some((delivery) => delivery.boardKey === "cross-guild-season" && delivery.snapshotDate === today),
+        lastAuditLogId: auditLogId
+      });
+    }
+
+    return {
+      summary: {
+        total: rows.length,
+        pending: rows.filter((row) => !row.isSettled).length,
+        settled: rows.filter((row) => row.isSettled).length,
+        activity: rows.filter((row) => row.kind === "activity").length,
+        guild: rows.filter((row) => row.kind === "guild").length,
+        crossGuild: rows.filter((row) => row.kind === "crossGuild").length,
+        leaderboard: rows.filter((row) => row.kind === "leaderboard").length
+      },
+      rows
+    };
   },
 
   async validateAdminActivityConfigDraft(draft, today) {

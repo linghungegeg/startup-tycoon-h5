@@ -521,6 +521,40 @@ type ActivityPublishObservationList = {
   }>;
 };
 
+type SettlementCandidateKind = "leaderboard" | "activity" | "guild" | "crossGuild";
+
+type SettlementCandidate = {
+  id: string;
+  kind: SettlementCandidateKind;
+  targetId: string;
+  serverId: string;
+  name: string;
+  reasonPreset: string;
+  riskLabel: string;
+  isSettled: boolean;
+  lastAuditLogId: string | null;
+};
+
+type SettlementCandidateList = {
+  summary: {
+    total: number;
+    pending: number;
+    settled: number;
+    activity: number;
+    guild: number;
+    crossGuild: number;
+    leaderboard: number;
+  };
+  rows: SettlementCandidate[];
+};
+
+type SettlementBatchResult = {
+  id: string;
+  name: string;
+  status: "success" | "retry" | "failed";
+  message: string;
+};
+
 type OperationConfigAlertAction = AuditResult & {
   alert: OperationConfigAlert;
 };
@@ -640,6 +674,16 @@ type ProfileStatus = AuditResult & {
   status: string;
 };
 
+type PendingAdminAction = {
+  title: string;
+  target: string;
+  impact: string;
+  reason: string;
+  riskLevel: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<void>;
+};
+
 type ActiveSection = "analytics" | "players" | "wallet" | "titles" | "cross" | "guilds" | "activities" | "businessClock" | "economy" | "configs" | "knowledge" | "audit";
 
 const menuItems: Array<{ id: ActiveSection; label: string }> = [
@@ -655,6 +699,15 @@ const menuItems: Array<{ id: ActiveSection; label: string }> = [
   { id: "configs", label: "配置清单" },
   { id: "knowledge", label: "知识审核" },
   { id: "audit", label: "审计日志" }
+];
+const auditQuickFilters = [
+  { label: "结算", action: "admin_activity_leaderboard_settle", targetType: "" },
+  { label: "资产", action: "admin_grant", targetType: "player_platform_wallet" },
+  { label: "封禁", action: "admin_player_ban", targetType: "player_profile" },
+  { label: "补偿", action: "admin_mail_compensation", targetType: "admin_mail_compensation" },
+  { label: "配置", action: "admin_activity_draft_publish", targetType: "activity_config_draft" },
+  { label: "知识", action: "admin_knowledge_update", targetType: "knowledge_entry" },
+  { label: "聊天", action: "admin_chat_keyword_update", targetType: "chat_keyword" }
 ];
 
 const formatNumber = (value: number): string => value.toLocaleString("zh-CN");
@@ -681,6 +734,17 @@ const paidProductLabel = (product: string): string => {
   if (product === "season_pass") return "通行证";
   if (product === "activity_shop") return "活动商店";
   return product;
+};
+const settlementKindLabel = (kind: SettlementCandidateKind): string => {
+  if (kind === "activity") return "活动榜";
+  if (kind === "guild") return "商会榜";
+  if (kind === "crossGuild") return "跨服商会";
+  return "排行榜";
+};
+const settlementResultLabel = (status: SettlementBatchResult["status"]): string => {
+  if (status === "failed") return "失败";
+  if (status === "retry") return "幂等重试";
+  return "成功";
 };
 const activityDraftStatusLabel = (status: ActivityDraftStatus): string => {
   if (status === "draft") return "草稿";
@@ -897,6 +961,12 @@ export default function App() {
   const [activityDraftValidation, setActivityDraftValidation] = useState<ActivityDraftValidation | null>(null);
   const [activityDrafts, setActivityDrafts] = useState<ActivityDraftList>({ rows: [], summary: { total: 0, draft: 0, pending_review: 0, approved: 0, rejected: 0, published: 0 } });
   const [activityPublishObservations, setActivityPublishObservations] = useState<ActivityPublishObservationList>({ summary: { total: 0, published: 0, rewardRiskCount: 0, unsettledEndedCount: 0 }, rows: [] });
+  const [settlementCandidates, setSettlementCandidates] = useState<SettlementCandidateList>({
+    summary: { total: 0, pending: 0, settled: 0, activity: 0, guild: 0, crossGuild: 0, leaderboard: 0 },
+    rows: []
+  });
+  const [selectedSettlementCandidateIds, setSelectedSettlementCandidateIds] = useState<string[]>([]);
+  const [batchSettlementResults, setBatchSettlementResults] = useState<SettlementBatchResult[]>([]);
   const [activityDraftReviewReason, setActivityDraftReviewReason] = useState("运营复核通过");
   const [activityDraftPublishReason, setActivityDraftPublishReason] = useState("发布前二次确认：配置、档期、奖励边界均已复核");
   const [chatKeywordList, setChatKeywordList] = useState<ChatKeywordList>({ rows: [], total: 0, filters: { sourceTypes: [], actions: [], statuses: [] } });
@@ -946,6 +1016,7 @@ export default function App() {
   const [knowledgeReviewStatus, setKnowledgeReviewStatus] = useState("");
   const [selectedKnowledgeId, setSelectedKnowledgeId] = useState("");
   const [knowledgeForm, setKnowledgeForm] = useState<KnowledgeForm>(() => emptyKnowledgeForm());
+  const [pendingAdminAction, setPendingAdminAction] = useState<PendingAdminAction | null>(null);
   const [error, setError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [isRestoring, setIsRestoring] = useState(initialSession !== null);
@@ -977,6 +1048,14 @@ export default function App() {
       .filter((alert) => alertType === "" || alert.type === alertType)
       .filter((alert) => alertStatus === "" || alert.status === alertStatus),
     [alertLevel, alertStatus, alertType, operationConfigAlerts.alerts]
+  );
+  const pendingSettlementCandidates = useMemo(
+    () => settlementCandidates.rows.filter((candidate) => !candidate.isSettled),
+    [settlementCandidates.rows]
+  );
+  const selectedSettlementCandidates = useMemo(
+    () => pendingSettlementCandidates.filter((candidate) => selectedSettlementCandidateIds.includes(candidate.id)),
+    [pendingSettlementCandidates, selectedSettlementCandidateIds]
   );
 
   const applyKnowledgeList = (data: KnowledgeList): void => {
@@ -1053,7 +1132,7 @@ export default function App() {
       setAssignGroupId((current) => current || (groupList.data.groups[0]?.id ?? ""));
       setSettleServerId((current) => current || (playerList.data.rows[0]?.serverId ?? "s1"));
       setCrossGuildSettleServerId((current) => current || (guildList.data.rows[0]?.serverId ?? "s1"));
-      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, logs, analyticsResponse, knowledgeResponse, chatKeywordsResponse] = await Promise.all([
+      const [configs, configAlerts, boundaryResponse, scheduleResponse, clockResponse, economyResponse, draftResponse, publishObservationResponse, settlementCandidateResponse, logs, analyticsResponse, knowledgeResponse, chatKeywordsResponse] = await Promise.all([
         apiRequest<ConfigCenter>("/admin/config-center", {}, token),
         apiRequest<OperationConfigAlerts>("/admin/operation-config-alerts", {}, token),
         apiRequest<MonetizationBoundaries>("/admin/monetization-boundaries", {}, token),
@@ -1062,6 +1141,7 @@ export default function App() {
         apiRequest<EconomyAlerts>("/admin/economy-alerts", {}, token),
         apiRequest<ActivityDraftList>("/admin/activity-config-drafts", {}, token),
         apiRequest<ActivityPublishObservationList>("/admin/activity-publish-observations", {}, token),
+        apiRequest<SettlementCandidateList>("/admin/settlement-candidates", {}, token),
         apiRequest<AuditLogList>("/admin/audit-logs", {}, token),
         apiRequest<AnalyticsDashboard>("/admin/analytics", {}, token),
         apiRequest<KnowledgeList>("/admin/knowledge", {}, token),
@@ -1099,6 +1179,10 @@ export default function App() {
         setError(publishObservationResponse.error.message);
         return;
       }
+      if (!settlementCandidateResponse.success) {
+        setError(settlementCandidateResponse.error.message);
+        return;
+      }
       if (!logs.success) {
         setError(logs.error.message);
         return;
@@ -1123,6 +1207,8 @@ export default function App() {
       setEconomyAlerts(economyResponse.data);
       setActivityDrafts(draftResponse.data);
       setActivityPublishObservations(publishObservationResponse.data);
+      setSettlementCandidates(settlementCandidateResponse.data);
+      setSelectedSettlementCandidateIds((current) => current.filter((id) => settlementCandidateResponse.data.rows.some((candidate) => candidate.id === id && !candidate.isSettled)));
       applyAuditList(logs.data);
       setAnalytics(analyticsResponse.data);
       applyKnowledgeList(knowledgeResponse.data);
@@ -1146,6 +1232,20 @@ export default function App() {
       setIsLoading(false);
     }
   }, [guildActiveStatus, guildCrossRegistered, guildKeyword, guildServerId, keyword]);
+
+  const requestAdminConfirmation = (action: PendingAdminAction): void => {
+    setError("");
+    setPendingAdminAction(action);
+  };
+
+  const executePendingAdminAction = async (): Promise<void> => {
+    if (pendingAdminAction === null) {
+      return;
+    }
+    const action = pendingAdminAction;
+    setPendingAdminAction(null);
+    await action.onConfirm();
+  };
 
   useEffect(() => {
     if (initialSession === null) {
@@ -1336,23 +1436,34 @@ export default function App() {
     if (session === null) {
       return;
     }
-    const response = await apiRequest<{ keyword: ChatKeyword; auditLogId: string }>(`/admin/chat-keywords/${encodeURIComponent(keyword.id)}`, {
-      method: "POST",
-      body: JSON.stringify({ action, isEnabled, replacement: keyword.replacement, reason: chatKeywordReason })
-    }, session.token);
-    if (!response.success) {
-      setError(response.error.message);
-      return;
-    }
-    setChatKeywordList((current) => ({
-      ...current,
-      rows: current.rows.map((row) => row.id === response.data.keyword.id ? response.data.keyword : row)
-    }));
-    setActionMessage(`聊天关键词库已保存并记录审计：${response.data.auditLogId}`);
-    const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
-    if (logs.success) {
-      applyAuditList(logs.data);
-    }
+    const actionLabel = action === "block" ? "阻断" : action === "mask" ? "替换" : "放行";
+    requestAdminConfirmation({
+      title: "调整聊天关键词",
+      target: keyword.keyword,
+      impact: `将关键词处置改为${actionLabel}，状态改为${isEnabled ? "启用" : "停用"}。`,
+      reason: chatKeywordReason.trim(),
+      riskLevel: action === "block" || !isEnabled ? "高风险" : "中风险",
+      confirmLabel: "提交调整",
+      onConfirm: async () => {
+        const response = await apiRequest<{ keyword: ChatKeyword; auditLogId: string }>(`/admin/chat-keywords/${encodeURIComponent(keyword.id)}`, {
+          method: "POST",
+          body: JSON.stringify({ action, isEnabled, replacement: keyword.replacement, reason: chatKeywordReason })
+        }, session.token);
+        if (!response.success) {
+          setError(response.error.message);
+          return;
+        }
+        setChatKeywordList((current) => ({
+          ...current,
+          rows: current.rows.map((row) => row.id === response.data.keyword.id ? response.data.keyword : row)
+        }));
+        setActionMessage(`聊天关键词库已保存并记录审计：${response.data.auditLogId}`);
+        const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
+        if (logs.success) {
+          applyAuditList(logs.data);
+        }
+      }
+    });
   };
 
   const loadGuildDetail = async (guildId: string): Promise<void> => {
@@ -1386,25 +1497,33 @@ export default function App() {
       setError("请输入商会榜结算原因。");
       return;
     }
-    if (!window.confirm(`确认手动结算 ${selectedGuild.name} 商会贡献榜？`)) {
-      return;
-    }
-
-    const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
-      `/admin/guilds/${encodeURIComponent(selectedGuild.id)}/leaderboard/settle`,
-      {
-        method: "POST",
-        body: JSON.stringify({ reason: guildSettleReason.trim() })
-      },
-      session.token
-    );
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`商会贡献榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
-    await loadGuildDetail(selectedGuild.id);
+    const guild = selectedGuild;
+    const reason = guildSettleReason.trim();
+    requestAdminConfirmation({
+      title: "结算商会贡献榜",
+      target: guild.name,
+      impact: "将向符合条件的商会成员发放榜单奖励，重复执行按幂等结果处理。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "结算奖励",
+      onConfirm: async () => {
+        const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
+          `/admin/guilds/${encodeURIComponent(guild.id)}/leaderboard/settle`,
+          {
+            method: "POST",
+            body: JSON.stringify({ reason })
+          },
+          session.token
+        );
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`商会贡献榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+        await loadGuildDetail(guild.id);
+      }
+    });
   };
 
   const submitCrossGuildSettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1416,23 +1535,28 @@ export default function App() {
       setError("请输入区服 ID 和跨服商会结算原因。");
       return;
     }
-    if (!window.confirm(`确认手动结算 ${crossGuildSettleServerId} 跨服商会赛季？`)) {
-      return;
-    }
-
-    const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/guild/settle", {
-      method: "POST",
-      body: JSON.stringify({
-        serverId: crossGuildSettleServerId.trim(),
-        reason: crossGuildSettleReason.trim()
-      })
-    }, session.token);
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`跨服商会赛季结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const serverId = crossGuildSettleServerId.trim();
+    const reason = crossGuildSettleReason.trim();
+    requestAdminConfirmation({
+      title: "结算跨服商会赛季",
+      target: serverId,
+      impact: "将向跨服商会赛季符合条件的商会发放结算奖励。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "结算奖励",
+      onConfirm: async () => {
+        const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/guild/settle", {
+          method: "POST",
+          body: JSON.stringify({ serverId, reason })
+        }, session.token);
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`跨服商会赛季结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitActivitySettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1444,24 +1568,32 @@ export default function App() {
       setError("请输入活动榜结算原因。");
       return;
     }
-    if (!window.confirm(`确认手动结算 ${selectedActivity.name} 活动榜？`)) {
-      return;
-    }
-
-    const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
-      `/admin/activities/${encodeURIComponent(selectedActivity.id)}/leaderboard/settle`,
-      {
-        method: "POST",
-        body: JSON.stringify({ reason: activitySettleReason.trim() })
-      },
-      session.token
-    );
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`活动榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const activity = selectedActivity;
+    const reason = activitySettleReason.trim();
+    requestAdminConfirmation({
+      title: "结算活动榜",
+      target: activity.name,
+      impact: "将向活动榜符合条件的玩家发放声望等奖励，重复执行按幂等结果处理。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "结算奖励",
+      onConfirm: async () => {
+        const result = await apiRequest<AuditResult & { deliveredRewards: number }>(
+          `/admin/activities/${encodeURIComponent(activity.id)}/leaderboard/settle`,
+          {
+            method: "POST",
+            body: JSON.stringify({ reason })
+          },
+          session.token
+        );
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`活动榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const selectKnowledge = (knowledge: KnowledgeEntry): void => {
@@ -1482,32 +1614,37 @@ export default function App() {
       setError("请填写知识卡审核原因。");
       return;
     }
-    if (!window.confirm(`确认更新知识卡「${selectedKnowledge.title}」？`)) {
-      return;
-    }
+    const knowledge = selectedKnowledge;
+    const form = { ...knowledgeForm, reason: knowledgeForm.reason.trim() };
+    requestAdminConfirmation({
+      title: "保存知识卡",
+      target: knowledge.title,
+      impact: "将更新知识卡内容、来源或审核状态，并写入审计日志。",
+      reason: form.reason,
+      riskLevel: "中风险",
+      confirmLabel: "保存知识卡",
+      onConfirm: async () => {
+        const response = await apiRequest<KnowledgeEntry & AuditResult>(`/admin/knowledge/${encodeURIComponent(knowledge.id)}`, {
+          method: "POST",
+          body: JSON.stringify(form)
+        }, session.token);
+        if (!response.success) {
+          setError(response.error.message);
+          return;
+        }
 
-    const response = await apiRequest<KnowledgeEntry & AuditResult>(`/admin/knowledge/${encodeURIComponent(selectedKnowledge.id)}`, {
-      method: "POST",
-      body: JSON.stringify({
-        ...knowledgeForm,
-        reason: knowledgeForm.reason.trim()
-      })
-    }, session.token);
-    if (!response.success) {
-      setError(response.error.message);
-      return;
-    }
-
-    setKnowledgeList((current) => ({
-      ...current,
-      rows: current.rows.map((knowledge) => knowledge.id === response.data.id ? response.data : knowledge)
-    }));
-    setKnowledgeForm(knowledgeToForm(response.data));
-    setActionMessage(`知识卡已更新，审计记录：${response.data.auditLogId}`);
-    const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
-    if (logs.success) {
-      applyAuditList(logs.data);
-    }
+        setKnowledgeList((current) => ({
+          ...current,
+          rows: current.rows.map((item) => item.id === response.data.id ? response.data : item)
+        }));
+        setKnowledgeForm(knowledgeToForm(response.data));
+        setActionMessage(`知识卡已更新，审计记录：${response.data.auditLogId}`);
+        const logs = await apiRequest<AuditLogList>("/admin/audit-logs", {}, session.token);
+        if (logs.success) {
+          applyAuditList(logs.data);
+        }
+      }
+    });
   };
 
   const submitAuditSearch = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1533,6 +1670,30 @@ export default function App() {
     applyAuditList(response.data);
   };
 
+  const applyAuditQuickFilter = async (action: string, targetType: string): Promise<void> => {
+    setAuditAction(action);
+    setAuditTargetType(targetType);
+    setAuditTargetId("");
+    setAuditAdmin("");
+    if (session === null) {
+      return;
+    }
+    const response = await apiRequest<AuditLogList>(buildAuditQuery({
+      action,
+      targetType,
+      targetId: "",
+      admin: "",
+      from: auditFrom,
+      to: auditTo
+    }), {}, session.token);
+    if (!response.success) {
+      setError(response.error.message);
+      return;
+    }
+    setError("");
+    applyAuditList(response.data);
+  };
+
   const submitCoinAdjustment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
     if (session === null || selectedPlayer === null) {
@@ -1543,25 +1704,33 @@ export default function App() {
       setError("请输入非零平台币调整数量和正式原因。");
       return;
     }
-    if (!window.confirm(`确认对 ${selectedPlayer.companyName} 调整平台币 ${changeAmount}？`)) {
-      return;
-    }
-
-    const adjusted = await apiRequest<WalletAdjustment>("/admin/wallet/adjust", {
-      method: "POST",
-      body: JSON.stringify({
-        profileId: selectedPlayer.profileId,
-        source: coinSource,
-        changeAmount,
-        reason: coinReason.trim()
-      })
-    }, session.token);
-    if (!adjusted.success) {
-      setError(adjusted.error.message);
-      return;
-    }
-    setActionMessage(`平台币操作已记录审计：${adjusted.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const player = selectedPlayer;
+    const reason = coinReason.trim();
+    requestAdminConfirmation({
+      title: "提交平台币调整",
+      target: player.companyName,
+      impact: `平台币变动 ${changeAmount}，会直接改变玩家资产并记录审计。`,
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "提交调整",
+      onConfirm: async () => {
+        const adjusted = await apiRequest<WalletAdjustment>("/admin/wallet/adjust", {
+          method: "POST",
+          body: JSON.stringify({
+            profileId: player.profileId,
+            source: coinSource,
+            changeAmount,
+            reason
+          })
+        }, session.token);
+        if (!adjusted.success) {
+          setError(adjusted.error.message);
+          return;
+        }
+        setActionMessage(`平台币操作已记录审计：${adjusted.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitVipAdjustment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1574,24 +1743,32 @@ export default function App() {
       setError("请输入非负 VIP 经验和正式原因。");
       return;
     }
-    if (!window.confirm(`确认修正 ${selectedPlayer.companyName} 的 VIP 经验为 ${nextVipExperience}？`)) {
-      return;
-    }
-
-    const adjusted = await apiRequest<VipAdjustment>("/admin/vip/adjust", {
-      method: "POST",
-      body: JSON.stringify({
-        profileId: selectedPlayer.profileId,
-        vipExperience: nextVipExperience,
-        reason: vipReason.trim()
-      })
-    }, session.token);
-    if (!adjusted.success) {
-      setError(adjusted.error.message);
-      return;
-    }
-    setActionMessage(`VIP 已调整为 ${adjusted.data.vipCenter.currentLevel.name}，审计记录：${adjusted.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const player = selectedPlayer;
+    const reason = vipReason.trim();
+    requestAdminConfirmation({
+      title: "提交 VIP 调整",
+      target: player.companyName,
+      impact: `VIP 经验将修正为 ${nextVipExperience}，会影响后台 VIP 档位展示。`,
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "提交调整",
+      onConfirm: async () => {
+        const adjusted = await apiRequest<VipAdjustment>("/admin/vip/adjust", {
+          method: "POST",
+          body: JSON.stringify({
+            profileId: player.profileId,
+            vipExperience: nextVipExperience,
+            reason
+          })
+        }, session.token);
+        if (!adjusted.success) {
+          setError(adjusted.error.message);
+          return;
+        }
+        setActionMessage(`VIP 已调整为 ${adjusted.data.vipCenter.currentLevel.name}，审计记录：${adjusted.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitGroupAssignment = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1603,24 +1780,29 @@ export default function App() {
       setError("请选择区服、跨服分组并填写调整原因。");
       return;
     }
-    if (!window.confirm(`确认将 ${assignServerId} 调整到 ${assignGroupId}？`)) {
-      return;
-    }
-
-    const assigned = await apiRequest<GroupAssignment>("/admin/cross-server/groups/assign", {
-      method: "POST",
-      body: JSON.stringify({
-        serverId: assignServerId.trim(),
-        groupId: assignGroupId.trim(),
-        reason: assignReason.trim()
-      })
-    }, session.token);
-    if (!assigned.success) {
-      setError(assigned.error.message);
-      return;
-    }
-    setActionMessage(`跨服分组已调整：${assigned.data.group.name}，审计记录：${assigned.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const serverId = assignServerId.trim();
+    const groupId = assignGroupId.trim();
+    const reason = assignReason.trim();
+    requestAdminConfirmation({
+      title: "调整跨服分组",
+      target: serverId,
+      impact: "将改变该区服后续跨服匹配池，影响跨服榜单和商会赛季范围。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "提交调整",
+      onConfirm: async () => {
+        const assigned = await apiRequest<GroupAssignment>("/admin/cross-server/groups/assign", {
+          method: "POST",
+          body: JSON.stringify({ serverId, groupId, reason })
+        }, session.token);
+        if (!assigned.success) {
+          setError(assigned.error.message);
+          return;
+        }
+        setActionMessage(`跨服分组已调整：${assigned.data.group.name}，审计记录：${assigned.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitTitleAction = async (event: { preventDefault(): void }, action: "grant" | "revoke"): Promise<void> => {
@@ -1633,24 +1815,33 @@ export default function App() {
       return;
     }
     const label = action === "grant" ? "发放" : "回收";
-    if (!window.confirm(`确认对 ${selectedPlayer.companyName} ${label}称号 ${selectedTitleId}？`)) {
-      return;
-    }
-
-    const result = await apiRequest<AuditResult>(`/admin/titles/${action}`, {
-      method: "POST",
-      body: JSON.stringify({
-        profileId: selectedPlayer.profileId,
-        titleId: selectedTitleId,
-        reason: titleReason.trim()
-      })
-    }, session.token);
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`称号${label}已记录审计：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const player = selectedPlayer;
+    const titleId = selectedTitleId;
+    const reason = titleReason.trim();
+    requestAdminConfirmation({
+      title: `${label}称号`,
+      target: `${player.companyName} / ${titleId}`,
+      impact: `将${label}玩家称号并写入审计日志。`,
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: action === "grant" ? "发放称号" : "回收称号",
+      onConfirm: async () => {
+        const result = await apiRequest<AuditResult>(`/admin/titles/${action}`, {
+          method: "POST",
+          body: JSON.stringify({
+            profileId: player.profileId,
+            titleId,
+            reason
+          })
+        }, session.token);
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`称号${label}已记录审计：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitMailCompensation = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1663,26 +1854,35 @@ export default function App() {
       setError("请输入邮件标题、正文和非负平台币数量。");
       return;
     }
-    if (!window.confirm(`确认向 ${selectedPlayer.companyName} 发送补偿邮件并发放 ${platformCoins} 平台币？`)) {
-      return;
-    }
-
-    const result = await apiRequest<MailCompensation>("/admin/mail/compensate", {
-      method: "POST",
-      body: JSON.stringify({
-        profileId: selectedPlayer.profileId,
-        subject: mailSubject.trim(),
-        body: mailBody.trim(),
-        platformCoins,
-        reason: mailSubject.trim()
-      })
-    }, session.token);
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`邮件补偿已发放，余额 ${formatNumber(result.data.wallet.balance)}，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const player = selectedPlayer;
+    const subject = mailSubject.trim();
+    const body = mailBody.trim();
+    requestAdminConfirmation({
+      title: "发送补偿邮件",
+      target: player.companyName,
+      impact: `将发送补偿邮件并发放 ${platformCoins} 平台币。`,
+      reason: subject,
+      riskLevel: "高风险",
+      confirmLabel: "发送补偿",
+      onConfirm: async () => {
+        const result = await apiRequest<MailCompensation>("/admin/mail/compensate", {
+          method: "POST",
+          body: JSON.stringify({
+            profileId: player.profileId,
+            subject,
+            body,
+            platformCoins,
+            reason: subject
+          })
+        }, session.token);
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`邮件补偿已发放，余额 ${formatNumber(result.data.wallet.balance)}，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitProfileStatus = async (status: "active" | "banned"): Promise<void> => {
@@ -1694,24 +1894,32 @@ export default function App() {
       setError("请输入封禁或解封原因。");
       return;
     }
-    if (!window.confirm(`确认${label} ${selectedPlayer.companyName}？`)) {
-      return;
-    }
-
-    const result = await apiRequest<ProfileStatus>("/admin/players/status", {
-      method: "POST",
-      body: JSON.stringify({
-        profileId: selectedPlayer.profileId,
-        status,
-        reason: statusReason.trim()
-      })
-    }, session.token);
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setActionMessage(`玩家状态已更新为 ${result.data.status}，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    const player = selectedPlayer;
+    const reason = statusReason.trim();
+    requestAdminConfirmation({
+      title: `${label}玩家`,
+      target: player.companyName,
+      impact: status === "banned" ? "将限制玩家账号进入正常经营状态。" : "将恢复玩家账号正常经营状态。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: label,
+      onConfirm: async () => {
+        const result = await apiRequest<ProfileStatus>("/admin/players/status", {
+          method: "POST",
+          body: JSON.stringify({
+            profileId: player.profileId,
+            status,
+            reason
+          })
+        }, session.token);
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`玩家状态已更新为 ${result.data.status}，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const submitLeaderboardSettlement = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -1723,23 +1931,103 @@ export default function App() {
       setError("请输入区服 ID 和结算原因。");
       return;
     }
-    if (!window.confirm(`确认手动结算 ${settleServerId} 排行榜奖励？`)) {
-      return;
-    }
+    const serverId = settleServerId.trim();
+    const reason = settleReason.trim();
+    requestAdminConfirmation({
+      title: "结算排行榜",
+      target: serverId,
+      impact: "将向该区服排行榜符合条件的玩家发放奖励，重复执行按幂等结果处理。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "结算奖励",
+      onConfirm: async () => {
+        const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/leaderboards/settle", {
+          method: "POST",
+          body: JSON.stringify({ serverId, reason })
+        }, session.token);
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setActionMessage(`排行榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
+  };
 
-    const result = await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/leaderboards/settle", {
-      method: "POST",
-      body: JSON.stringify({
-        serverId: settleServerId.trim(),
-        reason: settleReason.trim()
-      })
-    }, session.token);
-    if (!result.success) {
-      setError(result.error.message);
+  const toggleSettlementCandidate = (candidateId: string): void => {
+    setSelectedSettlementCandidateIds((current) =>
+      current.includes(candidateId) ? current.filter((id) => id !== candidateId) : [...current, candidateId]
+    );
+  };
+
+  const selectAllPendingSettlementCandidates = (): void => {
+    setSelectedSettlementCandidateIds(pendingSettlementCandidates.map((candidate) => candidate.id));
+  };
+
+  const clearSelectedSettlementCandidates = (): void => {
+    setSelectedSettlementCandidateIds([]);
+  };
+
+  const settleCandidate = async (candidate: SettlementCandidate): Promise<SettlementBatchResult> => {
+    if (session === null) {
+      return { id: candidate.id, name: candidate.name, status: "failed", message: "后台登录状态已失效。" };
+    }
+    const body = JSON.stringify({ serverId: candidate.serverId, reason: candidate.reasonPreset });
+    const response = candidate.kind === "activity"
+      ? await apiRequest<AuditResult & { deliveredRewards: number }>(
+        `/admin/activities/${encodeURIComponent(candidate.targetId)}/leaderboard/settle`,
+        { method: "POST", body: JSON.stringify({ reason: candidate.reasonPreset }) },
+        session.token
+      )
+      : candidate.kind === "guild"
+        ? await apiRequest<AuditResult & { deliveredRewards: number }>(
+          `/admin/guilds/${encodeURIComponent(candidate.targetId)}/leaderboard/settle`,
+          { method: "POST", body: JSON.stringify({ reason: candidate.reasonPreset }) },
+          session.token
+        )
+        : candidate.kind === "crossGuild"
+          ? await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/cross-server/guild/settle", { method: "POST", body }, session.token)
+          : await apiRequest<AuditResult & { deliveredRewards: number }>("/admin/leaderboards/settle", { method: "POST", body }, session.token);
+
+    if (!response.success) {
+      return { id: candidate.id, name: candidate.name, status: "failed", message: response.error.message };
+    }
+    return {
+      id: candidate.id,
+      name: candidate.name,
+      status: response.data.deliveredRewards === 0 ? "retry" : "success",
+      message: `发放 ${response.data.deliveredRewards} 条，审计记录：${response.data.auditLogId}`
+    };
+  };
+
+  const runSelectedSettlementCandidates = async (): Promise<void> => {
+    if (session === null) {
       return;
     }
-    setActionMessage(`排行榜结算完成，发放 ${result.data.deliveredRewards} 条奖励，审计记录：${result.data.auditLogId}`);
-    await loadAdminData(session.token, keyword);
+    if (selectedSettlementCandidates.length === 0) {
+      setError("请选择待结算对象。");
+      return;
+    }
+    const candidates = selectedSettlementCandidates;
+    requestAdminConfirmation({
+      title: "批量结算奖励",
+      target: `${candidates.length} 个待结算对象`,
+      impact: "将按队列顺序串行调用既有结算接口；不会创建无人值守定时发奖。",
+      reason: candidates.map((candidate) => candidate.reasonPreset).join("；"),
+      riskLevel: "高风险",
+      confirmLabel: "批量结算",
+      onConfirm: async () => {
+        const results: SettlementBatchResult[] = [];
+        for (const candidate of candidates) {
+          results.push(await settleCandidate(candidate));
+        }
+        setBatchSettlementResults(results);
+        setSelectedSettlementCandidateIds([]);
+        setActionMessage(`批量结算结果：成功 ${results.filter((result) => result.status === "success").length}，幂等重试 ${results.filter((result) => result.status === "retry").length}，失败 ${results.filter((result) => result.status === "failed").length}`);
+        await loadAdminData(session.token, keyword);
+      }
+    });
   };
 
   const updateActivityDraftForm = (field: keyof ActivityDraftForm, value: string): void => {
@@ -1860,24 +2148,34 @@ export default function App() {
       setError("发布确认说明需要 2-180 个字符。");
       return;
     }
-    const result = await apiRequest<ActivityDraftPublishResult>(
-      `/admin/activity-config-drafts/${encodeURIComponent(draft.id)}/publish`,
-      {
-        method: "POST",
-        body: JSON.stringify({ reason })
-      },
-      session.token
-    );
-    if (!result.success) {
-      setError(result.error.message);
-      return;
-    }
-    setError("");
-    setActivityDraftValidation(result.data.validation);
-    await refreshActivityDrafts();
-    await refreshActivityPublishObservations();
-    const auditText = result.data.auditLogId === null ? "重复发布未新增审计记录" : `审计记录：${result.data.auditLogId}`;
-    setActionMessage(`${result.data.activity.name} 已发布到正式活动配置，${auditText}`);
+    requestAdminConfirmation({
+      title: "正式发布活动",
+      target: draft.name,
+      impact: "将把已通过草案发布为正式活动配置，影响玩家侧活动入口和榜单。",
+      reason,
+      riskLevel: "高风险",
+      confirmLabel: "安全发布",
+      onConfirm: async () => {
+        const result = await apiRequest<ActivityDraftPublishResult>(
+          `/admin/activity-config-drafts/${encodeURIComponent(draft.id)}/publish`,
+          {
+            method: "POST",
+            body: JSON.stringify({ reason })
+          },
+          session.token
+        );
+        if (!result.success) {
+          setError(result.error.message);
+          return;
+        }
+        setError("");
+        setActivityDraftValidation(result.data.validation);
+        await refreshActivityDrafts();
+        await refreshActivityPublishObservations();
+        const auditText = result.data.auditLogId === null ? "重复发布未新增审计记录" : `审计记录：${result.data.auditLogId}`;
+        setActionMessage(`${result.data.activity.name} 已发布到正式活动配置，${auditText}`);
+      }
+    });
   };
 
   const refreshOperationConfigAlerts = async (): Promise<void> => {
@@ -2051,6 +2349,28 @@ export default function App() {
 
         {error && <p className="admin-error">{error}</p>}
         {actionMessage && <p className="action-message">{actionMessage}</p>}
+        {pendingAdminAction !== null && (
+          <div className="admin-confirm-backdrop" role="presentation">
+            <section className="admin-confirm-modal" aria-label="后台操作确认" role="dialog" aria-modal="true">
+              <header>
+                <span>{pendingAdminAction.riskLevel}</span>
+                <h2>{pendingAdminAction.title}</h2>
+              </header>
+              <div className="admin-confirm-grid">
+                <span>动作名称</span><strong>{pendingAdminAction.title}</strong>
+                <span>对象</span><strong>{pendingAdminAction.target}</strong>
+                <span>影响范围</span><strong>{pendingAdminAction.impact}</strong>
+                <span>审计原因</span><strong>{pendingAdminAction.reason}</strong>
+                <span>风险级别</span><strong>{pendingAdminAction.riskLevel}</strong>
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => void executePendingAdminAction()}>{pendingAdminAction.confirmLabel}</button>
+                <button className="secondary-button" type="button" onClick={() => setPendingAdminAction(null)}>取消</button>
+              </div>
+              <p className="panel-note">确认执行后才会调用后台接口；查询、刷新、草案校验和巡检知悉不进入此确认。</p>
+            </section>
+          </div>
+        )}
 
         {activeSection === "analytics" && (
           <section className="stacked-sections" aria-label="商业化数据看板">
@@ -2071,6 +2391,16 @@ export default function App() {
                 <span>慢接口</span>
                 <strong>{formatNumber(analytics?.overview.slowApiCount ?? 0)}</strong>
               </div>
+            </section>
+
+            <section className="dense-kpi-strip" aria-label="运营速览">
+              <strong>运营速览</strong>
+              <span>商业入口点击 {formatNumber(analytics?.monetization.commercialEntryClickTotal ?? 0)}</span>
+              <span>付费入口点击 {formatNumber(analytics?.monetization.paidProductEntryClickTotal ?? 0)}</span>
+              <span>长期目标点击 {formatNumber(analytics?.monetization.longTermGoalClickCount ?? 0)}</span>
+              <span>夜间简报 {formatNumber(analytics?.monetization.businessClockBriefingOpenCount ?? 0)}</span>
+              <span>经营待办 {formatNumber(analytics?.monetization.businessClockTodoHandledCount ?? 0)}</span>
+              <span>运营告警 {formatNumber(analytics?.alerts.length ?? 0)}</span>
             </section>
 
             <section className="operation-grid" aria-label="商业化调优指标">
@@ -2256,7 +2586,7 @@ export default function App() {
                 操作原因
                 <input onChange={(event) => setCoinReason(event.target.value)} value={coinReason} />
               </label>
-              <button type="submit">二次确认后提交</button>
+              <button type="submit">提交调整</button>
             </form>
 
             <form className="operation-panel" onSubmit={(event) => void submitVipAdjustment(event)}>
@@ -2272,7 +2602,7 @@ export default function App() {
                 调整原因
                 <input onChange={(event) => setVipReason(event.target.value)} value={vipReason} />
               </label>
-              <button type="submit">二次确认后调整</button>
+              <button type="submit">提交调整</button>
             </form>
           </section>
         )}
@@ -2306,9 +2636,9 @@ export default function App() {
                 <input onChange={(event) => setTitleReason(event.target.value)} value={titleReason} />
               </label>
               <div className="button-row">
-                <button type="submit">二次确认后发放</button>
+                <button type="submit">发放称号</button>
                 <button className="secondary-button" type="button" onClick={(event) => void submitTitleAction(event, "revoke")}>
-                  二次确认后回收
+                  回收称号
                 </button>
               </div>
             </form>
@@ -2330,7 +2660,7 @@ export default function App() {
                 补偿平台币
                 <input onChange={(event) => setMailCoins(event.target.value)} value={mailCoins} />
               </label>
-              <button type="submit">二次确认后发送</button>
+              <button type="submit">发送补偿</button>
             </form>
 
             <section className="operation-panel">
@@ -2369,7 +2699,7 @@ export default function App() {
                 调整原因
                 <input onChange={(event) => setAssignReason(event.target.value)} value={assignReason} />
               </label>
-              <button type="submit">二次确认后调整</button>
+              <button type="submit">提交调整</button>
             </form>
 
             <section className="table-section compact-table" aria-label="跨服分组列表">
@@ -2443,7 +2773,7 @@ export default function App() {
                   结算原因
                   <input onChange={(event) => setGuildSettleReason(event.target.value)} value={guildSettleReason} />
                 </label>
-                <button disabled={selectedGuild === null} type="submit">二次确认后结算</button>
+                <button disabled={selectedGuild === null} type="submit">结算奖励</button>
               </form>
 
               <form className="operation-panel" onSubmit={(event) => void submitCrossGuildSettlement(event)}>
@@ -2456,7 +2786,7 @@ export default function App() {
                   结算原因
                   <input onChange={(event) => setCrossGuildSettleReason(event.target.value)} value={crossGuildSettleReason} />
                 </label>
-                <button type="submit">二次确认后结算</button>
+                <button type="submit">结算奖励</button>
               </form>
             </section>
 
@@ -2595,7 +2925,7 @@ export default function App() {
                   结算原因
                   <input onChange={(event) => setActivitySettleReason(event.target.value)} value={activitySettleReason} />
                 </label>
-                <button disabled={selectedActivity === null} type="submit">二次确认后结算</button>
+                <button disabled={selectedActivity === null} type="submit">结算奖励</button>
               </form>
 
               <section className="table-section compact-table" aria-label="活动榜前三">
@@ -2752,6 +3082,15 @@ export default function App() {
                 <strong>经济巡检</strong>
                 <span>只读巡检</span>
               </div>
+              <div className="dense-kpi-strip" aria-label="风险摘要">
+                <strong>风险摘要</strong>
+                <span>严重 {formatNumber(economyAlerts.summary.critical)}</span>
+                <span>警告 {formatNumber(economyAlerts.summary.warning)}</span>
+                <span>提示 {formatNumber(economyAlerts.summary.info)}</span>
+                <span>待处理 {formatNumber(economyAlerts.summary.total)}</span>
+                <span>待结算 {formatNumber(economyAlerts.summary.settlementRiskCount)}</span>
+                <span>奖励边界 {formatNumber(monetizationBoundaries.summary.riskCount)}</span>
+              </div>
               <div className="config-grid">
                 <div>
                   <h3>巡检摘要</h3>
@@ -2815,6 +3154,80 @@ export default function App() {
 
         {activeSection === "configs" && (
           <section className="stacked-sections" aria-label="配置与排行榜">
+            <section className="table-section compact-table" aria-label="待结算队列">
+              <div className="table-toolbar">
+                <strong>待结算队列</strong>
+                <div>
+                  <span>自动识别，不自动发奖</span>
+                  <span>待结算 {settlementCandidates.summary.pending} / 已结算 {settlementCandidates.summary.settled}</span>
+                </div>
+              </div>
+              <div className="dense-kpi-strip" aria-label="结算队列摘要">
+                <strong>队列摘要</strong>
+                <span>排行榜 {settlementCandidates.summary.leaderboard}</span>
+                <span>活动榜 {settlementCandidates.summary.activity}</span>
+                <span>商会榜 {settlementCandidates.summary.guild}</span>
+                <span>跨服商会 {settlementCandidates.summary.crossGuild}</span>
+                <span>已选择 {selectedSettlementCandidates.length}</span>
+              </div>
+              <div className="button-row settlement-toolbar">
+                <button type="button" onClick={selectAllPendingSettlementCandidates}>全选待结算</button>
+                <button className="secondary-button" type="button" onClick={clearSelectedSettlementCandidates}>清空选择</button>
+                <button disabled={selectedSettlementCandidates.length === 0} type="button" onClick={() => void runSelectedSettlementCandidates()}>批量结算</button>
+              </div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>选择</th>
+                      <th>类型</th>
+                      <th>对象</th>
+                      <th>区服</th>
+                      <th>状态</th>
+                      <th>风险</th>
+                      <th>审计</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingSettlementCandidates.length === 0 && (
+                      <tr>
+                        <td colSpan={7}>暂无待结算对象。</td>
+                      </tr>
+                    )}
+                    {pendingSettlementCandidates.map((candidate) => (
+                      <tr key={candidate.id}>
+                        <td>
+                          <input
+                            checked={selectedSettlementCandidateIds.includes(candidate.id)}
+                            onChange={() => toggleSettlementCandidate(candidate.id)}
+                            type="checkbox"
+                          />
+                        </td>
+                        <td>{settlementKindLabel(candidate.kind)}</td>
+                        <td className="stacked-cell"><strong>{candidate.name}</strong><span>{candidate.targetId}</span></td>
+                        <td>{candidate.serverId}</td>
+                        <td>{candidate.isSettled ? "已结算" : "待结算"}</td>
+                        <td>{candidate.riskLabel}</td>
+                        <td>{candidate.lastAuditLogId ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {batchSettlementResults.length > 0 && (
+                <div className="settlement-result-list" aria-label="批量结算结果">
+                  <strong>批量结算结果</strong>
+                  {batchSettlementResults.map((result) => (
+                    <p key={result.id}>
+                      <span>{settlementResultLabel(result.status)}</span>
+                      <b>{result.name}</b>
+                      <em>{result.message}</em>
+                    </p>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <form className="operation-panel narrow-panel" onSubmit={(event) => void submitLeaderboardSettlement(event)}>
               <h2>排行榜手动结算</h2>
               <label>
@@ -2825,7 +3238,7 @@ export default function App() {
                 结算原因
                 <input onChange={(event) => setSettleReason(event.target.value)} value={settleReason} />
               </label>
-              <button type="submit">二次确认后结算</button>
+              <button type="submit">结算奖励</button>
             </form>
 
             <section className="table-section compact-table" aria-label="运营配置巡检告警">
@@ -2835,6 +3248,15 @@ export default function App() {
                   <span>严重 {operationConfigAlerts.summary.critical}，警告 {operationConfigAlerts.summary.warning}，提示 {operationConfigAlerts.summary.info}</span>
                   <button type="button" onClick={() => void refreshOperationConfigAlerts()}>刷新巡检</button>
                 </div>
+              </div>
+              <div className="dense-kpi-strip" aria-label="风险摘要">
+                <strong>风险摘要</strong>
+                <span>严重 {operationConfigAlerts.summary.critical}</span>
+                <span>警告 {operationConfigAlerts.summary.warning}</span>
+                <span>提示 {operationConfigAlerts.summary.info}</span>
+                <span>待处理 {operationConfigAlerts.summary.pending}</span>
+                <span>待结算 {operationConfigAlerts.summary.unsettledActivityCount}</span>
+                <span>奖励边界 {operationConfigAlerts.summary.rewardBoundaryRiskCount}</span>
               </div>
               <form className="filter-bar alert-filter" onSubmit={(event) => event.preventDefault()}>
                 <label>
@@ -3570,13 +3992,21 @@ export default function App() {
                 审核原因
                 <input onChange={(event) => updateKnowledgeForm("reason", event.target.value)} value={knowledgeForm.reason} />
               </label>
-              <button disabled={selectedKnowledge === null} type="submit">保存并记录审计</button>
+              <button disabled={selectedKnowledge === null} type="submit">保存知识卡</button>
             </form>
           </section>
         )}
 
         {activeSection === "audit" && (
           <section className="stacked-sections" aria-label="操作审计日志">
+            <section className="audit-chip-row" aria-label="审计快筛">
+              <strong>审计快筛</strong>
+              {auditQuickFilters.map((item) => (
+                <button key={item.label} type="button" onClick={() => void applyAuditQuickFilter(item.action, item.targetType)}>
+                  {item.label}
+                </button>
+              ))}
+            </section>
             <form className="filter-bar audit-filter" onSubmit={(event) => void submitAuditSearch(event)}>
               <label>
                 动作
