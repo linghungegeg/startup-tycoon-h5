@@ -3029,6 +3029,22 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase48-employee-event-state-impact.test.mjs`、员工事件 API 状态落地测试、员工事件/头像/收集相关回归、api/client typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：稳定后再评估员工事件筛选可视化或事件奖励微调；不在本批加入剧情树、羁绊奖励、头像抽取、皮肤商店或新付费池。
 
+### Phase 44：员工事件反馈可见收口
+
+- 当前稳定点：`f6f91de feat: apply employee event outcomes to staff state`。
+- 本阶段目标：把员工事件处理后的状态变化回到前台可见反馈，完成“事件出现 -> 专属经理处理 -> 员工状态变化 -> 员工页反馈”的闭环。
+- 已完成范围：
+  - 员工养成页事件行增加短反馈，覆盖“已缓解压力”“忠诚回升”“已保留观察”等玩家可读状态。
+  - 专属经理今日建议优先提示待处理员工事件，避免被普通岗位短板或收集目标盖住。
+  - 事件档案继续最多展示 3 条，不新增大档案页、不新增剧情系统、不改变员工数值、招募概率或事件池数量。
+- 四插件证据：
+  - Superpowers：先提交 Phase 43，再按 TDD 新增 Phase 49 红灯后落最小前端实现。
+  - Build Web Apps：反馈文案压缩为一行短句，保持竖版 H5 员工养成页紧凑。
+  - Game Studio：员工事件成为每日回访理由，处理后能看到状态反馈，但不扩数值膨胀和付费深度。
+  - Browser Use：完成后验收员工页、养成页、专属经理处理入口、返回员工页后的反馈和 Console。
+- 验证命令：`node apps/client/test/phase49-employee-event-feedback-surface.test.mjs`、Phase 42-48 员工回归、员工事件 API 定向测试、api/client typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：员工系统建议暂停继续扩展，优先转向活动/商会赛季留存或 Admin 运营收口；不在员工系统继续加头像美术、剧情树、皮肤商店或新付费池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

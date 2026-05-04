@@ -2176,6 +2176,26 @@ const formatEmployeeEventState = (eventState: string): string => {
   return eventState;
 };
 
+const formatEmployeeEventFeedback = (statusLabel: string, resultSummary: string | null): string => {
+  if (statusLabel === "待处理") {
+    return "等待处理";
+  }
+
+  if (statusLabel === "已保留") {
+    return "已保留观察";
+  }
+
+  if (resultSummary?.includes("信任提升") || resultSummary?.includes("降低离职风险")) {
+    return "已缓解压力 · 忠诚回升";
+  }
+
+  if (resultSummary?.includes("暂时稳定")) {
+    return "状态暂时稳定";
+  }
+
+  return "已缓解压力";
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -2670,9 +2690,14 @@ function App() {
         impactLabel: task.impactLabel ?? task.riskLabel,
         targetEmployeeName: task.targetEmployeeName ?? selectedEmployee?.name ?? "当前团队",
         targetTab: task.targetTab ?? "growth",
-        resultSummary: task.resultSummary
+        resultSummary: task.resultSummary,
+        feedbackLabel: formatEmployeeEventFeedback(task.status === "pending" ? "待处理" : task.status === "dismissed" ? "已保留" : "已处理", task.resultSummary)
       })),
     [employeeRandomTaskRows, selectedEmployee?.name]
+  );
+  const pendingEmployeeEventArchiveRows = useMemo(
+    () => employeeEventArchiveRows.filter((event) => event.statusLabel === "待处理"),
+    [employeeEventArchiveRows]
   );
   const selectedRandomTask = useMemo(
     () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
@@ -3167,6 +3192,18 @@ function App() {
     }))
   ];
   const primaryManagerRecommendation = (() => {
+    const employeeRandomTask = pendingEmployeeRandomTasks[0];
+    if (employeeRandomTask !== undefined) {
+      return {
+        kind: "random" as const,
+        id: employeeRandomTask.id,
+        source: "团队",
+        title: employeeRandomTask.title,
+        summary: employeeRandomTask.resultSummary ?? employeeRandomTask.description,
+        actionLabel: "处理员工待办"
+      };
+    }
+
     const employeeGuidanceGoal = longTermGoals?.sections
       .find((section) => section.key === "today")
       ?.goals.find((goal) => goal.id === "today-employee-guidance");
@@ -8863,22 +8900,22 @@ function App() {
                   )}
                   <article>
                     <strong>员工事件</strong>
-                    <span>{employeeEventArchiveRows.length > 0 ? `待处理 ${employeeEventArchiveRows.length} 件` : "团队状态稳定，继续关注压力和忠诚。"}</span>
+                    <span>{pendingEmployeeEventArchiveRows.length > 0 ? `待处理 ${pendingEmployeeEventArchiveRows.length} 件` : employeeEventArchiveRows.length > 0 ? `最近处理 ${employeeEventArchiveRows.length} 件` : "团队状态稳定，继续关注压力和忠诚。"}</span>
                     <div className="employee-event-archive" aria-label="员工事件轻档案">
                       {employeeEventArchiveRows.length > 0 ? (
                         employeeEventArchiveRows.slice(0, 3).map((event) => (
                           <button className="employee-event-row" key={event.id} type="button" onClick={() => openEmployeeEventManager(event.id)}>
                             <strong>{event.title}</strong>
                             <em>{event.impactLabel} · {event.statusLabel}</em>
-                            <small>关联：{event.targetEmployeeName} · {event.resultSummary ?? event.description}</small>
+                            <small>{event.feedbackLabel} · 关联：{event.targetEmployeeName} · {event.resultSummary ?? event.description}</small>
                           </button>
                         ))
                       ) : (
                         <p>团队状态稳定，继续关注压力和忠诚。</p>
                       )}
                     </div>
-                    {employeeEventArchiveRows.length > 0 && (
-                      <button className="employee-event-action" type="button" onClick={() => openEmployeeEventManager(employeeEventArchiveRows[0]?.id)}>
+                    {pendingEmployeeEventArchiveRows.length > 0 && (
+                      <button className="employee-event-action" type="button" onClick={() => openEmployeeEventManager(pendingEmployeeEventArchiveRows[0]?.id)}>
                         去专属经理处理
                       </button>
                     )}
