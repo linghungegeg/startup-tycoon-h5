@@ -2818,6 +2818,26 @@ VIP 权益：
   - `git diff --check`
 - 稳定点目标：Browser Use 验收和验证命令通过后，提交为 Phase 31 第一稳定点；未跟踪参考素材继续保持未提交。
 
+### Phase 32：员工经营引导与稳定收口
+
+- 当前稳定点：`b4243a2 feat: merge business into market center` 后续员工大系统改动。
+- 阶段目标：不继续扩员工人数、不新增头像美术和大系统，先让员工对产品、市场、融资的影响被专属经理、今日建议和阶段任务承接，让玩家明确为什么要回到员工页补岗位、处理压力和忠诚。
+- 完成内容：
+  - 长线目标新增员工经营缺口建议 `today-employee-guidance`，复用产品、市场、融资已有 `employeeEffect.missingRoles`，返回 `targetNav`、`targetTab`、`reason` 和 `missingRoles`。
+  - 专属经理今日建议优先展示员工经营缺口，可跳转员工图鉴、员工养成、市场-产品研发、市场-市场竞争或融资入口。
+  - 经营时钟贷款风险待办测试补齐同日验收日期，并将高债务压力判定对齐为负债率或债务规模触发，保证经理待办生成幂等。
+  - 员工池已落地为 36 人；员工页保留团队、图鉴、招募、养成四标签，图鉴展示收集进度、岗位筛选、稀有度筛选和头像预留位。
+  - 员工岗位已接入产品、市场和融资：产品推进计入产品经理、工程师、运营、市场支撑；市场应对计入市场、公关、销售、法务、客服支撑；融资路演计入投资关系、财务、高管、顾问、法务支撑。
+  - 融资页团队支撑完成文案与布局收口，展示路演把握和治理压力加成、重点短板岗位，并提供“补齐岗位”跳转员工图鉴；员工图鉴隐藏技术感羁绊 id，招募和养成文案补齐经营支撑说明。
+- 四插件证据：
+  - Superpowers：按 TDD 先锁定 phase26、经理建议缺口和员工经营支撑红灯，再按验证前检查完成稳定点收口。
+  - Build Web Apps：检查融资团队支撑、员工图鉴、招募、养成文案保持短句、可扫读、不压屏，不新增复杂页面层级。
+  - Game Studio：员工缺口进入每日回访和经理待办，融资页提供补岗位回路，不新增强教学弹窗，不硬锁经营动作。
+  - Browser Use：打开 `http://127.0.0.1:5173/` 新页面复验员工四标签、36 人图鉴、市场三标签、融资团队支撑、补齐岗位跳转和专属经理建议。
+- 验证命令：`npm run db:push -w @wenziyouxi/api`、`npm run db:seed -w @wenziyouxi/api`、`node apps/client/test/phase27-main-flow-regression.test.mjs`、`node apps/client/test/phase33-market-center-content.test.mjs`、`node apps/client/test/phase34-employee-closure.test.mjs`、`node apps/client/test/phase35-employee-system-depth.test.mjs`、`node apps/client/test/phase36-employee-business-effect.test.mjs`、`node apps/client/test/phase37-manager-employee-guidance.test.mjs`、`node --import tsx --test --test-name-pattern "employee team support reaches product market and funding centers" apps/api/test/http.test.ts`、`node --import tsx --test --test-name-pattern "manager goals" apps/api/test/http.test.ts`、API/client typecheck、lint、client build 和 `git diff --check`。`db:push` 数据库已同步，Prisma generate 阶段出现 Windows DLL 占用警告但命令退出码为 0，`db:seed` 成功。
+- 浏览器验收结果：员工页四标签完整、图鉴显示 `7/36`；招募门槛可见，图鉴不显示技术感羁绊 id；市场页三标签正常；融资页团队支撑显示加成或短板，“补齐岗位”可跳员工图鉴并筛到资本岗位；专属经理今日建议能指向员工经营缺口；新页面未发现本轮新增阻塞错误，控制台中旧 `05:44` fetch 记录来自此前 API/CORS 修复前的历史日志。
+- 下一阶段入口：在本批稳定后，再评估商会深度、员工 48/60 扩容或头像资源替换，不能在本批混入。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

@@ -11,7 +11,7 @@ import { calculateMarketShare, type CompetitorActionType } from "../src/market.j
 import { createPasswordRecord } from "../src/password.js";
 import { calculateNextProductMetrics, type ProductStage } from "../src/product.js";
 import { calculateProjectSuccessRate } from "../src/project.js";
-import { buildAdminActivitySchedule, buildChatCenterRecord, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
+import { buildAdminActivitySchedule, buildChatCenterRecord, buildEmployeeBusinessGuidance, buildLongTermGoalsRecord, calculateBusinessClockPulse, defaultChatKeywords, maskChatContent, readRandomTaskConfigWhere, selectFairRandomTaskConfigs, syncPlayerAchievementProgress, toAdminActivityConfigDraftRecord, validateAdminActivityConfigDraft } from "../src/repository.js";
 import type {
   AccountRecord,
   AdminOperationConfigAlertListRecord,
@@ -21,6 +21,7 @@ import type {
   CompanyFinanceRecord,
   CompanyFinanceSettlementRecord,
   EmployeeRecord,
+  EmployeeEffectRecord,
   EventChoiceRecord,
   EventRecord,
   FundingActionRecord,
@@ -235,6 +236,22 @@ const createTestRepository = (): GameRepository => {
       execution: 82,
       specialty: "擅长现金流管控，降低经营波动。",
       recruitWeight: 24
+    },
+    {
+      id: "deng-zhaoxi",
+      name: "邓昭熙",
+      role: "工程师",
+      careerLevel: "专家",
+      rarity: "顶尖",
+      baseSalary: 80000,
+      basePressure: 46,
+      loyalty: 78,
+      growthPotential: 88,
+      management: 76,
+      negotiation: 64,
+      execution: 96,
+      specialty: "擅长 AI 自动化和数据平台，适合高技术债产品线。",
+      recruitWeight: 6
     }
   ];
   const employees = new Map<string, EmployeeRecord>();
@@ -266,6 +283,62 @@ const createTestRepository = (): GameRepository => {
       customerSatisfactionReward: 6,
       failurePenalty: 180000,
       summary: "高风险项目，适合验证失败结算。"
+    },
+    {
+      id: "gov-data-dashboard",
+      name: "政企数据看板标案",
+      category: "政企标案",
+      cycleDays: 28,
+      budget: 520000,
+      risk: "高",
+      successRateBase: 52,
+      revenueReward: 980000,
+      reputationReward: 3400,
+      customerSatisfactionReward: 7,
+      failurePenalty: 240000,
+      summary: "参与政企数字化标案，周期长、验收严，但能显著提升行业背书。"
+    },
+    {
+      id: "membership-growth-suite",
+      name: "连锁会员运营改造",
+      category: "会员运营",
+      cycleDays: 14,
+      budget: 220000,
+      risk: "中",
+      successRateBase: 66,
+      revenueReward: 430000,
+      reputationReward: 1500,
+      customerSatisfactionReward: 5,
+      failurePenalty: 95000,
+      summary: "帮助连锁客户重做会员分层和复购活动，适合承接私域增长需求。"
+    },
+    {
+      id: "finance-control-system",
+      name: "中小企业财务系统",
+      category: "财务系统",
+      cycleDays: 16,
+      budget: 240000,
+      risk: "中",
+      successRateBase: 62,
+      revenueReward: 470000,
+      reputationReward: 1700,
+      customerSatisfactionReward: 4,
+      failurePenalty: 120000,
+      summary: "为成长型企业搭建预算、回款和费用审批工具，收益稳定但交付细节多。"
+    },
+    {
+      id: "regional-channel-launch",
+      name: "区域渠道试点上线",
+      category: "渠道试点",
+      cycleDays: 8,
+      budget: 120000,
+      risk: "低",
+      successRateBase: 74,
+      revenueReward: 230000,
+      reputationReward: 900,
+      customerSatisfactionReward: 3,
+      failurePenalty: 45000,
+      summary: "为客户验证一个城市渠道的获客方案，周期短，适合首周补现金流。"
     }
   ];
   const projects = new Map<string, ProjectRecord>();
@@ -343,6 +416,36 @@ const createTestRepository = (): GameRepository => {
       rewardReputation: 0,
       rewardActionPower: 20,
       guideAction: "前往项目",
+      unlockKind: "none" as const
+    },
+    {
+      id: "daily-product-advance",
+      type: "daily" as const,
+      title: "产品推进",
+      description: "推进一次产品研发或重构。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "市场情报 1、声望 160",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 160,
+      rewardActionPower: 0,
+      guideAction: "前往产品",
+      unlockKind: "none" as const
+    },
+    {
+      id: "daily-market-response",
+      type: "daily" as const,
+      title: "市场应对",
+      description: "进入市场赛道并处理一次竞争压力。",
+      target: 1,
+      initialProgress: 0,
+      rewardLabel: "声望 180、行动力 10",
+      rewardCash: 0,
+      rewardPlatformCoins: 0,
+      rewardReputation: 180,
+      rewardActionPower: 10,
+      guideAction: "前往市场",
       unlockKind: "none" as const
     },
     {
@@ -434,6 +537,8 @@ const createTestRepository = (): GameRepository => {
       rewardPlatformCoins: 0,
       rewardReputation: 180,
       rewardActionPower: 0,
+      rewardItemId: "headhunter-ticket",
+      rewardItemQuantity: 1,
       guideAction: "前往员工",
       unlockKind: "none" as const
     },
@@ -1273,6 +1378,66 @@ const createTestRepository = (): GameRepository => {
       serverCost: 52000,
       techDebtGrowth: 15,
       reputationGrowth: 5
+    },
+    {
+      id: "retail-data-dashboard",
+      name: "门店数据看板",
+      category: "数据看板",
+      summary: "把销售、库存和会员数据做成每日看板，用户增长稳，运维压力中等。",
+      launchCost: 360000,
+      baseUsers: 160,
+      retentionBasisPoints: 4600,
+      payRateBasisPoints: 150,
+      revenuePerPayingUser: 520,
+      acquisitionCost: 105000,
+      serverCost: 34000,
+      techDebtGrowth: 10,
+      reputationGrowth: 4
+    },
+    {
+      id: "private-domain-growth",
+      name: "私域增长助手",
+      category: "私域增长",
+      summary: "服务本地商家社群、优惠券和复购提醒，获客快但活动运营压力更高。",
+      launchCost: 320000,
+      baseUsers: 210,
+      retentionBasisPoints: 3900,
+      payRateBasisPoints: 130,
+      revenuePerPayingUser: 420,
+      acquisitionCost: 130000,
+      serverCost: 30000,
+      techDebtGrowth: 8,
+      reputationGrowth: 3
+    },
+    {
+      id: "finance-risk-copilot",
+      name: "财务风控 Copilot",
+      category: "风控工具",
+      summary: "面向老板和财务负责人，提醒现金流、坏账和费用异常，客单更高但信任门槛更高。",
+      launchCost: 500000,
+      baseUsers: 70,
+      retentionBasisPoints: 5200,
+      payRateBasisPoints: 260,
+      revenuePerPayingUser: 1280,
+      acquisitionCost: 160000,
+      serverCost: 64000,
+      techDebtGrowth: 14,
+      reputationGrowth: 6
+    },
+    {
+      id: "industry-service-saas",
+      name: "行业服务 SaaS",
+      category: "行业 SaaS",
+      summary: "沉淀项目交付中的行业流程，续费潜力高，但前期需要持续打磨模板。",
+      launchCost: 450000,
+      baseUsers: 95,
+      retentionBasisPoints: 4800,
+      payRateBasisPoints: 210,
+      revenuePerPayingUser: 860,
+      acquisitionCost: 125000,
+      serverCost: 46000,
+      techDebtGrowth: 11,
+      reputationGrowth: 5
     }
   ];
   const playerProducts = new Map<string, ProductRecord>();
@@ -1364,6 +1529,116 @@ const createTestRepository = (): GameRepository => {
       responseCost: 160000,
       responseShareDeltaBasisPoints: 190,
       responseReputationImpact: 900
+    },
+    {
+      id: "saas-channel-block",
+      trackId: "enterprise-saas",
+      competitorName: "北辰云商",
+      actionType: "public_opinion" as CompetitorActionType,
+      title: "竞品制造渠道封锁",
+      summary: "北辰云商给渠道商更高返佣，部分客户线索被截流，区域转化承压。",
+      cashImpact: -40000,
+      monthlyIncomeImpact: -45000,
+      monthlyExpenseImpact: 25000,
+      reputationImpact: -300,
+      employeeSatisfactionImpact: -1,
+      customerSatisfactionImpact: -2,
+      marketShareDeltaBasisPoints: -85,
+      competitorShareDeltaBasisPoints: 120,
+      pricePressure: 5,
+      talentPressure: 2,
+      policyRiskDelta: 0,
+      responseCost: 100000,
+      responseShareDeltaBasisPoints: 135,
+      responseReputationImpact: 450
+    },
+    {
+      id: "saas-customer-migration",
+      trackId: "enterprise-saas",
+      competitorName: "企航数科",
+      actionType: "price_war" as CompetitorActionType,
+      title: "竞品推动客户迁移",
+      summary: "企航数科承诺免费导入历史数据，老客户开始观望续费方案。",
+      cashImpact: -35000,
+      monthlyIncomeImpact: -70000,
+      monthlyExpenseImpact: 18000,
+      reputationImpact: -450,
+      employeeSatisfactionImpact: 0,
+      customerSatisfactionImpact: -5,
+      marketShareDeltaBasisPoints: -105,
+      competitorShareDeltaBasisPoints: 135,
+      pricePressure: 12,
+      talentPressure: 2,
+      policyRiskDelta: 0,
+      responseCost: 120000,
+      responseShareDeltaBasisPoints: 155,
+      responseReputationImpact: 520
+    },
+    {
+      id: "ai-financing-pressure",
+      trackId: "ai-tools",
+      competitorName: "光塔智能",
+      actionType: "public_opinion" as CompetitorActionType,
+      title: "竞品制造融资压制",
+      summary: "光塔智能拿到新一轮融资并集中投放品牌声量，客户对你的长期投入产生疑虑。",
+      cashImpact: -60000,
+      monthlyIncomeImpact: -45000,
+      monthlyExpenseImpact: 45000,
+      reputationImpact: -700,
+      employeeSatisfactionImpact: -3,
+      customerSatisfactionImpact: -3,
+      marketShareDeltaBasisPoints: -95,
+      competitorShareDeltaBasisPoints: 150,
+      pricePressure: 4,
+      talentPressure: 10,
+      policyRiskDelta: 0,
+      responseCost: 150000,
+      responseShareDeltaBasisPoints: 175,
+      responseReputationImpact: 760
+    },
+    {
+      id: "ai-policy-shift",
+      trackId: "ai-tools",
+      competitorName: "合规智造",
+      actionType: "patent" as CompetitorActionType,
+      title: "政策波动影响宣传口径",
+      summary: "行业监管口径收紧，合规智造借机强调安全资质，你的销售话术需要调整。",
+      cashImpact: -30000,
+      monthlyIncomeImpact: -35000,
+      monthlyExpenseImpact: 55000,
+      reputationImpact: -650,
+      employeeSatisfactionImpact: -1,
+      customerSatisfactionImpact: -4,
+      marketShareDeltaBasisPoints: -90,
+      competitorShareDeltaBasisPoints: 110,
+      pricePressure: 2,
+      talentPressure: 4,
+      policyRiskDelta: 14,
+      responseCost: 130000,
+      responseShareDeltaBasisPoints: 150,
+      responseReputationImpact: 700
+    },
+    {
+      id: "saas-regional-bid",
+      trackId: "enterprise-saas",
+      competitorName: "城云互联",
+      actionType: "poach" as CompetitorActionType,
+      title: "区域竞标团队被挖角",
+      summary: "城云互联在重点城市挖走售前骨干，区域竞标节奏被迫放缓。",
+      cashImpact: -45000,
+      monthlyIncomeImpact: -50000,
+      monthlyExpenseImpact: 35000,
+      reputationImpact: -420,
+      employeeSatisfactionImpact: -6,
+      customerSatisfactionImpact: -2,
+      marketShareDeltaBasisPoints: -88,
+      competitorShareDeltaBasisPoints: 115,
+      pricePressure: 3,
+      talentPressure: 24,
+      policyRiskDelta: 0,
+      responseCost: 115000,
+      responseShareDeltaBasisPoints: 145,
+      responseReputationImpact: 520
     }
   ];
   const playerMarkets = new Map<string, PlayerMarketRecord>();
@@ -1423,6 +1698,66 @@ const createTestRepository = (): GameRepository => {
   };
   const fundingForProfile = (profileId: string): FundingRecord[] =>
     [...playerFundings.values()].filter((funding) => funding.id.startsWith(`${profileId}:`));
+  const effectRoles = {
+    product: ["产品经理", "工程师", "运营", "市场"],
+    market: ["市场", "公关", "销售", "法务", "客服"],
+    funding: ["投资关系", "财务", "高管", "顾问", "法务"]
+  } as const;
+  const effectLabels = {
+    product: {
+      产品经理: "产品经理：推进节奏更稳",
+      工程师: "工程师：技术债压力降低",
+      运营: "运营：留存和活跃更稳",
+      市场: "市场：获客效率提升"
+    },
+    market: {
+      市场: "市场：份额应对更稳",
+      公关: "公关：舆论压力降低",
+      销售: "销售：客户迁移损失降低",
+      法务: "法务：专利和合规风险降低",
+      客服: "客服：客户满意波动降低"
+    },
+    funding: {
+      投资关系: "投资关系：路演沟通更顺",
+      财务: "财务：现金流说明更清楚",
+      高管: "高管：治理压力更可控",
+      顾问: "顾问：条款判断更稳",
+      法务: "法务：条款风险降低"
+    }
+  } as const;
+  const buildEmployeeEffect = (profileId: string, kind: keyof typeof effectRoles): EmployeeEffectRecord => {
+    const activeRoles = new Set(
+      [...employees.values()]
+        .filter((employee) => employee.id.startsWith(`${profileId}:`) && employee.isActive)
+        .map((employee) => employee.role)
+    );
+    const expectedRoles = [...effectRoles[kind]];
+    const coveredRoles = expectedRoles.filter((role) => activeRoles.has(role));
+    const missingRoles = expectedRoles.filter((role) => !activeRoles.has(role));
+    const coveredCount = coveredRoles.length;
+    const readableEffectLabels =
+      coveredCount === 0
+        ? ["当前无加成"]
+        : kind === "funding"
+          ? [`路演把握 +${Math.min(8, coveredCount * 2)}%`, `治理压力 -${Math.min(6, coveredCount * 2)}%`]
+          : kind === "market"
+            ? [`应对成本 -${Math.min(12, coveredCount * 3)}%`, `市场把握 +${coveredCount * 2}%`]
+            : [`推进效率 +${coveredCount * 3}%`, activeRoles.has("工程师") ? "技术压力 -6%" : "技术压力 -0%"];
+
+    return {
+      summary:
+        coveredRoles.length === 0
+          ? "暂无关键岗位支撑，建议补齐团队短板。"
+          : missingRoles.length === 0
+            ? "关键岗位已覆盖，当前经营动作获得稳定支撑。"
+            : `已覆盖${coveredRoles.join("、")}，短板在${missingRoles.join("、")}。`,
+      bonusLabels: coveredRoles.map((role) => (effectLabels[kind] as Record<string, string>)[role]),
+      missingRoles,
+      effectLabels: readableEffectLabels,
+      primaryMissingRoles: missingRoles.slice(0, 3),
+      targetTab: missingRoles.length > 0 ? "codex" : "growth"
+    };
+  };
   const productMetricsForProfile = (profileId: string) => {
     const activeProducts = [...playerProducts.values()].filter((product) => product.id.startsWith(`${profileId}:`) && product.status !== "closed");
     return {
@@ -1504,7 +1839,8 @@ const createTestRepository = (): GameRepository => {
   const toFundingCenterRecord = (profile: PlayerProfileRecord): FundingCenterRecord => ({
     offers: investorConfigs.map((config) => calculateFundingOffer(profile, config)),
     fundings: fundingForProfile(profile.id),
-    finance: toCompanyFinanceRecord(profile)
+    finance: toCompanyFinanceRecord(profile),
+    employeeEffect: buildEmployeeEffect(profile.id, "funding")
   });
   const projectForProfile = (profileId: string): ProjectRecord[] =>
     [...projects.values()].filter((project) => project.id.startsWith(`${profileId}:`));
@@ -1819,7 +2155,8 @@ const createTestRepository = (): GameRepository => {
         lockedReason: activeConfigIds.has(config.id) ? "同类产品运营中" : profile.cash < config.launchCost ? "现金不足" : null
       })),
       products: productsForProfile(profile.id),
-      finance: toCompanyFinanceRecord(profile)
+      finance: toCompanyFinanceRecord(profile),
+      employeeEffect: buildEmployeeEffect(profile.id, "product")
     };
   };
   const marketsForProfile = (profileId: string): PlayerMarketRecord[] =>
@@ -1844,7 +2181,8 @@ const createTestRepository = (): GameRepository => {
       })),
       markets: marketsForProfile(profile.id),
       actions: competitorActionsForProfile(profile.id),
-      finance: toCompanyFinanceRecord(profile)
+      finance: toCompanyFinanceRecord(profile),
+      employeeEffect: buildEmployeeEffect(profile.id, "market")
     };
   };
   const walletLedgers = new Map<string, PlatformWalletRecord["ledgers"][number][]>();
@@ -1934,9 +2272,25 @@ const createTestRepository = (): GameRepository => {
       rewardCash: 0,
       rewardActionPower: 20,
       rewardReputation: 120,
+      rewardItemId: "headhunter-ticket",
+      rewardItemQuantity: 1,
       durationDays: 0,
       purchaseLimit: 0,
       summary: "用于后续猎头招募池，当前提供行动力和少量声望预备奖励。"
+    },
+    {
+      id: "targeted-headhunt-pack",
+      name: "定向猎头礼包",
+      category: "employee_pack",
+      pricePlatformCoins: 880,
+      rewardCash: 0,
+      rewardActionPower: 0,
+      rewardReputation: 0,
+      rewardItemId: "targeted-headhunt-letter",
+      rewardItemQuantity: 1,
+      durationDays: 0,
+      purchaseLimit: 0,
+      summary: "提供岗位定向选择权，作为长期员工收集的核心深度商品。"
     },
     {
       id: "risk-insurance-trial",
@@ -4963,7 +5317,7 @@ const createTestRepository = (): GameRepository => {
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
-      const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild] = await Promise.all([
+      const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild, products, markets, fundings, employeeEvents] = await Promise.all([
         this.getCompanyGrowth(accountId, serverId),
         this.listTasks(accountId, serverId, today),
         this.getSeasonCenter(accountId, serverId, today),
@@ -4971,7 +5325,11 @@ const createTestRepository = (): GameRepository => {
         this.getCrossServerCenter(accountId, serverId, today),
         this.listTitles(accountId, serverId, today),
         this.listAchievements(accountId, serverId),
-        this.getGuildCenter(accountId, serverId, today)
+        this.getGuildCenter(accountId, serverId, today),
+        this.listProducts(accountId, serverId),
+        this.listMarkets(accountId, serverId),
+        this.listFundings(accountId, serverId),
+        this.listEmployeeEvents(accountId, serverId, today)
       ]);
       if (
         growth === "PLAYER_NOT_FOUND" ||
@@ -4979,10 +5337,21 @@ const createTestRepository = (): GameRepository => {
         leaderboards === "PLAYER_NOT_FOUND" ||
         titles === "PLAYER_NOT_FOUND" ||
         achievements === "PLAYER_NOT_FOUND" ||
-        guild === "PLAYER_NOT_FOUND"
+        guild === "PLAYER_NOT_FOUND" ||
+        products === "PLAYER_NOT_FOUND" ||
+        markets === "PLAYER_NOT_FOUND" ||
+        fundings === "PLAYER_NOT_FOUND" ||
+        employeeEvents === "PLAYER_NOT_FOUND"
       ) {
         return "PLAYER_NOT_FOUND";
       }
+      const employeeBusinessGuidance = buildEmployeeBusinessGuidance({
+        productEffect: products.employeeEffect,
+        marketEffect: markets.employeeEffect,
+        fundingEffect: fundings.employeeEffect,
+        employeeEvents,
+        pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length
+      });
       return buildLongTermGoalsRecord({
         profile,
         growth,
@@ -4992,7 +5361,8 @@ const createTestRepository = (): GameRepository => {
         crossServer: crossServer === "PLAYER_NOT_FOUND" || crossServer === "CROSS_SERVER_GROUP_NOT_FOUND" ? null : crossServer,
         titles,
         achievements,
-        guild
+        guild,
+        employeeBusinessGuidance
       });
     },
     async listMails(accountId, serverId) {
@@ -5266,6 +5636,10 @@ const createTestRepository = (): GameRepository => {
         profile.companyExperience = nextExperience;
         profile.companyLevel = readCompanyLevel(nextExperience);
       }
+      if ("rewardItemId" in config && typeof config.rewardItemId === "string") {
+        const rewardItemQuantity = "rewardItemQuantity" in config && typeof config.rewardItemQuantity === "number" ? config.rewardItemQuantity : 0;
+        grantInventoryItem(profile.id, config.rewardItemId, rewardItemQuantity, "task_reward", `领取任务奖励：${config.title}`);
+      }
       return toTaskRecord(profile.id, config, today);
     },
     async listRandomTasks(accountId, serverId, today) {
@@ -5401,6 +5775,13 @@ const createTestRepository = (): GameRepository => {
       assert.notEqual(center, "PLAYER_NOT_FOUND");
       return { center, task, profile, result: task.resultSummary } satisfies RandomTaskActionRecord;
     },
+    async listEmployeeEvents(accountId, serverId, today) {
+      const center = await this.listRandomTasks(accountId, serverId, today);
+      if (center === "PLAYER_NOT_FOUND") {
+        return center;
+      }
+      return center.tasks.filter((task) => task.category === "employee");
+    },
     async getCompanyFinance(accountId, serverId, now) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
@@ -5423,8 +5804,9 @@ const createTestRepository = (): GameRepository => {
           }
           const today = pulse.syncedAt.slice(0, 10);
           const report = calculateFinanceReport(profile);
+          const debtPressureLimit = Math.max(1, Math.floor(profile.valuation * 0.5));
           const configId =
-            report.debtRatioBasisPoints >= 6000
+            report.debtRatioBasisPoints >= 6000 || profile.totalDebt >= debtPressureLimit
               ? "random-loan-rate-review"
               : pulse.cashDelta < 0 || report.netCashFlow < 0 || profile.riskStatus !== "稳健"
                 ? "random-cashflow-warning"
@@ -5494,18 +5876,98 @@ const createTestRepository = (): GameRepository => {
 
       return [...employees.values()].filter((employee) => employee.id.startsWith(`${profile.id}:`));
     },
-    async recruitEmployee(accountId, serverId) {
+    async listEmployeeCollection(accountId, serverId) {
       const profile = getProfileByAccountAndServer(accountId, serverId);
       if (profile === undefined) {
         return "PLAYER_NOT_FOUND";
       }
 
+      const ownedEmployees = [...employees.values()].filter((employee) => employee.id.startsWith(`${profile.id}:`));
+      const employeesByConfigId = new Map(ownedEmployees.map((employee) => [employee.configId, employee]));
+      const activeEmployees = ownedEmployees.filter((employee) => employee.isActive);
+      const rareRarities = new Set(["稀缺", "顶尖", "传奇"]);
+      return {
+        total: employeeConfigs.length,
+        owned: ownedEmployees.length,
+        roleCount: new Set(activeEmployees.map((employee) => employee.role)).size,
+        rareOwned: activeEmployees.filter((employee) => rareRarities.has(employee.rarity)).length,
+        entries: employeeConfigs.map((config) => {
+          const employee = employeesByConfigId.get(config.id);
+          return {
+            id: config.id,
+            name: config.name,
+            role: config.role,
+            careerLevel: config.careerLevel,
+            rarity: config.rarity,
+            baseSalary: config.baseSalary,
+            basePressure: config.basePressure,
+            loyalty: config.loyalty,
+            growthPotential: config.growthPotential,
+            management: config.management,
+            negotiation: config.negotiation,
+            execution: config.execution,
+            specialty: config.specialty,
+            portraitAssetId: `employee-portrait-${config.id}`,
+            portraitUrl: null,
+            avatarFrameId: config.rarity === "传奇" ? "employee-frame-legend" : config.rarity === "顶尖" ? "employee-frame-elite" : null,
+            obtainSource: "常驻人才池",
+            tags: [config.role, config.careerLevel, config.rarity],
+            skills: [{ id: `${config.id}-core`, name: config.role, effect: config.specialty }],
+            bondGroupIds: ["company-management"],
+            isLimited: false,
+            isRecruitable: employee === undefined,
+            recruitWeight: config.recruitWeight,
+            ownedEmployeeId: employee?.id ?? null,
+            status: employee === undefined ? "未招募" : employee.isActive ? "已招募" : "已离岗"
+          };
+        })
+      };
+    },
+    async recruitEmployee(accountId, serverId, options = {}) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const mode = options.mode ?? "normal";
+      const role = options.role?.trim() ?? "";
       const ownedConfigIds = new Set(
         [...employees.values()]
           .filter((employee) => employee.id.startsWith(`${profile.id}:`))
           .map((employee) => employee.configId)
       );
-      const selected = employeeConfigs.find((config) => !ownedConfigIds.has(config.id));
+      const pool = employeeConfigs.filter((config) =>
+        !ownedConfigIds.has(config.id) &&
+        (mode !== "targeted" || config.role === role) &&
+        (mode !== "limited" || config.id === "deng-zhaoxi")
+      );
+      if (pool.length === 0) {
+        return mode === "targeted" ? "EMPLOYEE_ROLE_UNAVAILABLE" : "NO_EMPLOYEE_AVAILABLE";
+      }
+      const itemId = mode === "headhunter" || mode === "limited" ? "headhunter-ticket" : mode === "targeted" ? "targeted-headhunt-letter" : null;
+      if (itemId !== null) {
+        const key = `${profile.id}:${itemId}`;
+        const item = inventoryItems.get(key);
+        if (item === undefined || item.quantity <= 0) {
+          return "ITEM_NOT_FOUND";
+        }
+        const nextQuantity = item.quantity - 1;
+        inventoryItems.set(key, { ...item, quantity: nextQuantity, updatedAt: new Date().toISOString() });
+        itemLedgers.unshift({
+          id: randomUUID(),
+          profileId: profile.id,
+          itemId,
+          changeQuantity: -1,
+          balanceAfter: nextQuantity,
+          source: "employee_recruit",
+          reason: mode === "limited" ? "限时人才池消耗猎头券" : mode === "headhunter" ? "猎头招募消耗猎头券" : `定向猎头消耗定向猎头函：${role}`,
+          createdAt: new Date().toISOString()
+        });
+      }
+      const rareRarities = new Set(["稀缺", "顶尖", "传奇"]);
+      const selected = mode === "headhunter" || mode === "limited"
+        ? pool.find((config) => rareRarities.has(config.rarity)) ?? pool[0]
+        : pool[0];
       if (selected === undefined) {
         return "NO_EMPLOYEE_AVAILABLE";
       }
@@ -5526,6 +5988,11 @@ const createTestRepository = (): GameRepository => {
         negotiation: selected.negotiation,
         execution: selected.execution,
         specialty: selected.specialty,
+        experience: 0,
+        focusSkill: selected.role,
+        pressureState: selected.basePressure >= 45 ? "偏高" : "稳定",
+        eventState: "暂无事件",
+        unlockedPortraitAssetId: `employee-portrait-${selected.id}`,
         equityBasisPoints: 0,
         assignedTo: null,
         isActive: true
@@ -5546,16 +6013,59 @@ const createTestRepository = (): GameRepository => {
         return "EMPLOYEE_NOT_FOUND";
       }
 
+      if (profile.cash < 20000) {
+        return "INSUFFICIENT_CASH";
+      }
+
       const salaryIncrease = Math.max(2000, Math.round(employee.salary * 0.08));
       employee.level += 1;
+      employee.experience += 100;
       employee.salary += salaryIncrease;
       employee.pressure = Math.min(employee.pressure + 2, 100);
+      employee.pressureState = employee.pressure >= 60 ? "偏高" : "稳定";
+      employee.eventState = employee.pressure >= 60 ? "建议减压" : employee.eventState;
       employee.loyalty = Math.min(employee.loyalty + 1, 100);
       employee.management += 2;
       employee.negotiation += 2;
       employee.execution += 2;
       profile.cash -= 20000;
       profile.monthlyExpense += salaryIncrease;
+      return employee;
+    },
+    async supportEmployee(accountId, serverId, employeeId) {
+      const profile = getProfileByAccountAndServer(accountId, serverId);
+      if (profile === undefined) {
+        return "PLAYER_NOT_FOUND";
+      }
+
+      const employee = employees.get(employeeId);
+      if (employee === undefined || !employee.id.startsWith(`${profile.id}:`) || !employee.isActive) {
+        return "EMPLOYEE_NOT_FOUND";
+      }
+
+      const giftKey = `${profile.id}:employee-gift`;
+      const gift = inventoryItems.get(giftKey);
+      if (gift === undefined || gift.quantity <= 0) {
+        return "ITEM_NOT_FOUND";
+      }
+
+      const nextQuantity = gift.quantity - 1;
+      inventoryItems.set(giftKey, { ...gift, quantity: nextQuantity, updatedAt: new Date().toISOString() });
+      itemLedgers.unshift({
+        id: randomUUID(),
+        profileId: profile.id,
+        itemId: "employee-gift",
+        changeQuantity: -1,
+        balanceAfter: nextQuantity,
+        source: "employee_support",
+        reason: "员工关怀消耗员工好感礼物",
+        createdAt: new Date().toISOString()
+      });
+      employee.pressure = Math.max(0, employee.pressure - 10);
+      employee.pressureState = employee.pressure >= 60 ? "偏高" : "稳定";
+      employee.loyalty = Math.min(100, employee.loyalty + 4);
+      employee.eventState = "已关怀";
+      profile.employeeSatisfaction += 2;
       return employee;
     },
     async grantEmployeeEquity(accountId, serverId, employeeId) {
@@ -8031,7 +8541,7 @@ test("phase 26 business clock creates manager todo without duplicate random task
     assert.ok((synced.body.data?.businessClock?.settledTicks ?? 0) > 0);
 
     const center = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
-      headers: auth
+      headers: { ...auth, "x-server-date": "2026-05-02" }
     });
     assert.equal(center.status, 200);
     const pulseTasks = center.body.data?.tasks.filter((task) => task.configId === "random-loan-rate-review") ?? [];
@@ -8044,7 +8554,7 @@ test("phase 26 business clock creates manager todo without duplicate random task
     assert.equal(repeat.status, 200);
 
     const repeatedCenter = await requestJson<RandomTaskCenterRecord>(baseUrl, "/random-tasks?serverId=s1", {
-      headers: auth
+      headers: { ...auth, "x-server-date": "2026-05-02" }
     });
     assert.equal(repeatedCenter.status, 200);
     assert.equal(repeatedCenter.body.data?.tasks.filter((task) => task.configId === "random-loan-rate-review").length, 1);
@@ -8211,6 +8721,188 @@ test("recruits, cultivates, grants equity, and dismisses persistent employees", 
 
     const afterDismissList = await requestJson<EmployeeRecord[]>(baseUrl, "/employees?serverId=s1", { headers: auth });
     assert.equal(afterDismissList.body.data?.[0]?.isActive, false);
+  });
+});
+
+test("closes employee collection and recruit channel conditions", async () => {
+  await withServer(async (baseUrl) => {
+    const { token, profile } = await createPlayerSession(baseUrl, "employeeclosure");
+    const headers = { authorization: `Bearer ${token}`, "x-server-date": "2026-05-01" };
+
+    const emptyCollection = await requestJson<{
+      total: number;
+      owned: number;
+      roleCount: number;
+      rareOwned: number;
+      entries: Array<{ id: string; role: string; status: string; ownedEmployeeId: string | null; portraitAssetId: string | null; obtainSource: string; tags: string[]; isRecruitable: boolean }>;
+    }>(baseUrl, "/employees/collection?serverId=s1", { headers });
+    assert.equal(emptyCollection.status, 200);
+    assert.ok((emptyCollection.body.data?.total ?? 0) >= 4);
+    assert.equal(emptyCollection.body.data?.owned, 0);
+    assert.equal(emptyCollection.body.data?.entries.every((entry) => entry.status === "未招募"), true);
+    assert.ok(emptyCollection.body.data?.entries.every((entry) => entry.portraitAssetId !== null));
+    assert.ok(emptyCollection.body.data?.entries.every((entry) => entry.obtainSource.length > 0));
+    assert.equal(emptyCollection.body.data?.entries.every((entry) => entry.tags.length > 0 && entry.isRecruitable), true);
+
+    const noTicket = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", mode: "headhunter" })
+    });
+    assert.equal(noTicket.status, 409);
+    assert.equal(noTicket.body.error?.code, "ITEM_NOT_FOUND");
+
+    const normal = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(normal.status, 201);
+    assert.equal(normal.body.data?.configId, "lin-zhiyuan");
+
+    const collectionAfterNormal = await requestJson<{ owned: number; roleCount: number; rareOwned: number; entries: Array<{ id: string; status: string; ownedEmployeeId: string | null }> }>(
+      baseUrl,
+      "/employees/collection?serverId=s1",
+      { headers }
+    );
+    assert.equal(collectionAfterNormal.status, 200);
+    assert.equal(collectionAfterNormal.body.data?.owned, 1);
+    assert.equal(collectionAfterNormal.body.data?.entries.find((entry) => entry.id === "lin-zhiyuan")?.status, "已招募");
+    assert.ok((collectionAfterNormal.body.data?.roleCount ?? 0) >= 1);
+    assert.ok((collectionAfterNormal.body.data?.rareOwned ?? 0) >= 1);
+
+    const recruitTask = await requestJson<TaskRecord>(baseUrl, "/tasks/main-recruit-channel/claim", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(recruitTask.status, 200);
+
+    const headhunter = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", mode: "headhunter" })
+    });
+    assert.equal(headhunter.status, 201);
+    assert.notEqual(headhunter.body.data?.configId, normal.body.data?.configId);
+
+    const shopPurchase = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", productId: "targeted-headhunt-pack", requestId: randomUUID() })
+    });
+    assert.equal(shopPurchase.status, 201);
+
+    const targetedUnavailable = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", mode: "targeted", role: "不存在岗位" })
+    });
+    assert.equal(targetedUnavailable.status, 409);
+    assert.equal(targetedUnavailable.body.error?.code, "EMPLOYEE_ROLE_UNAVAILABLE");
+
+    const targeted = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", mode: "targeted", role: "财务" })
+    });
+    assert.equal(targeted.status, 201);
+    assert.equal(targeted.body.data?.role, "财务");
+    assert.equal(targeted.body.data?.experience, 0);
+    assert.equal(targeted.body.data?.pressureState, "稳定");
+
+    const noGiftSupport = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(targeted.body.data?.id ?? "")}/support`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(noGiftSupport.status, 409);
+    assert.equal(noGiftSupport.body.error?.code, "ITEM_NOT_FOUND");
+
+    const limitedTicket = await requestJson(baseUrl, "/shop/purchase", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", productId: "headhunter-ticket", requestId: randomUUID() })
+    });
+    assert.equal(limitedTicket.status, 201);
+    const limited = await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1", mode: "limited" })
+    });
+    assert.equal(limited.status, 201);
+    assert.equal(limited.body.data?.configId, "deng-zhaoxi");
+
+    const beforeTrainingDrain = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers });
+    assert.equal(beforeTrainingDrain.status, 200);
+    const trainableEmployeeId = targeted.body.data?.id ?? "";
+    const successfulTrainCount = Math.floor((beforeTrainingDrain.body.data?.cash ?? 0) / 20000);
+    for (let index = 0; index < successfulTrainCount; index += 1) {
+      const trained = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(trainableEmployeeId)}/train`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ serverId: "s1" })
+      });
+      assert.equal(trained.status, 200);
+    }
+
+    const trainWithoutCash = await requestJson<EmployeeRecord>(baseUrl, `/employees/${encodeURIComponent(trainableEmployeeId)}/train`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    assert.equal(trainWithoutCash.status, 409);
+    assert.equal(trainWithoutCash.body.error?.code, "INSUFFICIENT_CASH");
+
+    const afterTrainReject = await requestJson<CompanyFinanceRecord>(baseUrl, "/company/status?serverId=s1", { headers });
+    assert.equal(afterTrainReject.body.data?.cash, (beforeTrainingDrain.body.data?.cash ?? 0) - successfulTrainCount * 20000);
+    assert.equal(profile.serverId, "s1");
+  });
+});
+
+test("employee team support reaches product market and funding centers", async () => {
+  await withServer(async (baseUrl) => {
+    const { token } = await createPlayerSession(baseUrl, "employeeeffect");
+    const headers = { authorization: `Bearer ${token}` };
+
+    const initialProductCenter = await requestJson<ProductCenterRecord>(baseUrl, "/products?serverId=s1", { headers });
+    assert.equal(initialProductCenter.status, 200);
+    assert.ok(initialProductCenter.body.data?.employeeEffect.missingRoles.includes("产品经理"));
+
+    await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+    await requestJson<EmployeeRecord>(baseUrl, "/employees/recruit", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ serverId: "s1" })
+    });
+
+    const productCenter = await requestJson<ProductCenterRecord>(baseUrl, "/products?serverId=s1", { headers });
+    assert.equal(productCenter.status, 200);
+    assert.ok(productCenter.body.data?.employeeEffect.bonusLabels.some((label) => label.includes("工程师")));
+    assert.ok(productCenter.body.data?.employeeEffect.bonusLabels.some((label) => label.includes("产品经理")));
+    assert.ok(productCenter.body.data?.employeeEffect.missingRoles.includes("运营"));
+
+    const marketCenter = await requestJson<MarketCenterRecord>(baseUrl, "/markets?serverId=s1", { headers });
+    assert.equal(marketCenter.status, 200);
+    assert.ok(marketCenter.body.data?.employeeEffect.missingRoles.includes("市场"));
+
+    const fundingCenter = await requestJson<FundingCenterRecord>(baseUrl, "/finance/fundings?serverId=s1", { headers });
+    assert.equal(fundingCenter.status, 200);
+    assert.ok(fundingCenter.body.data?.employeeEffect.bonusLabels.some((label) => label.includes("财务")));
+    assert.ok(fundingCenter.body.data?.employeeEffect.missingRoles.includes("投资关系"));
+    assert.ok(fundingCenter.body.data?.employeeEffect.effectLabels.some((label) => label.includes("路演把握 +")));
+    assert.ok(fundingCenter.body.data?.employeeEffect.effectLabels.some((label) => label.includes("治理压力 -")));
+    assert.ok((fundingCenter.body.data?.employeeEffect.primaryMissingRoles.length ?? 99) <= 3);
+    assert.equal(fundingCenter.body.data?.employeeEffect.targetTab, "codex");
   });
 });
 
@@ -13675,6 +14367,25 @@ test("phase 25 long-term goals aggregates today week season and long-term target
     assert.equal(goals.body.data?.profile.companyLevel, 1);
     assert.equal(goals.body.data?.profile.maxLevel, 80);
     assert.ok((goals.body.data?.summaries.seasonActiveActivityCount ?? 0) >= 1);
+  });
+});
+
+test("manager goals surface employee business gaps with routed actions", async () => {
+  await withServer(async (baseUrl) => {
+    const player = await createPlayerSession(baseUrl, "manageremployeegaps");
+    const headers = { authorization: `Bearer ${player.token}`, "x-server-date": "2026-05-10" };
+
+    const goals = await requestJson<LongTermGoalsRecord>(baseUrl, "/long-term-goals?serverId=s1", { headers });
+    assert.equal(goals.status, 200, JSON.stringify(goals.body));
+
+    const todayGoals = goals.body.data?.sections.find((section) => section.key === "today")?.goals ?? [];
+    const employeeGoal = todayGoals.find((goal) => goal.id === "today-employee-guidance");
+    assert.ok(employeeGoal, "today goals should include employee business guidance");
+    assert.match(employeeGoal.description, /补齐|团队|岗位/);
+    assert.equal(employeeGoal.action.targetNav, "员工");
+    assert.equal(employeeGoal.action.targetTab, "图鉴");
+    assert.ok(employeeGoal.action.missingRoles.includes("产品经理"));
+    assert.match(employeeGoal.action.reason ?? "", /产品|市场|融资/);
   });
 });
 

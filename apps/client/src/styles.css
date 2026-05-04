@@ -2182,8 +2182,8 @@ input {
   inset: 8.8% 2.4% 9.8%;
   z-index: 6;
   display: grid;
-  grid-template-rows: auto auto 1fr;
-  gap: 2%;
+  grid-template-rows: auto auto auto auto auto 1fr;
+  gap: 1.3%;
   padding: 2.8%;
   border: 1px solid rgba(246, 204, 116, 0.74);
   border-radius: 8px;
@@ -2207,7 +2207,9 @@ input {
 
 .employee-header button,
 .employee-actions button,
-.employee-list button {
+.employee-list button,
+.employee-tab button,
+.employee-recruit-controls button {
   position: static;
 }
 
@@ -2257,6 +2259,92 @@ input {
   font-weight: 900;
   text-align: center;
   white-space: nowrap;
+}
+
+.employee-tab {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2%;
+}
+
+.employee-tab button {
+  min-height: 32px;
+  border: 1px solid rgba(246, 204, 116, 0.36);
+  border-radius: 5px;
+  color: #d8c9a8;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: clamp(12px, 3.2vw, 15px);
+  font-weight: 900;
+}
+
+.employee-tab button.active {
+  color: #58370f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+}
+
+.employee-recruit-panel {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5%;
+}
+
+.employee-recruit-panel > div {
+  min-width: 0;
+  border: 1px solid rgba(246, 204, 116, 0.3);
+  border-radius: 5px;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.employee-recruit-panel strong,
+.employee-recruit-panel span {
+  display: block;
+}
+
+.employee-recruit-panel strong {
+  color: #ffe5a9;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 900;
+}
+
+.employee-recruit-panel span {
+  margin-top: 3px;
+  color: #d8c9a8;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.employee-recruit-panel .employee-recruit-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.employee-recruit-controls select,
+.employee-recruit-controls button {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid rgba(246, 204, 116, 0.38);
+  border-radius: 5px;
+  color: #ffe5a9;
+  background: rgba(7, 13, 23, 0.86);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+}
+
+.employee-recruit-controls button {
+  color: #57360f;
+  background: linear-gradient(180deg, #fff1b5, #d29335);
+}
+
+.employee-recruit-controls button:disabled {
+  color: #b9aa8c;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .employee-error {
@@ -2492,6 +2580,161 @@ input {
   background: linear-gradient(180deg, #fff1b5, #d29335);
   font-size: clamp(12px, 3.4vw, 16px);
   font-weight: 900;
+}
+
+.employee-codex {
+  display: grid;
+  align-content: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 1%;
+}
+
+.employee-codex-filter {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2%;
+}
+
+.employee-codex-filter select {
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid rgba(246, 204, 116, 0.38);
+  border-radius: 5px;
+  color: #ffe5a9;
+  background: rgba(7, 13, 23, 0.86);
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 900;
+}
+
+.employee-codex article {
+  display: grid;
+  grid-template-columns: 52px 42px 1fr;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(246, 204, 116, 0.34);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.employee-codex article.locked {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.employee-codex div {
+  min-width: 0;
+}
+
+.employee-avatar-slot {
+  display: grid;
+  width: 52px;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid rgba(246, 204, 116, 0.58);
+  border-radius: 6px;
+  color: #1b2332;
+  background:
+    linear-gradient(145deg, rgba(255, 239, 184, 0.96), rgba(112, 151, 178, 0.86)),
+    rgba(255, 255, 255, 0.06);
+  font-size: clamp(20px, 5.2vw, 30px);
+  font-weight: 900;
+}
+
+.employee-frame-legend {
+  border-color: rgba(255, 205, 95, 0.98);
+  box-shadow: 0 0 0 1px rgba(142, 70, 24, 0.65), 0 0 16px rgba(255, 178, 79, 0.22);
+}
+
+.employee-frame-elite {
+  border-color: rgba(150, 210, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(58, 112, 170, 0.55);
+}
+
+.employee-codex strong,
+.employee-codex em,
+.employee-codex small,
+.employee-codex p {
+  display: block;
+}
+
+.employee-codex strong {
+  overflow: hidden;
+  color: #fff6d8;
+  font-size: clamp(14px, 3.8vw, 18px);
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.employee-codex em {
+  margin-top: 2px;
+  color: #ffe5a9;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-style: normal;
+  font-weight: 900;
+}
+
+.employee-codex small {
+  margin-top: 4px;
+  color: #d8c9a8;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.employee-codex p {
+  margin: 5px 0 0;
+  color: #efe2c6;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.employee-growth-panel {
+  display: grid;
+  align-content: start;
+  gap: 2%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.employee-growth-panel article {
+  border: 1px solid rgba(246, 204, 116, 0.34);
+  border-radius: 6px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.employee-growth-panel strong,
+.employee-growth-panel span,
+.employee-growth-panel p {
+  display: block;
+}
+
+.employee-growth-panel strong {
+  color: #fff6d8;
+  font-size: clamp(14px, 3.8vw, 18px);
+  font-weight: 900;
+}
+
+.employee-growth-panel span {
+  margin-top: 4px;
+  color: #ffe5a9;
+  font-size: clamp(10px, 2.8vw, 13px);
+  font-weight: 900;
+}
+
+.employee-growth-panel p {
+  margin: 6px 0 0;
+  color: #efe2c6;
+  font-size: clamp(11px, 3vw, 14px);
+  font-weight: 800;
+  line-height: 1.45;
 }
 
 .project-screen {
@@ -4502,6 +4745,42 @@ input {
   color: #efe2c6;
 }
 
+.team-effect-panel {
+  margin: 0 10px;
+}
+
+.finance-funding-screen > .team-effect-panel {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 16px;
+  border-top: 0;
+  border-bottom: 1px solid #2d2d32;
+  background: rgba(21, 21, 24, 0.62);
+}
+
+.finance-funding-screen > .team-effect-panel button {
+  min-height: 28px;
+  border: 1px solid rgba(197, 160, 89, 0.36);
+  border-radius: 4px;
+  padding: 5px 9px;
+  color: #c5a059;
+  background: rgba(197, 160, 89, 0.12);
+  box-shadow: none;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.team-effect-panel span,
+.team-effect-panel small {
+  overflow: visible;
+  line-height: 1.45;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .funding-actions {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -4527,7 +4806,7 @@ input {
   inset: 0;
   z-index: 120;
   display: grid;
-  grid-template-rows: 48px auto minmax(0, 1fr);
+  grid-template-rows: 48px auto auto minmax(0, 1fr);
   gap: 0;
   padding: 0;
   color: #e0e0e0;

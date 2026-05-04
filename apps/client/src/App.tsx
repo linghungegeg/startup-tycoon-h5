@@ -111,10 +111,54 @@ type Employee = {
   negotiation: number;
   execution: number;
   specialty: string;
+  experience: number;
+  focusSkill: string;
+  pressureState: string;
+  eventState: string;
+  unlockedPortraitAssetId: string | null;
   equityBasisPoints: number;
   assignedTo: string | null;
   isActive: boolean;
 };
+
+type EmployeeCollectionEntry = {
+  id: string;
+  name: string;
+  role: string;
+  careerLevel: string;
+  rarity: string;
+  baseSalary: number;
+  basePressure: number;
+  loyalty: number;
+  growthPotential: number;
+  management: number;
+  negotiation: number;
+  execution: number;
+  specialty: string;
+  portraitAssetId: string | null;
+  portraitUrl: string | null;
+  avatarFrameId: string | null;
+  obtainSource: string;
+  tags: string[];
+  skills: Array<{ id: string; name: string; effect: string }>;
+  bondGroupIds: string[];
+  isLimited: boolean;
+  isRecruitable: boolean;
+  recruitWeight: number;
+  ownedEmployeeId: string | null;
+  status: "已招募" | "已离岗" | "未招募";
+};
+
+type EmployeeCollection = {
+  total: number;
+  owned: number;
+  roleCount: number;
+  rareOwned: number;
+  entries: EmployeeCollectionEntry[];
+};
+
+type EmployeeRecruitMode = "normal" | "headhunter" | "targeted" | "limited";
+type EmployeeViewTab = "team" | "codex" | "recruit" | "growth";
 
 type BusinessProject = {
   id: string;
@@ -194,6 +238,10 @@ type LongTermGoal = {
   action: {
     label: string;
     href: string;
+    targetNav?: string;
+    targetTab?: string | null;
+    reason?: string | null;
+    missingRoles?: string[];
   };
 };
 
@@ -475,10 +523,20 @@ type PlayerFunding = {
   resolvedAt: string | null;
 };
 
+type EmployeeEffect = {
+  summary: string;
+  bonusLabels: string[];
+  missingRoles: string[];
+  effectLabels: string[];
+  primaryMissingRoles: string[];
+  targetTab?: "codex" | "growth";
+};
+
 type FundingCenter = {
   offers: FundingOffer[];
   fundings: PlayerFunding[];
   finance: CompanyFinance;
+  employeeEffect: EmployeeEffect;
   postInvestmentFocus?: FundingTextBlock;
   recentResult?: string | null;
 };
@@ -533,6 +591,7 @@ type ProductCenter = {
   offers: ProductOffer[];
   products: PlayerProduct[];
   finance: CompanyFinance;
+  employeeEffect: EmployeeEffect;
 };
 
 type ProductActionResult = {
@@ -593,6 +652,7 @@ type MarketCenter = {
   markets: PlayerMarket[];
   actions: CompetitorAction[];
   finance: CompanyFinance;
+  employeeEffect: EmployeeEffect;
 };
 
 type MarketActionResult = {
@@ -1383,7 +1443,6 @@ const navIcons: Record<string, string> = {
   "员工": "users",
   "项目": "layout-dashboard",
   "产品": "box",
-  "业务": "layout-dashboard",
   "市场": "megaphone",
   "商会": "building-2",
   "背包": "package"
@@ -2277,6 +2336,12 @@ function App() {
   const [seasonCenter, setSeasonCenter] = useState<SeasonCenter | null>(null);
   const [seasonError, setSeasonError] = useState("");
   const [seasonNotice, setSeasonNotice] = useState("");
+  const [employeeCollection, setEmployeeCollection] = useState<EmployeeCollection | null>(null);
+  const [employeeViewTab, setEmployeeViewTab] = useState<EmployeeViewTab>("team");
+  const [employeeRecruitMode, setEmployeeRecruitMode] = useState<EmployeeRecruitMode>("normal");
+  const [targetRecruitRole, setTargetRecruitRole] = useState("");
+  const [employeeCodexRoleFilter, setEmployeeCodexRoleFilter] = useState("全部岗位");
+  const [employeeCodexRarityFilter, setEmployeeCodexRarityFilter] = useState("全部稀有度");
   const [activeActivityView, setActiveActivityView] = useState<ActivityNativeView>("main");
   const [selectedActivityShopItemId, setSelectedActivityShopItemId] = useState("");
   const [scenarioRun, setScenarioRun] = useState<ScenarioRunResult["run"] | null>(null);
@@ -2397,6 +2462,51 @@ function App() {
     () => activeEmployees.reduce((total, employee) => total + employee.salary, 0),
     [activeEmployees]
   );
+  const headhunterTicketCount = inventoryCenter?.items.find((item) => item.itemId === "headhunter-ticket")?.quantity ?? 0;
+  const targetedHeadhuntLetterCount = inventoryCenter?.items.find((item) => item.itemId === "targeted-headhunt-letter")?.quantity ?? 0;
+  const employeeGiftCount = inventoryCenter?.items.find((item) => item.itemId === "employee-gift")?.quantity ?? 0;
+  const trainingManualCount = inventoryCenter?.items.find((item) => item.itemId === "training-manual")?.quantity ?? 0;
+  const limitedRecruitOpen = useMemo(
+    () => (employeeCollection?.entries ?? []).some((entry) => entry.isLimited && entry.status === "未招募"),
+    [employeeCollection?.entries]
+  );
+  const employeeRecruitRoles = useMemo(
+    () => Array.from(new Set((employeeCollection?.entries ?? []).filter((entry) => entry.status === "未招募").map((entry) => entry.role))).sort((left, right) => left.localeCompare(right, "zh-CN")),
+    [employeeCollection?.entries]
+  );
+  const employeeCodexRoles = useMemo(
+    () => ["全部岗位", ...Array.from(new Set((employeeCollection?.entries ?? []).map((entry) => entry.role))).sort((left, right) => left.localeCompare(right, "zh-CN"))],
+    [employeeCollection?.entries]
+  );
+  const employeeCodexRarities = useMemo(
+    () => ["全部稀有度", ...Array.from(new Set((employeeCollection?.entries ?? []).map((entry) => entry.rarity)))],
+    [employeeCollection?.entries]
+  );
+  const filteredEmployeeCollectionEntries = useMemo(
+    () =>
+      (employeeCollection?.entries ?? []).filter((entry) =>
+        (employeeCodexRoleFilter === "全部岗位" || entry.role === employeeCodexRoleFilter) &&
+        (employeeCodexRarityFilter === "全部稀有度" || entry.rarity === employeeCodexRarityFilter)
+      ),
+    [employeeCodexRarityFilter, employeeCodexRoleFilter, employeeCollection?.entries]
+  );
+  const selectedTargetRecruitRole = targetRecruitRole || employeeRecruitRoles[0] || "";
+  const canRecruitEmployee =
+    employeeRecruitMode === "normal"
+      ? (employeeCollection?.owned ?? 0) < (employeeCollection?.total ?? 1)
+      : employeeRecruitMode === "headhunter"
+        ? headhunterTicketCount > 0
+        : employeeRecruitMode === "limited"
+          ? headhunterTicketCount > 0 && limitedRecruitOpen
+          : targetedHeadhuntLetterCount > 0 && selectedTargetRecruitRole !== "";
+  const employeeRecruitLockedReason =
+    employeeRecruitMode === "normal"
+      ? (employeeCollection?.owned ?? 0) >= (employeeCollection?.total ?? 1) ? "员工池已招满" : ""
+      : employeeRecruitMode === "headhunter"
+        ? headhunterTicketCount > 0 ? "" : "需要猎头券"
+        : employeeRecruitMode === "limited"
+          ? !limitedRecruitOpen ? "限时池已招满" : headhunterTicketCount > 0 ? "" : "需要猎头券"
+          : targetedHeadhuntLetterCount > 0 ? "" : "需要定向猎头函";
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0],
     [projects, selectedProjectId]
@@ -2437,6 +2547,10 @@ function App() {
   const pendingRandomTasks = useMemo(
     () => randomTaskCenter?.tasks.filter((task) => task.status === "pending") ?? [],
     [randomTaskCenter?.tasks]
+  );
+  const pendingEmployeeRandomTasks = useMemo(
+    () => pendingRandomTasks.filter((task) => task.category === "employee"),
+    [pendingRandomTasks]
   );
   const selectedRandomTask = useMemo(
     () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
@@ -2915,6 +3029,21 @@ function App() {
     }))
   ];
   const primaryManagerRecommendation = (() => {
+    const employeeGuidanceGoal = longTermGoals?.sections
+      .find((section) => section.key === "today")
+      ?.goals.find((goal) => goal.id === "today-employee-guidance");
+    if (employeeGuidanceGoal !== undefined) {
+      return {
+        kind: "goal" as const,
+        id: employeeGuidanceGoal.id,
+        source: "团队",
+        title: employeeGuidanceGoal.title,
+        summary: employeeGuidanceGoal.action.reason ?? employeeGuidanceGoal.description,
+        actionLabel: employeeGuidanceGoal.action.label,
+        goal: employeeGuidanceGoal
+      };
+    }
+
     const activityReminder = activityManagerReminders[0];
     if (activityReminder !== undefined) {
       return {
@@ -4130,6 +4259,23 @@ function App() {
     setPhase14Error(response.error.message);
   };
 
+  const loadEmployeeCollection = async (token: string, nextServerId: string): Promise<void> => {
+    const response = await apiRequest<EmployeeCollection>(
+      `/employees/collection?serverId=${encodeURIComponent(nextServerId)}`,
+      {},
+      token
+    );
+
+    if (response.success) {
+      setEmployeeCollection(response.data);
+      setTargetRecruitRole((currentRole) => response.data.entries.some((entry) => entry.role === currentRole) ? currentRole : response.data.entries[0]?.role ?? "");
+      setEmployeeError("");
+      return;
+    }
+
+    setEmployeeError(response.error.message);
+  };
+
   const loadEmployees = async (token: string, nextServerId: string): Promise<void> => {
     const response = await apiRequest<Employee[]>(
       `/employees?serverId=${encodeURIComponent(nextServerId)}`,
@@ -4141,6 +4287,7 @@ function App() {
       setEmployees(response.data);
       setSelectedEmployeeId((currentId) => response.data.find((employee) => employee.id === currentId)?.id ?? response.data[0]?.id ?? "");
       setEmployeeError("");
+      void loadEmployeeCollection(token, nextServerId);
       return;
     }
 
@@ -4884,7 +5031,44 @@ function App() {
     setActiveNav("任务");
   };
 
+  const openEmployeeCapitalCodex = (): void => {
+    setActivePanel(null);
+    setNativeHomePage(null);
+    setEmployeeViewTab("codex");
+    setEmployeeCodexRoleFilter("投资关系");
+    setActiveNav("员工");
+  };
+
   const openLongTermGoalAction = (goal: LongTermGoal): void => {
+    if (goal.action.targetNav === "员工") {
+      setActivePanel(null);
+      setNativeHomePage(null);
+      setActiveNav("员工");
+      if (goal.action.targetTab === "图鉴") {
+        setEmployeeViewTab("codex");
+      }
+      if (goal.action.targetTab === "养成") {
+        setEmployeeViewTab("growth");
+      }
+      return;
+    }
+    if (goal.action.targetNav === "市场") {
+      setActivePanel(null);
+      setNativeHomePage(null);
+      setActiveNav("市场");
+      if (goal.action.targetTab === "产品") {
+        setMarketTab("产品");
+      }
+      if (goal.action.targetTab === "市场") {
+        setMarketTab("市场");
+      }
+      return;
+    }
+    if (goal.action.targetNav === "融资") {
+      openHomePanel("融资");
+      return;
+    }
+
     if (goal.action.href === "#tasks") {
       openTaskScreen();
       return;
@@ -5070,7 +5254,7 @@ function App() {
     void loadProjects(account.token, selectedServer.id);
   };
 
-  const runEmployeeAction = async (path: string): Promise<boolean> => {
+  const runEmployeeAction = async (path: string, body: Record<string, string> = {}): Promise<boolean> => {
     if (!account || !selectedServer) {
       setEmployeeError("账号或服务器状态缺失，请重新登录。");
       return false;
@@ -5080,7 +5264,7 @@ function App() {
       path,
       {
         method: "POST",
-        body: JSON.stringify({ serverId: selectedServer.id })
+        body: JSON.stringify({ serverId: selectedServer.id, ...body })
       },
       account.token
     );
@@ -5089,6 +5273,7 @@ function App() {
       setSelectedEmployeeId(response.data.id);
       setEmployeeError("");
       refreshCompanyAndEmployees();
+      void loadInventoryCenter(account.token, selectedServer.id);
       return true;
     }
 
@@ -5097,7 +5282,14 @@ function App() {
   };
 
   const recruitEmployee = (): void => {
-    void runEmployeeAction("/employees/recruit");
+    if (!canRecruitEmployee) {
+      setEmployeeError(employeeRecruitLockedReason || "当前没有可招募员工。");
+      return;
+    }
+    void runEmployeeAction("/employees/recruit", {
+      mode: employeeRecruitMode,
+      role: employeeRecruitMode === "targeted" ? selectedTargetRecruitRole : ""
+    });
   };
 
   const cultivateEmployee = async (): Promise<void> => {
@@ -5109,6 +5301,14 @@ function App() {
     if (isSuccess && account && selectedServer) {
       void loadTasks(account.token, selectedServer.id);
     }
+  };
+
+  const supportEmployee = async (): Promise<void> => {
+    if (!selectedEmployee || !selectedEmployee.isActive) {
+      return;
+    }
+
+    await runEmployeeAction(`/employees/${encodeURIComponent(selectedEmployee.id)}/support`);
   };
 
   const grantEmployeeEquity = (): void => {
@@ -8209,95 +8409,198 @@ function App() {
                 <span>平均忠诚 {averageEmployeeLoyalty}</span>
                 <span>月薪合计 {formatWan(totalEmployeeSalary)}</span>
               </section>
-              <section className="employee-summary" aria-label="员工付费深度">
-                <span>普通招募 免费补位</span>
-                <span>猎头招募 稀缺提升</span>
-                <span>定向猎头 岗位选择</span>
+              <section className="employee-summary" aria-label="员工收集">
+                <span>已招募 {employeeCollection?.owned ?? 0}/{employeeCollection?.total ?? 24}</span>
+                <span>岗位覆盖 {employeeCollection?.roleCount ?? 0}</span>
+                <span>稀有人才 {employeeCollection?.rareOwned ?? 0}</span>
               </section>
+              <nav className="employee-tab" aria-label="员工视图">
+                <button className={employeeViewTab === "team" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("team")}>团队</button>
+                <button className={employeeViewTab === "codex" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("codex")}>图鉴</button>
+                <button className={employeeViewTab === "recruit" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("recruit")}>招募</button>
+                <button className={employeeViewTab === "growth" ? "active" : undefined} type="button" onClick={() => setEmployeeViewTab("growth")}>养成</button>
+              </nav>
               {employeeError && <p className="employee-error">{employeeError}</p>}
 
-              <section className="employee-layout">
-                <div className="employee-list" aria-label="员工列表">
-                  {employees.map((employee) => (
-                    <button
-                      className={employee.id === selectedEmployee?.id ? "selected" : undefined}
-                      key={employee.id}
-                      type="button"
-                      onClick={() => setSelectedEmployeeId(employee.id)}
-                    >
-                      <span className={`quality ${rarityClass(employee.rarity)}`}>{employee.rarity}</span>
-                      <strong>{employee.name}</strong>
-                      <em>{employee.role} · {employee.careerLevel}</em>
-                      <small>{employee.isActive ? `Lv.${employee.level}` : "离岗"}</small>
-                    </button>
-                  ))}
-                </div>
+              {employeeViewTab === "team" ? (
+                <section className="employee-layout">
+                  <div className="employee-list" aria-label="员工列表">
+                    {employees.map((employee) => (
+                      <button
+                        className={employee.id === selectedEmployee?.id ? "selected" : undefined}
+                        key={employee.id}
+                        type="button"
+                        onClick={() => setSelectedEmployeeId(employee.id)}
+                      >
+                        <span className={`quality ${rarityClass(employee.rarity)}`}>{employee.rarity}</span>
+                        <strong>{employee.name}</strong>
+                        <em>{employee.role} · {employee.careerLevel}</em>
+                        <small>{employee.isActive ? `Lv.${employee.level}` : "离岗"}</small>
+                      </button>
+                    ))}
+                  </div>
 
-                <article className="employee-detail" aria-label="员工详情">
-                  {selectedEmployee ? (
-                    <>
-                      <div className="employee-portrait">
-                        <span>{selectedEmployee.name.slice(0, 1)}</span>
-                        <strong>{selectedEmployee.name}</strong>
-                        <em>{selectedEmployee.rarity} · {selectedEmployee.role} · {selectedEmployee.careerLevel}</em>
+                  <article className="employee-detail" aria-label="员工详情">
+                    {selectedEmployee ? (
+                      <>
+                        <div className="employee-portrait">
+                          <span>{selectedEmployee.name.slice(0, 1)}</span>
+                          <strong>{selectedEmployee.name}</strong>
+                          <em>{selectedEmployee.rarity} · {selectedEmployee.role} · {selectedEmployee.careerLevel} · {selectedEmployee.pressureState}</em>
+                        </div>
+
+                        <dl className="employee-stats">
+                          <div>
+                            <dt>等级</dt>
+                            <dd>Lv.{selectedEmployee.level}</dd>
+                          </div>
+                          <div>
+                            <dt>薪资</dt>
+                            <dd>{formatWan(selectedEmployee.salary)}/月</dd>
+                          </div>
+                          <div>
+                            <dt>忠诚</dt>
+                            <dd>{selectedEmployee.loyalty}</dd>
+                          </div>
+                          <div>
+                            <dt>压力</dt>
+                            <dd>{selectedEmployee.pressure}</dd>
+                          </div>
+                          <div>
+                            <dt>管理</dt>
+                            <dd>{selectedEmployee.management}</dd>
+                          </div>
+                          <div>
+                            <dt>谈判</dt>
+                            <dd>{selectedEmployee.negotiation}</dd>
+                          </div>
+                          <div>
+                            <dt>执行</dt>
+                            <dd>{selectedEmployee.execution}</dd>
+                          </div>
+                          <div>
+                            <dt>股权</dt>
+                            <dd>{(selectedEmployee.equityBasisPoints / 100).toFixed(0)}%</dd>
+                          </div>
+                        </dl>
+
+                        <p>{selectedEmployee.specialty} 成长潜力 {selectedEmployee.growthPotential}。</p>
+                        <p>
+                          培养消耗资金，提升属性和月薪；员工关怀消耗员工好感礼物，降低压力并提升忠诚；股权激励消耗创始人 1% 股权。
+                        </p>
+
+                        <div className="employee-actions">
+                          <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
+                          <button type="button" onClick={() => void supportEmployee()} disabled={!selectedEmployee.isActive || employeeGiftCount <= 0}>{employeeGiftCount > 0 ? "关怀" : "需要礼物"}</button>
+                          <button type="button" onClick={grantEmployeeEquity} disabled={!selectedEmployee.isActive}>股权</button>
+                          <button type="button" onClick={() => void dismissEmployee()} disabled={!selectedEmployee.isActive}>裁员</button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="employee-empty">
+                        <strong>暂无员工</strong>
+                        <p>通过招募建立第一支核心团队，员工薪资会计入公司月支出。</p>
+                        <button type="button" onClick={recruitEmployee} disabled={!canRecruitEmployee}>{employeeRecruitLockedReason || "招募员工"}</button>
                       </div>
-
-                      <dl className="employee-stats">
-                        <div>
-                          <dt>等级</dt>
-                          <dd>Lv.{selectedEmployee.level}</dd>
-                        </div>
-                        <div>
-                          <dt>薪资</dt>
-                          <dd>{formatWan(selectedEmployee.salary)}/月</dd>
-                        </div>
-                        <div>
-                          <dt>忠诚</dt>
-                          <dd>{selectedEmployee.loyalty}</dd>
-                        </div>
-                        <div>
-                          <dt>压力</dt>
-                          <dd>{selectedEmployee.pressure}</dd>
-                        </div>
-                        <div>
-                          <dt>管理</dt>
-                          <dd>{selectedEmployee.management}</dd>
-                        </div>
-                        <div>
-                          <dt>谈判</dt>
-                          <dd>{selectedEmployee.negotiation}</dd>
-                        </div>
-                        <div>
-                          <dt>执行</dt>
-                          <dd>{selectedEmployee.execution}</dd>
-                        </div>
-                        <div>
-                          <dt>股权</dt>
-                          <dd>{(selectedEmployee.equityBasisPoints / 100).toFixed(0)}%</dd>
-                        </div>
-                      </dl>
-
-                      <p>{selectedEmployee.specialty} 成长潜力 {selectedEmployee.growthPotential}。</p>
-                      <p>
-                        员工池已扩展为岗位收集和养成主线：项目看执行，产品看产品/工程/运营组合，融资看财务和投资关系，风险事件看法务、HR 与顾问道具。
-                      </p>
-
+                    )}
+                  </article>
+                </section>
+              ) : employeeViewTab === "codex" ? (
+                <section className="employee-codex" aria-label="员工图鉴">
+                  <div className="employee-codex-filter">
+                    <select value={employeeCodexRoleFilter} onChange={(event) => setEmployeeCodexRoleFilter(event.target.value)} aria-label="图鉴岗位筛选">
+                      {employeeCodexRoles.map((role) => (
+                        <option key={role} value={role}>{role}</option>
+                      ))}
+                    </select>
+                    <select value={employeeCodexRarityFilter} onChange={(event) => setEmployeeCodexRarityFilter(event.target.value)} aria-label="图鉴稀有度筛选">
+                      {employeeCodexRarities.map((rarity) => (
+                        <option key={rarity} value={rarity}>{rarity}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {filteredEmployeeCollectionEntries.map((entry) => (
+                    <article className={entry.status === "未招募" ? "locked" : undefined} key={entry.id}>
+                      <div className={`employee-avatar-slot ${entry.avatarFrameId ?? ""}`}>
+                        <span>{entry.portraitUrl ? "" : entry.name.slice(0, 1)}</span>
+                      </div>
+                      <span className={`quality ${rarityClass(entry.rarity)}`}>{entry.rarity}</span>
+                      <div>
+                        <strong>{entry.name}</strong>
+                        <em>{entry.role} · {entry.careerLevel} · {entry.status} · {entry.obtainSource}</em>
+                        <small>基础薪资 {formatWan(entry.baseSalary)}/月 · 管理 {entry.management} · 谈判 {entry.negotiation} · 执行 {entry.execution}</small>
+                        <p>{entry.specialty}</p>
+                        <small>{entry.tags.join(" / ")} · {entry.isRecruitable ? "可通过人才池招募" : "暂未开放"}</small>
+                      </div>
+                    </article>
+                  ))}
+                </section>
+              ) : employeeViewTab === "recruit" ? (
+                <section className="employee-recruit-panel" aria-label="员工招募条件">
+                  <div>
+                    <strong>普通招募：免费补位</strong>
+                    <span>从未拥有员工中随机招募，员工池招满后停止。</span>
+                  </div>
+                  <div>
+                    <strong>猎头招募：消耗猎头券</strong>
+                    <span>当前持有 {headhunterTicketCount} 张，稀缺及以上权重提高，10 抽内保底顶尖或传奇。</span>
+                  </div>
+                  <div>
+                    <strong>定向猎头：消耗定向猎头函</strong>
+                    <span>当前持有 {targetedHeadhuntLetterCount} 张，按岗位补位，适合补齐融资、产品和市场短板。</span>
+                  </div>
+                  <div>
+                    <strong>限时人才池：消耗猎头券</strong>
+                    <span>{limitedRecruitOpen ? "AI 创业、行业 SaaS、市场竞标人才开放中。" : "限时人才已招满，后续活动再开放。"}</span>
+                  </div>
+                  <div className="employee-recruit-controls">
+                    <select value={employeeRecruitMode} onChange={(event) => setEmployeeRecruitMode(event.target.value as EmployeeRecruitMode)} aria-label="招募方式">
+                      <option value="normal">普通招募</option>
+                      <option value="headhunter">猎头招募</option>
+                      <option value="targeted">定向猎头</option>
+                      <option value="limited">限时人才池</option>
+                    </select>
+                    {employeeRecruitMode === "targeted" && (
+                      <select value={selectedTargetRecruitRole} onChange={(event) => setTargetRecruitRole(event.target.value)} aria-label="定向岗位">
+                        {employeeRecruitRoles.map((role) => (
+                          <option key={role} value={role}>{role}</option>
+                        ))}
+                      </select>
+                    )}
+                    <button type="button" onClick={recruitEmployee} disabled={!canRecruitEmployee}>{employeeRecruitLockedReason || "招募"}</button>
+                  </div>
+                </section>
+              ) : (
+                <section className="employee-growth-panel" aria-label="员工养成">
+                  <article>
+                    <strong>养成资源</strong>
+                    <span>培养资金 2 万 · 培训手册 {trainingManualCount} · 员工好感礼物 {employeeGiftCount}</span>
+                    <p>培养提升等级、三项能力和月薪，也会增强岗位对融资、产品和市场的支撑；关怀降低压力、提升忠诚；股权激励消耗创始人 1% 股权并稳定核心员工。</p>
+                  </article>
+                  {selectedEmployee ? (
+                    <article>
+                      <strong>{selectedEmployee.name} · {selectedEmployee.focusSkill}</strong>
+                      <span>经验 {selectedEmployee.experience} · 压力状态 {selectedEmployee.pressureState} · 事件 {selectedEmployee.eventState}</span>
+                      <p>{selectedEmployee.specialty}</p>
                       <div className="employee-actions">
                         <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
-                        <button type="button" onClick={recruitEmployee}>招募</button>
+                        <button type="button" onClick={() => void supportEmployee()} disabled={!selectedEmployee.isActive || employeeGiftCount <= 0}>{employeeGiftCount > 0 ? "关怀" : "需要礼物"}</button>
                         <button type="button" onClick={grantEmployeeEquity} disabled={!selectedEmployee.isActive}>股权</button>
-                        <button type="button" onClick={() => void dismissEmployee()} disabled={!selectedEmployee.isActive}>裁员</button>
                       </div>
-                    </>
+                    </article>
                   ) : (
-                    <div className="employee-empty">
-                      <strong>暂无员工</strong>
-                      <p>通过招募建立第一支核心团队，员工薪资会计入公司月支出。</p>
-                      <button type="button" onClick={recruitEmployee}>招募员工</button>
-                    </div>
+                    <article>
+                      <strong>暂无可养成员工</strong>
+                      <span>先完成一次招募，再进入培养和关怀。</span>
+                    </article>
                   )}
-                </article>
-              </section>
+                  <article>
+                    <strong>员工事件</strong>
+                    <span>{pendingEmployeeRandomTasks.length > 0 ? `待处理 ${pendingEmployeeRandomTasks.length} 件` : "暂无待处理员工事件"}</span>
+                    <p>{pendingEmployeeRandomTasks[0]?.description ?? "员工压力、离职和成长机会会进入专属经理待办，也会在这里提示处理。"}</p>
+                  </article>
+                </section>
+              )}
             </section>
           )}
 
@@ -8450,6 +8753,17 @@ function App() {
                 <span>现金 {compactNumber(productCenter?.finance.cash ?? profile.cash)}</span>
                 <span>风险 {productCenter?.finance.riskStatus ?? profile.riskStatus}</span>
               </section>
+              {productCenter?.employeeEffect && (
+                <section className="funding-active team-effect-panel" aria-label="产品团队支撑">
+                  <strong>团队支撑</strong>
+                  <span>{productCenter.employeeEffect.summary}</span>
+                  <small>
+                    {productCenter.employeeEffect.bonusLabels.length > 0
+                      ? productCenter.employeeEffect.bonusLabels.join(" / ")
+                      : `短板：${productCenter.employeeEffect.missingRoles.join("、")}`}
+                  </small>
+                </section>
+              )}
               {(productNotice || productError) && (
                 <div className={`operation-toast is-product ${productError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
                   {productError || productNotice}
@@ -8578,6 +8892,17 @@ function App() {
                 <span>热度 {selectedMarket?.industryHeat ?? selectedMarketOffer?.industryHeat ?? 0}</span>
                 <span>风险 {marketCenter?.finance.riskStatus ?? profile.riskStatus}</span>
               </section>
+              {marketCenter?.employeeEffect && (
+                <section className="funding-active team-effect-panel" aria-label="市场团队支撑">
+                  <strong>团队支撑</strong>
+                  <span>{marketCenter.employeeEffect.summary}</span>
+                  <small>
+                    {marketCenter.employeeEffect.bonusLabels.length > 0
+                      ? marketCenter.employeeEffect.bonusLabels.join(" / ")
+                      : `短板：${marketCenter.employeeEffect.missingRoles.join("、")}`}
+                  </small>
+                </section>
+              )}
               {(marketNotice || marketError) && (
                 <div className={`operation-toast is-market ${marketError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
                   {marketError || marketNotice}
@@ -8651,6 +8976,14 @@ function App() {
                         </section>
                       )}
 
+                      {!selectedCompetitorAction && (
+                        <section className="funding-active">
+                          <strong>应对门槛</strong>
+                          <span>先触发竞品行动，再选择防守或反击。</span>
+                          <small>进入赛道后会出现价格战、挖人、舆论和政策等市场压力。</small>
+                        </section>
+                      )}
+
                       <div className="funding-actions">
                         <button
                           type="button"
@@ -8721,6 +9054,25 @@ function App() {
                   <strong>{(fundingCenter?.offers ?? []).filter((offer) => offer.isAvailable).length} / {fundingCenter?.offers.length ?? 0}</strong>
                 </div>
               </section>
+              {fundingCenter?.employeeEffect && (
+                <section className="finance-funding-panel team-effect-panel" aria-label="融资团队支撑">
+                  <div>
+                    <strong>团队支撑</strong>
+                    <span>
+                      {fundingCenter.employeeEffect.bonusLabels.length > 0
+                        ? "资本团队已形成支撑，路演条件更稳。"
+                        : "资本团队薄弱，路演把握未获得加成。"}
+                    </span>
+                    <small>
+                      {fundingCenter.employeeEffect.effectLabels.filter((label) => label !== "当前无加成").join(" / ") || "当前无加成"}
+                      {fundingCenter.employeeEffect.primaryMissingRoles.length > 0 ? ` · 短板：${fundingCenter.employeeEffect.primaryMissingRoles.join("、")}` : ""}
+                    </small>
+                  </div>
+                  {fundingCenter.employeeEffect.primaryMissingRoles.length > 0 && (
+                    <button type="button" onClick={openEmployeeCapitalCodex}>补齐岗位</button>
+                  )}
+                </section>
+              )}
 
               {(fundingNotice || fundingError) && (
                 <div className={`finance-funding-toast ${fundingError ? "is-error" : "is-success"}`} role="status" aria-live="polite">
@@ -9242,6 +9594,11 @@ function App() {
                           setSelectedEventId(primaryManagerRecommendation.id);
                           return;
                         }
+                        const routedGoal = "goal" in primaryManagerRecommendation ? primaryManagerRecommendation.goal : undefined;
+                        if (primaryManagerRecommendation.kind === "goal" && routedGoal !== undefined) {
+                          openLongTermGoalAction(routedGoal);
+                          return;
+                        }
                         setManagerTab("goals");
                       }}
                     >
@@ -9249,7 +9606,7 @@ function App() {
                     </button>
                   </>
                 ) : (
-                  <p>暂无紧急事项，继续推进业务后会出现新的经营机会。</p>
+                  <p>暂无紧急事项，继续推进市场经营后会出现新的经营机会。</p>
                 )}
               </section>
 

@@ -141,7 +141,20 @@ export type LongTermGoalRecord = {
   action: {
     label: string;
     href: string;
+    targetNav?: string;
+    targetTab?: string | null;
+    reason?: string | null;
+    missingRoles?: string[];
   };
+};
+
+export type EmployeeBusinessGuidanceRecord = {
+  title: string;
+  description: string;
+  targetNav: string;
+  targetTab: string | null;
+  reason: string;
+  missingRoles: string[];
 };
 
 export type LongTermGoalsRecord = {
@@ -343,9 +356,57 @@ export type EmployeeRecord = {
   negotiation: number;
   execution: number;
   specialty: string;
+  experience: number;
+  focusSkill: string;
+  pressureState: string;
+  eventState: string;
+  unlockedPortraitAssetId: string | null;
   equityBasisPoints: number;
   assignedTo: string | null;
   isActive: boolean;
+};
+
+export type EmployeeCollectionEntry = {
+  id: string;
+  name: string;
+  role: string;
+  careerLevel: string;
+  rarity: string;
+  baseSalary: number;
+  basePressure: number;
+  loyalty: number;
+  growthPotential: number;
+  management: number;
+  negotiation: number;
+  execution: number;
+  specialty: string;
+  portraitAssetId: string | null;
+  portraitUrl: string | null;
+  avatarFrameId: string | null;
+  obtainSource: string;
+  tags: string[];
+  skills: Array<{ id: string; name: string; effect: string }>;
+  bondGroupIds: string[];
+  isLimited: boolean;
+  isRecruitable: boolean;
+  recruitWeight: number;
+  ownedEmployeeId: string | null;
+  status: "已招募" | "已离岗" | "未招募";
+};
+
+export type EmployeeCollectionRecord = {
+  total: number;
+  owned: number;
+  roleCount: number;
+  rareOwned: number;
+  entries: EmployeeCollectionEntry[];
+};
+
+export type EmployeeRecruitMode = "normal" | "headhunter" | "targeted" | "limited";
+
+export type EmployeeRecruitOptions = {
+  mode?: EmployeeRecruitMode;
+  role?: string;
 };
 
 export type ProjectRecord = {
@@ -531,10 +592,20 @@ export type FundingRecord = {
   resolvedAt: string | null;
 };
 
+export type EmployeeEffectRecord = {
+  summary: string;
+  bonusLabels: string[];
+  missingRoles: string[];
+  effectLabels: string[];
+  primaryMissingRoles: string[];
+  targetTab?: "codex" | "growth";
+};
+
 export type FundingCenterRecord = {
   offers: FundingOfferRecord[];
   fundings: FundingRecord[];
   finance: CompanyFinanceRecord;
+  employeeEffect: EmployeeEffectRecord;
 };
 
 export type FundingActionRecord = {
@@ -585,6 +656,7 @@ export type ProductCenterRecord = {
   offers: ProductOfferRecord[];
   products: ProductRecord[];
   finance: CompanyFinanceRecord;
+  employeeEffect: EmployeeEffectRecord;
 };
 
 export type ProductActionRecord = {
@@ -643,6 +715,7 @@ export type MarketCenterRecord = {
   markets: PlayerMarketRecord[];
   actions: CompetitorActionRecord[];
   finance: CompanyFinanceRecord;
+  employeeEffect: EmployeeEffectRecord;
 };
 
 export type MarketActionRecord = {
@@ -2401,12 +2474,15 @@ export type GameRepository = {
   listRandomTasks(accountId: string, serverId: string, today: string): Promise<RandomTaskCenterRecord | "PLAYER_NOT_FOUND">;
   resolveRandomTask(accountId: string, serverId: string, randomTaskId: string, option: "A" | "B", today: string, modifierItemId?: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED" | "INSUFFICIENT_ACTION_POWER" | "ITEM_NOT_FOUND" | "ITEM_NOT_USABLE">;
   dismissRandomTask(accountId: string, serverId: string, randomTaskId: string, today: string): Promise<RandomTaskActionRecord | "PLAYER_NOT_FOUND" | "RANDOM_TASK_NOT_FOUND" | "RANDOM_TASK_ALREADY_RESOLVED">;
+  listEmployeeEvents(accountId: string, serverId: string, today: string): Promise<RandomTaskRecord[] | "PLAYER_NOT_FOUND">;
   getCompanyFinance(accountId: string, serverId: string, now: Date): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyDay(accountId: string, serverId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND">;
   settleCompanyMonth(accountId: string, serverId: string, reportMonth: number): Promise<CompanyFinanceSettlementRecord | "PLAYER_NOT_FOUND">;
   listEmployees(accountId: string, serverId: string): Promise<EmployeeRecord[] | "PLAYER_NOT_FOUND">;
-  recruitEmployee(accountId: string, serverId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "NO_EMPLOYEE_AVAILABLE">;
-  cultivateEmployee(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
+  listEmployeeCollection(accountId: string, serverId: string): Promise<EmployeeCollectionRecord | "PLAYER_NOT_FOUND">;
+  recruitEmployee(accountId: string, serverId: string, options?: EmployeeRecruitOptions): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "NO_EMPLOYEE_AVAILABLE" | "ITEM_NOT_FOUND" | "EMPLOYEE_ROLE_UNAVAILABLE">;
+  cultivateEmployee(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "INSUFFICIENT_CASH">;
+  supportEmployee(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "ITEM_NOT_FOUND">;
   grantEmployeeEquity(accountId: string, serverId: string, employeeId: string): Promise<EmployeeRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND" | "EQUITY_LIMIT_REACHED">;
   dismissEmployee(accountId: string, serverId: string, employeeId: string): Promise<CompanyFinanceRecord | "PLAYER_NOT_FOUND" | "EMPLOYEE_NOT_FOUND">;
   listProjects(accountId: string, serverId: string): Promise<ProjectRecord[] | "PLAYER_NOT_FOUND">;
@@ -2623,11 +2699,261 @@ const toEmployeeRecord = (employee: {
   negotiation: number;
   execution: number;
   specialty: string;
+  experience: number;
+  focusSkill: string;
+  pressureState: string;
+  eventState: string;
+  unlockedPortraitAssetId: string | null;
   equityBasisPoints: number;
   assignedTo: string | null;
   isActive: boolean;
 }): EmployeeRecord => ({
   ...employee
+});
+
+const rareEmployeeRarities = new Set(["稀缺", "顶尖", "传奇"]);
+const highRarityEmployeeRarities = new Set(["顶尖", "传奇"]);
+
+type EmployeeEffectKind = "product" | "market" | "funding";
+
+const employeeEffectRoles: Record<EmployeeEffectKind, string[]> = {
+  product: ["产品经理", "工程师", "运营", "市场"],
+  market: ["市场", "公关", "销售", "法务", "客服"],
+  funding: ["投资关系", "财务", "高管", "顾问", "法务"]
+};
+
+const employeeEffectLabels: Record<EmployeeEffectKind, Record<string, string>> = {
+  product: {
+    产品经理: "产品经理：推进节奏更稳",
+    工程师: "工程师：技术债压力降低",
+    运营: "运营：留存和活跃更稳",
+    市场: "市场：获客效率提升"
+  },
+  market: {
+    市场: "市场：份额应对更稳",
+    公关: "公关：舆论压力降低",
+    销售: "销售：客户迁移损失降低",
+    法务: "法务：专利和合规风险降低",
+    客服: "客服：客户满意波动降低"
+  },
+  funding: {
+    投资关系: "投资关系：路演沟通更顺",
+    财务: "财务：现金流说明更清楚",
+    高管: "高管：治理压力更可控",
+    顾问: "顾问：条款判断更稳",
+    法务: "法务：条款风险降低"
+  }
+};
+
+const employeeEffectTitles: Record<EmployeeEffectKind, string> = {
+  product: "产品研发",
+  market: "市场竞争",
+  funding: "融资路演"
+};
+
+const employeeEffectMissingHints: Record<EmployeeEffectKind, string> = {
+  product: "建议补齐产品经理、工程师、运营或市场岗位。",
+  market: "建议补齐市场、公关、销售、法务或客服岗位。",
+  funding: "建议补齐投资关系、财务、高管、顾问或法务岗位。"
+};
+
+const readEmployeeRoles = (employees: EmployeeRecord[]): Set<string> =>
+  new Set(employees.filter((employee) => employee.isActive).map((employee) => employee.role));
+
+const buildEmployeeEffect = (employees: EmployeeRecord[], kind: EmployeeEffectKind): EmployeeEffectRecord => {
+  const roles = readEmployeeRoles(employees);
+  const expectedRoles = employeeEffectRoles[kind];
+  const coveredRoles = expectedRoles.filter((role) => roles.has(role));
+  const missingRoles = expectedRoles.filter((role) => !roles.has(role));
+  const title = employeeEffectTitles[kind];
+  const coveredCount = coveredRoles.length;
+  const effectLabels =
+    coveredCount === 0
+      ? ["当前无加成"]
+      : kind === "funding"
+        ? [`路演把握 +${Math.min(8, coveredCount * 2)}%`, `治理压力 -${Math.min(6, coveredCount * 2)}%`]
+        : kind === "market"
+          ? [`应对成本 -${Math.min(12, coveredCount * 3)}%`, `市场把握 +${coveredCount * 2}%`]
+          : [`推进效率 +${coveredCount * 3}%`, roles.has("工程师") ? "技术压力 -6%" : "技术压力 -0%"];
+
+  return {
+    summary:
+      coveredRoles.length === 0
+        ? `${title}暂无关键岗位支撑，${employeeEffectMissingHints[kind]}`
+        : missingRoles.length === 0
+          ? `${title}关键岗位已覆盖，当前经营动作获得稳定支撑。`
+          : `${title}已覆盖${coveredRoles.join("、")}，短板在${missingRoles.join("、")}。`,
+    bonusLabels: coveredRoles
+      .map((role) => employeeEffectLabels[kind][role])
+      .filter((label): label is string => label !== undefined),
+    missingRoles,
+    effectLabels,
+    primaryMissingRoles: missingRoles.slice(0, 3),
+    targetTab: missingRoles.length > 0 ? "codex" : "growth"
+  };
+};
+
+const listActiveEmployeeRecords = async (prisma: PrismaClient, profileId: string): Promise<EmployeeRecord[]> => {
+  const employees = await prisma.playerEmployee.findMany({
+    where: { profileId, isActive: true },
+    orderBy: [{ createdAt: "asc" }]
+  });
+
+  return employees.map(toEmployeeRecord);
+};
+
+const countCoveredRoles = (employees: EmployeeRecord[], roles: string[]): number => {
+  const activeRoles = readEmployeeRoles(employees);
+  return roles.filter((role) => activeRoles.has(role)).length;
+};
+
+const applyProductEmployeeEffect = (
+  metrics: ReturnType<typeof calculateNextProductMetrics>,
+  employees: EmployeeRecord[],
+  revenuePerPayingUser: number
+): ReturnType<typeof calculateNextProductMetrics> => {
+  const roles = readEmployeeRoles(employees);
+  const userMultiplierBasisPoints =
+    10000 + (roles.has("产品经理") ? 350 : 0) + (roles.has("运营") ? 420 : 0) + (roles.has("市场") ? 500 : 0);
+  const users = Math.max(0, Math.round((metrics.users * userMultiplierBasisPoints) / 10000));
+  const retentionBasisPoints = clamp(metrics.retentionBasisPoints + (roles.has("运营") ? 120 : 0), 500, 8500);
+  const payRateBasisPoints = clamp(metrics.payRateBasisPoints + (roles.has("产品经理") ? 15 : 0), 20, 1200);
+  const serverCostReduction = roles.has("工程师") ? Math.round(metrics.serverCost * 0.06) : 0;
+  const techDebtReduction = (roles.has("工程师") ? 5 : 0) + (roles.has("产品经理") ? 2 : 0);
+  const serverCost = Math.max(0, metrics.serverCost - serverCostReduction);
+  const techDebt = clamp(metrics.techDebt - techDebtReduction, 0, 100);
+  const monthlyRevenue =
+    metrics.stage === "idea" || metrics.stage === "mvp" || metrics.stage === "beta"
+      ? 0
+      : calculateProductRevenue(users, payRateBasisPoints, revenuePerPayingUser);
+  const incidentTriggered = techDebt >= 75;
+
+  return {
+    ...metrics,
+    users,
+    retentionBasisPoints,
+    payRateBasisPoints,
+    serverCost,
+    techDebt,
+    monthlyRevenue,
+    incidentTriggered,
+    resultSummary:
+      countCoveredRoles(employees, employeeEffectRoles.product) > 0
+        ? `${incidentTriggered ? "产品继续增长，但技术债已触发事故预警，需要安排重构。" : metrics.resultSummary} 团队支撑已计入本次推进。`
+        : metrics.resultSummary
+  };
+};
+
+const applyFundingEmployeeEffect = (offer: FundingOfferRecord, employees: EmployeeRecord[]): FundingOfferRecord => {
+  const coveredCount = countCoveredRoles(employees, employeeEffectRoles.funding);
+  if (coveredCount === 0) {
+    return offer;
+  }
+
+  return {
+    ...offer,
+    successRate: clamp(offer.successRate + Math.min(8, coveredCount * 2), 5, 95),
+    boardPressure: Math.max(0, offer.boardPressure - Math.min(6, coveredCount * 2))
+  };
+};
+
+const marketActionSupportRoles: Record<CompetitorActionType, string[]> = {
+  price_war: ["市场", "销售"],
+  poach: ["HR", "法务"],
+  public_opinion: ["公关", "客服"],
+  patent: ["法务", "顾问"]
+};
+
+const calculateMarketEmployeeSupport = (employees: EmployeeRecord[], actionType: CompetitorActionType): number =>
+  Math.min(4, countCoveredRoles(employees, employeeEffectRoles.market) + countCoveredRoles(employees, marketActionSupportRoles[actionType]));
+
+const readJsonStringArray = (value: string | null): string[] => {
+  if (value === null) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+const readEmployeeSkills = (value: string | null): Array<{ id: string; name: string; effect: string }> => {
+  if (value === null) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((item): item is { id: string; name: string; effect: string } =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as { id?: unknown }).id === "string" &&
+        typeof (item as { name?: unknown }).name === "string" &&
+        typeof (item as { effect?: unknown }).effect === "string"
+      )
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+};
+
+const toEmployeeCollectionEntry = (
+  config: {
+    id: string;
+    name: string;
+    role: string;
+    careerLevel: string;
+    rarity: string;
+    baseSalary: number;
+    basePressure: number;
+    loyalty: number;
+    growthPotential: number;
+    management: number;
+    negotiation: number;
+    execution: number;
+    specialty: string;
+    portraitAssetId: string | null;
+    portraitUrl: string | null;
+    avatarFrameId: string | null;
+    obtainSource: string;
+    tagsJson: string | null;
+    skillsJson: string | null;
+    bondGroupIdsJson: string | null;
+    isLimited: boolean;
+    recruitWeight: number;
+  },
+  employee: { id: string; isActive: boolean } | undefined
+): EmployeeCollectionEntry => ({
+  id: config.id,
+  name: config.name,
+  role: config.role,
+  careerLevel: config.careerLevel,
+  rarity: config.rarity,
+  baseSalary: config.baseSalary,
+  basePressure: config.basePressure,
+  loyalty: config.loyalty,
+  growthPotential: config.growthPotential,
+  management: config.management,
+  negotiation: config.negotiation,
+  execution: config.execution,
+  specialty: config.specialty,
+  portraitAssetId: config.portraitAssetId,
+  portraitUrl: config.portraitUrl,
+  avatarFrameId: config.avatarFrameId,
+  obtainSource: config.obtainSource,
+  tags: readJsonStringArray(config.tagsJson),
+  skills: readEmployeeSkills(config.skillsJson),
+  bondGroupIds: readJsonStringArray(config.bondGroupIdsJson),
+  isLimited: config.isLimited,
+  isRecruitable: employee === undefined,
+  recruitWeight: config.recruitWeight,
+  ownedEmployeeId: employee?.id ?? null,
+  status: employee === undefined ? "未招募" : employee.isActive ? "已招募" : "已离岗"
 });
 
 const readProjectStatus = (status: string): ProjectRecord["status"] =>
@@ -3280,7 +3606,7 @@ const toFundingCenterRecord = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
 ): Promise<FundingCenterRecord> => {
-  const [configs, fundings, products] = await Promise.all([
+  const [configs, fundings, products, employees] = await Promise.all([
     prisma.investorConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.playerFunding.findMany({
       where: { profileId: profile.id },
@@ -3288,7 +3614,8 @@ const toFundingCenterRecord = async (
     }),
     prisma.playerProduct.findMany({
       where: { profileId: profile.id }
-    })
+    }),
+    listActiveEmployeeRecords(prisma, profile.id)
   ]);
   const fundedInvestorCounts = new Map<string, number>();
   for (const funding of fundings.filter((funding) => funding.status === "funded")) {
@@ -3298,9 +3625,12 @@ const toFundingCenterRecord = async (
   const productMetrics = calculateFundingProductMetrics(products);
 
   return {
-    offers: configs.map((config) => calculateFundingOffer(profile, productMetrics, config, fundedInvestorCounts, activeInvestorIds)),
+    offers: configs.map((config) =>
+      applyFundingEmployeeEffect(calculateFundingOffer(profile, productMetrics, config, fundedInvestorCounts, activeInvestorIds), employees)
+    ),
     fundings: fundings.map(toFundingRecord),
-    finance: toCompanyFinanceRecord(profile)
+    finance: toCompanyFinanceRecord(profile),
+    employeeEffect: buildEmployeeEffect(employees, "funding")
   };
 };
 
@@ -3308,12 +3638,13 @@ const toProductCenterRecord = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
 ): Promise<ProductCenterRecord> => {
-  const [configs, products] = await Promise.all([
+  const [configs, products, employees] = await Promise.all([
     prisma.productConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.playerProduct.findMany({
       where: { profileId: profile.id },
       orderBy: [{ status: "asc" }, { createdAt: "asc" }]
-    })
+    }),
+    listActiveEmployeeRecords(prisma, profile.id)
   ]);
   const activeConfigIds = new Set(products.filter((product) => product.status !== "closed").map((product) => product.configId));
 
@@ -3335,7 +3666,8 @@ const toProductCenterRecord = async (
       lockedReason: activeConfigIds.has(config.id) ? "产品线已在运营" : profile.cash < config.launchCost ? "现金不足" : null
     })),
     products: products.map(toProductRecord),
-    finance: toCompanyFinanceRecord(profile)
+    finance: toCompanyFinanceRecord(profile),
+    employeeEffect: buildEmployeeEffect(employees, "product")
   };
 };
 
@@ -3343,7 +3675,7 @@ const toMarketCenterRecord = async (
   prisma: PrismaClient,
   profile: PlayerProfileRecord
 ): Promise<MarketCenterRecord> => {
-  const [configs, markets, actions] = await Promise.all([
+  const [configs, markets, actions, employees] = await Promise.all([
     prisma.marketTrackConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.playerMarketState.findMany({
       where: { profileId: profile.id },
@@ -3352,7 +3684,8 @@ const toMarketCenterRecord = async (
     prisma.playerCompetitorAction.findMany({
       where: { profileId: profile.id },
       orderBy: [{ status: "asc" }, { createdAt: "desc" }]
-    })
+    }),
+    listActiveEmployeeRecords(prisma, profile.id)
   ]);
   const activeTrackIds = new Set(markets.map((market) => market.trackId));
 
@@ -3371,7 +3704,8 @@ const toMarketCenterRecord = async (
     })),
     markets: markets.map(toPlayerMarketRecord),
     actions: actions.map(toCompetitorActionRecord),
-    finance: toCompanyFinanceRecord(profile)
+    finance: toCompanyFinanceRecord(profile),
+    employeeEffect: buildEmployeeEffect(employees, "market")
   };
 };
 
@@ -4586,7 +4920,8 @@ const resolveBusinessClockManagerTaskConfigId = (
   }
 
   const report = calculateFinanceReport(profile);
-  if (report.debtRatioBasisPoints >= 6000) {
+  const debtPressureLimit = Math.max(1, Math.floor(profile.valuation * 0.5));
+  if (report.debtRatioBasisPoints >= 6000 || profile.totalDebt >= debtPressureLimit) {
     return "random-loan-rate-review";
   }
   if (pulse.cashDelta < 0 || report.netCashFlow < 0 || profile.riskStatus !== "稳健") {
@@ -4815,6 +5150,74 @@ const createLongTermGoal = (
   };
 };
 
+export const buildEmployeeBusinessGuidance = (input: {
+  productEffect: EmployeeEffectRecord | null;
+  marketEffect: EmployeeEffectRecord | null;
+  fundingEffect: EmployeeEffectRecord | null;
+  employeeEvents: RandomTaskRecord[];
+  pendingMarketActionCount: number;
+}): EmployeeBusinessGuidanceRecord | null => {
+  if (input.employeeEvents.length > 0) {
+    return {
+      title: "处理员工状态提醒",
+      description: "有员工压力或忠诚提醒，先回到员工养成页处理。",
+      targetNav: "员工",
+      targetTab: "养成",
+      reason: "员工压力或忠诚进入待处理状态",
+      missingRoles: []
+    };
+  }
+
+  const productMissingRoles = input.productEffect?.missingRoles ?? [];
+  if (productMissingRoles.length > 0) {
+    return {
+      title: "补齐产品团队岗位",
+      description: `补齐${productMissingRoles.slice(0, 2).join("、")}后，产品推进更稳。`,
+      targetNav: "员工",
+      targetTab: "图鉴",
+      reason: `产品研发：${input.productEffect?.summary ?? "需要关键岗位支撑"}`,
+      missingRoles: productMissingRoles
+    };
+  }
+
+  const marketMissingRoles = input.marketEffect?.missingRoles ?? [];
+  if (input.pendingMarketActionCount > 0 && marketMissingRoles.length > 0) {
+    return {
+      title: "补齐市场应对岗位",
+      description: `竞品行动待处理，建议补齐${marketMissingRoles.slice(0, 2).join("、")}支撑。`,
+      targetNav: "市场",
+      targetTab: "市场",
+      reason: `市场竞争：${input.marketEffect?.summary ?? "需要岗位支撑"}`,
+      missingRoles: marketMissingRoles
+    };
+  }
+
+  const fundingMissingRoles = input.fundingEffect?.missingRoles ?? [];
+  if (fundingMissingRoles.length > 0) {
+    return {
+      title: "补齐资本团队岗位",
+      description: `补齐${fundingMissingRoles.slice(0, 2).join("、")}，提高路演把握。`,
+      targetNav: "融资",
+      targetTab: null,
+      reason: `融资路演：${input.fundingEffect?.summary ?? "需要岗位支撑"}`,
+      missingRoles: fundingMissingRoles
+    };
+  }
+
+  if ((input.productEffect?.bonusLabels.length ?? 0) > 0) {
+    return {
+      title: "继续推进产品研发",
+      description: input.productEffect?.summary ?? "团队已经形成产品支撑，可以继续推进产品。",
+      targetNav: "市场",
+      targetTab: "产品",
+      reason: "当前团队已有经营加成",
+      missingRoles: []
+    };
+  }
+
+  return null;
+};
+
 export const buildLongTermGoalsRecord = (input: {
   profile: PlayerProfileRecord;
   growth: CompanyGrowthRecord;
@@ -4825,6 +5228,7 @@ export const buildLongTermGoalsRecord = (input: {
   titles: TitleCenterRecord;
   achievements: AchievementRecord[];
   guild: GuildCenterRecord | null;
+  employeeBusinessGuidance?: EmployeeBusinessGuidanceRecord | null;
 }): LongTermGoalsRecord => {
   const dailyTask = input.tasks.find((task) => task.type === "daily" && !task.isClaimed) ?? input.tasks.find((task) => !task.isClaimed) ?? null;
   const mainTask = input.tasks.find((task) => task.type === "main" && !task.isClaimed) ?? dailyTask;
@@ -4886,6 +5290,30 @@ export const buildLongTermGoalsRecord = (input: {
             rewardLabel: mainTask?.rewardLabel ?? null,
             action: { label: mainTask?.isClaimable ? "领取主线" : "查看主线", href: "#tasks" }
           }),
+          ...(input.employeeBusinessGuidance === undefined || input.employeeBusinessGuidance === null
+            ? []
+            : [
+                createLongTermGoal({
+                  id: "today-employee-guidance",
+                  title: input.employeeBusinessGuidance.title,
+                  description: input.employeeBusinessGuidance.description,
+                  source: "task",
+                  sourceId: "employee-business-guidance",
+                  progress: input.employeeBusinessGuidance.missingRoles.length === 0 ? 1 : 0,
+                  target: 1,
+                  isClaimable: false,
+                  isCompleted: false,
+                  rewardLabel: null,
+                  action: {
+                    label: "查看岗位",
+                    href: "#employee-guidance",
+                    targetNav: input.employeeBusinessGuidance.targetNav,
+                    targetTab: input.employeeBusinessGuidance.targetTab,
+                    reason: input.employeeBusinessGuidance.reason,
+                    missingRoles: input.employeeBusinessGuidance.missingRoles
+                  }
+                })
+              ]),
           createLongTermGoal({
             id: "today-activity",
             title: activityGoal?.name ?? "参与赛季活动",
@@ -6782,7 +7210,7 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
 
-    const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild] = await Promise.all([
+    const [growth, tasks, season, leaderboards, crossServer, titles, achievements, guild, products, markets, fundings, employeeEvents] = await Promise.all([
       this.getCompanyGrowth(accountId, serverId),
       this.listTasks(accountId, serverId, today),
       this.getSeasonCenter(accountId, serverId, today),
@@ -6790,7 +7218,11 @@ export const createPrismaGameRepository = (
       this.getCrossServerCenter(accountId, serverId, today),
       this.listTitles(accountId, serverId, today),
       this.listAchievements(accountId, serverId),
-      this.getGuildCenter(accountId, serverId, today)
+      this.getGuildCenter(accountId, serverId, today),
+      this.listProducts(accountId, serverId),
+      this.listMarkets(accountId, serverId),
+      this.listFundings(accountId, serverId),
+      this.listEmployeeEvents(accountId, serverId, today)
     ]);
     if (
       growth === "PLAYER_NOT_FOUND" ||
@@ -6798,10 +7230,22 @@ export const createPrismaGameRepository = (
       leaderboards === "PLAYER_NOT_FOUND" ||
       titles === "PLAYER_NOT_FOUND" ||
       achievements === "PLAYER_NOT_FOUND" ||
-      guild === "PLAYER_NOT_FOUND"
+      guild === "PLAYER_NOT_FOUND" ||
+      products === "PLAYER_NOT_FOUND" ||
+      markets === "PLAYER_NOT_FOUND" ||
+      fundings === "PLAYER_NOT_FOUND" ||
+      employeeEvents === "PLAYER_NOT_FOUND"
     ) {
       return "PLAYER_NOT_FOUND";
     }
+
+    const employeeBusinessGuidance = buildEmployeeBusinessGuidance({
+      productEffect: products.employeeEffect,
+      marketEffect: markets.employeeEffect,
+      fundingEffect: fundings.employeeEffect,
+      employeeEvents,
+      pendingMarketActionCount: markets.actions.filter((action) => action.status === "pending").length
+    });
 
     return buildLongTermGoalsRecord({
       profile,
@@ -6812,7 +7256,8 @@ export const createPrismaGameRepository = (
       crossServer: crossServer === "PLAYER_NOT_FOUND" || crossServer === "CROSS_SERVER_GROUP_NOT_FOUND" ? null : crossServer,
       titles,
       achievements,
-      guild
+      guild,
+      employeeBusinessGuidance
     });
   },
 
@@ -7125,7 +7570,25 @@ export const createPrismaGameRepository = (
       const usedConfigIds = new Set(existingToday.map((task) => task.configId));
       const usedCategories = new Set(existingToday.map((task) => task.config.category));
       const selectedConfigs = [];
-      if (hasSeasonPass && !existingToday.some((task) => task.config.category === "season")) {
+      const employeeRisk = await prisma.playerEmployee.findFirst({
+        where: {
+          profileId: profile.id,
+          isActive: true,
+          OR: [{ pressure: { gte: 60 } }, { loyalty: { lte: 55 } }]
+        }
+      });
+      if (employeeRisk !== null && !usedConfigIds.has("random-employee-burnout")) {
+        const employeeConfig = await prisma.randomTaskConfig.findFirst({
+          where: { id: "random-employee-burnout", isActive: true },
+          orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+        });
+        if (employeeConfig !== null) {
+          selectedConfigs.push(employeeConfig);
+          usedConfigIds.add(employeeConfig.id);
+          usedCategories.add(employeeConfig.category);
+        }
+      }
+      if (selectedConfigs.length < createCount && hasSeasonPass && !existingToday.some((task) => task.config.category === "season")) {
         const seasonConfig = await prisma.randomTaskConfig.findFirst({
           where: { isActive: true, category: "season", id: { notIn: [...usedConfigIds] } },
           orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
@@ -7366,6 +7829,15 @@ export const createPrismaGameRepository = (
       profile: center.profile,
       result: "已暂时跳过本次展示，本次不消耗行动力。"
     };
+  },
+
+  async listEmployeeEvents(accountId, serverId, today) {
+    const center = await this.listRandomTasks(accountId, serverId, today);
+    if (center === "PLAYER_NOT_FOUND") {
+      return center;
+    }
+
+    return center.tasks.filter((task) => task.category === "employee");
   },
 
   async listTasks(accountId, serverId, today) {
@@ -7832,7 +8304,7 @@ export const createPrismaGameRepository = (
     return employees.map(toEmployeeRecord);
   },
 
-  async recruitEmployee(accountId, serverId) {
+  async listEmployeeCollection(accountId, serverId) {
     const profile = await prisma.playerProfile.findUnique({
       where: {
         accountId_serverId: {
@@ -7845,24 +8317,105 @@ export const createPrismaGameRepository = (
       return "PLAYER_NOT_FOUND";
     }
 
+    const [configs, employees] = await Promise.all([
+      prisma.employeeConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+      prisma.playerEmployee.findMany({ where: { profileId: profile.id }, select: { id: true, configId: true, role: true, rarity: true, isActive: true } })
+    ]);
+    const employeesByConfigId = new Map(employees.map((employee) => [employee.configId, employee]));
+    const ownedEmployees = employees.filter((employee) => employee.isActive);
+
+    return {
+      total: configs.length,
+      owned: employees.length,
+      roleCount: new Set(ownedEmployees.map((employee) => employee.role)).size,
+      rareOwned: ownedEmployees.filter((employee) => rareEmployeeRarities.has(employee.rarity)).length,
+      entries: configs.map((config) => toEmployeeCollectionEntry(config, employeesByConfigId.get(config.id)))
+    };
+  },
+
+  async recruitEmployee(accountId, serverId, options = {}) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const mode = options.mode ?? "normal";
+    const role = options.role?.trim() ?? "";
     const [configs, ownedEmployees] = await Promise.all([
       prisma.employeeConfig.findMany({ orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
       prisma.playerEmployee.findMany({ where: { profileId: profile.id }, select: { configId: true } })
     ]);
     const ownedConfigIds = new Set(ownedEmployees.map((employee) => employee.configId));
-    const pool = configs.filter((config) => !ownedConfigIds.has(config.id));
+    const pool = configs.filter((config) =>
+      !ownedConfigIds.has(config.id) &&
+      (mode !== "targeted" || config.role === role) &&
+      (mode !== "limited" || config.isLimited)
+    );
     if (pool.length === 0) {
-      return "NO_EMPLOYEE_AVAILABLE";
+      return mode === "targeted" ? "EMPLOYEE_ROLE_UNAVAILABLE" : "NO_EMPLOYEE_AVAILABLE";
     }
 
-    const totalWeight = pool.reduce((total, config) => total + Math.max(config.recruitWeight, 0), 0);
-    const selected = pickRecruitCandidate(pool, Math.random() * totalWeight);
+    const itemId = mode === "headhunter" || mode === "limited" ? "headhunter-ticket" : mode === "targeted" ? "targeted-headhunt-letter" : null;
+    const inventoryItem = itemId === null
+      ? null
+      : await prisma.playerInventoryItem.findUnique({
+        where: { profileId_itemId: { profileId: profile.id, itemId } },
+        include: { item: true }
+      });
+    if (itemId !== null && (inventoryItem === null || inventoryItem.quantity <= 0)) {
+      return "ITEM_NOT_FOUND";
+    }
+
+    const recruitPool = mode === "headhunter" || mode === "limited"
+      ? pool.map((config) => ({
+        ...config,
+        recruitWeight: rareEmployeeRarities.has(config.rarity)
+          ? Math.max(config.recruitWeight, 1) * 4
+          : Math.max(1, Math.trunc(config.recruitWeight / 2))
+      }))
+      : pool;
+    const totalWeight = recruitPool.reduce((total, config) => total + Math.max(config.recruitWeight, 0), 0);
+    const pityCount = mode === "limited" ? profile.limitedEmployeeRecruitPityCount : profile.employeeRecruitPityCount;
+    const guaranteedPool = mode === "headhunter" || mode === "limited"
+      ? recruitPool.filter((config) => highRarityEmployeeRarities.has(config.rarity))
+      : [];
+    const selected = pityCount >= 9 && guaranteedPool.length > 0
+      ? guaranteedPool[0]
+      : totalWeight > 0
+        ? pickRecruitCandidate(recruitPool, Math.random() * totalWeight)
+        : undefined;
     if (selected === undefined) {
       return "NO_EMPLOYEE_AVAILABLE";
     }
 
-    const [created] = await prisma.$transaction([
-      prisma.playerEmployee.create({
+    const created = await prisma.$transaction(async (tx) => {
+      if (inventoryItem !== null && itemId !== null) {
+        const nextQuantity = inventoryItem.quantity - 1;
+        await tx.playerInventoryItem.update({
+          where: { id: inventoryItem.id },
+          data: { quantity: nextQuantity }
+        });
+        await tx.playerItemLedger.create({
+          data: {
+            profileId: profile.id,
+            itemId,
+            changeQuantity: -1,
+            balanceAfter: nextQuantity,
+            source: "employee_recruit",
+            referenceId: inventoryItem.id,
+            reason: mode === "limited" ? "限时人才池消耗猎头券" : mode === "headhunter" ? "猎头招募消耗猎头券" : `定向猎头消耗定向猎头函：${role}`
+          }
+        });
+      }
+
+      const employee = await tx.playerEmployee.create({
         data: {
           id: randomUUID(),
           profileId: profile.id,
@@ -7879,17 +8432,32 @@ export const createPrismaGameRepository = (
           management: selected.management,
           negotiation: selected.negotiation,
           execution: selected.execution,
-          specialty: selected.specialty
+          specialty: selected.specialty,
+          experience: 0,
+          focusSkill: selected.role,
+          pressureState: selected.basePressure >= 45 ? "偏高" : "稳定",
+          eventState: "暂无事件",
+          unlockedPortraitAssetId: selected.portraitAssetId
         }
-      }),
-      prisma.playerProfile.update({
+      });
+      if (mode === "headhunter" || mode === "limited") {
+        const nextPityCount = highRarityEmployeeRarities.has(selected.rarity) ? 0 : pityCount + 1;
+        await tx.playerProfile.update({
+          where: { id: profile.id },
+          data: mode === "limited"
+            ? { limitedEmployeeRecruitPityCount: nextPityCount }
+            : { employeeRecruitPityCount: nextPityCount }
+        });
+      }
+      await tx.playerProfile.update({
         where: { id: profile.id },
         data: {
           monthlyExpense: { increment: selected.baseSalary },
           employeeSatisfaction: { increment: 1 }
         }
-      })
-    ]);
+      });
+      return employee;
+    });
 
     return toEmployeeRecord(created);
   },
@@ -7918,14 +8486,21 @@ export const createPrismaGameRepository = (
       return "EMPLOYEE_NOT_FOUND";
     }
 
+    if (profile.cash < 20000) {
+      return "INSUFFICIENT_CASH";
+    }
+
     const salaryIncrease = Math.max(2000, Math.round(employee.salary * 0.08));
     const [updated] = await prisma.$transaction([
       prisma.playerEmployee.update({
         where: { id: employee.id },
         data: {
           level: employee.level + 1,
+          experience: employee.experience + 100,
           salary: employee.salary + salaryIncrease,
           pressure: Math.min(employee.pressure + 2, 100),
+          pressureState: employee.pressure + 2 >= 60 ? "偏高" : "稳定",
+          eventState: employee.pressure + 2 >= 60 ? "建议减压" : employee.eventState,
           loyalty: Math.min(employee.loyalty + 1, 100),
           management: employee.management + 2,
           negotiation: employee.negotiation + 2,
@@ -7940,6 +8515,73 @@ export const createPrismaGameRepository = (
         }
       })
     ]);
+
+    return toEmployeeRecord(updated);
+  },
+
+  async supportEmployee(accountId, serverId, employeeId) {
+    const profile = await prisma.playerProfile.findUnique({
+      where: {
+        accountId_serverId: {
+          accountId,
+          serverId
+        }
+      }
+    });
+    if (profile === null) {
+      return "PLAYER_NOT_FOUND";
+    }
+
+    const employee = await prisma.playerEmployee.findFirst({
+      where: {
+        id: employeeId,
+        profileId: profile.id,
+        isActive: true
+      }
+    });
+    if (employee === null) {
+      return "EMPLOYEE_NOT_FOUND";
+    }
+
+    const gift = await prisma.playerInventoryItem.findUnique({
+      where: { profileId_itemId: { profileId: profile.id, itemId: "employee-gift" } },
+      include: { item: true }
+    });
+    if (gift === null || gift.quantity <= 0) {
+      return "ITEM_NOT_FOUND";
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const nextQuantity = gift.quantity - 1;
+      await tx.playerInventoryItem.update({
+        where: { id: gift.id },
+        data: { quantity: nextQuantity }
+      });
+      await tx.playerItemLedger.create({
+        data: {
+          profileId: profile.id,
+          itemId: "employee-gift",
+          changeQuantity: -1,
+          balanceAfter: nextQuantity,
+          source: "employee_support",
+          referenceId: employee.id,
+          reason: "员工关怀消耗员工好感礼物"
+        }
+      });
+      await tx.playerProfile.update({
+        where: { id: profile.id },
+        data: { employeeSatisfaction: { increment: 2 } }
+      });
+      return tx.playerEmployee.update({
+        where: { id: employee.id },
+        data: {
+          pressure: Math.max(0, employee.pressure - 10),
+          pressureState: employee.pressure - 10 >= 60 ? "偏高" : "稳定",
+          loyalty: Math.min(100, employee.loyalty + 4),
+          eventState: "已关怀"
+        }
+      });
+    });
 
     return toEmployeeRecord(updated);
   },
@@ -8821,21 +9463,25 @@ export const createPrismaGameRepository = (
       return "INVESTOR_NOT_FOUND";
     }
 
-    const [fundings, products] = await Promise.all([
+    const [fundings, products, employees] = await Promise.all([
       prisma.playerFunding.findMany({ where: { profileId: profile.id } }),
-      prisma.playerProduct.findMany({ where: { profileId: profile.id } })
+      prisma.playerProduct.findMany({ where: { profileId: profile.id } }),
+      listActiveEmployeeRecords(prisma, profile.id)
     ]);
     const fundedInvestorCounts = new Map<string, number>();
     for (const funding of fundings.filter((funding) => funding.status === "funded")) {
       fundedInvestorCounts.set(funding.investorId, (fundedInvestorCounts.get(funding.investorId) ?? 0) + 1);
     }
     const activeInvestorIds = new Set(fundings.filter((funding) => funding.status === "pending").map((funding) => funding.investorId));
-    const offer = calculateFundingOffer(
-      toProfileRecord(profile),
-      calculateFundingProductMetrics(products),
-      config,
-      fundedInvestorCounts,
-      activeInvestorIds
+    const offer = applyFundingEmployeeEffect(
+      calculateFundingOffer(
+        toProfileRecord(profile),
+        calculateFundingProductMetrics(products),
+        config,
+        fundedInvestorCounts,
+        activeInvestorIds
+      ),
+      employees
     );
     if (!offer.isAvailable) {
       return "FUNDING_LOCKED";
@@ -9311,19 +9957,24 @@ export const createPrismaGameRepository = (
       return "INSUFFICIENT_CASH";
     }
 
-    const nextMetrics = calculateNextProductMetrics({
-      stage: readProductStage(product.stage),
-      users: product.users,
-      retentionBasisPoints: product.retentionBasisPoints,
-      payRateBasisPoints: product.payRateBasisPoints,
-      revenuePerPayingUser: product.config.revenuePerPayingUser,
-      acquisitionCost: product.acquisitionCost,
-      serverCost: product.serverCost,
-      reputationScore: product.reputationScore,
-      techDebt: product.techDebt,
-      techDebtGrowth: product.config.techDebtGrowth,
-      reputationGrowth: product.config.reputationGrowth
-    });
+    const employees = await listActiveEmployeeRecords(prisma, profile.id);
+    const nextMetrics = applyProductEmployeeEffect(
+      calculateNextProductMetrics({
+        stage: readProductStage(product.stage),
+        users: product.users,
+        retentionBasisPoints: product.retentionBasisPoints,
+        payRateBasisPoints: product.payRateBasisPoints,
+        revenuePerPayingUser: product.config.revenuePerPayingUser,
+        acquisitionCost: product.acquisitionCost,
+        serverCost: product.serverCost,
+        reputationScore: product.reputationScore,
+        techDebt: product.techDebt,
+        techDebtGrowth: product.config.techDebtGrowth,
+        reputationGrowth: product.config.reputationGrowth
+      }),
+      employees,
+      product.config.revenuePerPayingUser
+    );
     const incomeDelta = nextMetrics.monthlyRevenue - product.monthlyRevenue;
     const expenseDelta = nextMetrics.serverCost - product.serverCost;
 
@@ -9717,11 +10368,19 @@ export const createPrismaGameRepository = (
     if (market === null) {
       return "MARKET_NOT_FOUND";
     }
-    const responseCost = response === "counter" ? action.config.responseCost : Math.round(action.config.responseCost * 0.55);
+    const employees = await listActiveEmployeeRecords(prisma, profile.id);
+    const marketEmployeeEffect = buildEmployeeEffect(employees, "market");
+    const employeeSupport = calculateMarketEmployeeSupport(employees, readCompetitorActionType(action.actionType));
+    const baseResponseCost = response === "counter" ? action.config.responseCost : Math.round(action.config.responseCost * 0.55);
+    const responseCost = Math.max(0, Math.round(baseResponseCost * (100 - Math.min(12, employeeSupport * 3)) / 100));
     if (profile.cash < responseCost) {
       return "INSUFFICIENT_CASH";
     }
 
+    const responseShareDeltaBasisPoints =
+      (response === "counter"
+        ? action.config.responseShareDeltaBasisPoints
+        : Math.round(action.config.responseShareDeltaBasisPoints * 0.65)) + employeeSupport * 18;
     const shareResult = calculateMarketShare({
       currentShareBasisPoints: market.playerShareBasisPoints,
       competitorShareBasisPoints: market.competitorShareBasisPoints,
@@ -9730,17 +10389,15 @@ export const createPrismaGameRepository = (
       customerSatisfaction: profile.customerSatisfaction,
       monthlyIncome: profile.monthlyIncome,
       monthlyExpense: profile.monthlyExpense,
-      actionShareDeltaBasisPoints:
-        response === "counter"
-          ? action.config.responseShareDeltaBasisPoints
-          : Math.round(action.config.responseShareDeltaBasisPoints * 0.65)
+      actionShareDeltaBasisPoints: responseShareDeltaBasisPoints
     });
     const reputationImpact =
-      response === "counter" ? action.config.responseReputationImpact : Math.round(action.config.responseReputationImpact * 0.45);
+      (response === "counter" ? action.config.responseReputationImpact : Math.round(action.config.responseReputationImpact * 0.45)) + employeeSupport * 40;
+    const pressureRelief = employeeSupport * 2;
     const resultSummary =
       response === "counter"
-        ? `${action.competitorName} 的攻势被正面反击，市场份额回升。`
-        : `${action.competitorName} 的攻势被防守化解，经营压力下降。`;
+        ? `${action.competitorName} 的攻势被正面反击，市场份额回升。${marketEmployeeEffect.bonusLabels.length > 0 ? " 团队支撑已计入本次反击。" : ""}`
+        : `${action.competitorName} 的攻势被防守化解，经营压力下降。${marketEmployeeEffect.bonusLabels.length > 0 ? " 团队支撑已计入本次防守。" : ""}`;
 
     const result = await prisma.$transaction(async (tx) => {
       const updatedMarket = await tx.playerMarketState.update({
@@ -9748,9 +10405,9 @@ export const createPrismaGameRepository = (
         data: {
           playerShareBasisPoints: shareResult.playerShareBasisPoints,
           competitorShareBasisPoints: shareResult.competitorShareBasisPoints,
-          pricePressure: { decrement: Math.min(market.pricePressure, response === "counter" ? 10 : 6) },
-          talentPressure: { decrement: Math.min(market.talentPressure, response === "counter" ? 10 : 6) },
-          reputationPressure: { decrement: Math.min(market.reputationPressure, response === "counter" ? 800 : 400) },
+          pricePressure: { decrement: Math.min(market.pricePressure, (response === "counter" ? 10 : 6) + pressureRelief) },
+          talentPressure: { decrement: Math.min(market.talentPressure, (response === "counter" ? 10 : 6) + pressureRelief) },
+          reputationPressure: { decrement: Math.min(market.reputationPressure, (response === "counter" ? 800 : 400) + pressureRelief * 80) },
           resultSummary
         }
       });
@@ -9768,7 +10425,7 @@ export const createPrismaGameRepository = (
         data: {
           cash: { decrement: responseCost },
           reputation: { increment: reputationImpact },
-          customerSatisfaction: { increment: response === "counter" ? 3 : 2 },
+          customerSatisfaction: { increment: (response === "counter" ? 3 : 2) + Math.min(2, employeeSupport) },
           riskStatus: "稳健"
         }
       });

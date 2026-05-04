@@ -210,6 +210,8 @@ model PlayerProfile {
   totalDebt    Int         @default(0)
   creditRating String      @default("A") @db.VarChar(8)
   employeeSatisfaction Int @default(82)
+  employeeRecruitPityCount Int @default(0)
+  limitedEmployeeRecruitPityCount Int @default(0)
   customerSatisfaction Int @default(78)
   financeMonth Int        @default(1)
   operatingDay Int        @default(1)
@@ -980,6 +982,14 @@ model EmployeeConfig {
   negotiation Int
   execution  Int
   specialty String          @db.VarChar(160)
+  portraitAssetId String?   @db.VarChar(64)
+  portraitUrl String?       @db.VarChar(220)
+  avatarFrameId String?     @db.VarChar(64)
+  obtainSource String       @default("常驻人才池") @db.VarChar(40)
+  tagsJson String?          @db.Text
+  skillsJson String?        @db.Text
+  bondGroupIdsJson String?  @db.Text
+  isLimited Boolean         @default(false)
   recruitWeight Int
   sortOrder Int             @default(0)
   createdAt DateTime        @default(now())
@@ -1006,6 +1016,11 @@ model PlayerEmployee {
   negotiation Int
   execution  Int
   specialty String       @db.VarChar(160)
+  experience Int         @default(0)
+  focusSkill String      @default("岗位专长") @db.VarChar(48)
+  pressureState String   @default("稳定") @db.VarChar(16)
+  eventState String      @default("暂无事件") @db.VarChar(24)
+  unlockedPortraitAssetId String? @db.VarChar(64)
   equityBasisPoints Int  @default(0)
   assignedTo String?     @db.VarChar(32)
   isActive Boolean       @default(true)

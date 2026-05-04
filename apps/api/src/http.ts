@@ -74,7 +74,7 @@ const sendJson = <T>(
   body: ApiResponse<T>
 ): void => {
   response.writeHead(statusCode, {
-    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date, x-server-now",
     "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
@@ -85,7 +85,7 @@ const sendJson = <T>(
 
 const sendOptions = (response: ServerResponse): void => {
   response.writeHead(204, {
-    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date, x-server-now",
     "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-length": "0"
@@ -95,7 +95,7 @@ const sendOptions = (response: ServerResponse): void => {
 
 const sendRateLimited = (response: ServerResponse, traceId: string): void => {
   response.writeHead(429, {
-    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date",
+    "access-control-allow-headers": "authorization, content-type, x-trace-id, x-server-date, x-server-now",
     "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-origin": "*",
     "content-type": "application/json; charset=utf-8",
@@ -4238,6 +4238,50 @@ export const createApiServer = (
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/employees/collection") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const collection = await repository.listEmployeeCollection(account.id, serverId);
+      if (collection === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(collection, traceId));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/employees/events") {
+      if (account === undefined) {
+        sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
+        return;
+      }
+
+      const serverId = url.searchParams.get("serverId")?.trim();
+      if (serverId === undefined || serverId === "") {
+        sendJson(response, 400, failure("VALIDATION_ERROR", "serverId query parameter is required.", traceId));
+        return;
+      }
+
+      const events = await repository.listEmployeeEvents(account.id, serverId, readToday(request));
+      if (events === "PLAYER_NOT_FOUND") {
+        sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
+        return;
+      }
+
+      sendJson(response, 200, success(events, traceId));
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/employees") {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -4266,19 +4310,31 @@ export const createApiServer = (
         return;
       }
 
-      const serverId = readServerId(await readBody(request));
+      const body = await readBody(request);
+      const serverId = readServerId(body);
       if (serverId === undefined) {
         sendJson(response, 400, failure("VALIDATION_ERROR", "serverId is required.", traceId));
         return;
       }
 
-      const employee = await repository.recruitEmployee(account.id, serverId);
+      const modeText = isRecord(body) ? readString(body, "mode") : "";
+      const role = isRecord(body) ? readString(body, "role") : "";
+      const mode = modeText === "headhunter" || modeText === "targeted" || modeText === "limited" ? modeText : "normal";
+      const employee = await repository.recruitEmployee(account.id, serverId, { mode, role });
       if (employee === "PLAYER_NOT_FOUND") {
         sendJson(response, 404, failure("PLAYER_NOT_FOUND", "Player profile not found.", traceId));
         return;
       }
       if (employee === "NO_EMPLOYEE_AVAILABLE") {
         sendJson(response, 409, failure("NO_EMPLOYEE_AVAILABLE", "No employee candidates are available.", traceId));
+        return;
+      }
+      if (employee === "ITEM_NOT_FOUND") {
+        sendJson(response, 409, failure("ITEM_NOT_FOUND", "Required recruit item is not available.", traceId));
+        return;
+      }
+      if (employee === "EMPLOYEE_ROLE_UNAVAILABLE") {
+        sendJson(response, 409, failure("EMPLOYEE_ROLE_UNAVAILABLE", "No employee candidates are available for this role.", traceId));
         return;
       }
 
@@ -4288,7 +4344,7 @@ export const createApiServer = (
       return;
     }
 
-    const employeeActionMatch = /^\/employees\/([^/]+)\/(train|equity|fire)$/.exec(url.pathname);
+    const employeeActionMatch = /^\/employees\/([^/]+)\/(train|support|equity|fire)$/.exec(url.pathname);
     if (request.method === "POST" && employeeActionMatch !== null) {
       if (account === undefined) {
         sendJson(response, 401, failure("UNAUTHORIZED", "Missing or invalid session token.", traceId));
@@ -4306,6 +4362,8 @@ export const createApiServer = (
       const result =
         action === "train"
           ? await repository.cultivateEmployee(account.id, serverId, decodeURIComponent(employeeId))
+          : action === "support"
+            ? await repository.supportEmployee(account.id, serverId, decodeURIComponent(employeeId))
           : action === "equity"
             ? await repository.grantEmployeeEquity(account.id, serverId, decodeURIComponent(employeeId))
             : await repository.dismissEmployee(account.id, serverId, decodeURIComponent(employeeId));
@@ -4320,6 +4378,14 @@ export const createApiServer = (
       }
       if (result === "EQUITY_LIMIT_REACHED") {
         sendJson(response, 409, failure("EQUITY_LIMIT_REACHED", "Founder equity is not enough.", traceId));
+        return;
+      }
+      if (result === "INSUFFICIENT_CASH") {
+        sendJson(response, 409, failure("INSUFFICIENT_CASH", "Cash is not enough for employee training.", traceId));
+        return;
+      }
+      if (result === "ITEM_NOT_FOUND") {
+        sendJson(response, 409, failure("ITEM_NOT_FOUND", "Required employee item is not available.", traceId));
         return;
       }
 
