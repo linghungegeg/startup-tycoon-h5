@@ -2976,6 +2976,24 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase45-employee-event-archive.test.mjs`、员工头像/收集奖励相关测试、client typecheck、lint、build 和 `git diff --check`。
 - 下一阶段入口：稳定后再评估员工事件结果展示或员工事件配置扩容；不在本批加入剧情树、羁绊奖励、皮肤商店或新付费池。
 
+### Phase 41：员工事件结果收口
+
+- 当前稳定点：`586d118 feat: add employee event archive`。
+- 阶段目标：不新增员工剧情表和付费池，只让员工事件处理后的结果能回到员工养成页被看见，补齐“出现、处理、反馈”的轻闭环。
+- 完成内容：
+  - 员工事件轻档案改为读取当天员工类随机任务，展示待处理、已处理和已保留状态。
+  - 已处理或已保留事件展示最近结果短句，待处理事件继续展示事件说明和专属经理入口。
+  - 员工详情中的事件状态清洗为“暂无待办 / 建议关怀 / 关怀完成”等玩家可读文案。
+  - 员工类随机任务正式配置补到 4 条，覆盖压力升高、加薪沟通、竞品挖人和入职适应。
+  - 不改变随机任务结算、员工数值、招募概率、市场、融资和商会闭环。
+- 四插件证据：
+  - Superpowers：先提交 Phase 40 稳定点，再按 TDD 新增 Phase 46 红灯后落最小实现。
+  - Build Web Apps：事件结果仍在紧凑列表中呈现，不新增大档案页或复杂弹窗。
+  - Game Studio：员工事件结果反馈形成每日回访闭环，但不扩大剧情树或付费深度。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工养成页状态、专属经理处理入口、处理后反馈和 Console。
+- 验证命令：`node apps/client/test/phase46-employee-event-result-loop.test.mjs`、员工事件/收集/头像相关测试、api/client typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估员工事件内容池继续扩容或事件结果奖励微调；不在本批加入剧情树、羁绊奖励、头像抽取或新付费池。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

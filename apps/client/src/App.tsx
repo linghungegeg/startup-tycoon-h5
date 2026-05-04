@@ -2160,6 +2160,22 @@ const employeeFrameLabel = (avatarFrameId: string | null | undefined, rarity: st
   return `${rarity}基础头像位`;
 };
 
+const formatEmployeeEventState = (eventState: string): string => {
+  if (eventState === "暂无事件") {
+    return "暂无待办";
+  }
+
+  if (eventState === "建议减压") {
+    return "建议关怀";
+  }
+
+  if (eventState === "已关怀") {
+    return "关怀完成";
+  }
+
+  return eventState;
+};
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -2640,18 +2656,23 @@ function App() {
     () => pendingRandomTasks.filter((task) => task.category === "employee"),
     [pendingRandomTasks]
   );
+  const employeeRandomTaskRows = useMemo(
+    () => (randomTaskCenter?.tasks ?? []).filter((task) => task.category === "employee"),
+    [randomTaskCenter?.tasks]
+  );
   const employeeEventArchiveRows = useMemo(
     () =>
-      pendingEmployeeRandomTasks.map((task) => ({
+      employeeRandomTaskRows.map((task) => ({
         id: task.id,
         title: task.title,
         description: task.description,
-        statusLabel: task.status === "pending" ? "待处理" : "已处理",
+        statusLabel: task.status === "pending" ? "待处理" : task.status === "dismissed" ? "已保留" : "已处理",
         impactLabel: task.impactLabel ?? task.riskLabel,
         targetEmployeeName: task.targetEmployeeName ?? selectedEmployee?.name ?? "当前团队",
-        targetTab: task.targetTab ?? "growth"
+        targetTab: task.targetTab ?? "growth",
+        resultSummary: task.resultSummary
       })),
-    [pendingEmployeeRandomTasks, selectedEmployee?.name]
+    [employeeRandomTaskRows, selectedEmployee?.name]
   );
   const selectedRandomTask = useMemo(
     () => pendingRandomTasks.find((task) => task.id === selectedRandomTaskId) ?? pendingRandomTasks[0],
@@ -8826,7 +8847,7 @@ function App() {
                   {selectedEmployee ? (
                     <article>
                       <strong>{selectedEmployee.name} · {selectedEmployee.focusSkill}</strong>
-                      <span>经验 {selectedEmployee.experience} · 压力状态 {selectedEmployee.pressureState} · 事件 {selectedEmployee.eventState}</span>
+                      <span>经验 {selectedEmployee.experience} · 压力状态 {selectedEmployee.pressureState} · 事件 {formatEmployeeEventState(selectedEmployee.eventState)}</span>
                       <p>{selectedEmployee.specialty}</p>
                       <div className="employee-actions">
                         <button type="button" onClick={() => void cultivateEmployee()} disabled={!selectedEmployee.isActive}>培养</button>
@@ -8849,7 +8870,7 @@ function App() {
                           <button className="employee-event-row" key={event.id} type="button" onClick={() => openEmployeeEventManager(event.id)}>
                             <strong>{event.title}</strong>
                             <em>{event.impactLabel} · {event.statusLabel}</em>
-                            <small>关联：{event.targetEmployeeName} · {event.description}</small>
+                            <small>关联：{event.targetEmployeeName} · {event.resultSummary ?? event.description}</small>
                           </button>
                         ))
                       ) : (
