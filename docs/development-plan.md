@@ -2907,6 +2907,23 @@ VIP 权益：
 - 验证命令：`node apps/client/test/phase41-employee-long-term-collection.test.mjs`、`node apps/client/test/phase39-employee-48-collection.test.mjs`、`node apps/client/test/phase40-employee-collection-loop.test.mjs`，以及员工、经理、typecheck、lint、build、`db:seed` 和 `git diff --check`。
 - 下一阶段入口：稳定后再评估正式头像资源替换或员工外观展示；不在本批加入新付费池或剧情树。
 
+### Phase 37：员工头像展示层
+
+- 当前稳定点：`4a204cc feat: prepare employee long-term collection layer`。
+- 阶段目标：不生产正式头像美术、不新增表和付费池，只把现有头像字段接入图鉴和员工详情展示，让后续替换 UI 资源时不再改结构。
+- 完成内容：
+  - 员工图鉴和员工详情统一头像规则：有 `portraitUrl` 时显示图片，没有资源时显示姓名首字占位。
+  - 传奇和顶尖员工继续通过 `avatarFrameId` 展示头像框，普通员工保持基础边框。
+  - 员工详情复用图鉴配置中的头像、头像框和来源短文案；图鉴卡片保留常驻人才池、限时人才池等来源说明。
+  - 不改变招募、养成、员工数值、市场、融资、商会和经理建议闭环。
+- 四插件证据：
+  - Superpowers：按 TDD 新增 Phase 42 红灯后再实现头像展示层。
+  - Build Web Apps：头像位保持固定尺寸和短来源标签，不新增大卡片和教学弹窗。
+  - Game Studio：头像展示只增强收集可见性，不改变经营循环或付费深度。
+  - Browser Use：完成后打开 `http://127.0.0.1:5173/` 验收员工四标签、图鉴 `X/60`、头像位和 Console。
+- 验证命令：`node apps/client/test/phase42-employee-portrait-display.test.mjs`，以及员工闭环、长期收集、typecheck、lint、build 和 `git diff --check`。
+- 下一阶段入口：稳定后再评估正式头像资源替换、员工外观展示或员工收集奖励轻量化；不在本批加入皮肤商店、剧情树或羁绊奖励。
+
 ### Phase 24-31 全局验证要求
 
 - Phase 24 第十三批、Phase 25、Phase 26、Phase 27、Phase 28、Phase 29、Phase 30 和 Phase 31 的每个实施批次都必须使用四插件完成开发与检查，并在阶段总结中写明证据：

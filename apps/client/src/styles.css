@@ -2476,12 +2476,24 @@ input {
   width: min(24vw, 92px);
   aspect-ratio: 1;
   place-items: center;
+  overflow: hidden;
   border: 2px solid rgba(255, 218, 126, 0.88);
   border-radius: 50%;
   color: #1b2332;
   background: radial-gradient(circle at 34% 24%, #fff6d7, #c79038 72%);
   font-size: clamp(32px, 10vw, 54px);
   font-weight: 900;
+}
+
+.employee-portrait img,
+.employee-avatar-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.employee-portrait img {
+  border-radius: 50%;
 }
 
 .employee-portrait strong {
@@ -2495,6 +2507,13 @@ input {
   font-size: clamp(11px, 3vw, 14px);
   font-style: normal;
   font-weight: 800;
+}
+
+.employee-avatar-source {
+  color: #f6cc74;
+  font-size: clamp(9px, 2.5vw, 12px);
+  font-weight: 900;
+  letter-spacing: 0;
 }
 
 .employee-stats {
@@ -2700,6 +2719,7 @@ input {
   width: 52px;
   aspect-ratio: 1;
   place-items: center;
+  overflow: hidden;
   border: 2px solid rgba(246, 204, 116, 0.58);
   border-radius: 6px;
   color: #1b2332;
@@ -2708,6 +2728,11 @@ input {
     rgba(255, 255, 255, 0.06);
   font-size: clamp(20px, 5.2vw, 30px);
   font-weight: 900;
+}
+
+.employee-avatar-slot > img,
+.employee-avatar-slot > span {
+  grid-area: 1 / 1;
 }
 
 .employee-frame-legend {

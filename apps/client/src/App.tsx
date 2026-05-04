@@ -2461,6 +2461,10 @@ function App() {
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? employees[0],
     [employees, selectedEmployeeId]
   );
+  const selectedEmployeeCollectionEntry = useMemo(
+    () => (selectedEmployee ? (employeeCollection?.entries ?? []).find((entry) => entry.id === selectedEmployee.configId) : undefined),
+    [employeeCollection?.entries, selectedEmployee]
+  );
   const activeEmployees = useMemo(() => employees.filter((employee) => employee.isActive), [employees]);
   const employeePower = useMemo(
     () =>
@@ -8587,10 +8591,14 @@ function App() {
                   <article className="employee-detail" aria-label="员工详情">
                     {selectedEmployee ? (
                       <>
-                        <div className="employee-portrait">
-                          <span>{selectedEmployee.name.slice(0, 1)}</span>
+                        <div className={`employee-portrait ${selectedEmployeeCollectionEntry?.avatarFrameId ?? ""}`}>
+                          <span>
+                            {selectedEmployeeCollectionEntry?.portraitUrl && <img src={selectedEmployeeCollectionEntry.portraitUrl} alt="" />}
+                            {selectedEmployeeCollectionEntry?.portraitUrl ? "" : selectedEmployee.name.slice(0, 1)}
+                          </span>
                           <strong>{selectedEmployee.name}</strong>
                           <em>{selectedEmployee.rarity} · {selectedEmployee.role} · {selectedEmployee.careerLevel} · {selectedEmployee.pressureState}</em>
+                          <small className="employee-avatar-source">{selectedEmployeeCollectionEntry?.obtainSource ?? "常驻人才池"}</small>
                         </div>
 
                         <dl className="employee-stats">
@@ -8678,6 +8686,7 @@ function App() {
                   {filteredEmployeeCollectionEntries.map((entry) => (
                     <article className={entry.status === "未招募" ? "locked" : undefined} key={entry.id}>
                       <div className={`employee-avatar-slot ${entry.avatarFrameId ?? ""}`}>
+                        {entry.portraitUrl && <img src={entry.portraitUrl} alt="" />}
                         <span>{entry.portraitUrl ? "" : entry.name.slice(0, 1)}</span>
                       </div>
                       <span className={`quality ${rarityClass(entry.rarity)}`}>{entry.rarity}</span>
@@ -8686,7 +8695,7 @@ function App() {
                         <em>{entry.role} · {entry.careerLevel} · {entry.status} · {entry.obtainSource}</em>
                         <small>基础薪资 {formatWan(entry.baseSalary)}/月 · 管理 {entry.management} · 谈判 {entry.negotiation} · 执行 {entry.execution}</small>
                         <p>{entry.specialty}</p>
-                        <small>{entry.tags.join(" / ")} · {entry.isRecruitable ? "可通过人才池招募" : "暂未开放"}</small>
+                        <small className="employee-avatar-source">{entry.obtainSource} · {entry.isRecruitable ? "可通过人才池招募" : "已入队或暂不可招募"}</small>
                       </div>
                     </article>
                   ))}
