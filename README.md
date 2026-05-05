@@ -350,7 +350,7 @@ npm run db:seed -w @wenziyouxi/api
 
 ## License
 
-建议使用 MIT License。正式开源前建议在仓库根目录补充 `LICENSE` 文件，并写明版权归属。
+本项目使用 MIT License，详见根目录 `LICENSE` 文件。
 
 ## 联系作者
 

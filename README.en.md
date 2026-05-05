@@ -272,7 +272,7 @@ startup-tycoon-h5/
 
 ## License
 
-MIT License is recommended. Before publishing as an open-source project, add a root `LICENSE` file with the final copyright owner.
+This project uses the MIT License. See the root `LICENSE` file for details.
 
 ## Contact
 
