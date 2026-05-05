@@ -276,9 +276,12 @@ This project uses the MIT License. See the root `LICENSE` file for details.
 
 ## Contact
 
-The repository root includes contact and support QR codes:
-
-- WeChat: `wx.jpg`
-- Donation/support: `zhanshang.png`
-
 If you build a derivative project, reskin, commercial deployment, or custom version from this project, you can contact the author through WeChat.
+
+### WeChat
+
+<img src="wx.jpg" alt="WeChat QR code" width="220" />
+
+### Donation / Support
+
+<img src="zhanshang.png" alt="Donation QR code" width="220" />

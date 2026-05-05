@@ -318,9 +318,12 @@ npm run db:seed -w @wenziyouxi/api
 
 ## 联系作者
 
-根目录包含作者联系方式和赞赏二维码：
-
-- 微信：`wx.jpg`
-- 赞赏：`zhanshang.png`
-
 如果你基于本项目做二开、换皮、商业化、部署或定制开发，可以通过微信联系作者交流。
+
+### 微信联系
+
+<img src="wx.jpg" alt="微信联系二维码" width="220" />
+
+### 赞赏支持
+
+<img src="zhanshang.png" alt="赞赏二维码" width="220" />
