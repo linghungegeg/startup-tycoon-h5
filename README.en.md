@@ -59,6 +59,32 @@ Default local URLs:
 - Concept images, home UI references, feature entry images, employee portraits, and cross-server assets are included.
 - Admin tools cover player management, compensation, configuration, activities, audit logs, analytics, and operation alerts.
 
+## Core Advantages
+
+### Authentic startup management loop
+
+The project is not a simple click-to-upgrade demo. It connects cash flow, monthly income, monthly expenses, debt ratio, credit rating, funding, loans, valuation, equity dilution, and board pressure into one business loop. Projects, products, loans, funding, and events all affect the company's resources and future options, which is closer to real startup management where growth and risk must be balanced.
+
+### Employees as business assets, not combat cards
+
+Employees are not just power cards. They have roles, salary, pressure, loyalty, growth potential, management, negotiation, and execution attributes. These values affect project delivery, funding talks, market responses, and operating risk. Secondary developers can extend this into co-founder paths, equity incentives, resignations, headhunting, role collaboration, and employee story events.
+
+### Product and market systems with operating pressure
+
+Product R&D includes users, retention, pay rate, ARPPU, acquisition cost, server cost, technical debt, and refactoring. Market competition includes competitor share, price pressure, talent pressure, policy risk, reputation pressure, patent risk, and competitor actions. This makes the project suitable for extending into SaaS, AI tools, overseas expansion, industry bidding, and other startup tracks.
+
+### Text events as business decisions
+
+Random business tasks, employee events, manager todos, finance tasks, funding tasks, and loan tasks are built around choices, costs, risks, and feedback. Players are not only reading story text. They make tradeoffs between cash, action power, reputation, employee state, and long-term returns, which is where a text-based business simulation can create real depth.
+
+### Knowledge cards as content depth
+
+Knowledge cards can carry startup knowledge around finance, funding, compliance, HR, product, market, customer relationships, and team management. Events, tasks, achievements, and business outcomes can unlock related knowledge cards, turning one-time story content into reusable business learning material that secondary developers can keep expanding.
+
+### Long-term playability loops
+
+The project does not rely on one main quest line only. Main tasks, daily tasks, random business events, manager todos, employee events, guilds, seasons, activities, leaderboards, cross-server gameplay, and business scenarios form long-term playability loops. Players can keep progressing through company growth, employee collection, business reviews, guild cooperation, season rewards, and cross-server competition.
+
 ## Feature Overview
 
 ### Account and Character Flow
@@ -87,7 +113,7 @@ Finance includes daily settlement, monthly settlement, income, expense, net cash
 
 ### Tasks and Manager Events
 
-The project includes main tasks, daily tasks, side tasks, task progress, rewards, company experience, knowledge unlocks, random business tasks, manager todo items, deferred handling, expiration, action power costs, and category rotation. Random tasks can use risk insurance, market intelligence, finance advisor cards, and season pass extra tasks.
+The project includes main tasks, daily tasks, side tasks, task progress, rewards, company experience, knowledge unlocks, random business tasks, manager todo items, deferred handling, expiration, action power costs, and category rotation. Knowledge cards are not just a standalone encyclopedia: they can enter the player growth loop through tasks, events, achievements, and business outcomes. Random tasks can use risk insurance, market intelligence, finance advisor cards, and season pass extra tasks.
 
 ### Monetization and Inventory
 
@@ -95,7 +121,7 @@ The project includes platform coin wallet, ledgers, shop products, purchases, fi
 
 ### Activities, Seasons, Rankings, and Scenarios
 
-The project includes seasons, season tasks, season points, pass purchase, limited-time activities, activity registration, progress, rewards, temporary leaderboards, activity shop, activity config drafts, review, publish, settlement, leaderboard snapshots, titles, achievements, knowledge base, and business scenarios.
+The project includes seasons, season tasks, season points, pass purchase, limited-time activities, activity registration, progress, rewards, temporary leaderboards, activity shop, activity config drafts, review, publish, settlement, leaderboard snapshots, titles, achievements, knowledge base, and business scenarios. Business scenarios can carry replayable challenges such as cash flow crises, failed funding, and competitor pressure, while seasons, activities, rankings, and cross-server gameplay provide long-term goals.
 
 ### Guilds and Cross-Server Gameplay
 
