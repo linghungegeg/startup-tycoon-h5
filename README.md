@@ -275,42 +275,6 @@ startup-tycoon-h5/
 | `npm run db:push -w @wenziyouxi/api` | 同步数据库结构 |
 | `npm run db:seed -w @wenziyouxi/api` | 写入初始化配置和种子数据 |
 
-## 建议上传内容
-
-建议上传：
-
-- `apps`
-- `packages`
-- `docs`
-- `img`
-- `package.json`
-- `package-lock.json`
-- `tsconfig.base.json`
-- `eslint.config.js`
-- `.env.example`
-- `.gitignore`
-- `README.md`
-- `README.en.md`
-- `wx.jpg`
-- `zhanshang.png`
-- 根目录静态 HTML 原型文件
-
-不要上传：
-
-- `.env`
-- `node_modules`
-- `dist`
-- `.npm-cache`
-- `.codex-run`
-- `.playwright-cli`
-- `.superpowers`
-- `test-results`
-- `*.log`
-- 真实生产密钥
-- 真实支付密钥
-- 真实服务器密码
-- 真实用户数据或数据库备份
-
 ## 新手研究路线
 
 1. 先跑通本地环境：安装依赖、初始化数据库、启动玩家端、后台和 API。
