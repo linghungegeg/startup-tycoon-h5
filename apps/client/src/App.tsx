@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3001";
 const EMPLOYEE_CULTIVATE_COST = 20_000;
@@ -998,6 +998,7 @@ type CrossServerCenter = {
       serverName: string;
       companyName: string;
       founderName: string;
+      avatarUrl: string | null;
       rank: number;
       rankLabel: string;
       power: number;
@@ -1008,6 +1009,7 @@ type CrossServerCenter = {
       name: string;
       role: string;
       power: number;
+      portraitUrl: string | null;
     }>;
     lastBattleReport: CrossServerArenaBattleReport | null;
   };
@@ -1848,6 +1850,458 @@ const compactNumber = (value: number): string => {
   return value.toLocaleString("zh-CN");
 };
 
+type CrossServerCoord = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+const crossServerCoordStyle = ({ x, y, w, h }: CrossServerCoord): CSSProperties => ({
+  "--x": x,
+  "--y": y,
+  "--w": w,
+  "--h": h
+} as CSSProperties);
+
+const CROSS_SERVER_RANK_VALUE_COORD: CrossServerCoord = { x: 90, y: 404, w: 125, h: 54 };
+const CROSS_SERVER_ATTEMPTS_COORD: CrossServerCoord = { x: 639, y: 404, w: 145, h: 77 };
+const CROSS_SERVER_RECOVER_COORD: CrossServerCoord = { x: 807, y: 406, w: 72, h: 70 };
+const CROSS_SERVER_ARTBOARD_COORD: CrossServerCoord = { x: 0, y: 0, w: 941, h: 1672 };
+const CROSS_SERVER_ASSET_BASE = "/game-ui/cross-server";
+
+const CROSS_SERVER_OPPONENT_COORDS = [
+  { avatar: { x: 154, y: 640, w: 130, h: 130 }, name: { x: 307, y: 684, w: 346, h: 39 }, power: { x: 307, y: 738, w: 245, h: 28 }, rank: { x: 44, y: 690, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 696, w: 190, h: 70 } },
+  { avatar: { x: 154, y: 792, w: 130, h: 130 }, name: { x: 307, y: 838, w: 345, h: 39 }, power: { x: 307, y: 894, w: 245, h: 28 }, rank: { x: 44, y: 842, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 852, w: 190, h: 70 } },
+  { avatar: { x: 154, y: 946, w: 130, h: 130 }, name: { x: 307, y: 994, w: 346, h: 39 }, power: { x: 307, y: 1050, w: 245, h: 28 }, rank: { x: 44, y: 996, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 1008, w: 190, h: 70 } },
+  { avatar: { x: 154, y: 1103, w: 130, h: 130 }, name: { x: 307, y: 1151, w: 346, h: 39 }, power: { x: 307, y: 1206, w: 245, h: 28 }, rank: { x: 44, y: 1153, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 1164, w: 190, h: 70 } }
+] satisfies Array<Record<"avatar" | "name" | "power" | "rank" | "challengeHotspot", CrossServerCoord>>;
+
+const CROSS_SERVER_LINEUP_COORDS = [
+  { card: { x: 43, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
+  { card: { x: 216, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
+  { card: { x: 390, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
+  { card: { x: 563, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
+  { card: { x: 737, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } }
+] satisfies Array<Record<"card" | "role" | "level", CrossServerCoord>>;
+
+const CROSS_SERVER_LINEUP_SOURCE_RECTS = [
+  { x: 0, y: 18, w: 156, h: 158 },
+  { x: 0, y: 18, w: 156, h: 158 },
+  { x: 0, y: 14, w: 156, h: 160 },
+  { x: 0, y: 18, w: 156, h: 158 },
+  { x: 0, y: 18, w: 156, h: 158 }
+] satisfies CrossServerCoord[];
+
+const getCrossServerLineupRoleLabel = (role: string): string => {
+  const roleLabelOverrides: Record<string, string> = {
+    "产品经理": "产品",
+    "投资关系": "投资"
+  };
+
+  return roleLabelOverrides[role] ?? role;
+};
+
+type CrossServerPixelOpponent = {
+  companyName: string;
+  power: number;
+  rank: number;
+  avatarUrl: string | null;
+};
+
+type CrossServerPixelLineup = {
+  role: string;
+  level: number;
+  portraitUrl: string | null;
+};
+
+type CrossServerPixelAssets = {
+  background: HTMLImageElement | null;
+  opponentAvatars: Array<HTMLImageElement | null>;
+  lineupPortraits: Array<HTMLImageElement | null>;
+};
+
+type CrossServerDynamicImages = {
+  opponentAvatars: Array<HTMLImageElement | null>;
+  lineupPortraits: Array<HTMLImageElement | null>;
+};
+
+type CrossServerPixelTextOptions = {
+  color: string;
+  fontSize: number;
+  weight?: number;
+  maxWidth?: number;
+  shadowColor?: string;
+  shadowBlur?: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  align?: CanvasTextAlign;
+};
+
+const CROSS_SERVER_PIXEL_TEXT_STYLES = {
+  rankValue: {
+    color: "#ffe5a6",
+    fontSize: 38,
+    maxWidth: CROSS_SERVER_RANK_VALUE_COORD.w,
+    shadowColor: "rgba(255, 197, 88, 0.26)",
+    shadowBlur: 8,
+    strokeColor: "rgba(88, 48, 15, 0.58)",
+    strokeWidth: 3
+  },
+  attemptsValue: {
+    color: "#ffe5a6",
+    fontSize: 46,
+    maxWidth: 72,
+    shadowColor: "rgba(255, 197, 88, 0.24)",
+    shadowBlur: 8,
+    strokeColor: "rgba(88, 48, 15, 0.52)",
+    strokeWidth: 3
+  },
+  attemptsLimit: {
+    color: "rgba(172, 150, 108, 0.94)",
+    fontSize: 41,
+    maxWidth: 78,
+    shadowBlur: 5,
+    strokeColor: "rgba(42, 31, 20, 0.52)",
+    strokeWidth: 2
+  },
+  opponentName: {
+    color: "#f4f6f6",
+    fontSize: 32,
+    weight: 850,
+    shadowBlur: 5,
+    strokeColor: "rgba(8, 15, 16, 0.68)",
+    strokeWidth: 2
+  },
+  opponentPower: {
+    color: "#eec16e",
+    fontSize: 23,
+    weight: 800,
+    shadowBlur: 4,
+    strokeColor: "rgba(34, 22, 10, 0.62)",
+    strokeWidth: 2
+  },
+  opponentRank: {
+    color: "#f0bd67",
+    fontSize: 20,
+    weight: 800,
+    shadowBlur: 3,
+    strokeColor: "rgba(34, 22, 10, 0.52)",
+    strokeWidth: 2
+  },
+  roleTag: {
+    color: "#f5fbff",
+    fontSize: 22,
+    weight: 800,
+    shadowBlur: 2,
+    strokeColor: "rgba(12, 26, 38, 0.62)",
+    strokeWidth: 1
+  },
+  lineupLevel: {
+    color: "#fffdf5",
+    fontSize: 27,
+    weight: 850,
+    shadowBlur: 5,
+    strokeColor: "rgba(3, 7, 10, 0.68)",
+    strokeWidth: 3
+  },
+} satisfies Record<string, CrossServerPixelTextOptions>;
+
+const loadCrossServerImage = (src: string): Promise<HTMLImageElement | null> =>
+  new Promise((resolve) => {
+    const image = new Image();
+    image.decoding = "async";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = src;
+  });
+
+const loadCrossServerImageWithFallback = async (primarySrc: string, fallbackSrc: string): Promise<HTMLImageElement | null> => {
+  const primary = await loadCrossServerImage(primarySrc);
+  return primary ?? loadCrossServerImage(fallbackSrc);
+};
+
+const loadCrossServerPixelAssets = async (): Promise<CrossServerPixelAssets> => {
+  const [background, opponentAvatars, lineupPortraits] = await Promise.all([
+    loadCrossServerImage(`${CROSS_SERVER_ASSET_BASE}/cross-server-main.png`),
+    Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        loadCrossServerImageWithFallback(
+          `${CROSS_SERVER_ASSET_BASE}/opponent-avatar-clean-${index + 1}.png`,
+          `${CROSS_SERVER_ASSET_BASE}/opponent-avatar-${index + 1}.png`
+        )
+      )
+    ),
+    Promise.all(
+      Array.from({ length: 5 }, (_, index) =>
+        loadCrossServerImageWithFallback(
+          `${CROSS_SERVER_ASSET_BASE}/lineup-portrait-clean-${index + 1}.png`,
+          `${CROSS_SERVER_ASSET_BASE}/lineup-portrait-${index + 1}.png`
+        )
+      )
+    )
+  ]);
+
+  return {
+    background,
+    opponentAvatars,
+    lineupPortraits
+  };
+};
+
+const loadCrossServerCachedImage = async (src: string | null, cache: Map<string, HTMLImageElement | null>): Promise<HTMLImageElement | null> => {
+  if (!src) {
+    return null;
+  }
+  if (cache.has(src)) {
+    return cache.get(src) ?? null;
+  }
+  const image = await loadCrossServerImage(src);
+  cache.set(src, image);
+  return image;
+};
+
+const loadCrossServerDynamicImages = async (
+  opponents: CrossServerPixelOpponent[],
+  lineup: CrossServerPixelLineup[],
+  cache: Map<string, HTMLImageElement | null>
+): Promise<CrossServerDynamicImages> => {
+  const [opponentAvatars, lineupPortraits] = await Promise.all([
+    Promise.all(opponents.slice(0, 4).map((opponent) => loadCrossServerCachedImage(opponent.avatarUrl, cache))),
+    Promise.all(lineup.slice(0, 5).map((employee) => loadCrossServerCachedImage(employee.portraitUrl, cache)))
+  ]);
+
+  return {
+    opponentAvatars,
+    lineupPortraits
+  };
+};
+
+const drawCrossServerImage = (context: CanvasRenderingContext2D, image: HTMLImageElement | null | undefined, coord: CrossServerCoord, fit: "cover" | "stretch" = "stretch"): void => {
+  if (!image) {
+    return;
+  }
+
+  if (fit === "stretch") {
+    context.drawImage(image, coord.x, coord.y, coord.w, coord.h);
+    return;
+  }
+
+  const sourceRatio = image.naturalWidth / image.naturalHeight;
+  const targetRatio = coord.w / coord.h;
+  let sourceX = 0;
+  let sourceY = 0;
+  let sourceWidth = image.naturalWidth;
+  let sourceHeight = image.naturalHeight;
+
+  if (sourceRatio > targetRatio) {
+    sourceWidth = image.naturalHeight * targetRatio;
+    sourceX = (image.naturalWidth - sourceWidth) / 2;
+  } else {
+    sourceHeight = image.naturalWidth / targetRatio;
+    sourceY = (image.naturalHeight - sourceHeight) / 2;
+  }
+
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, coord.x, coord.y, coord.w, coord.h);
+};
+
+const drawCrossServerCirclePortrait = (context: CanvasRenderingContext2D, image: HTMLImageElement | null | undefined, coord: CrossServerCoord): void => {
+  if (!image) {
+    return;
+  }
+
+  const sourceInset = 4;
+  context.save();
+  context.beginPath();
+  context.arc(coord.x + coord.w / 2, coord.y + coord.h / 2, coord.w / 2 - 2, 0, Math.PI * 2);
+  context.clip();
+  context.drawImage(
+    image,
+    sourceInset,
+    sourceInset,
+    image.naturalWidth - sourceInset * 2,
+    image.naturalHeight - sourceInset * 2,
+    coord.x + 1,
+    coord.y + 1,
+    coord.w - 2,
+    coord.h - 2
+  );
+  context.restore();
+};
+
+const drawCrossServerLineupPortrait = (context: CanvasRenderingContext2D, image: HTMLImageElement | null | undefined, coord: CrossServerCoord, index: number): void => {
+  if (!image) {
+    return;
+  }
+
+  const source = CROSS_SERVER_LINEUP_SOURCE_RECTS[index] ?? CROSS_SERVER_LINEUP_SOURCE_RECTS[0]!;
+  context.drawImage(image, source.x, source.y, source.w, source.h, coord.x + 2, coord.y + 3, coord.w - 4, coord.h - 6);
+};
+
+const drawCrossServerText = (
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  options: CrossServerPixelTextOptions
+): void => {
+  context.save();
+  context.font = `${options.weight ?? 900} ${options.fontSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+  context.textAlign = options.align ?? "left";
+  context.textBaseline = "top";
+  context.lineJoin = "round";
+  context.shadowColor = options.shadowColor ?? "rgba(0, 0, 0, 0.82)";
+  context.shadowBlur = options.shadowBlur ?? 8;
+  context.shadowOffsetY = 2;
+  if (options.strokeColor && options.strokeWidth) {
+    context.strokeStyle = options.strokeColor;
+    context.lineWidth = options.strokeWidth;
+    context.strokeText(text, x, y, options.maxWidth);
+  }
+  context.fillStyle = options.color;
+  context.fillText(text, x, y, options.maxWidth);
+  context.restore();
+};
+
+const drawCrossServerRoleTag = (context: CanvasRenderingContext2D, label: string, coord: CrossServerCoord, index: number): void => {
+  const defaultColor = "#16608c";
+  const colors = [defaultColor, "#5f8f28", "#663f96", "#a65a19", "#285f9c"];
+  context.save();
+  context.fillStyle = colors[index] ?? defaultColor;
+  context.shadowColor = "rgba(0, 0, 0, 0.62)";
+  context.shadowBlur = 5;
+  context.beginPath();
+  context.roundRect(coord.x, coord.y, coord.w + 10, coord.h - 2, 4);
+  context.fill();
+  context.restore();
+  drawCrossServerText(context, label, coord.x + 8, coord.y + 6, {
+    ...CROSS_SERVER_PIXEL_TEXT_STYLES.roleTag,
+    maxWidth: coord.w + 2,
+  });
+};
+
+const drawCrossServerLineupTextBackplate = (context: CanvasRenderingContext2D, card: CrossServerCoord, role: CrossServerCoord, level: CrossServerCoord): void => {
+  context.save();
+  const gradient = context.createLinearGradient(0, card.y + card.h - 58, 0, card.y + card.h - 4);
+  gradient.addColorStop(0, "rgba(7, 11, 14, 0)");
+  gradient.addColorStop(0.56, "rgba(7, 11, 14, 0.72)");
+  gradient.addColorStop(1, "rgba(2, 5, 8, 0.98)");
+  context.fillStyle = gradient;
+  context.fillRect(card.x + 6, card.y + card.h - 58, card.w - 12, 54);
+  context.fillStyle = "rgba(2, 5, 8, 0.9)";
+  context.fillRect(card.x + level.x - 14, card.y + level.y - 2, level.w + 28, level.h + 8);
+  context.restore();
+};
+
+const drawCrossServerPixelLayer = (
+  canvas: HTMLCanvasElement | null,
+  options: {
+    rank: string | number;
+    attemptsRemaining: number;
+    attemptLimit: number;
+    opponents: CrossServerPixelOpponent[];
+    lineup: CrossServerPixelLineup[];
+    hasLiveArenaData: boolean;
+    assets?: CrossServerPixelAssets | null;
+    dynamicImages?: CrossServerDynamicImages | null;
+  }
+): void => {
+  if (!canvas) {
+    return;
+  }
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  drawCrossServerImage(context, options.assets?.background, CROSS_SERVER_ARTBOARD_COORD);
+
+  if (!options.hasLiveArenaData) {
+    return;
+  }
+
+  options.opponents.slice(0, 4).forEach((opponent, index) => {
+    const coords = CROSS_SERVER_OPPONENT_COORDS[index];
+    if (!coords) {
+      return;
+    }
+
+    drawCrossServerCirclePortrait(context, options.dynamicImages?.opponentAvatars[index] ?? options.assets?.opponentAvatars[index], coords.avatar);
+  });
+
+  options.lineup.slice(0, 5).forEach((employee, index) => {
+    const coords = CROSS_SERVER_LINEUP_COORDS[index];
+    if (!coords) {
+      return;
+    }
+
+    drawCrossServerLineupPortrait(context, options.dynamicImages?.lineupPortraits[index] ?? options.assets?.lineupPortraits[index], coords.card, index);
+  });
+
+  drawCrossServerText(context, String(options.rank), CROSS_SERVER_RANK_VALUE_COORD.x + 2, CROSS_SERVER_RANK_VALUE_COORD.y + 10, CROSS_SERVER_PIXEL_TEXT_STYLES.rankValue);
+  drawCrossServerText(context, String(options.attemptsRemaining), CROSS_SERVER_ATTEMPTS_COORD.x + 3, CROSS_SERVER_ATTEMPTS_COORD.y + 15, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsValue);
+  drawCrossServerText(context, `/${options.attemptLimit}`, CROSS_SERVER_ATTEMPTS_COORD.x + 61, CROSS_SERVER_ATTEMPTS_COORD.y + 22, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsLimit);
+
+  options.opponents.slice(0, 4).forEach((opponent, index) => {
+    const coords = CROSS_SERVER_OPPONENT_COORDS[index];
+    if (!coords) {
+      return;
+    }
+
+    drawCrossServerText(context, opponent.companyName, coords.name.x, coords.name.y + 2, {
+      ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentName,
+      maxWidth: coords.name.w,
+    });
+    context.save();
+    context.fillStyle = "#eec16e";
+    context.fillRect(coords.power.x, coords.power.y + 13, 6, 13);
+    context.fillRect(coords.power.x + 8, coords.power.y + 8, 6, 18);
+    context.fillRect(coords.power.x + 16, coords.power.y + 4, 6, 22);
+    context.fillRect(coords.power.x - 1, coords.power.y + 25, 25, 3);
+    context.restore();
+    drawCrossServerText(context, `战力 ${compactNumber(opponent.power)}`, coords.power.x + 33, coords.power.y + 2, {
+      ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentPower,
+      maxWidth: coords.power.w,
+    });
+    drawCrossServerText(context, String(opponent.rank), coords.rank.x + coords.rank.w / 2, coords.rank.y, {
+      ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentRank,
+      maxWidth: coords.rank.w,
+      align: "center",
+    });
+  });
+
+  options.lineup.slice(0, 5).forEach((employee, index) => {
+    const coords = CROSS_SERVER_LINEUP_COORDS[index];
+    if (!coords) {
+      return;
+    }
+    const roleCoord = {
+      x: coords.card.x + coords.role.x,
+      y: coords.card.y + coords.role.y,
+      w: coords.role.w,
+      h: coords.role.h
+    };
+    const levelCoord = {
+      x: coords.card.x + coords.level.x,
+      y: coords.card.y + coords.level.y,
+      w: coords.level.w,
+      h: coords.level.h
+    };
+
+    drawCrossServerLineupTextBackplate(context, coords.card, coords.role, coords.level);
+    drawCrossServerRoleTag(context, getCrossServerLineupRoleLabel(employee.role), roleCoord, index);
+    drawCrossServerText(context, `Lv.${employee.level}`, levelCoord.x + levelCoord.w / 2, levelCoord.y - 2, {
+      ...CROSS_SERVER_PIXEL_TEXT_STYLES.lineupLevel,
+      maxWidth: levelCoord.w,
+      align: "center",
+    });
+  });
+};
+
 const shopProductSummaryOverrides: Record<string, string> = {
   "first-charge-starter": "首日启动资源，包含现金、行动力和首次猎头机会。",
   "daily-founder-pack": "补足今日项目推进和经营事件所需资源。",
@@ -2429,6 +2883,13 @@ const formatPlayerActionError = (failureResponse: ApiFailure): string =>
   playerActionErrorMessages[failureResponse.error.code] ?? failureResponse.error.message;
 
 function App() {
+  const crossServerPixelLayerRef = useRef<HTMLCanvasElement | null>(null);
+  const crossServerPixelAssetsRef = useRef<CrossServerPixelAssets | null>(null);
+  const crossServerDynamicImagesRef = useRef<CrossServerDynamicImages | null>(null);
+  const crossServerImageCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map());
+  const [crossServerPixelAssetsVersion, setCrossServerPixelAssetsVersion] = useState(0);
+  const [crossServerDynamicImagesVersion, setCrossServerDynamicImagesVersion] = useState(0);
+  const crossServerDebug = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("crossServerDebug");
   const initialSession = loadSession();
   const rememberedAuth = loadRememberedAuth();
   const [step, setStep] = useState<OnboardingStep>("auth");
@@ -3097,11 +3558,63 @@ function App() {
         return {
           ...member,
           level: employee?.level ?? 1,
-          portraitUrl: collectionEntry?.portraitUrl ?? null
+          portraitUrl: collectionEntry?.portraitUrl ?? member.portraitUrl ?? null
         };
       }),
     [crossServerCenter?.arena.lineup, employeeCollection?.entries, employees]
   );
+  useEffect(() => {
+    let isCancelled = false;
+
+    void loadCrossServerPixelAssets().then((assets) => {
+      if (isCancelled) {
+        return;
+      }
+      crossServerPixelAssetsRef.current = assets;
+      setCrossServerPixelAssetsVersion((version) => version + 1);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    let isCancelled = false;
+    const opponents = (crossServerCenter?.arena.opponents ?? []).slice(0, 4);
+
+    void loadCrossServerDynamicImages(opponents, crossServerLineupCards, crossServerImageCacheRef.current).then((images) => {
+      if (isCancelled) {
+        return;
+      }
+      crossServerDynamicImagesRef.current = images;
+      setCrossServerDynamicImagesVersion((version) => version + 1);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [crossServerCenter?.arena.opponents, crossServerLineupCards]);
+  useEffect(() => {
+    const redraw = (): void => {
+      const hasLiveArenaData =
+        crossServerCenter !== null &&
+        crossServerCenter.arena.opponents.length > 0 &&
+        crossServerCenter.arena.lineup.length > 0;
+      drawCrossServerPixelLayer(crossServerPixelLayerRef.current, {
+        rank: personalCrossRank,
+        attemptsRemaining: hasLiveArenaData ? crossServerCenter.arena.attemptsRemaining : 0,
+        attemptLimit: hasLiveArenaData ? crossServerCenter.arena.attemptLimit : 0,
+        opponents: (crossServerCenter?.arena.opponents ?? []).slice(0, 4),
+        lineup: crossServerLineupCards,
+        hasLiveArenaData,
+        assets: crossServerPixelAssetsRef.current,
+        dynamicImages: crossServerDynamicImagesRef.current
+      });
+    };
+
+    redraw();
+    void document.fonts?.ready.then(redraw);
+  }, [crossServerCenter?.arena.attemptLimit, crossServerCenter?.arena.attemptsRemaining, crossServerCenter?.arena.opponents, crossServerLineupCards, crossServerPixelAssetsVersion, crossServerDynamicImagesVersion, nativeHomePage, activeCrossServerMode, personalCrossRank]);
   const currentCrossGuildRank = crossServerCenter?.guildBoard.rows.find((row) => row.guildId === crossServerCenter.guildSeason.guildId)?.rank ?? "-";
   const crossServerBattleReport = crossServerCenter?.battleReport ?? null;
   const crossServerMatchup = crossServerCenter?.matchup ?? null;
@@ -5353,6 +5866,7 @@ function App() {
     if (panelName === "跨服") {
       reportCurrentTelemetry("long_term_goal_click", "cross-server-center");
       setActivePanel(null);
+      setActiveCrossServerMode("season");
       setNativeHomePage("cross-server");
       if (account && selectedServer) {
         void loadPhase14Center(account.token, selectedServer.id);
@@ -7603,107 +8117,46 @@ function App() {
 
           {nativeHomePage === "cross-server" && (
             <section className="page-container page-active" aria-label="跨服" data-testid="native-cross-server">
-              <div className="flex-1 overflow-hidden bg-[radial-gradient(circle_at_52%_20%,rgba(245,158,11,0.18),transparent_24%),radial-gradient(circle_at_50%_38%,rgba(245,158,11,0.12),transparent_42%),linear-gradient(180deg,#111820_0%,#071019_46%,#03070c_100%)]">
-                <div className="relative flex h-full flex-col overflow-hidden" data-testid="cross-server-unified-shell">
-                  <button className="absolute left-6 top-10 z-20 flex h-12 w-12 items-center justify-center rounded-full text-business-gold" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
-                    <Icon name="chevron-left" className="h-8 w-8" />
+              <div className="cross-server-static-page">
+                <div className="cross-server-static-artboard" data-testid="cross-server-unified-shell">
+                  <button className="cross-server-static-close" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
+                    <Icon name="chevron-left" className="h-6 w-6" />
                   </button>
-                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden" data-testid="cross-server-content-pane">
-                    <div className="px-7 pb-1 pt-12">
-                      <div className="flex items-start justify-between gap-3">
-                        <h2 className="mt-8 text-left text-6xl font-black tracking-[0.08em] text-business-gold drop-shadow-[0_5px_16px_rgba(245,158,11,0.42)]">跨服竞技</h2>
-                        <div className="flex shrink-0 flex-col gap-4 pt-1">
-                          <button className="flex h-11 items-center gap-2 rounded-full border border-business-gold/70 bg-slate-950/55 px-4 text-sm font-black text-business-gold shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" type="button" onClick={() => setActiveCrossServerMode("history")}>
-                            <Icon name="play" className="h-5 w-5" />
-                            战报回放
-                          </button>
-                          <button className="flex h-11 items-center gap-2 rounded-full border border-business-gold/70 bg-slate-950/55 px-4 text-sm font-black text-business-gold shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" type="button" onClick={() => setActiveCrossServerMode("rewards")}>
-                            <Icon name="info" className="h-5 w-5" />
-                            规则说明
-                          </button>
+                  <canvas className="cross-server-pixel-layer" data-testid="cross-server-pixel-layer" ref={crossServerPixelLayerRef} width={941} height={1672} aria-hidden="true" />
+                  {crossServerDebug && <img className="cross-server-reference-overlay" data-testid="cross-server-reference-overlay" src="/game-ui/cross-server/kuafujixian.png" alt="" aria-hidden="true" />}
+                  <div className="cross-server-static-hit-layer" data-testid="cross-server-content-pane">
+                    <section className="cross-server-static-arena" aria-label="可挑战对手" data-testid="cross-server-arena-panel" hidden={activeCrossServerMode !== "season"}>
+                      <button className="cross-server-static-hotspot cross-server-static-history" type="button" onClick={() => setActiveCrossServerMode("history")}>
+                        战报回放
+                      </button>
+                      <button className="cross-server-static-hotspot cross-server-static-rules" type="button" onClick={() => setActiveCrossServerMode("rewards")}>
+                        规则说明
+                      </button>
+                      <button className="cross-server-static-hotspot cross-server-static-recover" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining >= crossServerCenter.arena.attemptLimit} type="button" style={crossServerCoordStyle(CROSS_SERVER_RECOVER_COORD)} onClick={() => void recoverCrossServerAttempts()} aria-label="恢复挑战次数">
+                        恢复次数
+                      </button>
+
+                      <div className="cross-server-static-opponent-list" aria-label="可挑战对手">
+                        {(crossServerCenter?.arena.opponents ?? []).slice(0, 4).map((opponent, index) => (
+                          <article className="cross-server-static-opponent" key={opponent.id} aria-label={`${opponent.companyName} 战力 ${compactNumber(opponent.power)} 排名 ${opponent.rank}`}>
+                            <span className="cross-server-static-avatar" data-testid="cross-server-opponent-avatar-placeholder" style={crossServerCoordStyle(CROSS_SERVER_OPPONENT_COORDS[index]!.avatar)} aria-hidden="true" />
+                            <button className="cross-server-static-hotspot cross-server-static-challenge" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining <= 0} type="button" style={crossServerCoordStyle(CROSS_SERVER_OPPONENT_COORDS[index]!.challengeHotspot)} onClick={() => void challengeCrossServerOpponent(opponent.id)}>
+                              挑战
+                            </button>
+                          </article>
+                        ))}
+                      </div>
+
+                      <div className="cross-server-static-lineup" aria-label="上阵员工">
+                        <div className="cross-server-static-lineup-grid">
+                          {crossServerLineupCards.map((employee, index) => (
+                            <span className="cross-server-static-lineup-card" data-testid="cross-server-lineup-avatar-placeholder" style={crossServerCoordStyle(CROSS_SERVER_LINEUP_COORDS[index]!.card)} key={employee.employeeId} title={`${employee.name} Lv.${employee.level}`} aria-label={`${employee.role} ${employee.name} Lv.${employee.level}`} />
+                          ))}
                         </div>
                       </div>
-                    </div>
-                    <div className="flex-1 overflow-hidden px-7 pb-6 pt-0">
-                <div className="space-y-4" hidden={activeCrossServerMode !== "season"}>
-                <section className="relative overflow-visible px-1 pb-8 pt-8" data-testid="cross-server-arena-panel">
-                  <div className="pointer-events-none absolute left-1/2 top-[-72px] h-72 w-72 -translate-x-1/2 rounded-full border border-business-gold/10 bg-[radial-gradient(circle,rgba(245,158,11,0.18),transparent_62%)]" />
-                  <div className="pointer-events-none absolute left-1/2 top-[92px] h-px w-[92%] -translate-x-1/2 bg-gradient-to-r from-transparent via-business-gold/65 to-transparent shadow-[0_0_16px_rgba(245,158,11,0.9)]" />
-                  <div className="relative grid grid-cols-[1fr_150px_1fr] items-center gap-4">
-                    <div className="text-left">
-                      <div className="flex items-center gap-2 text-business-gold">
-                        <Icon name="bar-chart-3" className="h-6 w-6" />
-                        <span className="text-xl font-black text-slate-100">当前排名</span>
-                      </div>
-                      <strong className="mt-3 block text-7xl font-black leading-none tracking-tight text-business-gold">{personalCrossRank}</strong>
-                    </div>
-                    <div className="relative mx-auto flex h-40 w-40 items-center justify-center rounded-full border border-business-gold/45 bg-[radial-gradient(circle,rgba(245,158,11,0.34),rgba(17,24,39,0.22)_52%,rgba(2,6,23,0.62))] shadow-[0_0_42px_rgba(245,158,11,0.3)]">
-                      <div className="absolute h-24 w-24 rotate-45 rounded-[1.6rem] border border-business-gold/75 bg-business-gold/15" data-testid="cross-server-medal-placeholder" />
-                      <div className="relative h-14 w-14 rounded-full border border-business-gold/60 bg-slate-950/45" />
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center justify-end gap-2 text-business-gold">
-                        <Icon name="swords" className="h-6 w-6" />
-                        <span className="text-xl font-black text-slate-100">挑战次数</span>
-                      </div>
-                      <div className="mt-3 flex items-center justify-end gap-3">
-                        <strong className="text-6xl font-black leading-none text-business-gold">{crossServerCenter?.arena.attemptsRemaining ?? 10}/{crossServerCenter?.arena.attemptLimit ?? 10}</strong>
-                        <button className="flex h-11 w-11 items-center justify-center rounded-xl border border-business-gold/70 bg-slate-950/45 text-business-gold disabled:opacity-45" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining >= crossServerCenter.arena.attemptLimit} type="button" onClick={() => void recoverCrossServerAttempts()} aria-label="恢复次数">
-                          <Icon name="plus" className="h-6 w-6" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </section>
+                    </section>
 
-                <section className="mt-1">
-                  <div className="mb-2 flex items-center justify-between">
-                    <strong className="text-2xl font-black tracking-[0.08em] text-business-gold">可挑战对手</strong>
-                    <button className="flex items-center gap-1 text-sm font-black text-business-gold/85" type="button" onClick={() => setPhase14Notice("可挑战对手已刷新。")}>
-                      <Icon name="refresh-cw" className="h-5 w-5" />
-                      刷新
-                    </button>
-                  </div>
-                  <div className="divide-y divide-business-gold/20 border-y border-business-gold/20">
-                    {(crossServerCenter?.arena.opponents ?? []).slice(0, 4).map((opponent, index) => (
-                      <article className="bg-slate-950/20 py-3" key={opponent.id}>
-                        <div className="grid grid-cols-[56px_78px_1fr_88px_112px] items-center gap-3">
-                          <span className={`flex h-12 w-12 items-center justify-center rounded-2xl border text-2xl font-black ${index === 0 ? "border-business-gold/75 bg-business-gold/20 text-business-gold" : index === 1 ? "border-slate-300/50 bg-slate-500/20 text-slate-200" : index === 2 ? "border-amber-700/60 bg-amber-900/30 text-amber-300" : "border-business-gold/35 bg-slate-950/40 text-business-gold/80"}`}>{index + 1}</span>
-                          <span className="flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-full border border-business-gold/35 bg-[radial-gradient(circle,rgba(245,158,11,0.12),rgba(15,23,42,0.62))]" data-testid="cross-server-opponent-avatar-placeholder" />
-                          <div className="min-w-0">
-                            <strong className="block truncate text-xl font-black text-white">{opponent.companyName}</strong>
-                            <span className="mt-2 flex items-center gap-1 truncate text-sm font-bold text-business-gold">
-                              <Icon name="building-2" className="h-4 w-4" />
-                              战力 {compactNumber(opponent.power)}
-                            </span>
-                          </div>
-                          <span className="text-right text-sm font-black text-business-gold">排名：{opponent.rank}</span>
-                          <button className="h-11 rounded-xl border border-business-gold/75 bg-business-gold px-5 text-lg font-black text-business-dark shadow-[0_8px_20px_rgba(245,158,11,0.25)] disabled:opacity-45" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining <= 0} type="button" onClick={() => void challengeCrossServerOpponent(opponent.id)}>挑战</button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="mt-4">
-                  <strong className="mb-2 block text-2xl font-black tracking-[0.08em] text-business-gold">上阵员工</strong>
-                  <div className="grid grid-cols-5 gap-2.5">
-                    {crossServerLineupCards.map((employee) => (
-                      <div className="relative overflow-hidden rounded-xl border border-business-gold/35 bg-slate-950/54 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" key={employee.employeeId}>
-                        <span className="absolute left-0 top-0 z-10 max-w-full truncate rounded-br-lg bg-business-gold/20 px-2 py-1 text-[10px] font-black text-business-gold">{employee.role}</span>
-                        <div className="flex aspect-[0.82] items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_50%_24%,rgba(245,158,11,0.11),rgba(15,23,42,0.78))]" data-testid="cross-server-lineup-avatar-placeholder" />
-                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent px-1.5 pb-1.5 pt-5 text-center">
-                          <strong className="block truncate text-[11px] text-white">{employee.name}</strong>
-                          <span className="text-[11px] font-bold text-slate-300">Lv.{employee.level}</span>
-                        </div>
-                      </div>
-                    ))}
-                    {crossServerLineupCards.length === 0 && <p className="col-span-5 rounded-xl bg-slate-900/70 p-3 text-[10px] font-bold text-slate-400">招募员工后自动上阵。</p>}
-                  </div>
-                </section>
-                </div>
-
-                <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board" hidden={activeCrossServerMode !== "board"}>
+                    <section className="glass-panel rounded-3xl p-4" data-testid="cross-server-personal-board" hidden={activeCrossServerMode !== "board"}>
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <strong className="block text-sm text-white font-black">跨服竞技场</strong>
@@ -7873,7 +8326,6 @@ function App() {
                     </div>
                   </div>
                 </div>
-              </div>
             </section>
           )}
 

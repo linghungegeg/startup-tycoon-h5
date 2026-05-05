@@ -2264,6 +2264,7 @@ export type CrossServerArenaRecord = {
     name: string;
     role: string;
     power: number;
+    portraitUrl: string | null;
   }>;
   lastBattleReport: CrossServerArenaBattleReportRecord | null;
 };
@@ -2274,6 +2275,7 @@ export type CrossServerArenaOpponentRecord = {
   serverName: string;
   companyName: string;
   founderName: string;
+  avatarUrl: string | null;
   rank: number;
   rankLabel: string;
   power: number;
@@ -6193,6 +6195,8 @@ const crossServerArenaOpponentBand = (rank: number): { start: number; end: numbe
   return { start, end, label: `${start}-${end}` };
 };
 
+const CROSS_SERVER_ASSET_BASE = "/game-ui/cross-server";
+
 const crossServerArenaBots = [
   { suffix: "星河资本", founder: "顾寒舟", employee: "资本参谋" },
   { suffix: "云启集团", founder: "程晚星", employee: "增长统帅" },
@@ -6222,6 +6226,7 @@ const buildCrossServerArenaOpponents = (
       serverName: serverNames[serverId] ?? serverId.toUpperCase(),
       founderName: bot.founder,
       companyName: bot.suffix,
+      avatarUrl: `${CROSS_SERVER_ASSET_BASE}/opponent-avatar-clean-${index + 1}.png`,
       rank: opponentRank,
       rankLabel: rank > 1000 ? band.label : `第 ${opponentRank} 名`,
       power: Math.max(8000, 42000 - opponentRank * 18 + index * 1200),
@@ -14469,7 +14474,8 @@ export const createPrismaGameRepository = (
         }
       }),
       prisma.playerEmployee.findMany({
-        where: { profileId: profile.id, isActive: true }
+        where: { profileId: profile.id, isActive: true },
+        include: { config: true }
       })
     ]);
     const rules = toCrossServerRuleConfigRecord(ruleConfig);
@@ -14644,7 +14650,8 @@ export const createPrismaGameRepository = (
         employeeId: employee.id,
         name: employee.name,
         role: employee.role,
-        power: employee.management + employee.negotiation + employee.execution + employee.level * 3
+        power: employee.management + employee.negotiation + employee.execution + employee.level * 3,
+        portraitUrl: employee.config.portraitUrl
       }));
     const fallbackEmployees = ownedLineup.length > 0 ? [] : await prisma.employeeConfig.findMany({
       orderBy: [{ recruitWeight: "asc" }, { sortOrder: "asc" }],
@@ -14654,7 +14661,8 @@ export const createPrismaGameRepository = (
       employeeId: employee.id,
       name: employee.name,
       role: employee.role,
-      power: employee.management + employee.negotiation + employee.execution + 3
+      power: employee.management + employee.negotiation + employee.execution + 3,
+      portraitUrl: employee.portraitUrl
     }));
     const lineup = (ownedLineup.length > 0 ? ownedLineup : fallbackLineup)
       .sort((left, right) => right.power - left.power)
