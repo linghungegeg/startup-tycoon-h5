@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="filename" content="business_game_leaderboard.html">
+    <title>财富巅峰 - 商业精英排行榜</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'rank-bg': '#0C0E14',
+                        'gold-primary': '#D4AF37',
+                        'gold-light': '#F9E498',
+                        'tech-purple': '#8B5CF6',
+                        'tech-blue': '#3B82F6',
+                        'card-dark': 'rgba(30, 35, 45, 0.7)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: screen;
+            margin: 0;
+            color: #E2E8F0;
+        }
+        .app-container {
+            width: 375px;
+            height: 812px;
+            background: radial-gradient(circle at top, #1A1F2E 0%, #0C0E14 100%);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 100px rgba(0,0,0,0.8);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .gold-glow {
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+        }
+        .purple-glow {
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.2);
+        }
+        .tab-active {
+            color: #D4AF37;
+            background: linear-gradient(180deg, rgba(212, 175, 55, 0.1) 0%, rgba(212, 175, 55, 0) 100%);
+            border-bottom: 2px solid #D4AF37;
+        }
+        .rank-number {
+            font-style: italic;
+            font-weight: 900;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes modal-in {
+            from { transform: scale(0.9) translateY(40px); opacity: 0; }
+            to { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .modal-animate {
+            animation: modal-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        @keyframes toast-in {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast-animate {
+            animation: toast-in 0.3s ease-out forwards;
+        }
+        
+        .asset-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.05);
+            overflow: hidden;
+            position: relative;
+        }
+        .asset-fill {
+            height: 100%;
+            width: 0%; /* Initial state for animation */
+            transition: width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            position: relative;
+        }
+        .asset-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; bottom: 0; left: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: shimmer 2s infinite;
+        }
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="app-container rounded-[40px] border-[4px] border-neutral-800">
+        <!-- 顶部装饰光效 -->
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-40 bg-tech-purple/10 blur-[80px] rounded-full"></div>
+        
+        <!-- Header -->
+        <header class="relative px-6 pt-10 pb-4 flex justify-between items-center z-10">
+            <button class="w-10 h-10 rounded-full glass-card flex items-center justify-center hover:bg-white/10 transition-all">
+                <i data-lucide="chevron-left" class="w-6 h-6 text-gold-light"></i>
+            </button>
+            <h1 class="text-xl font-black tracking-widest text-gold-primary uppercase">Leaderboard</h1>
+            <button class="w-10 h-10 rounded-full glass-card flex items-center justify-center">
+                <i data-lucide="help-circle" class="w-5 h-5 text-neutral-400"></i>
+            </button>
+        </header>
+
+        <!-- Tabs -->
+        <nav class="flex px-4 border-b border-white/5 relative z-10">
+            <button id="tab-server" class="flex-1 py-3 text-sm font-bold text-neutral-500 transition-all tab-active">本服榜</button>
+            <button id="tab-event" class="flex-1 py-3 text-sm font-bold text-neutral-500 transition-all">活动榜</button>
+            <button id="tab-cross" class="flex-1 py-3 text-sm font-bold text-neutral-500 transition-all">跨服榜</button>
+        </nav>
+
+        <!-- List Content -->
+        <div id="list-container" class="flex-1 overflow-y-auto no-scrollbar px-4 pt-4 pb-32">
+            <!-- Top 3 -->
+            <div class="flex items-end justify-between mb-8 px-2 pt-6">
+                <!-- Rank 2 -->
+                <div class="flex flex-col items-center w-24 player-item cursor-pointer" data-player='{"name":"特斯拉继承人","corp":"雷电工业集结","wealth":"4.21亿","lv":"82","achieve":"市场操盘手","real":40,"tech":45,"fin":10,"ind":5}'>
+                    <div class="relative mb-3">
+                        <div class="w-16 h-16 rounded-2xl border-2 border-slate-300 overflow-hidden glass-card">
+                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" class="w-full h-full object-cover">
+                        </div>
+                        <div class="absolute -bottom-2 -right-2 bg-slate-300 text-black w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black italic">2</div>
+                    </div>
+                    <p class="text-[10px] font-bold text-slate-300 truncate w-full text-center">特斯拉继承人</p>
+                    <p class="text-[12px] font-black text-white">4.21亿</p>
+                </div>
+
+                <!-- Rank 1 -->
+                <div class="flex flex-col items-center w-28 scale-110 -translate-y-2 player-item cursor-pointer" data-player='{"name":"华尔街之狼","corp":"天穹资本集团","wealth":"8.54亿","lv":"99","achieve":"全球垄断者","real":20,"tech":20,"fin":50,"ind":10}'>
+                    <div class="relative mb-4">
+                        <div class="absolute -top-6 left-1/2 -translate-x-1/2 text-gold-primary">
+                            <i data-lucide="crown" class="w-8 h-8 fill-gold-primary animate-bounce"></i>
+                        </div>
+                        <div class="w-20 h-20 rounded-3xl border-2 border-gold-primary overflow-hidden gold-glow relative p-1 bg-gold-primary/20">
+                            <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=120&h=120&fit=crop" class="w-full h-full object-cover rounded-2xl">
+                        </div>
+                        <div class="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-gold-primary to-gold-light text-black px-3 py-0.5 rounded-full text-[10px] font-black italic shadow-lg">NO.1</div>
+                    </div>
+                    <p class="text-xs font-black text-gold-light truncate w-full text-center drop-shadow-md">华尔街之狼</p>
+                    <p class="text-sm font-black text-white">8.54亿</p>
+                </div>
+
+                <!-- Rank 3 -->
+                <div class="flex flex-col items-center w-24 player-item cursor-pointer" data-player='{"name":"硅谷女帝","corp":"明日科技实验室","wealth":"3.10亿","lv":"85","achieve":"创新先锋","real":10,"tech":70,"fin":10,"ind":10}'>
+                    <div class="relative mb-3">
+                        <div class="w-16 h-16 rounded-2xl border-2 border-orange-400/60 overflow-hidden glass-card">
+                            <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop" class="w-full h-full object-cover">
+                        </div>
+                        <div class="absolute -bottom-2 -right-2 bg-orange-500 text-black w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black italic">3</div>
+                    </div>
+                    <p class="text-[10px] font-bold text-orange-400 truncate w-full text-center">硅谷女帝</p>
+                    <p class="text-[12px] font-black text-white">3.10亿</p>
+                </div>
+            </div>
+
+            <!-- Scrollable List -->
+            <div id="scroll-list" class="space-y-3"></div>
+        </div>
+
+        <!-- Player Card Modal Overlay -->
+        <div id="player-modal" class="absolute inset-0 z-50 bg-black/90 backdrop-blur-md hidden flex items-center justify-center p-6">
+            <div class="w-full glass-card rounded-[32px] border-gold-primary/30 p-6 modal-animate relative shadow-2xl">
+                <button id="close-modal" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10">
+                    <i data-lucide="x" class="w-4 h-4 text-neutral-400"></i>
+                </button>
+
+                <!-- Profile Header -->
+                <div class="flex items-center gap-4 mb-6">
+                    <div id="modal-avatar-container" class="w-20 h-20 rounded-2xl border-2 border-gold-primary p-1 bg-gold-primary/10">
+                        <img id="modal-avatar" src="" class="w-full h-full object-cover rounded-xl">
+                    </div>
+                    <div class="flex-1">
+                        <h3 id="modal-name" class="text-xl font-black text-white leading-tight"></h3>
+                        <p id="modal-corp" class="text-xs text-gold-primary/80 font-bold mb-1"></p>
+                        <div class="flex gap-2">
+                            <span class="bg-tech-blue/20 text-tech-blue text-[10px] px-2 py-0.5 rounded-md font-bold border border-tech-blue/30 tracking-tight">LV.<span id="modal-lv"></span></span>
+                            <span class="bg-gold-primary/20 text-gold-primary text-[10px] px-2 py-0.5 rounded-md font-bold border border-gold-primary/30 tracking-tight" id="modal-achieve"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wealth Stats -->
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                    <div class="bg-white/5 rounded-2xl p-3 border border-white/5">
+                        <p class="text-[10px] text-neutral-500 mb-1 font-bold">财富净值</p>
+                        <p id="modal-wealth" class="text-lg font-black text-white"></p>
+                    </div>
+                    <div class="bg-white/5 rounded-2xl p-3 border border-white/5">
+                        <p class="text-[10px] text-neutral-500 mb-1 font-bold">行业地位</p>
+                        <p class="text-lg font-black text-tech-purple font-mono">TOP-TIER</p>
+                    </div>
+                </div>
+
+                <!-- Asset Composition -->
+                <div class="space-y-4 mb-8">
+                    <h4 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <i data-lucide="bar-chart-3" class="w-3 h-3 text-gold-primary"></i> 资产结构分析
+                    </h4>
+                    <div class="space-y-3">
+                        <div class="asset-item">
+                            <div class="flex justify-between text-[10px] font-bold mb-1.5">
+                                <span class="text-neutral-400">地产资源</span>
+                                <span id="val-real" class="text-gold-light">0%</span>
+                            </div>
+                            <div class="asset-bar"><div id="bar-real" class="asset-fill bg-gold-primary"></div></div>
+                        </div>
+                        <div class="asset-item">
+                            <div class="flex justify-between text-[10px] font-bold mb-1.5">
+                                <span class="text-neutral-400">科技研发</span>
+                                <span id="val-tech" class="text-blue-400">0%</span>
+                            </div>
+                            <div class="asset-bar"><div id="bar-tech" class="asset-fill bg-blue-500"></div></div>
+                        </div>
+                        <div class="asset-item">
+                            <div class="flex justify-between text-[10px] font-bold mb-1.5">
+                                <span class="text-neutral-400">金融衍生</span>
+                                <span id="val-fin" class="text-purple-400">0%</span>
+                            </div>
+                            <div class="asset-bar"><div id="bar-fin" class="asset-fill bg-purple-500"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Social Actions -->
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <button id="btn-add-friend" class="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 active:scale-95 transition-all">
+                        <i data-lucide="user-plus" class="w-4 h-4 text-gold-primary"></i> 添加好友
+                    </button>
+                    <button id="btn-private-chat" class="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 active:scale-95 transition-all">
+                        <i data-lucide="message-square" class="w-4 h-4 text-tech-blue"></i> 私密会谈
+                    </button>
+                </div>
+                <button class="w-full py-3.5 rounded-xl bg-gradient-to-r from-gold-primary to-gold-light text-black font-black text-sm hover:brightness-110 active:scale-[0.98] transition-all shadow-lg shadow-gold-primary/20">
+                    前往商业拜访
+                </button>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toast-container" class="absolute bottom-32 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 w-[280px] pointer-events-none"></div>
+
+        <!-- Footer -->
+        <div class="absolute bottom-0 left-0 right-0 h-28 bg-[#161B28]/95 backdrop-blur-md border-t border-gold-primary/20 px-6 py-4 rounded-t-[32px] z-20">
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl border-2 border-tech-blue p-0.5">
+                        <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100&h=100&fit=crop" class="w-full h-full object-cover rounded-lg">
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-neutral-400 flex items-center gap-1">
+                            <span class="text-tech-blue font-bold">我的排名: 99+</span>
+                            <span class="mx-1 opacity-20">|</span>
+                            <span>距上位: 1,200万</span>
+                        </p>
+                        <p class="text-sm font-black text-white">首席执行官 · 您</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="text-lg font-black text-gold-primary">8,500万</p>
+                    <p class="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Asset</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+
+            const listEl = document.getElementById('scroll-list');
+            const modal = document.getElementById('player-modal');
+            const toastContainer = document.getElementById('toast-container');
+            
+            const names = ["房产大亨", "电商巨头", "芯片领袖", "石油大王", "航天先锋", "金融巨子", "媒体领航"];
+            const corps = ["寰球实业", "领航科技", "摩根信托", "深海能源", "星际探索", "数字矩阵", "智库集团"];
+            const achievements = ["市场搅局者", "并购狂人", "商业奇才", "独角兽捕手", "风口浪尖"];
+
+            let animationTimerId = null;
+
+            function populateList() {
+                listEl.innerHTML = '';
+                for(let i = 4; i <= 12; i++) {
+                    const wealth = (300 - (i * 15)).toFixed(2);
+                    const playerData = {
+                        name: `${names[i % names.length]}·${Math.floor(Math.random() * 99)}`,
+                        corp: corps[i % corps.length],
+                        wealth: `${wealth}万`,
+                        lv: 90 - i,
+                        achieve: achievements[i % achievements.length],
+                        real: Math.floor(Math.random() * 40 + 10),
+                        tech: Math.floor(Math.random() * 30 + 10),
+                        avatar: `https://picsum.photos/seed/${i + 55}/100/100`
+                    };
+                    playerData.fin = 100 - playerData.real - playerData.tech;
+
+                    const item = document.createElement('div');
+                    item.className = 'flex items-center p-3 rounded-2xl glass-card group hover:bg-white/5 transition-all cursor-pointer border-l-2 border-transparent hover:border-gold-primary/40';
+                    item.innerHTML = `
+                        <span class="w-8 rank-number text-neutral-600 group-hover:text-gold-light transition-colors">${i.toString().padStart(2, '0')}</span>
+                        <div class="w-10 h-10 rounded-lg overflow-hidden border border-white/10 mr-3">
+                            <img src="${playerData.avatar}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
+                        </div>
+                        <div class="flex-1">
+                            <p class="text-sm font-bold text-white">${playerData.name}</p>
+                            <p class="text-[10px] text-neutral-500">${playerData.corp}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-black text-gold-light">${playerData.wealth}</p>
+                            <p class="text-[10px] text-neutral-600 font-black uppercase">Wealth</p>
+                        </div>
+                    `;
+                    item.addEventListener('click', () => showPlayerCard(playerData));
+                    listEl.appendChild(item);
+                }
+            }
+
+            function animateValue(id, start, end, duration) {
+                const obj = document.getElementById(id);
+                let startTimestamp = null;
+                const step = (timestamp) => {
+                    if (!startTimestamp) startTimestamp = timestamp;
+                    const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                    const val = Math.floor(progress * (end - start) + start);
+                    obj.innerText = val + "%";
+                    if (progress < 1) {
+                        window.requestAnimationFrame(step);
+                    }
+                };
+                window.requestAnimationFrame(step);
+            }
+
+            function showPlayerCard(data) {
+                // Initial Reset
+                document.getElementById('modal-name').innerText = data.name;
+                document.getElementById('modal-corp').innerText = data.corp;
+                document.getElementById('modal-wealth').innerText = data.wealth;
+                document.getElementById('modal-lv').innerText = data.lv;
+                document.getElementById('modal-achieve').innerText = data.achieve;
+                document.getElementById('modal-avatar').src = data.avatar;
+
+                // Reset bars to 0
+                document.getElementById('bar-real').style.width = '0%';
+                document.getElementById('bar-tech').style.width = '0%';
+                document.getElementById('bar-fin').style.width = '0%';
+                document.getElementById('val-real').innerText = '0%';
+                document.getElementById('val-tech').innerText = '0%';
+                document.getElementById('val-fin').innerText = '0%';
+
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+
+                // Trigger animations after modal displays
+                if(animationTimerId) clearTimeout(animationTimerId);
+                animationTimerId = setTimeout(() => {
+                    const real = data.real || 20;
+                    const tech = data.tech || 30;
+                    const fin = data.fin || 50;
+
+                    document.getElementById('bar-real').style.width = real + '%';
+                    document.getElementById('bar-tech').style.width = tech + '%';
+                    document.getElementById('bar-fin').style.width = fin + '%';
+
+                    animateValue('val-real', 0, real, 1000);
+                    animateValue('val-tech', 0, tech, 1000);
+                    animateValue('val-fin', 0, fin, 1000);
+                    
+                    clearTimeout(animationTimerId);
+                    animationTimerId = null;
+                }, 100);
+            }
+
+            function showToast(message, type = 'success') {
+                const toast = document.createElement('div');
+                toast.className = `glass-card rounded-full py-2 px-4 flex items-center gap-2 border-l-4 border-l-gold-primary toast-animate shadow-xl`;
+                const icon = type === 'success' ? 'check-circle' : 'info';
+                const color = type === 'success' ? 'text-gold-primary' : 'text-tech-blue';
+                
+                toast.innerHTML = `
+                    <i data-lucide="${icon}" class="w-4 h-4 ${color}"></i>
+                    <span class="text-[11px] font-bold text-white">${message}</span>
+                `;
+                toastContainer.appendChild(toast);
+                lucide.createIcons();
+
+                let toastTimerId = setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateY(-10px)';
+                    toast.style.transition = 'all 0.3s ease';
+                    let cleanupTimerId = setTimeout(() => {
+                        toast.remove();
+                        clearTimeout(cleanupTimerId);
+                    }, 300);
+                    clearTimeout(toastTimerId);
+                }, 2000);
+            }
+
+            // Social Listeners
+            document.getElementById('btn-add-friend').addEventListener('click', () => {
+                const name = document.getElementById('modal-name').innerText;
+                showToast(`已向 ${name} 发送好友申请`);
+            });
+
+            document.getElementById('btn-private-chat').addEventListener('click', () => {
+                showToast(`正在建立加密通信频道...`, 'info');
+            });
+
+            // Close modal
+            document.getElementById('close-modal').addEventListener('click', () => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            });
+
+            // Tab switching
+            const tabs = ['server', 'event', 'cross'];
+            tabs.forEach(tabId => {
+                document.getElementById(`tab-${tabId}`).addEventListener('click', () => {
+                    tabs.forEach(t => document.getElementById(`tab-${t}`).classList.remove('tab-active'));
+                    document.getElementById(`tab-${tabId}`).classList.add('tab-active');
+                    
+                    listEl.style.opacity = '0';
+                    let switchTimerId = setTimeout(() => {
+                        populateList();
+                        listEl.style.opacity = '1';
+                        clearTimeout(switchTimerId);
+                    }, 150);
+                });
+            });
+
+            // Top 3 interaction
+            document.querySelectorAll('.player-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const data = JSON.parse(item.getAttribute('data-player'));
+                    data.avatar = item.querySelector('img').src;
+                    showPlayerCard(data);
+                });
+            });
+
+            populateList();
+        });
+    </script>
+</body>
+</html>

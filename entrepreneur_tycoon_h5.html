@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="filename" content="entrepreneur_tycoon_h5.html">
+    <title>创业大亨 - 现代商业模拟手游</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        business: {
+                            dark: '#020617',
+                            card: '#0f172a',
+                            gold: '#fbbf24',
+                            goldLight: '#fef3c7',
+                            accent: '#3b82f6',
+                            danger: '#ef4444',
+                            success: '#10b981'
+                        }
+                    },
+                    animation: {
+                        'glow': 'glow 2s ease-in-out infinite',
+                        'float': 'float 3s ease-in-out infinite',
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        glow: {
+                            '0%, 100%': { opacity: 0.6, transform: 'scale(1)' },
+                            '50%': { opacity: 1, transform: 'scale(1.05)' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-6px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', 'Inter', sans-serif; background: #000; color: #fff; margin: 0; padding: 0; }
+        .app-viewport {
+            width: 100vw;
+            height: 100vh;
+            max-width: 430px;
+            max-height: 932px;
+            position: relative;
+            overflow: hidden;
+            background: #020617;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .main-bg {
+            background-image: linear-gradient(to bottom, rgba(2,6,23,0.4), rgba(2,6,23,0.95)), 
+                              url('https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80');
+            background-size: cover;
+            background-position: center;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(251, 191, 36, 0.15);
+        }
+        .btn-gold {
+            background: linear-gradient(180deg, #fcd34d 0%, #fbbf24 100%);
+            box-shadow: 0 4px 0 #b45309, 0 6px 15px rgba(180, 83, 9, 0.3);
+            transition: all 0.1s;
+        }
+        .btn-gold:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #b45309;
+        }
+        .red-dot {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 10px;
+            height: 10px;
+            background: #ef4444;
+            border-radius: 50%;
+            border: 1.5px solid #020617;
+            z-index: 10;
+        }
+        .scroll-hide::-webkit-scrollbar { display: none; }
+        .resource-tag {
+            background: rgba(0,0,0,0.5);
+            border-radius: 14px;
+            padding: 2px 8px;
+            border: 1px solid rgba(255,255,255,0.08);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .page-container {
+            display: none;
+            position: absolute;
+            inset: 0;
+            z-index: 40;
+            background: #020617;
+            flex-direction: column;
+        }
+        .page-active { display: flex; }
+        .card-inner-glow { box-shadow: inset 0 0 15px rgba(251, 191, 36, 0.05); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen bg-zinc-900">
+
+    <div class="app-viewport shadow-2xl">
+        
+        <!-- 1. 顶部玩家信息与资源栏 -->
+        <header class="absolute top-0 left-0 right-0 z-[60] p-4 space-y-3 pointer-events-none">
+            <div class="flex items-center justify-between pointer-events-auto">
+                <div class="flex items-center gap-2">
+                    <div class="relative group">
+                        <div class="w-12 h-12 rounded-full border-2 border-business-gold p-0.5 overflow-hidden shadow-lg shadow-business-gold/10">
+                            <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=120&q=80" class="w-full h-full object-cover rounded-full">
+                        </div>
+                        <div class="absolute -bottom-1 -right-1 bg-business-gold text-business-dark text-[9px] font-black px-1.5 rounded-sm border border-business-dark">VIP 8</div>
+                    </div>
+                    <div class="flex flex-col">
+                        <div class="flex items-center gap-1.5">
+                            <span class="font-black text-sm text-white drop-shadow-md">陆远 · 集团CEO</span>
+                            <span class="bg-blue-500/20 text-blue-400 text-[9px] px-1.5 py-0.5 rounded font-bold border border-blue-500/30">创业先驱</span>
+                        </div>
+                        <div class="flex items-center gap-2 mt-1">
+                            <div class="w-20 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                                <div class="w-3/4 h-full bg-business-gold shadow-[0_0_8px_rgba(251,191,36,0.5)]"></div>
+                            </div>
+                            <span class="text-[9px] text-slate-400 font-bold">LV.45</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex flex-col items-end">
+                    <div class="text-[10px] text-slate-400 font-medium">公司估值</div>
+                    <div class="text-xs text-business-gold font-black">¥ 12.8 亿</div>
+                </div>
+            </div>
+
+            <!-- 资源栏 -->
+            <div class="flex gap-2 overflow-x-auto scroll-hide pb-1 pointer-events-auto">
+                <div class="resource-tag min-w-[90px]">
+                    <i data-lucide="circle-dollar-sign" class="w-3 h-3 text-emerald-400"></i>
+                    <span class="text-[10px] font-bold">1.25M</span>
+                    <button class="ml-auto w-3.5 h-3.5 bg-white/10 rounded flex items-center justify-center"><i data-lucide="plus" class="w-2.5 h-2.5 text-slate-400"></i></button>
+                </div>
+                <div class="resource-tag min-w-[90px]">
+                    <i data-lucide="gem" class="w-3 h-3 text-business-gold"></i>
+                    <span class="text-[10px] font-bold">2,580</span>
+                    <button class="ml-auto w-3.5 h-3.5 bg-white/10 rounded flex items-center justify-center"><i data-lucide="plus" class="w-2.5 h-2.5 text-slate-400"></i></button>
+                </div>
+                <div class="resource-tag min-w-[80px]">
+                    <i data-lucide="award" class="w-3 h-3 text-blue-400"></i>
+                    <span class="text-[10px] font-bold">14k</span>
+                </div>
+                <div class="resource-tag min-w-[85px]">
+                    <i data-lucide="zap" class="w-3 h-3 text-amber-500"></i>
+                    <span class="text-[10px] font-bold">45/100</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 2. 主场景 -->
+        <main id="home-scene" class="flex-1 main-bg relative flex flex-col items-center justify-center">
+            <!-- 办公视觉 -->
+            <div class="animate-float text-center space-y-4 pointer-events-none">
+                <div class="w-24 h-24 mx-auto bg-slate-900/60 backdrop-blur-xl rounded-3xl border border-white/10 flex items-center justify-center shadow-2xl">
+                    <i data-lucide="rocket" class="w-12 h-12 text-business-gold drop-shadow-[0_0_15px_rgba(251,191,36,0.4)]"></i>
+                </div>
+                <div>
+                    <h2 class="text-2xl font-black tracking-widest text-white drop-shadow-2xl">星河科技集团</h2>
+                    <p class="text-[10px] text-slate-400 mt-1 uppercase tracking-tighter">Galaxy Technology Group Co., Ltd.</p>
+                </div>
+            </div>
+
+            <!-- 左侧入口 (运营/福利) -->
+            <div class="absolute left-4 top-40 space-y-4">
+                <button class="flex flex-col items-center gap-1 group relative">
+                    <div class="red-dot"></div>
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="gift" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">首充豪礼</span>
+                </button>
+                <button onclick="showPage('activity-page')" class="flex flex-col items-center gap-1 group relative">
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="calendar" class="w-6 h-6 text-business-gold"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">七日目标</span>
+                </button>
+                <button class="flex flex-col items-center gap-1 group">
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="landmark" class="w-6 h-6 text-emerald-400"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">创业基金</span>
+                </button>
+            </div>
+
+            <!-- 右侧入口 (核心功能) -->
+            <div class="absolute right-4 top-40 space-y-4">
+                <button onclick="showPage('leaderboard-page')" class="flex flex-col items-center gap-1 group">
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="trophy" class="w-6 h-6 text-amber-400"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">排行榜</span>
+                </button>
+                <button onclick="showPage('finance-page')" class="flex flex-col items-center gap-1 group">
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="pie-chart" class="w-6 h-6 text-blue-400"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">财务中心</span>
+                </button>
+                <button onclick="showPage('shop-page')" class="flex flex-col items-center gap-1 group relative">
+                    <span class="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1 rounded animate-pulse">HOT</span>
+                    <div class="w-12 h-12 glass-panel rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <i data-lucide="shopping-cart" class="w-6 h-6 text-pink-400"></i>
+                    </div>
+                    <span class="text-[10px] text-white/90 font-bold drop-shadow-md">特惠商城</span>
+                </button>
+            </div>
+
+            <!-- 主线任务条 -->
+            <div onclick="showPage('task-page')" class="absolute bottom-32 left-4 right-4 glass-panel p-2.5 rounded-2xl flex items-center gap-3 active:scale-95 transition-transform cursor-pointer">
+                <div class="w-12 h-12 bg-business-gold/15 rounded-xl flex items-center justify-center relative border border-business-gold/20">
+                    <div class="red-dot"></div>
+                    <i data-lucide="clipboard-check" class="w-7 h-7 text-business-gold"></i>
+                </div>
+                <div class="flex-1 overflow-hidden">
+                    <div class="flex justify-between items-center mb-0.5">
+                        <span class="text-business-gold text-[10px] font-black uppercase tracking-wider">主线任务 15-4</span>
+                        <span class="text-slate-500 text-[10px] font-bold">已完成 85%</span>
+                    </div>
+                    <div class="text-xs font-black truncate text-white">将 集团总部 升级至 Lv.25</div>
+                    <div class="flex items-center gap-2 mt-1">
+                        <div class="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
+                            <i data-lucide="gem" class="w-2.5 h-2.5"></i> +200
+                        </div>
+                        <div class="flex items-center gap-1 text-[9px] text-emerald-400 font-bold">
+                            <i data-lucide="circle-dollar-sign" class="w-2.5 h-2.5"></i> +50W
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-gold px-5 py-2 rounded-xl text-xs font-black text-business-dark">前往</button>
+            </div>
+
+            <!-- 核心推进行动按钮 -->
+            <button class="absolute bottom-4 right-4 group">
+                <div class="absolute -inset-4 bg-business-gold/20 blur-2xl rounded-full animate-glow"></div>
+                <div class="relative w-28 h-28 bg-gradient-to-br from-business-gold to-amber-600 rounded-full border-[6px] border-business-dark flex flex-col items-center justify-center shadow-2xl group-hover:scale-105 transition-all">
+                    <i data-lucide="handshake" class="w-10 h-10 text-business-dark mb-1 drop-shadow-md"></i>
+                    <span class="text-business-dark font-black text-[13px]">出门谈判</span>
+                    <span class="text-business-dark/60 text-[10px] font-black">第15章</span>
+                </div>
+            </button>
+        </main>
+
+        <!-- 3. 底部导航栏 -->
+        <nav class="h-24 bg-slate-950/80 backdrop-blur-xl border-t border-white/5 px-2 flex items-center justify-between z-[100] pb-6">
+            <button onclick="showPage('home')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn active" data-nav="home">
+                <i data-lucide="home" class="w-6 h-6"></i>
+                <span class="text-[10px] font-bold">首页</span>
+            </button>
+            <button onclick="showPage('staff-page')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn" data-nav="staff">
+                <div class="relative">
+                    <div class="red-dot"></div>
+                    <i data-lucide="users" class="w-6 h-6"></i>
+                </div>
+                <span class="text-[10px] font-bold">员工</span>
+            </button>
+            <button onclick="showPage('project-page')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn" data-nav="project">
+                <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+                <span class="text-[10px] font-bold">项目</span>
+            </button>
+            <button onclick="showPage('war-page')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn" data-nav="war">
+                <i data-lucide="sword" class="w-6 h-6"></i>
+                <span class="text-[10px] font-bold">商战</span>
+            </button>
+            <button onclick="showPage('guild-page')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn" data-nav="guild">
+                <i data-lucide="building-2" class="w-6 h-6"></i>
+                <span class="text-[10px] font-bold">联盟</span>
+            </button>
+            <button onclick="showPage('bag-page')" class="flex flex-col items-center gap-1.5 flex-1 transition-colors nav-btn" data-nav="bag">
+                <i data-lucide="briefcase" class="w-6 h-6"></i>
+                <span class="text-[10px] font-bold">背包</span>
+            </button>
+        </nav>
+
+        <!-- ================= 内页面板 ================= -->
+
+        <!-- 通用模板结构: Header, Tabs, Content, Bottom Action -->
+        
+        <!-- 任务页 (Tasks) -->
+        <div id="task-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-business-gold/20 rounded-xl flex items-center justify-center border border-business-gold/30">
+                        <i data-lucide="list-todo" class="w-6 h-6 text-business-gold"></i>
+                    </div>
+                    <h2 class="text-xl font-black text-white italic">TASKS 任务中心</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="px-6 flex gap-6 border-b border-white/5 mb-4">
+                <button class="pb-3 border-b-2 border-business-gold text-business-gold font-bold text-sm">主线任务</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm">每日任务</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm">成就</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <!-- 任务卡片 -->
+                <div class="glass-panel p-4 rounded-2xl space-y-3">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-black text-sm">【主线 15-4】 扩张之路</h3>
+                            <p class="text-[10px] text-slate-400 mt-1">提升公司总部等级，解锁更多经营权限</p>
+                        </div>
+                        <span class="bg-amber-500/10 text-amber-500 text-[9px] px-2 py-0.5 rounded border border-amber-500/20 font-bold">进行中</span>
+                    </div>
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between text-[10px]">
+                            <span class="text-slate-400 font-bold">总部等级 (20/25)</span>
+                            <span class="text-white font-black">80%</span>
+                        </div>
+                        <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div class="w-4/5 h-full bg-business-gold shadow-[0_0_8px_rgba(251,191,36,0.5)]"></div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between pt-1">
+                        <div class="flex gap-3">
+                            <div class="flex items-center gap-1 text-[10px] font-bold"><i data-lucide="gem" class="w-3 h-3 text-business-gold"></i> 200</div>
+                            <div class="flex items-center gap-1 text-[10px] font-bold"><i data-lucide="award" class="w-3 h-3 text-blue-400"></i> 1k</div>
+                        </div>
+                        <button class="btn-gold px-4 py-1.5 rounded-lg text-[10px] font-black text-business-dark">去完成</button>
+                    </div>
+                </div>
+                <!-- 已完成任务 -->
+                <div class="glass-panel p-4 rounded-2xl space-y-3 opacity-60">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-black text-sm">【主线 15-3】 人才库建设</h3>
+                            <p class="text-[10px] text-slate-400 mt-1">累计招募 10 名 SR 级以上员工</p>
+                        </div>
+                        <span class="bg-emerald-500/10 text-emerald-400 text-[9px] px-2 py-0.5 rounded border border-emerald-500/20 font-bold italic">已领取</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 财务页 (Finance) -->
+        <div id="finance-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center bg-slate-900/40">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="landmark" class="w-7 h-7 text-business-gold"></i>
+                    <h2 class="text-xl font-black text-white italic tracking-tighter">FINANCE 财报中心</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="p-6 space-y-4 flex-1 overflow-y-auto scroll-hide">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="glass-panel p-4 rounded-3xl border-l-4 border-l-emerald-500 card-inner-glow">
+                        <div class="text-[10px] text-slate-400 font-bold mb-1">本月净流入</div>
+                        <div class="text-lg font-black text-emerald-400">+ ¥842W</div>
+                        <div class="text-[9px] text-emerald-500/70 mt-1">↑ 12% 同比上月</div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-3xl border-l-4 border-l-red-500 card-inner-glow">
+                        <div class="text-[10px] text-slate-400 font-bold mb-1">月固定支出</div>
+                        <div class="text-lg font-black text-red-400">- ¥215W</div>
+                        <div class="text-[9px] text-red-500/70 mt-1">↓ 3% 同比上月</div>
+                    </div>
+                </div>
+                <!-- 资产大盘 -->
+                <div class="glass-panel p-6 rounded-[32px] space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-black text-white">资产分布</h3>
+                        <i data-lucide="info" class="w-4 h-4 text-slate-500"></i>
+                    </div>
+                    <div class="flex items-end justify-between h-32 gap-3 px-2">
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            <div class="w-full bg-blue-500/40 rounded-t-lg border-x border-t border-blue-400/30" style="height: 60%"></div>
+                            <span class="text-[9px] text-slate-400 font-bold">实物</span>
+                        </div>
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            <div class="w-full bg-emerald-500/40 rounded-t-lg border-x border-t border-emerald-400/30" style="height: 90%"></div>
+                            <span class="text-[9px] text-slate-400 font-bold">现金</span>
+                        </div>
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            <div class="w-full bg-business-gold/40 rounded-t-lg border-x border-t border-business-gold/30" style="height: 40%"></div>
+                            <span class="text-[9px] text-slate-400 font-bold">股权</span>
+                        </div>
+                        <div class="flex flex-col items-center gap-2 flex-1">
+                            <div class="w-full bg-purple-500/40 rounded-t-lg border-x border-t border-purple-400/30" style="height: 25%"></div>
+                            <span class="text-[9px] text-slate-400 font-bold">理财</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 信用评级 -->
+                <div class="glass-panel p-5 rounded-3xl flex items-center justify-between">
+                    <div class="flex items-center gap-4">
+                        <div class="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center border-2 border-business-gold shadow-[0_0_15px_rgba(251,191,36,0.2)]">
+                            <span class="text-xl font-black text-business-gold">AAA</span>
+                        </div>
+                        <div>
+                            <div class="text-xs font-black text-white">商业信用评级</div>
+                            <div class="text-[10px] text-slate-400">贷款额度: 5,000W</div>
+                        </div>
+                    </div>
+                    <button class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-colors">申请贷款</button>
+                </div>
+            </div>
+            <div class="p-6 pb-10">
+                <button class="w-full btn-gold py-4 rounded-2xl text-business-dark font-black shadow-2xl flex items-center justify-center gap-3">
+                    <i data-lucide="presentation" class="w-5 h-5"></i>
+                    寻求新一轮融资 (C轮)
+                </button>
+            </div>
+        </div>
+
+        <!-- 员工页 (Staff) - 增强版 -->
+        <div id="staff-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="users-round" class="w-7 h-7 text-business-gold"></i>
+                    <h2 class="text-xl font-black text-white italic">TALENTS 人才库</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="px-6 flex gap-6 overflow-x-auto scroll-hide border-b border-white/5 mb-4">
+                <button class="pb-3 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap">全部 (24)</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm whitespace-nowrap">技术研发</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm whitespace-nowrap">市场运营</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm whitespace-nowrap">行政财务</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 space-y-4 pb-24 scroll-hide">
+                <!-- 员工卡片 1 -->
+                <div class="glass-panel p-3 rounded-2xl flex gap-4 relative overflow-hidden group active:bg-white/5 transition-colors">
+                    <div class="absolute top-0 right-0 p-1 bg-amber-500/20 text-amber-500 text-[8px] font-black rounded-bl-lg border-b border-l border-amber-500/20 italic">SSR</div>
+                    <div class="w-20 h-24 bg-slate-800 rounded-xl overflow-hidden border border-business-gold/30 shrink-0">
+                        <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1 py-1">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-black text-sm">林婉儿</h3>
+                            <span class="text-[9px] text-slate-500 font-bold">首席运营官</span>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                            <div class="space-y-0.5">
+                                <div class="flex justify-between text-[8px] text-slate-500 font-bold uppercase"><span>管理</span><span class="text-business-gold">95</span></div>
+                                <div class="w-full h-1 bg-slate-800 rounded-full"><div class="w-[95%] h-full bg-business-gold"></div></div>
+                            </div>
+                            <div class="space-y-0.5">
+                                <div class="flex justify-between text-[8px] text-slate-500 font-bold uppercase"><span>营销</span><span class="text-blue-400">88</span></div>
+                                <div class="w-full h-1 bg-slate-800 rounded-full"><div class="w-[88%] h-full bg-blue-400"></div></div>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between">
+                            <div class="flex items-center gap-1.5">
+                                <div class="flex items-center gap-0.5 text-[9px] text-emerald-400 font-bold"><i data-lucide="smile" class="w-2.5 h-2.5"></i> 98%</div>
+                                <div class="flex items-center gap-0.5 text-[9px] text-blue-400 font-bold"><i data-lucide="star" class="w-2.5 h-2.5"></i> LV.42</div>
+                            </div>
+                            <button class="bg-business-gold/10 text-business-gold px-3 py-1 rounded-lg text-[9px] font-black border border-business-gold/30">档案</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- 员工卡片 2 -->
+                <div class="glass-panel p-3 rounded-2xl flex gap-4 relative opacity-90">
+                    <div class="absolute top-0 right-0 p-1 bg-blue-500/20 text-blue-400 text-[8px] font-black rounded-bl-lg border-b border-l border-blue-500/20 italic">SR</div>
+                    <div class="w-20 h-24 bg-slate-800 rounded-xl overflow-hidden border border-slate-700 shrink-0">
+                        <img src="https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80" class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1 py-1">
+                        <div class="flex items-center gap-2">
+                            <h3 class="font-black text-sm">张大伟</h3>
+                            <span class="text-[9px] text-slate-500 font-bold">高级架构师</span>
+                        </div>
+                        <div class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                            <div class="space-y-0.5">
+                                <div class="flex justify-between text-[8px] text-slate-500 font-bold uppercase"><span>技术</span><span class="text-blue-400">92</span></div>
+                                <div class="w-full h-1 bg-slate-800 rounded-full"><div class="w-[92%] h-full bg-blue-400"></div></div>
+                            </div>
+                            <div class="space-y-0.5">
+                                <div class="flex justify-between text-[8px] text-slate-500 font-bold uppercase"><span>效率</span><span class="text-amber-500">85</span></div>
+                                <div class="w-full h-1 bg-slate-800 rounded-full"><div class="w-[85%] h-full bg-amber-500"></div></div>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between">
+                            <div class="flex items-center gap-1.5">
+                                <div class="flex items-center gap-0.5 text-[9px] text-red-400 font-bold"><i data-lucide="frown" class="w-2.5 h-2.5"></i> 65%</div>
+                                <div class="flex items-center gap-0.5 text-[9px] text-blue-400 font-bold"><i data-lucide="star" class="w-2.5 h-2.5"></i> LV.30</div>
+                            </div>
+                            <span class="text-[8px] text-red-500 font-black animate-pulse">高离职风险</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="absolute bottom-28 left-4 right-4 flex gap-3">
+                <button class="flex-1 glass-panel py-3 rounded-2xl text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/10">
+                    <i data-lucide="graduation-cap" class="w-4 h-4 text-blue-400"></i>
+                    全员培训
+                </button>
+                <button class="flex-1 btn-gold py-3 rounded-2xl text-business-dark font-black text-xs flex items-center justify-center gap-2">
+                    <i data-lucide="search" class="w-4 h-4"></i>
+                    猎头招募
+                </button>
+            </div>
+        </div>
+
+        <!-- 项目页 (Projects) -->
+        <div id="project-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center bg-slate-900/40">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="layers" class="w-7 h-7 text-business-gold"></i>
+                    <h2 class="text-xl font-black text-white italic">PROJECTS 研发中心</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="p-6 space-y-6 flex-1 overflow-y-auto scroll-hide pb-24">
+                <!-- 重点研发 -->
+                <div class="glass-panel p-5 rounded-[32px] border-l-4 border-l-business-gold relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-3"><i data-lucide="rocket" class="w-6 h-6 text-business-gold/20"></i></div>
+                    <h3 class="font-black text-lg text-white mb-1">AI 自动化经营 Agent</h3>
+                    <p class="text-[10px] text-slate-400 mb-4 font-medium">核心自研产品 · 进度: 68.5%</p>
+                    <div class="relative h-6 bg-slate-900 rounded-xl border border-white/5 overflow-hidden mb-5">
+                        <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-business-gold to-amber-400 w-[68.5%] shadow-[0_0_15px_rgba(251,191,36,0.3)] animate-pulse"></div>
+                        <div class="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white mix-blend-difference italic tracking-widest">CODING...</div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="flex -space-x-3">
+                            <img src="https://i.pravatar.cc/100?u=1" class="w-9 h-9 rounded-full border-2 border-slate-900 shadow-xl">
+                            <img src="https://i.pravatar.cc/100?u=2" class="w-9 h-9 rounded-full border-2 border-slate-900 shadow-xl">
+                            <img src="https://i.pravatar.cc/100?u=3" class="w-9 h-9 rounded-full border-2 border-slate-900 shadow-xl">
+                            <div class="w-9 h-9 rounded-full bg-slate-800 border-2 border-slate-900 flex items-center justify-center text-[10px] font-black text-business-gold">+4</div>
+                        </div>
+                        <button class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-xl text-xs font-black transition-all shadow-lg shadow-blue-600/20">加速研发</button>
+                    </div>
+                </div>
+
+                <!-- 外包项目 -->
+                <div class="space-y-4">
+                    <h4 class="text-xs font-black text-slate-500 uppercase tracking-widest">可接外包需求</h4>
+                    <div class="glass-panel p-4 rounded-2xl flex items-center justify-between group active:scale-[0.98] transition-all">
+                        <div class="flex gap-4 items-center">
+                            <div class="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center border border-white/5">
+                                <i data-lucide="database" class="w-6 h-6 text-slate-400 group-hover:text-business-gold transition-colors"></i>
+                            </div>
+                            <div>
+                                <h5 class="text-sm font-black text-white">政府大数据处理系统</h5>
+                                <p class="text-[10px] text-slate-500 font-bold">周期: 12天 | 预计收益: ¥85W</p>
+                            </div>
+                        </div>
+                        <button class="btn-gold px-4 py-2 rounded-xl text-[10px] font-black text-business-dark">竞标</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 决策覆盖层 (Decision) -->
+        <div id="event-overlay" class="fixed inset-0 z-[1000] bg-black/90 flex items-center justify-center p-6 hidden">
+            <div class="glass-panel w-full max-w-[340px] rounded-[40px] overflow-hidden flex flex-col shadow-[0_0_50px_rgba(0,0,0,1)] border-white/10">
+                <div class="h-40 bg-gradient-to-br from-slate-900 via-slate-950 to-business-dark p-8 relative">
+                    <div class="absolute top-6 left-6 bg-red-600 text-white text-[9px] px-2.5 py-1 rounded-full font-black animate-pulse tracking-widest uppercase shadow-lg shadow-red-600/30">Urgent 紧急危机</div>
+                    <h3 class="text-2xl font-black mt-8 text-white">数据安全泄露风险</h3>
+                    <p class="text-[11px] text-slate-400 mt-2 font-medium">来源: 安全部技术预警</p>
+                </div>
+                <div class="p-8 space-y-6">
+                    <p class="text-sm leading-relaxed text-slate-300 font-medium">
+                        我们在第三方支付网关中发现了一个潜在漏洞。虽然目前尚未造成实质损失，但如果不立即处理，可能会导致数百万用户信息泄露，面临监管重罚。
+                    </p>
+                    <div class="space-y-4">
+                        <button onclick="hideEvent()" class="w-full text-left p-4 rounded-[20px] border border-business-gold/30 hover:bg-business-gold/10 transition-all group relative">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-black text-business-gold">全面停机修复</span>
+                                <span class="text-[10px] text-red-400 font-black">- ¥25W 收入</span>
+                            </div>
+                            <p class="text-[10px] text-slate-500 font-medium">彻底解决风险，但会导致 24 小时服务中断</p>
+                        </button>
+                        <button onclick="hideEvent()" class="w-full text-left p-4 rounded-[20px] border border-slate-800 hover:bg-white/5 transition-all group">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-xs font-black text-white">热更新动态修补</span>
+                                <span class="text-[10px] text-blue-400 font-black">- 50 行动力</span>
+                            </div>
+                            <p class="text-[10px] text-slate-500 font-medium">不中断服务，但有 20% 概率修复失败</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 排名页 (Leaderboard) -->
+        <div id="leaderboard-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="award" class="w-7 h-7 text-business-gold"></i>
+                    <h2 class="text-xl font-black text-white italic italic uppercase">Rank 排行榜</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="px-6 flex gap-8 border-b border-white/5 mb-4">
+                <button class="pb-3 border-b-2 border-business-gold text-business-gold font-bold text-sm">全服估值榜</button>
+                <button class="pb-3 text-slate-500 font-bold text-sm">月度盈利榜</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 space-y-3 pb-10 scroll-hide">
+                <!-- 第一名 -->
+                <div class="glass-panel p-4 rounded-2xl flex items-center gap-4 bg-gradient-to-r from-business-gold/10 to-transparent border-business-gold/30">
+                    <div class="w-8 h-8 flex items-center justify-center"><i data-lucide="crown" class="w-6 h-6 text-business-gold"></i></div>
+                    <div class="w-10 h-10 rounded-full border-2 border-business-gold p-0.5"><img src="https://i.pravatar.cc/100?u=v" class="rounded-full"></div>
+                    <div class="flex-1">
+                        <div class="text-xs font-black">马氪 · 万向集团</div>
+                        <div class="text-[9px] text-slate-500">估值: ¥145.2 亿</div>
+                    </div>
+                    <div class="text-[10px] font-black text-business-gold italic">NO.1</div>
+                </div>
+                <!-- 其他排行项 -->
+                <div class="glass-panel p-4 rounded-2xl flex items-center gap-4">
+                    <div class="w-8 text-center text-slate-500 font-black text-lg italic">2</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-slate-700 p-0.5"><img src="https://i.pravatar.cc/100?u=x" class="rounded-full"></div>
+                    <div class="flex-1">
+                        <div class="text-xs font-black">许天 · 天空资本</div>
+                        <div class="text-[9px] text-slate-500">估值: ¥98.7 亿</div>
+                    </div>
+                </div>
+                <div class="glass-panel p-4 rounded-2xl flex items-center gap-4">
+                    <div class="w-8 text-center text-slate-500 font-black text-lg italic">3</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-slate-700 p-0.5"><img src="https://i.pravatar.cc/100?u=y" class="rounded-full"></div>
+                    <div class="flex-1">
+                        <div class="text-xs font-black">张强 · 巅峰科技</div>
+                        <div class="text-[9px] text-slate-500">估值: ¥82.1 亿</div>
+                    </div>
+                </div>
+            </div>
+            <!-- 我的排名 -->
+            <div class="p-4 bg-slate-900 border-t border-business-gold/30 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                <div class="flex items-center gap-4 px-2">
+                    <div class="w-8 text-center text-business-gold font-black italic">45</div>
+                    <div class="w-10 h-10 rounded-full border-2 border-business-gold p-0.5"><img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=120&q=80" class="rounded-full"></div>
+                    <div class="flex-1">
+                        <div class="text-xs font-black">陆远 · 星河科技</div>
+                        <div class="text-[9px] text-slate-400 italic">击败了 85% 的玩家</div>
+                    </div>
+                    <div class="text-xs font-black text-business-gold">¥12.8 亿</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 商城页 (Shop) -->
+        <div id="shop-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="shopping-bag" class="w-7 h-7 text-pink-400"></i>
+                    <h2 class="text-xl font-black text-white italic italic uppercase">Shop 商业特权</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="px-6 flex gap-6 overflow-x-auto scroll-hide mb-4">
+                <button class="pb-2 border-b-2 border-business-gold text-business-gold font-bold text-sm whitespace-nowrap">限时礼包</button>
+                <button class="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap">钻石充值</button>
+                <button class="pb-2 text-slate-500 font-bold text-sm whitespace-nowrap">月卡/基金</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-6 space-y-4 pb-10 scroll-hide">
+                <!-- 限时活动广告 -->
+                <div class="w-full h-28 rounded-3xl overflow-hidden relative">
+                    <img src="https://images.unsplash.com/photo-1611974714658-66d2f13ee9a2?auto=format&fit=crop&w=400&q=80" class="w-full h-full object-cover">
+                    <div class="absolute inset-0 bg-gradient-to-r from-business-dark to-transparent flex flex-col justify-center p-6">
+                        <h4 class="text-lg font-black italic">C轮融资专项礼包</h4>
+                        <p class="text-[10px] text-business-gold font-bold">限时 2.5 折 | 仅剩 14:23:45</p>
+                    </div>
+                </div>
+                <!-- 商品列表 -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="glass-panel p-4 rounded-3xl flex flex-col items-center gap-2 relative">
+                        <div class="absolute -top-1 -right-1 bg-red-500 text-[8px] font-black px-1.5 rounded-sm">-60%</div>
+                        <div class="w-16 h-16 flex items-center justify-center"><i data-lucide="file-search" class="w-10 h-10 text-business-gold"></i></div>
+                        <div class="text-xs font-black text-white">高级猎头契约 x10</div>
+                        <div class="flex items-center gap-1">
+                            <i data-lucide="gem" class="w-3 h-3 text-business-gold"></i>
+                            <span class="text-sm font-black">1280</span>
+                        </div>
+                        <button class="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark">购买</button>
+                    </div>
+                    <div class="glass-panel p-4 rounded-3xl flex flex-col items-center gap-2">
+                        <div class="w-16 h-16 flex items-center justify-center"><i data-lucide="shield-check" class="w-10 h-10 text-emerald-400"></i></div>
+                        <div class="text-xs font-black text-white">经营保险 (7天)</div>
+                        <div class="flex items-center gap-1">
+                            <i data-lucide="gem" class="w-3 h-3 text-business-gold"></i>
+                            <span class="text-sm font-black">680</span>
+                        </div>
+                        <button class="w-full btn-gold py-1.5 rounded-xl text-[10px] font-black text-business-dark">购买</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 背包页 (Bag) -->
+        <div id="bag-page" class="page-container">
+            <header class="p-6 pt-10 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="package" class="w-7 h-7 text-business-gold"></i>
+                    <h2 class="text-xl font-black text-white italic uppercase italic">Inventory 背包</h2>
+                </div>
+                <button onclick="showPage('home')" class="w-10 h-10 bg-slate-800 rounded-full flex items-center justify-center"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </header>
+            <div class="flex-1 overflow-y-auto px-6 pb-10 scroll-hide">
+                <div class="grid grid-cols-4 gap-3">
+                    <!-- 物品格子 -->
+                    <div class="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 active:border-business-gold transition-colors relative">
+                        <i data-lucide="file-text" class="w-8 h-8 text-slate-500"></i>
+                        <span class="absolute bottom-1 right-2 text-[10px] font-black text-white">12</span>
+                    </div>
+                    <div class="aspect-square glass-panel rounded-2xl flex items-center justify-center border-business-gold/40 bg-business-gold/5">
+                        <i data-lucide="star" class="w-8 h-8 text-business-gold"></i>
+                        <span class="absolute bottom-1 right-2 text-[10px] font-black text-white">1</span>
+                    </div>
+                    <div class="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-40"></div>
+                    <div class="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-40"></div>
+                    <!-- 循环格子预览 -->
+                    <script>
+                        for(let i=0; i<16; i++) {
+                            document.write('<div class="aspect-square glass-panel rounded-2xl flex items-center justify-center border-white/5 opacity-40"></div>');
+                        }
+                    </script>
+                </div>
+            </div>
+            <!-- 物品详情预览区 -->
+            <div class="p-6 bg-slate-900 border-t border-white/5 h-48 flex gap-6">
+                <div class="w-20 h-20 bg-slate-800 rounded-3xl flex items-center justify-center border border-business-gold/30 shrink-0">
+                    <i data-lucide="star" class="w-10 h-10 text-business-gold"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="font-black text-white">精英员工直聘券 (SSR)</h3>
+                    <p class="text-xs text-slate-400 mt-2 font-medium">使用后可从当前卡池中自选一名 SSR 级员工入职。</p>
+                    <button class="mt-4 btn-gold px-8 py-2 rounded-xl text-xs font-black text-business-dark">使用</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 交互脚本 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化图标
+            lucide.createIcons();
+            
+            // 页面切换逻辑
+            window.showPage = function(pageId) {
+                // 隐藏所有页面容器
+                document.querySelectorAll('.page-container').forEach(p => p.classList.remove('page-active'));
+                
+                // 逻辑控制首页场景的显示/隐藏
+                const homeScene = document.getElementById('home-scene');
+                if (pageId === 'home') {
+                    homeScene.style.display = 'flex';
+                    updateNavState('home');
+                } else {
+                    homeScene.style.display = 'none';
+                    const target = document.getElementById(pageId);
+                    if (target) {
+                        target.classList.add('page-active');
+                        // 更新底部导航选中态
+                        updateNavState(pageId.split('-')[0]);
+                    }
+                }
+            };
+
+            function updateNavState(navKey) {
+                document.querySelectorAll('.nav-btn').forEach(btn => {
+                    if (btn.dataset.nav === navKey) {
+                        btn.classList.add('text-business-gold');
+                        btn.classList.remove('text-slate-500');
+                    } else {
+                        btn.classList.remove('text-business-gold');
+                        btn.classList.add('text-slate-500');
+                    }
+                });
+            }
+
+            // 模拟 4 秒后触发一次随机经营事件
+            let eventTimer = setTimeout(() => {
+                const overlay = document.getElementById('event-overlay');
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+            }, 4000);
+
+            window.hideEvent = function() {
+                const overlay = document.getElementById('event-overlay');
+                overlay.classList.remove('flex');
+                overlay.classList.add('hidden');
+            };
+
+            // 按钮动效
+            document.querySelectorAll('button').forEach(btn => {
+                btn.addEventListener('touchstart', () => {
+                    btn.classList.add('scale-95');
+                });
+                btn.addEventListener('touchend', () => {
+                    btn.classList.remove('scale-95');
+                });
+            });
+        });
+    </script>
+</body>
+</html>

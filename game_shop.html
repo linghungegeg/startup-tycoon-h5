@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="filename" content="game_shop.html">
+    <title>幻境商店 - 资源补给站</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=ZCOOL+XiaoWei&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'game-bg': '#0f111a',
+                        'game-card': 'rgba(30, 41, 59, 0.7)',
+                        'accent-gold': '#ffd700',
+                        'accent-purple': '#a855f7',
+                        'accent-blue': '#3b82f6',
+                        'rarity-legendary': '#f59e0b',
+                        'rarity-epic': '#a855f7',
+                        'rarity-rare': '#3b82f6'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        game: ['ZCOOL XiaoWei', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #050505;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        .game-container {
+            width: 375px;
+            height: 812px;
+            background: linear-gradient(180deg, #1a1c2e 0%, #0f111a 100%);
+            position: relative;
+            overflow: hidden;
+            border: 4px solid #334155;
+            border-radius: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .scroll-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .tab-active {
+            background: linear-gradient(90deg, #a855f7, #3b82f6);
+            color: white;
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+        }
+
+        .item-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .item-card:active {
+            transform: scale(0.95);
+        }
+
+        .sold-out {
+            filter: grayscale(1);
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .ticker-text {
+            animation: ticker 20s linear infinite;
+        }
+
+        @keyframes ticker {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+
+        /* Toast styles for direct feedback */
+        .toast {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 12px 24px;
+            border-radius: 100px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .toast.show {
+            bottom: 120px;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+<div class="game-container flex flex-col">
+    <!-- Header: Currency & Close -->
+    <div class="px-6 pt-10 pb-4 flex justify-between items-center z-10">
+        <div class="flex gap-2">
+            <div class="flex items-center bg-black/40 border border-white/10 rounded-full pl-1 pr-3 py-0.5 h-7">
+                <div class="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(59,130,246,0.6)]">
+                    <i data-lucide="gem" class="w-3 h-3 text-white"></i>
+                </div>
+                <span class="ml-2 text-xs font-bold text-blue-200">12,450</span>
+            </div>
+            <div class="flex items-center bg-black/40 border border-white/10 rounded-full pl-1 pr-3 py-0.5 h-7">
+                <div class="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(234,179,8,0.6)]">
+                    <i data-lucide="coins" class="w-3 h-3 text-white"></i>
+                </div>
+                <span class="ml-2 text-xs font-bold text-yellow-200">852K</span>
+            </div>
+        </div>
+        <button id="close-main-btn" class="w-8 h-8 rounded-full glass-panel flex items-center justify-center text-white/60 hover:text-white transition-colors">
+            <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+    </div>
+
+    <!-- Ticker -->
+    <div class="h-6 bg-black/30 border-y border-white/5 overflow-hidden flex items-center">
+        <div class="ticker-text whitespace-nowrap text-[10px] text-purple-300/80 font-medium">
+            恭喜 玩家 <span class="text-white">幻影旅人</span> 成功购买 <span class="text-orange-400">[至尊成长礼包]</span>！ · 玩家 <span class="text-white">氪金大佬99</span> 开启了 <span class="text-purple-400">[远古秘宝箱]</span>...
+        </div>
+    </div>
+
+    <!-- Shop Title -->
+    <div class="px-6 py-4">
+        <h2 class="text-2xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white via-blue-200 to-purple-400 uppercase">
+            Nexus Store
+        </h2>
+        <p class="text-[10px] text-white/40 -mt-1 font-bold tracking-widest uppercase">资源中心 · 限定补给</p>
+    </div>
+
+    <!-- Categories Tab -->
+    <div class="px-6 mb-4 flex gap-2 overflow-x-auto scroll-hide">
+        <button class="tab-btn px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap tab-active" data-tab="special">
+            限时特惠
+        </button>
+        <button class="tab-btn px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap glass-panel text-white/40" data-tab="resources">
+            资源道具
+        </button>
+        <button class="tab-btn px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap glass-panel text-white/40" data-tab="currency">
+            钻石充值
+        </button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 overflow-y-auto px-6 pb-24 scroll-hide space-y-6" id="items-container">
+        <!-- Daily Featured -->
+        <div>
+            <div class="flex justify-between items-end mb-3">
+                <span class="text-[11px] font-bold text-blue-400 flex items-center gap-1">
+                    <i data-lucide="clock" class="w-3 h-3"></i> 每日轮换 (14:22:05)
+                </span>
+            </div>
+            
+            <div class="grid grid-cols-3 gap-3">
+                <div class="item-card bg-game-card rounded-xl p-2 border border-white/10 flex flex-col items-center" data-item-id="exp-boost">
+                    <div class="absolute top-0 left-0 bg-red-500 text-[8px] px-1.5 py-0.5 rounded-br-lg font-bold">-50%</div>
+                    <div class="w-12 h-12 my-2 bg-gradient-to-br from-blue-500/20 to-transparent rounded-lg flex items-center justify-center relative">
+                        <i data-lucide="zap" class="w-8 h-8 text-blue-400"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-white/80 text-center leading-tight mb-2">双倍经验卷轴</span>
+                    <div class="mt-auto w-full flex items-center justify-center gap-1 bg-black/40 py-1 rounded-md">
+                        <i data-lucide="gem" class="w-2.5 h-2.5 text-blue-400"></i>
+                        <span class="text-[10px] font-black italic">60</span>
+                    </div>
+                </div>
+
+                <div class="item-card bg-game-card rounded-xl p-2 border border-white/10 flex flex-col items-center sold-out">
+                    <div class="absolute inset-0 z-10 flex items-center justify-center">
+                        <div class="bg-black/80 px-2 py-0.5 rounded border border-white/20 text-[10px] font-bold text-white rotate-[-15deg]">已售罄</div>
+                    </div>
+                    <div class="w-12 h-12 my-2 bg-gradient-to-br from-purple-500/20 to-transparent rounded-lg flex items-center justify-center">
+                        <i data-lucide="box" class="w-8 h-8 text-purple-400"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-white/80 text-center leading-tight mb-2">神秘补给箱</span>
+                </div>
+
+                <div class="item-card bg-game-card rounded-xl p-2 border border-white/10 flex flex-col items-center" data-item-id="rare-key">
+                    <div class="w-12 h-12 my-2 bg-gradient-to-br from-yellow-500/20 to-transparent rounded-lg flex items-center justify-center">
+                        <i data-lucide="key" class="w-8 h-8 text-yellow-500"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-white/80 text-center leading-tight mb-2">虚空秘境钥匙</span>
+                    <div class="mt-auto w-full flex items-center justify-center gap-1 bg-black/40 py-1 rounded-md">
+                        <i data-lucide="gem" class="w-2.5 h-2.5 text-blue-400"></i>
+                        <span class="text-[10px] font-black italic">300</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Super Packs -->
+        <div>
+            <div class="flex justify-between items-end mb-3">
+                <span class="text-[11px] font-bold text-orange-400 flex items-center gap-1">
+                    <i data-lucide="star" class="w-3 h-3 fill-orange-400"></i> 至尊礼包
+                </span>
+            </div>
+            
+            <div class="space-y-3">
+                <div class="item-card glass-panel rounded-2xl p-3 border-l-4 border-l-orange-500 flex items-center gap-4" data-item-id="vip-pack">
+                    <div class="w-16 h-16 bg-gradient-to-tr from-orange-500/20 to-transparent rounded-xl flex items-center justify-center">
+                        <i data-lucide="gift" class="w-10 h-10 text-orange-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="text-xs font-bold text-white">王者成长计划</h4>
+                        <p class="text-[9px] text-white/50 mt-1">内含: 1000钻石, 橙色英雄包*1...</p>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span class="text-xs font-black text-orange-400 italic">¥30.00</span>
+                        </div>
+                    </div>
+                    <div class="bg-orange-500 text-white text-[10px] font-black px-3 py-1.5 rounded-lg shadow-lg">购买</div>
+                </div>
+
+                <div class="item-card glass-panel rounded-2xl p-3 border-l-4 border-l-purple-500 flex items-center gap-4" data-item-id="monthly-card">
+                    <div class="w-16 h-16 bg-gradient-to-tr from-purple-500/20 to-transparent rounded-xl flex items-center justify-center">
+                        <i data-lucide="calendar" class="w-10 h-10 text-purple-400"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h4 class="text-xs font-bold text-white">月度特权卡</h4>
+                        <p class="text-[9px] text-white/50 mt-1">立即获得300钻, 每日领取100钻...</p>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span class="text-xs font-black text-purple-400 italic">¥25.00</span>
+                        </div>
+                    </div>
+                    <div class="bg-purple-600 text-white text-[10px] font-black px-3 py-1.5 rounded-lg">激活</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Feedback Container -->
+    <div id="buy-toast" class="toast">
+        <div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+            <i data-lucide="check" class="w-4 h-4 text-white"></i>
+        </div>
+        <span class="text-xs font-bold text-white">购买成功</span>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        lucide.createIcons();
+
+        const itemsData = {
+            'exp-boost': { title: '双倍经验卷轴', price: '60 钻石' },
+            'rare-key': { title: '虚空秘境钥匙', price: '300 钻石' },
+            'vip-pack': { title: '王者成长计划', price: '¥30.00' },
+            'monthly-card': { title: '月度特权卡', price: '¥25.00' }
+        };
+
+        const toast = document.getElementById('buy-toast');
+        let toastTimer = null;
+
+        const showPurchaseFeedback = (itemName) => {
+            if (toastTimer) clearTimeout(toastTimer);
+            
+            toast.querySelector('span').textContent = `成功购买 [${itemName}]`;
+            toast.classList.add('show');
+            
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 2000);
+        };
+
+        // Handle direct purchase on click
+        document.getElementById('items-container').addEventListener('click', (e) => {
+            const card = e.target.closest('.item-card');
+            if (card && !card.classList.contains('sold-out')) {
+                const itemId = card.getAttribute('data-item-id');
+                const item = itemsData[itemId];
+                if (item) {
+                    showPurchaseFeedback(item.title);
+                }
+            }
+        });
+
+        // Tab Switching logic
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => {
+                    b.classList.remove('tab-active');
+                    b.classList.add('glass-panel', 'text-white/40');
+                });
+                btn.classList.add('tab-active');
+                btn.classList.remove('glass-panel', 'text-white/40');
+            });
+        });
+
+        document.getElementById('close-main-btn').addEventListener('click', () => {
+            alert('返回游戏主界面');
+        });
+    });
+</script>
+</body>
+</html>

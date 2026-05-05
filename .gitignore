@@ -5,4 +5,7 @@ coverage/
 .env.local
 .npm-cache/
 .superpowers/
+.codex-run/
+.playwright-cli/
+test-results/
 *.log

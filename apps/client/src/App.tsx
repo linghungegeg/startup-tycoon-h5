@@ -1864,33 +1864,36 @@ const crossServerCoordStyle = ({ x, y, w, h }: CrossServerCoord): CSSProperties 
   "--h": h
 } as CSSProperties);
 
-const CROSS_SERVER_RANK_VALUE_COORD: CrossServerCoord = { x: 90, y: 404, w: 125, h: 54 };
-const CROSS_SERVER_ATTEMPTS_COORD: CrossServerCoord = { x: 639, y: 404, w: 145, h: 77 };
-const CROSS_SERVER_RECOVER_COORD: CrossServerCoord = { x: 807, y: 406, w: 72, h: 70 };
+const CROSS_SERVER_RANK_VALUE_COORD: CrossServerCoord = { x: 144, y: 366, w: 152, h: 78 };
+const CROSS_SERVER_ATTEMPTS_COORD: CrossServerCoord = { x: 665, y: 366, w: 151, h: 78 };
+const CROSS_SERVER_BACK_HOTSPOT_COORD: CrossServerCoord = { x: 8, y: 8, w: 84, h: 84 };
+const CROSS_SERVER_RECOVER_COORD: CrossServerCoord = { x: 790, y: 396, w: 72, h: 72 };
+const CROSS_SERVER_HISTORY_COORD: CrossServerCoord = { x: 735, y: 37, w: 201, h: 85 };
+const CROSS_SERVER_RULES_COORD: CrossServerCoord = { x: 735, y: 134, w: 201, h: 85 };
 const CROSS_SERVER_ARTBOARD_COORD: CrossServerCoord = { x: 0, y: 0, w: 941, h: 1672 };
 const CROSS_SERVER_ASSET_BASE = "/game-ui/cross-server";
 
 const CROSS_SERVER_OPPONENT_COORDS = [
-  { avatar: { x: 154, y: 640, w: 130, h: 130 }, name: { x: 307, y: 684, w: 346, h: 39 }, power: { x: 307, y: 738, w: 245, h: 28 }, rank: { x: 44, y: 690, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 696, w: 190, h: 70 } },
-  { avatar: { x: 154, y: 792, w: 130, h: 130 }, name: { x: 307, y: 838, w: 345, h: 39 }, power: { x: 307, y: 894, w: 245, h: 28 }, rank: { x: 44, y: 842, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 852, w: 190, h: 70 } },
-  { avatar: { x: 154, y: 946, w: 130, h: 130 }, name: { x: 307, y: 994, w: 346, h: 39 }, power: { x: 307, y: 1050, w: 245, h: 28 }, rank: { x: 44, y: 996, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 1008, w: 190, h: 70 } },
-  { avatar: { x: 154, y: 1103, w: 130, h: 130 }, name: { x: 307, y: 1151, w: 346, h: 39 }, power: { x: 307, y: 1206, w: 245, h: 28 }, rank: { x: 44, y: 1153, w: 100, h: 30 }, challengeHotspot: { x: 675, y: 1164, w: 190, h: 70 } }
+  { avatar: { x: 157, y: 625, w: 142, h: 142 }, name: { x: 319, y: 697, w: 230, h: 2 }, power: { x: 319, y: 746, w: 245, h: 2 }, rank: { x: 558, y: 695, w: 122, h: 2 }, challengeHotspot: { x: 688, y: 648, w: 208, h: 86 } },
+  { avatar: { x: 157, y: 805, w: 142, h: 142 }, name: { x: 319, y: 878, w: 230, h: 2 }, power: { x: 319, y: 927, w: 245, h: 2 }, rank: { x: 558, y: 876, w: 122, h: 2 }, challengeHotspot: { x: 688, y: 829, w: 208, h: 86 } },
+  { avatar: { x: 157, y: 986, w: 142, h: 142 }, name: { x: 319, y: 1058, w: 230, h: 2 }, power: { x: 319, y: 1107, w: 245, h: 2 }, rank: { x: 558, y: 1056, w: 122, h: 2 }, challengeHotspot: { x: 688, y: 1010, w: 208, h: 86 } },
+  { avatar: { x: 157, y: 1166, w: 142, h: 142 }, name: { x: 319, y: 1238, w: 230, h: 2 }, power: { x: 319, y: 1287, w: 245, h: 2 }, rank: { x: 558, y: 1236, w: 122, h: 2 }, challengeHotspot: { x: 688, y: 1191, w: 208, h: 86 } }
 ] satisfies Array<Record<"avatar" | "name" | "power" | "rank" | "challengeHotspot", CrossServerCoord>>;
 
 const CROSS_SERVER_LINEUP_COORDS = [
-  { card: { x: 43, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
-  { card: { x: 216, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
-  { card: { x: 390, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
-  { card: { x: 563, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } },
-  { card: { x: 737, y: 1308, w: 160, h: 274 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 30, y: 240, w: 100, h: 28 } }
+  { card: { x: 42, y: 1321, w: 157, h: 294 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 29, y: 249, w: 100, h: 28 } },
+  { card: { x: 215, y: 1321, w: 157, h: 294 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 29, y: 249, w: 100, h: 28 } },
+  { card: { x: 386, y: 1321, w: 157, h: 294 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 29, y: 249, w: 100, h: 28 } },
+  { card: { x: 557, y: 1321, w: 157, h: 294 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 29, y: 249, w: 100, h: 28 } },
+  { card: { x: 728, y: 1321, w: 157, h: 294 }, role: { x: 2, y: 0, w: 78, h: 34 }, level: { x: 29, y: 249, w: 100, h: 28 } }
 ] satisfies Array<Record<"card" | "role" | "level", CrossServerCoord>>;
 
 const CROSS_SERVER_LINEUP_SOURCE_RECTS = [
-  { x: 0, y: 18, w: 156, h: 158 },
-  { x: 0, y: 18, w: 156, h: 158 },
-  { x: 0, y: 14, w: 156, h: 160 },
-  { x: 0, y: 18, w: 156, h: 158 },
-  { x: 0, y: 18, w: 156, h: 158 }
+  { x: 0, y: 0, w: 156, h: 194 },
+  { x: 0, y: 0, w: 156, h: 194 },
+  { x: 0, y: 0, w: 156, h: 194 },
+  { x: 0, y: 0, w: 156, h: 194 },
+  { x: 0, y: 0, w: 156, h: 194 }
 ] satisfies CrossServerCoord[];
 
 const getCrossServerLineupRoleLabel = (role: string): string => {
@@ -1936,58 +1939,70 @@ type CrossServerPixelTextOptions = {
   strokeColor?: string;
   strokeWidth?: number;
   align?: CanvasTextAlign;
+  baseline?: CanvasTextBaseline;
+  minFontSize?: number;
 };
 
 const CROSS_SERVER_PIXEL_TEXT_STYLES = {
   rankValue: {
-    color: "#ffe5a6",
-    fontSize: 38,
+    color: "#f2d08b",
+    fontSize: 72,
+    weight: 700,
     maxWidth: CROSS_SERVER_RANK_VALUE_COORD.w,
     shadowColor: "rgba(255, 197, 88, 0.26)",
     shadowBlur: 8,
     strokeColor: "rgba(88, 48, 15, 0.58)",
-    strokeWidth: 3
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   attemptsValue: {
-    color: "#ffe5a6",
-    fontSize: 46,
-    maxWidth: 72,
+    color: "#f2d08b",
+    fontSize: 64,
+    weight: 700,
+    maxWidth: 78,
     shadowColor: "rgba(255, 197, 88, 0.24)",
     shadowBlur: 8,
     strokeColor: "rgba(88, 48, 15, 0.52)",
-    strokeWidth: 3
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   attemptsLimit: {
     color: "rgba(172, 150, 108, 0.94)",
-    fontSize: 41,
+    fontSize: 46,
+    weight: 700,
     maxWidth: 78,
     shadowBlur: 5,
     strokeColor: "rgba(42, 31, 20, 0.52)",
-    strokeWidth: 2
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   opponentName: {
     color: "#f4f6f6",
-    fontSize: 32,
-    weight: 850,
+    fontSize: 28,
+    weight: 700,
     shadowBlur: 5,
     strokeColor: "rgba(8, 15, 16, 0.68)",
-    strokeWidth: 2
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   opponentPower: {
     color: "#eec16e",
-    fontSize: 23,
+    fontSize: 24,
     weight: 800,
     shadowBlur: 4,
     strokeColor: "rgba(34, 22, 10, 0.62)",
-    strokeWidth: 2
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   opponentRank: {
     color: "#f0bd67",
-    fontSize: 20,
+    fontSize: 24,
+    minFontSize: 18,
     weight: 800,
     shadowBlur: 3,
     strokeColor: "rgba(34, 22, 10, 0.52)",
-    strokeWidth: 2
+    strokeWidth: 2,
+    baseline: "alphabetic"
   },
   roleTag: {
     color: "#f5fbff",
@@ -2051,6 +2066,9 @@ const loadCrossServerPixelAssets = async (): Promise<CrossServerPixelAssets> => 
 
 const loadCrossServerCachedImage = async (src: string | null, cache: Map<string, HTMLImageElement | null>): Promise<HTMLImageElement | null> => {
   if (!src) {
+    return null;
+  }
+  if (src.toLowerCase().split("?")[0]?.endsWith(".svg")) {
     return null;
   }
   if (cache.has(src)) {
@@ -2146,9 +2164,18 @@ const drawCrossServerText = (
   options: CrossServerPixelTextOptions
 ): void => {
   context.save();
-  context.font = `${options.weight ?? 900} ${options.fontSize}px "Microsoft YaHei", "PingFang SC", sans-serif`;
+  let fontSize = options.fontSize;
+  const minFontSize = options.minFontSize ?? Math.max(12, options.fontSize - 18);
+  const fontFamily = `"Microsoft YaHei", "PingFang SC", sans-serif`;
+  context.font = `${options.weight ?? 900} ${fontSize}px ${fontFamily}`;
   context.textAlign = options.align ?? "left";
-  context.textBaseline = "top";
+  context.textBaseline = options.baseline ?? "top";
+  if (options.maxWidth) {
+    while (fontSize > minFontSize && context.measureText(text).width > options.maxWidth) {
+      fontSize -= 1;
+      context.font = `${options.weight ?? 900} ${fontSize}px ${fontFamily}`;
+    }
+  }
   context.lineJoin = "round";
   context.shadowColor = options.shadowColor ?? "rgba(0, 0, 0, 0.82)";
   context.shadowBlur = options.shadowBlur ?? 8;
@@ -2242,9 +2269,9 @@ const drawCrossServerPixelLayer = (
     drawCrossServerLineupPortrait(context, options.dynamicImages?.lineupPortraits[index] ?? options.assets?.lineupPortraits[index], coords.card, index);
   });
 
-  drawCrossServerText(context, String(options.rank), CROSS_SERVER_RANK_VALUE_COORD.x + 2, CROSS_SERVER_RANK_VALUE_COORD.y + 10, CROSS_SERVER_PIXEL_TEXT_STYLES.rankValue);
-  drawCrossServerText(context, String(options.attemptsRemaining), CROSS_SERVER_ATTEMPTS_COORD.x + 3, CROSS_SERVER_ATTEMPTS_COORD.y + 15, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsValue);
-  drawCrossServerText(context, `/${options.attemptLimit}`, CROSS_SERVER_ATTEMPTS_COORD.x + 61, CROSS_SERVER_ATTEMPTS_COORD.y + 22, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsLimit);
+  drawCrossServerText(context, String(options.rank), CROSS_SERVER_RANK_VALUE_COORD.x, CROSS_SERVER_RANK_VALUE_COORD.y + 67, CROSS_SERVER_PIXEL_TEXT_STYLES.rankValue);
+  drawCrossServerText(context, String(options.attemptsRemaining), CROSS_SERVER_ATTEMPTS_COORD.x, CROSS_SERVER_ATTEMPTS_COORD.y + 62, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsValue);
+  drawCrossServerText(context, `/${options.attemptLimit}`, CROSS_SERVER_ATTEMPTS_COORD.x + 66, CROSS_SERVER_ATTEMPTS_COORD.y + 62, CROSS_SERVER_PIXEL_TEXT_STYLES.attemptsLimit);
 
   options.opponents.slice(0, 4).forEach((opponent, index) => {
     const coords = CROSS_SERVER_OPPONENT_COORDS[index];
@@ -2252,25 +2279,24 @@ const drawCrossServerPixelLayer = (
       return;
     }
 
-    drawCrossServerText(context, opponent.companyName, coords.name.x, coords.name.y + 2, {
+    drawCrossServerText(context, opponent.companyName, coords.name.x, coords.name.y, {
       ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentName,
       maxWidth: coords.name.w,
     });
     context.save();
     context.fillStyle = "#eec16e";
-    context.fillRect(coords.power.x, coords.power.y + 13, 6, 13);
-    context.fillRect(coords.power.x + 8, coords.power.y + 8, 6, 18);
-    context.fillRect(coords.power.x + 16, coords.power.y + 4, 6, 22);
-    context.fillRect(coords.power.x - 1, coords.power.y + 25, 25, 3);
+    context.fillRect(coords.power.x, coords.power.y - 17, 6, 13);
+    context.fillRect(coords.power.x + 8, coords.power.y - 22, 6, 18);
+    context.fillRect(coords.power.x + 16, coords.power.y - 26, 6, 22);
+    context.fillRect(coords.power.x - 1, coords.power.y - 5, 25, 3);
     context.restore();
-    drawCrossServerText(context, `战力 ${compactNumber(opponent.power)}`, coords.power.x + 33, coords.power.y + 2, {
+    drawCrossServerText(context, `战力 ${compactNumber(opponent.power)}`, coords.power.x + 33, coords.power.y, {
       ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentPower,
       maxWidth: coords.power.w,
     });
-    drawCrossServerText(context, String(opponent.rank), coords.rank.x + coords.rank.w / 2, coords.rank.y, {
+    drawCrossServerText(context, `排名： ${opponent.rank}`, coords.rank.x, coords.rank.y, {
       ...CROSS_SERVER_PIXEL_TEXT_STYLES.opponentRank,
       maxWidth: coords.rank.w,
-      align: "center",
     });
   });
 
@@ -8119,17 +8145,17 @@ function App() {
             <section className="page-container page-active" aria-label="跨服" data-testid="native-cross-server">
               <div className="cross-server-static-page">
                 <div className="cross-server-static-artboard" data-testid="cross-server-unified-shell">
-                  <button className="cross-server-static-close" data-testid="cross-server-close-button" type="button" aria-label="关闭跨服" onClick={closeNativeHomePage}>
+                  <button className="cross-server-static-close" data-testid="cross-server-close-button" type="button" style={crossServerCoordStyle(CROSS_SERVER_BACK_HOTSPOT_COORD)} aria-label="关闭跨服" onClick={closeNativeHomePage}>
                     <Icon name="chevron-left" className="h-6 w-6" />
                   </button>
                   <canvas className="cross-server-pixel-layer" data-testid="cross-server-pixel-layer" ref={crossServerPixelLayerRef} width={941} height={1672} aria-hidden="true" />
                   {crossServerDebug && <img className="cross-server-reference-overlay" data-testid="cross-server-reference-overlay" src="/game-ui/cross-server/kuafujixian.png" alt="" aria-hidden="true" />}
                   <div className="cross-server-static-hit-layer" data-testid="cross-server-content-pane">
                     <section className="cross-server-static-arena" aria-label="可挑战对手" data-testid="cross-server-arena-panel" hidden={activeCrossServerMode !== "season"}>
-                      <button className="cross-server-static-hotspot cross-server-static-history" type="button" onClick={() => setActiveCrossServerMode("history")}>
+                      <button className="cross-server-static-hotspot cross-server-static-history" type="button" style={crossServerCoordStyle(CROSS_SERVER_HISTORY_COORD)} onClick={() => setActiveCrossServerMode("history")}>
                         战报回放
                       </button>
-                      <button className="cross-server-static-hotspot cross-server-static-rules" type="button" onClick={() => setActiveCrossServerMode("rewards")}>
+                      <button className="cross-server-static-hotspot cross-server-static-rules" type="button" style={crossServerCoordStyle(CROSS_SERVER_RULES_COORD)} onClick={() => setActiveCrossServerMode("rewards")}>
                         规则说明
                       </button>
                       <button className="cross-server-static-hotspot cross-server-static-recover" disabled={!crossServerCenter || crossServerCenter.arena.attemptsRemaining >= crossServerCenter.arena.attemptLimit} type="button" style={crossServerCoordStyle(CROSS_SERVER_RECOVER_COORD)} onClick={() => void recoverCrossServerAttempts()} aria-label="恢复挑战次数">

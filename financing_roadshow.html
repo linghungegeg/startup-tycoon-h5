@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="filename" content="financing_roadshow.html">
+    <title>融资路演 - 模拟经营</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'game-bg': '#0a0a0c',
+                        'game-surface': '#151518',
+                        'game-gold': '#c5a059',
+                        'game-gold-dim': '#8e7341',
+                        'game-border': '#2d2d32',
+                        'status-available': '#c5a059',
+                        'status-locked': '#993d3d',
+                        'status-active': '#d97706',
+                        'status-done': '#16a34a',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Microsoft YaHei', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #050505;
+            color: #e0e0e0;
+            font-size: 14px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        /* H5 Mobile Container Shape */
+        .container-h5 {
+            width: 375px;
+            height: 812px;
+            background-color: #0a0a0c;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 0 40px rgba(0,0,0,0.8);
+            border: 1px solid #1a1a1e;
+            overflow: hidden;
+        }
+        @media (max-width: 400px) {
+            .container-h5 {
+                width: 100vw;
+                height: 100vh;
+                border: none;
+            }
+        }
+        .status-badge {
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: bold;
+            border-radius: 2px;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        /* 呼吸灯动画效果 */
+        @keyframes breathing {
+            0%, 100% { 
+                box-shadow: 0 0 2px rgba(217, 119, 6, 0.2);
+                border-color: rgba(217, 119, 6, 0.3);
+            }
+            50% { 
+                box-shadow: 0 0 8px rgba(217, 119, 6, 0.5);
+                border-color: rgba(217, 119, 6, 0.8);
+                transform: scale(1.02);
+            }
+        }
+        .animate-status-pulse {
+            animation: breathing 2s ease-in-out infinite;
+        }
+
+        /* 高危警示闪烁动画 */
+        @keyframes danger-flash {
+            0%, 100% { 
+                background-color: #ef4444; 
+                box-shadow: 0 0 0px #ef4444;
+            }
+            50% { 
+                background-color: #7f1d1d; 
+                box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+            }
+        }
+        .animate-danger-pulse {
+            animation: danger-flash 0.4s ease-in-out infinite;
+        }
+
+        .list-item {
+            border-bottom: 1px solid #1a1a1e;
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+        .list-item.active {
+            background-color: #1e1e24;
+            border-left: 3px solid #c5a059;
+        }
+        .scroll-v {
+            overflow-y: auto;
+            scrollbar-width: none; 
+        }
+        .scroll-v::-webkit-scrollbar {
+            display: none;
+        }
+        .label-text {
+            color: #666;
+            font-size: 10px;
+            margin-bottom: 2px;
+            text-transform: uppercase;
+        }
+        .btn-main {
+            background-color: #c5a059;
+            color: #000;
+            font-weight: 700;
+            padding: 10px 20px;
+            transition: all 0.2s;
+            font-size: 13px;
+        }
+        .btn-main:disabled {
+            background-color: #2d2d32;
+            color: #555;
+        }
+        .btn-secondary {
+            border: 1px solid #2d2d32;
+            color: #888;
+            padding: 6px 10px;
+            font-size: 11px;
+            flex: 1;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-h5">
+    <!-- Header -->
+    <header class="h-12 shrink-0 border-b border-game-border flex items-center justify-between px-4 bg-game-surface/50">
+        <button id="btn-back" class="text-game-gold flex items-center gap-1">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            <span class="text-xs">返回</span>
+        </button>
+        <h1 class="text-sm font-bold tracking-tight">融资路演</h1>
+        <button id="btn-sync" class="p-1 text-gray-400">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+    </header>
+
+    <!-- Top Stats -->
+    <section class="grid grid-cols-2 shrink-0 border-b border-game-border bg-game-bg">
+        <div class="p-3 border-r border-b border-game-border">
+            <p class="label-text">公司估值</p>
+            <p class="text-sm font-bold text-white">¥ 12.45 B</p>
+        </div>
+        <div class="p-3 border-b border-game-border">
+            <p class="label-text">账上现金</p>
+            <p class="text-sm font-bold text-game-gold">¥ 430.2 M</p>
+        </div>
+        <div class="p-3 border-r border-game-border">
+            <p class="label-text">创始人持股</p>
+            <p class="text-sm font-bold text-white">68.42%</p>
+        </div>
+        <div class="p-3">
+            <p class="label-text">可谈方案</p>
+            <p class="text-sm font-bold text-white">03 / 08</p>
+        </div>
+    </section>
+
+    <!-- Content Area -->
+    <div class="flex-1 flex flex-col min-h-0">
+        <!-- List Section -->
+        <div class="h-[35%] shrink-0 flex flex-col border-b border-game-border bg-game-surface/20">
+            <div class="px-4 py-1 bg-game-surface/80 text-[10px] font-bold text-gray-500 flex justify-between items-center border-b border-game-border">
+                <span>融资方案列表</span>
+                <span>当前状态</span>
+            </div>
+            <div id="proposal-list" class="flex-1 scroll-v"></div>
+        </div>
+
+        <!-- Detail Section -->
+        <div id="detail-section" class="flex-1 flex flex-col min-h-0 bg-game-bg scroll-v px-4 py-4">
+            <div class="mb-4">
+                <h2 id="detail-name" class="text-xl font-bold text-game-gold leading-tight">--</h2>
+                <p id="detail-bio" class="text-gray-500 text-xs mt-1 leading-relaxed">请选择上方方案。</p>
+            </div>
+
+            <!-- Stats Mini Grid -->
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="flex flex-col">
+                    <p class="label-text">路演把握</p>
+                    <div class="w-full bg-game-border h-1 rounded-full overflow-hidden mt-1 relative">
+                        <div id="confidence-bar" class="bg-game-gold h-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <span id="detail-confidence" class="text-xs font-bold mt-1 inline-block">0%</span>
+                </div>
+                <div class="flex flex-col">
+                    <p class="label-text">治理压力</p>
+                    <div class="w-full bg-game-border h-1 rounded-full overflow-hidden mt-1 relative">
+                        <div id="pressure-bar" class="bg-red-900 h-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <span id="detail-pressure" class="text-xs font-bold mt-1 inline-block text-gray-500">None</span>
+                </div>
+                <div>
+                    <p class="label-text">到账金额</p>
+                    <p id="detail-amount" class="text-sm font-bold text-white">--</p>
+                </div>
+                <div>
+                    <p class="label-text">投后持股</p>
+                    <p id="detail-post-equity" class="text-sm font-bold text-white">--</p>
+                </div>
+            </div>
+
+            <!-- Detailed Lists -->
+            <div class="space-y-4 mb-8">
+                <div class="border-t border-game-border pt-3">
+                    <p class="label-text text-game-gold-dim">门槛与条款</p>
+                    <ul id="detail-thresholds" class="space-y-1.5 mt-2"></ul>
+                </div>
+                <div class="border-t border-game-border pt-3">
+                    <p class="label-text text-game-gold-dim">投后管理事件</p>
+                    <ul id="detail-events" class="space-y-1.5 mt-2"></ul>
+                </div>
+                <div class="border-t border-game-border pt-3">
+                    <p class="label-text text-game-gold-dim">最近谈判结果</p>
+                    <p id="detail-results" class="text-xs text-gray-600 italic mt-1 leading-relaxed">敲定后显示投后反馈。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fixed Footer -->
+    <footer id="action-bar" class="shrink-0 border-t border-game-border bg-game-surface p-4">
+        <div class="flex flex-col gap-3">
+            <div class="flex gap-2">
+                <button id="btn-legal" class="btn-secondary">无需法务</button>
+                <button id="btn-pause" class="btn-secondary">暂停打款</button>
+                <button id="btn-topup" class="btn-secondary">加投</button>
+            </div>
+            <div class="flex items-center justify-between gap-4">
+                <div class="shrink-0">
+                    <p class="text-[9px] text-gray-600 uppercase">当前状态</p>
+                    <p id="status-text" class="text-[11px] font-bold text-gray-400">请选择方案</p>
+                </div>
+                <button id="btn-primary" class="btn-main flex-1 uppercase tracking-widest disabled">
+                    开始谈判
+                </button>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<script>
+    const PROPOSALS = [
+        {
+            id: 1,
+            round: '天使轮',
+            investor: '红杉资本(模拟)',
+            amount: '¥ 20.0 M',
+            equity: '8.5%',
+            status: 'AVAILABLE',
+            reason: '',
+            bio: '全球顶尖风投，拥有极强的产业资源。对治理结构要求较高。',
+            confidence: 85,
+            pressure: 75,
+            postEquity: '62.60%',
+            thresholds: ['月度流水 > ¥ 5M', '核心专利 > 3项'],
+            events: ['引入行业董事', '年度战略审计'],
+            results: ''
+        },
+        {
+            id: 2,
+            round: 'Pre-A 轮',
+            investor: '经纬中国(模拟)',
+            amount: '¥ 45.0 M',
+            equity: '12.0%',
+            status: 'ACTIVE',
+            reason: '复核中',
+            bio: '专注早期，风格激进。提供大量流量支持。',
+            confidence: 62,
+            pressure: 45,
+            postEquity: '60.21%',
+            thresholds: ['活跃用户 > 1M', '团队全职'],
+            events: ['PR资源注入', '季度财务汇报'],
+            results: '已完成初步条款。'
+        },
+        {
+            id: 3,
+            round: '种子轮',
+            investor: '蓝池资本(模拟)',
+            amount: '¥ 15.0 M',
+            equity: '5.0%',
+            status: 'LOCKED',
+            reason: '估值未达15B',
+            bio: '稳健型家族基金，干预较少。',
+            confidence: 45,
+            pressure: 20,
+            postEquity: '65.00%',
+            thresholds: ['估值达 ¥ 15B', '现金流正'],
+            events: ['股东会议', '财务监督'],
+            results: ''
+        },
+        {
+            id: 4,
+            round: 'A 轮',
+            investor: '淡马锡(模拟)',
+            amount: '¥ 120 M',
+            equity: '15.0%',
+            status: 'DONE',
+            reason: '',
+            bio: '顶级主权基金。流程规范。',
+            confidence: 100,
+            pressure: 92,
+            postEquity: '58.15%',
+            thresholds: ['全球化布局'],
+            events: ['委派财务总监', '否决权'],
+            results: '上季度已打款。'
+        }
+    ];
+
+    let selectedId = 1;
+    let pressureIntervalId = null;
+
+    const listContainer = document.getElementById('proposal-list');
+    const detailName = document.getElementById('detail-name');
+    const detailBio = document.getElementById('detail-bio');
+    const detailConfidence = document.getElementById('detail-confidence');
+    const confidenceBar = document.getElementById('confidence-bar');
+    const detailPressure = document.getElementById('detail-pressure');
+    const pressureBar = document.getElementById('pressure-bar');
+    const detailAmount = document.getElementById('detail-amount');
+    const detailPostEquity = document.getElementById('detail-post-equity');
+    const detailThresholds = document.getElementById('detail-thresholds');
+    const detailEvents = document.getElementById('detail-events');
+    const detailResults = document.getElementById('detail-results');
+    const btnPrimary = document.getElementById('btn-primary');
+    const btnLegal = document.getElementById('btn-legal');
+    const btnPause = document.getElementById('btn-pause');
+    const btnTopup = document.getElementById('btn-topup');
+    const statusText = document.getElementById('status-text');
+
+    function getStatusConfig(status) {
+        switch(status) {
+            case 'AVAILABLE': return { label: '可谈', class: 'bg-status-available/20 text-status-available border border-status-available/30', icon: 'zap' };
+            case 'LOCKED': return { label: '锁定', class: 'bg-status-locked/20 text-status-locked border border-status-locked/30', icon: 'lock' };
+            case 'ACTIVE': return { 
+                label: '谈判', 
+                class: 'bg-status-active/20 text-status-active border border-status-active/40 animate-status-pulse', 
+                icon: 'loader-2',
+                iconClass: 'animate-spin' 
+            };
+            case 'DONE': return { label: '完成', class: 'bg-status-done/20 text-status-done border border-status-done/30', icon: 'check' };
+            default: return { label: '未知', class: 'bg-gray-500/20 text-gray-500', icon: 'help-circle' };
+        }
+    }
+
+    // 核心函数：仅更新压力相关的 UI
+    function updatePressureUI(pressureValue) {
+        let pressureLevel = '';
+        let pressureClass = '';
+        
+        pressureBar.classList.remove('animate-danger-pulse'); 
+        
+        if (pressureValue > 80) {
+            pressureLevel = '危急';
+            pressureClass = 'text-red-500 font-black animate-pulse';
+            pressureBar.classList.add('animate-danger-pulse');
+        } else if (pressureValue > 50) {
+            pressureLevel = '高压';
+            pressureClass = 'text-red-500';
+        } else if (pressureValue > 30) {
+            pressureLevel = '中等';
+            pressureClass = 'text-amber-500';
+        } else {
+            pressureLevel = '轻微';
+            pressureClass = 'text-green-500';
+        }
+        
+        detailPressure.innerText = `${pressureLevel} (${Math.round(pressureValue)}%)`;
+        detailPressure.className = `text-xs font-bold mt-1 inline-block ${pressureClass}`;
+        pressureBar.style.width = `${pressureValue}%`;
+    }
+
+    function renderList() {
+        listContainer.innerHTML = '';
+        PROPOSALS.forEach(p => {
+            const config = getStatusConfig(p.status);
+            const item = document.createElement('div');
+            item.className = `list-item px-4 py-3 flex justify-between items-center ${selectedId === p.id ? 'active' : ''}`;
+            item.innerHTML = `
+                <div class="flex-1 min-w-0 pr-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-bold text-gray-500 shrink-0">${p.round}</span>
+                        <p class="font-bold text-white text-xs truncate">${p.investor}</p>
+                    </div>
+                    <div class="flex gap-3 mt-0.5">
+                        <span class="text-xs font-bold text-game-gold">${p.amount}</span>
+                        <span class="text-xs text-gray-500">${p.equity}</span>
+                    </div>
+                </div>
+                <div class="text-right shrink-0">
+                    <div class="status-badge ${config.class} gap-1">
+                        <i data-lucide="${config.icon}" class="w-2.5 h-2.5 ${config.iconClass || ''}"></i>
+                        ${config.label}
+                    </div>
+                    ${p.reason ? `<p class="text-[9px] text-red-900 mt-0.5">${p.reason}</p>` : ''}
+                </div>
+            `;
+            item.addEventListener('click', () => {
+                selectedId = p.id;
+                renderList();
+                renderDetail();
+            });
+            listContainer.appendChild(item);
+        });
+        lucide.createIcons();
+    }
+
+    function renderDetail() {
+        const p = PROPOSALS.find(x => x.id === selectedId);
+        if (!p) return;
+
+        detailName.innerText = p.investor;
+        detailBio.innerText = p.bio;
+        detailConfidence.innerText = `${p.confidence}%`;
+        confidenceBar.style.width = `${p.confidence}%`;
+        
+        // 调用统一的压力 UI 更新逻辑
+        updatePressureUI(p.pressure);
+        
+        detailAmount.innerText = p.amount;
+        detailPostEquity.innerText = p.postEquity;
+
+        detailThresholds.innerHTML = p.thresholds.map(t => `<li class="text-[11px] flex items-start gap-2 text-gray-400"><i data-lucide="circle" class="w-1.5 h-1.5 mt-1 text-game-gold fill-game-gold"></i><span>${t}</span></li>`).join('');
+        detailEvents.innerHTML = p.events.map(e => `<li class="text-[11px] flex items-start gap-2 text-gray-400"><i data-lucide="chevron-right" class="w-2.5 h-2.5 mt-0.5 text-game-gold"></i><span>${e}</span></li>`).join('');
+        
+        detailResults.innerText = p.results || '敲定后显示投后反馈。';
+
+        btnLegal.disabled = btnPause.disabled = btnTopup.disabled = btnPrimary.disabled = true;
+        btnPrimary.innerText = '开始谈判';
+
+        if (p.status === 'AVAILABLE') {
+            btnPrimary.disabled = false;
+            statusText.innerText = '就绪';
+            statusText.className = 'text-[11px] font-bold text-game-gold';
+        } else if (p.status === 'ACTIVE') {
+            btnPrimary.innerText = '敲定条款';
+            btnPrimary.disabled = false;
+            btnLegal.disabled = btnPause.disabled = btnTopup.disabled = false;
+            statusText.innerText = '谈判中';
+            statusText.className = 'text-[11px] font-bold text-amber-500';
+        } else if (p.status === 'LOCKED') {
+            statusText.innerText = '不满足';
+            statusText.className = 'text-[11px] font-bold text-red-900';
+        } else if (p.status === 'DONE') {
+            btnPrimary.innerText = '已完成';
+            statusText.innerText = '生效';
+            statusText.className = 'text-[11px] font-bold text-green-600';
+        }
+
+        lucide.createIcons();
+    }
+
+    // 启动压力波动逻辑
+    function initPressureFluctuation() {
+        if (pressureIntervalId) clearInterval(pressureIntervalId);
+        
+        pressureIntervalId = setInterval(() => {
+            // 找出所有正在谈判中的方案并让它们产生波动
+            PROPOSALS.forEach(p => {
+                if (p.status === 'ACTIVE') {
+                    // 产生 -2.0 到 +2.0 之间的随机波动
+                    const jitter = (Math.random() * 4) - 2;
+                    let nextPressure = p.pressure + jitter;
+                    
+                    // 确保压力值在 0-100 之间
+                    p.pressure = Math.max(0, Math.min(100, nextPressure));
+
+                    // 如果当前选中的正是这个方案，实时更新 UI
+                    if (p.id === selectedId) {
+                        updatePressureUI(p.pressure);
+                    }
+                }
+            });
+        }, 2000); // 每2秒波动一次
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        renderList();
+        renderDetail();
+        initPressureFluctuation();
+        
+        document.getElementById('btn-sync').addEventListener('click', function() {
+            const icon = this.querySelector('i');
+            icon.classList.add('animate-spin');
+            setTimeout(() => { icon.classList.remove('animate-spin'); }, 800);
+        });
+    });
+</script>
+
+</body>
+</html>
