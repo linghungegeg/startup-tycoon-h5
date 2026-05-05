@@ -57,25 +57,13 @@ npm run dev
 
 ## 截图与概念图
 
-### 首页 UI
-
-![首页 UI](img/ui-preview.png)
-
-### 财务系统
-
-![财务系统](img/caiwu.png)
-
-### 跨服玩法概念图
-
-![跨服玩法概念图](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png)
-
-### 对战概念图
-
-![对战概念图](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png)
-
-### 回放概念图
-
-![回放概念图](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png)
+| 首页 UI | 财务系统 |
+| --- | --- |
+| ![首页 UI](img/ui-preview.png) | ![财务系统](img/caiwu.png) |
+| 跨服玩法概念图 | 对战概念图 |
+| ![跨服玩法概念图](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png) | ![对战概念图](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png) |
+| 回放概念图 | 更多概念图 |
+| ![回放概念图](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png) | 更多图片见 `img/` |
 
 ## 项目特色
 

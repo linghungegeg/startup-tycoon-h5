@@ -42,25 +42,13 @@ Default local URLs:
 
 ## Screenshots and Concept Images
 
-### Home UI
-
-![Home UI](img/ui-preview.png)
-
-### Finance
-
-![Finance](img/caiwu.png)
-
-### Cross-Server Concept
-
-![Cross-Server Concept](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png)
-
-### Battle Concept
-
-![Battle Concept](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png)
-
-### Replay Concept
-
-![Replay Concept](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png)
+| Home UI | Finance |
+| --- | --- |
+| ![Home UI](img/ui-preview.png) | ![Finance](img/caiwu.png) |
+| Cross-Server Concept | Battle Concept |
+| ![Cross-Server Concept](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png) | ![Battle Concept](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png) |
+| Replay Concept | More Images |
+| ![Replay Concept](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png) | More images in `img/` |
 
 ## Highlights
 
