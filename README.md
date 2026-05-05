@@ -65,17 +65,17 @@ npm run dev
 
 ![财务系统](img/caiwu.png)
 
-### 产品研发
-
-![产品研发](img/chanpin-yanfa.png)
-
-### 商战竞争
-
-![商战竞争](img/shangzhan-jingzheng.png)
-
 ### 跨服玩法概念图
 
-![跨服玩法概念图](img/kuafujixian.png)
+![跨服玩法概念图](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png)
+
+### 对战概念图
+
+![对战概念图](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png)
+
+### 回放概念图
+
+![回放概念图](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png)
 
 ## 项目特色
 
@@ -316,14 +316,10 @@ npm run db:seed -w @wenziyouxi/api
 
 本项目使用 MIT License，详见根目录 `LICENSE` 文件。
 
-## 联系作者
+## 联系与赞赏
 
-如果你基于本项目做二开、换皮、商业化、部署或定制开发，可以通过微信联系作者交流。
+如果这个项目对你有帮助，欢迎赞赏支持后续维护；商业合作、二开定制、部署上线、玩法扩展和前端 UI 重做，可以通过微信联系作者。
 
-### 微信联系
-
-<img src="wx.jpg" alt="微信联系二维码" width="220" />
-
-### 赞赏支持
-
-<img src="zhanshang.png" alt="赞赏二维码" width="220" />
+| 微信联系 | 赞赏支持 |
+| --- | --- |
+| ![微信联系](wx.jpg) | ![赞赏码](zhanshang.png) |

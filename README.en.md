@@ -50,17 +50,17 @@ Default local URLs:
 
 ![Finance](img/caiwu.png)
 
-### Product R&D
-
-![Product R&D](img/chanpin-yanfa.png)
-
-### Market Competition
-
-![Market Competition](img/shangzhan-jingzheng.png)
-
 ### Cross-Server Concept
 
-![Cross-Server Concept](img/kuafujixian.png)
+![Cross-Server Concept](img/ChatGPT%20Image%202026年5月4日%2022_18_12.png)
+
+### Battle Concept
+
+![Battle Concept](img/0c4eddc8-62aa-4e4e-bf60-fede9d88bf13.png)
+
+### Replay Concept
+
+![Replay Concept](img/ChatGPT%20Image%202026年5月4日%2022_29_15.png)
 
 ## Highlights
 
@@ -274,14 +274,10 @@ startup-tycoon-h5/
 
 This project uses the MIT License. See the root `LICENSE` file for details.
 
-## Contact
+## Contact and Support
 
-If you build a derivative project, reskin, commercial deployment, or custom version from this project, you can contact the author through WeChat.
+If this project helps you, donations are welcome for future maintenance. For commercial cooperation, custom development, deployment, gameplay expansion, or frontend UI redesign, contact the author through WeChat.
 
-### WeChat
-
-<img src="wx.jpg" alt="WeChat QR code" width="220" />
-
-### Donation / Support
-
-<img src="zhanshang.png" alt="Donation QR code" width="220" />
+| WeChat | Donation / Support |
+| --- | --- |
+| ![WeChat](wx.jpg) | ![Donation QR code](zhanshang.png) |
