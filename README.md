@@ -6,6 +6,26 @@
 
 玩家扮演创业公司创始人，需要在员工、项目、产品、现金流、融资、贷款、市场竞争、商会、活动、排行榜和跨服玩法之间做经营决策。项目不是纯前端演示，也不是通用换皮模板，而是一套带前后端、数据库和运营后台的模拟经营游戏工程。
 
+## 赞助商
+
+<p align="center">
+  <a href="https://core2api.com">
+    <img src="https://img.shields.io/badge/Sponsor-Core2API-111827?style=for-the-badge" alt="Sponsor Core2API" />
+  </a>
+</p>
+
+<p align="center">
+  <strong>Claude / GPT / Grok / Gemini / DeepSeek 全球大模型 API</strong><br>
+  全球大模型最低价 0.001 倍率，支持论文修改、代码编程、开发 App、逆向工程等场景
+</p>
+
+<p align="center">
+  <a href="https://core2api.com">
+    <img src="https://img.shields.io/badge/core2api.com-%E8%AE%BF%E9%97%AE%E5%AE%98%E7%BD%91-2563eb?style=flat-square" alt="访问 core2api.com" />
+  </a>
+  <img src="https://img.shields.io/badge/%E4%BA%A4%E6%B5%81%E7%BE%A4-684281579-16a34a?style=flat-square" alt="交流群 684281579" />
+</p>
+
 ## 快捷功能
 
 | 目标 | 入口 |
